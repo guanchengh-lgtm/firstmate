@@ -36,7 +36,7 @@ The worker runs one staged job at a time and preempts a running reply long-poll 
 `bin/fm-remote-job-lib.sh` owns that preemption contract, and a preempted poll is indistinguishable from one whose wait window closed with no data, so the re-armed poll loses nothing.
 Linux uses the same queue and worker protocol without the Aqua-session requirement.
 The remote account must provide the required toolchain, the selected worker runtime, the selected session backend, and credentials that work on that host.
-Project origin URLs recorded by the primary must be reachable from the remote account because projects are cloned on that host rather than copied from the primary.
+The origin URL named for each project must be reachable from the remote account because projects are cloned on that host rather than copied from the primary.
 
 ## Non-interactive tool contract
 
@@ -115,11 +115,18 @@ A file at `~/.local/bin/fm-remote-entrypoint.sh` that is not Firstmate's own sym
 Create and fill the normal secondmate charter first, then run:
 
 ```sh
-bin/fm-remote-home-seed.sh <id> <ssh-alias> <remote-root> <remote-home> {<project>...|--no-projects}
+bin/fm-remote-home-seed.sh <id> <ssh-alias> <remote-root> <remote-home> {<project>[=<origin-url>]...|--no-projects}
 ```
 
 `<remote-root>` is the remote Firstmate code clone that supplies tracked scripts.
 `<remote-home>` is a separate absolute path for the persistent secondmate home and must not overlap the code root.
+
+Name each project's origin as `<project>=<origin-url>`.
+The origin is whatever URL the person or agent running the seed already knows for that project, so seeding a project this machine has never cloned needs nothing else: no clone under `projects/`, no `no-mistakes` initialization here, and no fleet sync first.
+A bare `<project>` is still accepted when this machine happens to have `projects/<project>`, whose configured origin is then read instead of being retyped.
+[`bin/fm-project-origin-lib.sh`](../bin/fm-project-origin-lib.sh) owns which URLs are accepted; ordinary `https`, `ssh`, `git`, `file`, scp-like, and absolute-path clone URLs are, while anything git could execute as a transport or absorb as an option is refused at both ends of the transfer.
+The project's registered delivery mode still comes from this machine's `data/projects.md`, so an unregistered or `local-only` project is refused rather than provisioned.
+
 The seed records `host:`, `root:`, and `home:` in `data/secondmates.md`, gates the host on readiness, sends a bounded manifest, and lets the remote host clone its own Firstmate home and project origins.
 Readiness starts with a read-only check; when that check reports a gap, it runs `--fix` and then a second read-only check whose verdict decides, so the operator never has to run the repair by hand and a repair is never trusted on its own word.
 A host that stays red prints the doctor's remaining gaps and their operator steps, restores the registry, and creates nothing on the remote host.
@@ -207,12 +214,14 @@ No generic remote delete or write surface exists: remote writes are confined to 
 
 ## Verification
 
-The portable tests use the real entrypoint protocol, real git repositories, a deterministic SSH boundary, a stateful host-local Herdr CLI fixture, and a controlled account fixture for the readiness gate:
+The portable tests use the real entrypoint protocol, real git repositories, a deterministic SSH boundary, a stateful host-local Herdr CLI fixture, and a controlled account fixture for the readiness gate.
+The lifecycle test covers seeding a registered project that this machine has never cloned, and asserts that the local project tree is unchanged afterwards:
 
 ```sh
 bin/fm-test-run.sh tests/fm-on.test.sh
 bin/fm-test-run.sh tests/fm-remote-job.test.sh
 bin/fm-test-run.sh tests/fm-remote-doctor.test.sh
+bin/fm-test-run.sh tests/fm-project-origin.test.sh
 bin/fm-test-run.sh tests/fm-remote-reply.test.sh
 bin/fm-test-run.sh tests/fm-remote-backlog-handoff.test.sh
 bin/fm-test-run.sh tests/fm-remote-secondmate-lifecycle-e2e.test.sh

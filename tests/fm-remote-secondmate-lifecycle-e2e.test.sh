@@ -437,6 +437,114 @@ doctor-fixable --fix
 doctor-fixable -' ] || fail "the repaired seed did not re-check after its repair"$'\n'"$(cat "$DOCTOR_LOG")"
 pass "remote seeding proceeds once the repair closes every gap"
 
+# Seeding must not need a copy of the project in this home: firstmate names the
+# origin it already resolved, the seed validates and transports it, and the
+# primary project tree is left exactly as it was found.
+projects_snapshot() { # <dir>
+  local dir=$1 path
+  (
+    cd "$dir" 2>/dev/null || exit 0
+    find . -print | LC_ALL=C sort | while IFS= read -r path; do
+      if [ -f "$path" ] && [ ! -L "$path" ]; then
+        printf '%s %s\n' "$path" "$(sha256_file "$path")"
+      else
+        printf '%s\n' "$path"
+      fi
+    done
+  )
+}
+mkdir -p "$TMP_ROOT/seed-parent/projects"
+fm_git_init_commit "$TMP_ROOT/seed-parent/projects/resident"
+git init -q --bare "$TMP_ROOT/beta.git"
+fm_git_init_commit "$TMP_ROOT/beta-src"
+git -C "$TMP_ROOT/beta-src" remote add origin "file://$TMP_ROOT/beta.git"
+git -C "$TMP_ROOT/beta-src" push -q -u origin HEAD
+rm -rf "$TMP_ROOT/beta-src"
+cat > "$TMP_ROOT/seed-parent/data/projects.md" <<'EOF'
+- beta [direct-PR] - beta project (added 2026-08-06)
+- delta [local-only] - delta project (added 2026-08-06)
+EOF
+BETA_ORIGIN="file://$TMP_ROOT/beta.git"
+PROJECTS_BEFORE=$(projects_snapshot "$TMP_ROOT/seed-parent/projects")
+
+if FM_SECONDMATE_CHARTER='Unsupplied origin charter.' FM_SECONDMATE_SCOPE='unsupplied origin' \
+  seed_env "$ROOT/bin/fm-remote-home-seed.sh" seed-noorigin remote-mac "$REMOTE_ROOT" \
+  "$TMP_ROOT/seed-noorigin-home" beta > "$TMP_ROOT/seed-noorigin.out" 2>&1; then
+  fail "seeding an uncloned project with no origin claimed success"
+fi
+assert_grep 'pass beta=<origin-url>' "$TMP_ROOT/seed-noorigin.out" \
+  "the refusal did not name how to supply the origin"
+assert_absent "$TMP_ROOT/seed-noorigin-home" "the unresolvable origin still provisioned a remote home"
+
+if FM_SECONDMATE_CHARTER='Unsafe origin charter.' FM_SECONDMATE_SCOPE='unsafe origin' \
+  seed_env "$ROOT/bin/fm-remote-home-seed.sh" seed-unsafe remote-mac "$REMOTE_ROOT" \
+  "$TMP_ROOT/seed-unsafe-home" 'beta=ext::git-upload-pack' \
+  > "$TMP_ROOT/seed-unsafe.out" 2>&1; then
+  fail "seeding accepted a remote-helper origin the remote host would execute"
+fi
+assert_grep 'not an accepted clone URL' "$TMP_ROOT/seed-unsafe.out" \
+  "the unsafe-origin refusal did not name the reason"
+assert_absent "$TMP_ROOT/seed-unsafe-home" "the unsafe origin still provisioned a remote home"
+
+if FM_SECONDMATE_CHARTER='Local-only charter.' FM_SECONDMATE_SCOPE='local only' \
+  seed_env "$ROOT/bin/fm-remote-home-seed.sh" seed-localonly remote-mac "$REMOTE_ROOT" \
+  "$TMP_ROOT/seed-localonly-home" "delta=$BETA_ORIGIN" \
+  > "$TMP_ROOT/seed-localonly.out" 2>&1; then
+  fail "a supplied origin bypassed the local-only delivery-mode refusal"
+fi
+assert_grep 'is local-only and cannot be provisioned remotely' "$TMP_ROOT/seed-localonly.out" \
+  "the local-only refusal did not name the registered mode"
+
+if FM_SECONDMATE_CHARTER='Unregistered charter.' FM_SECONDMATE_SCOPE='unregistered' \
+  seed_env "$ROOT/bin/fm-remote-home-seed.sh" seed-unregistered remote-mac "$REMOTE_ROOT" \
+  "$TMP_ROOT/seed-unregistered-home" "gamma=$BETA_ORIGIN" \
+  > "$TMP_ROOT/seed-unregistered.out" 2>&1; then
+  fail "a supplied origin bypassed the project registry requirement"
+fi
+assert_grep 'has no registry record' "$TMP_ROOT/seed-unregistered.out" \
+  "the unregistered-project refusal did not name the missing record"
+
+out=$(FM_SECONDMATE_CHARTER='Own beta delivery on the build Mac.' \
+  FM_SECONDMATE_SCOPE='beta delivery and validation' \
+  seed_env "$ROOT/bin/fm-remote-home-seed.sh" seed-noclone remote-mac "$REMOTE_ROOT" \
+  "$TMP_ROOT/seed-noclone-home" "beta=$BETA_ORIGIN" 2>&1) \
+  || fail "seeding refused a registered project whose origin was supplied"$'\n'"$out"
+assert_contains "$out" "home=remote-mac:$TMP_ROOT/seed-noclone-home" \
+  "the no-clone seed did not report the host-qualified home"
+assert_grep '- seed-noclone ' "$TMP_ROOT/seed-parent/data/secondmates.md" \
+  "the no-clone seed did not register the remote route"
+assert_present "$TMP_ROOT/seed-noclone-home/projects/beta/README.md" \
+  "the remote host did not clone the supplied origin"
+[ "$(git -C "$TMP_ROOT/seed-noclone-home/projects/beta" remote get-url origin)" = "$BETA_ORIGIN" ] \
+  || fail "the remote clone did not come from the supplied origin"
+assert_grep '- beta [direct-PR]' "$TMP_ROOT/seed-noclone-home/data/projects.md" \
+  "the remote home did not publish the project's registered posture"
+assert_absent "$TMP_ROOT/seed-parent/projects/beta" \
+  "seeding cloned the project into the primary project tree"
+[ "$(projects_snapshot "$TMP_ROOT/seed-parent/projects")" = "$PROJECTS_BEFORE" ] \
+  || fail "seeding changed the primary project tree"
+pass "remote seeding provisions a supplied origin without touching the primary project tree"
+
+# The receiving host validates the origin itself rather than trusting whatever
+# reached it, so a manifest naming an executable transport provisions nothing.
+printf 'schema=fm-remote-home-provision.v1\nid_b64=%s\ncharter_b64=%s\nproject_count=1\nproject=%s|%s|%s|%s\n' \
+  "$(printf unsafe-origin | base64 | tr -d '\n')" \
+  "$(printf 'Unsafe origin manifest charter.\n' | base64 | tr -d '\n')" \
+  "$(printf beta | base64 | tr -d '\n')" \
+  "$(printf 'ext::git-upload-pack' | base64 | tr -d '\n')" \
+  "$(printf -- '- beta [direct-PR] - beta project (added 2026-08-06)' | base64 | tr -d '\n')" \
+  "$(printf direct-PR | base64 | tr -d '\n')" \
+  > "$TMP_ROOT/unsafe-origin.manifest"
+if FM_HOME="$TMP_ROOT/unsafe-origin-home" FM_ROOT_OVERRIDE="$REMOTE_ROOT" \
+  "$REMOTE_ROOT/bin/fm-remote-home-provision.sh" < "$TMP_ROOT/unsafe-origin.manifest" \
+  > "$TMP_ROOT/unsafe-origin.out" 2>&1; then
+  fail "remote provisioning accepted an origin the transport had not validated"
+fi
+assert_grep 'not an accepted clone URL' "$TMP_ROOT/unsafe-origin.out" \
+  "remote provisioning did not name the rejected origin"
+assert_absent "$TMP_ROOT/unsafe-origin-home" "the rejected manifest left a remote home behind"
+pass "remote provisioning re-validates a supplied origin at the receiving host"
+
 # Provision and register the remote route from the captain-facing primary.
 out=$(FM_SECONDMATE_CHARTER='Own iOS delivery on the build Mac.' \
   FM_SECONDMATE_SCOPE='iOS implementation and Xcode validation' \

@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# tests/fm-project-origin.test.sh - which project origins seeding accepts.
+#
+# Firstmate supplies a project's origin instead of discovering it from a local
+# clone, and the receiving host re-validates whatever reached it, so this
+# validator is the boundary that keeps a supplied value from reaching git as an
+# executable transport or as a stray option. The ext:: case is exercised against
+# real git first, so the refusal is pinned to a demonstrated hazard rather than
+# to a string someone once worried about.
+set -u
+
+# shellcheck source=tests/lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=bin/fm-project-origin-lib.sh
+. "$ROOT/bin/fm-project-origin-lib.sh"
+
+TMP_ROOT=$(fm_test_tmproot fm-project-origin)
+FAKEBIN=$(fm_fakebin "$TMP_ROOT/fake")
+
+accepts() {
+  fm_project_origin_safe "$1" || fail "refused an ordinary clone URL: $1"
+}
+refuses() {
+  ! fm_project_origin_safe "$1" || fail "accepted an origin git must never be handed: $1"
+}
+
+fm_git_init_commit "$TMP_ROOT/source"
+git clone --quiet --bare "$TMP_ROOT/source" "$TMP_ROOT/source.git"
+
+accepts "file://$TMP_ROOT/source.git"
+accepts "$TMP_ROOT/source.git"
+accepts 'https://github.com/kunchenguid/firstmate.git'
+accepts 'http://git.example.internal/team/app.git'
+accepts 'ssh://git@github.com/kunchenguid/firstmate.git'
+accepts 'git://git.example.internal/app.git'
+accepts 'git@github.com:kunchenguid/firstmate.git'
+accepts 'build-mac.local:/srv/git/app.git'
+
+# The accepted forms are not just spellings: the two a fixture can reach really
+# do clone with the same plain command the remote host runs.
+git clone --quiet -- "file://$TMP_ROOT/source.git" "$TMP_ROOT/via-file-url" \
+  || fail "an accepted file:// origin did not clone"
+git clone --quiet -- "$TMP_ROOT/source.git" "$TMP_ROOT/via-path" \
+  || fail "an accepted absolute-path origin did not clone"
+assert_present "$TMP_ROOT/via-file-url/README.md" "the file:// clone produced no worktree"
+assert_present "$TMP_ROOT/via-path/README.md" "the absolute-path clone produced no worktree"
+pass "ordinary clone URLs are accepted and clone with the command the remote host runs"
+
+# A remote-helper transport is a command git runs whenever the cloning host's own
+# configuration permits that protocol, and the parent cannot see that host's
+# configuration. Prove the hazard is real before pinning the refusal that closes
+# it, rather than trusting the cloning host's default to stay strict.
+cat > "$FAKEBIN/fm-origin-probe" <<SH
+#!/usr/bin/env bash
+touch '$TMP_ROOT/helper-ran'
+exit 1
+SH
+chmod +x "$FAKEBIN/fm-origin-probe"
+PATH="$FAKEBIN:$PATH" git -c protocol.ext.allow=always clone --quiet -- \
+  'ext::fm-origin-probe' "$TMP_ROOT/via-helper" >/dev/null 2>&1 || true
+assert_present "$TMP_ROOT/helper-ran" \
+  "the fixture could not demonstrate that git executes an ext:: origin"
+
+refuses 'ext::fm-origin-probe'
+refuses 'ext::sh -c whoami'
+refuses 'transport::address'
+refuses '--upload-pack=/usr/bin/touch'
+refuses '-oProxyCommand=touch /tmp/pwned'
+refuses 'javascript://example.com/app.git'
+refuses 'unknown://example.com/app.git'
+refuses 'https://example.com/app.git
+https://evil.example.com/app.git'
+refuses 'https://example.com/a pp.git'
+refuses ''
+refuses 'relative/path.git'
+refuses 'file://relative.git'
+pass "executable transports, option-shaped values, and unusable spellings are refused"
+
+echo "ALL TESTS PASSED"

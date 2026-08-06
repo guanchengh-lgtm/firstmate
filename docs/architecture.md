@@ -179,6 +179,7 @@ Remote placement pins the remote second-mate agent to Herdr while leaving the re
 [`remote-secondmates.md`](remote-secondmates.md) owns current setup, transport, relay, failure, and retirement behavior.
 `fm-home-seed.sh` provisions a local isolated home, clones the listed PR-based projects into it, initializes newly cloned `no-mistakes` projects, copies the charter to `data/charter.md`, and `fm-spawn.sh --secondmate` launches it through the same session-provider and status-file path as any direct report.
 `fm-remote-home-seed.sh` sends a bounded charter and origin manifest through the generic transport so the remote host clones and provisions its own home and projects.
+Origins are supplied to that command rather than discovered from a local clone, so remote seeding reads the primary's registry and writes nothing under `projects/`; both ends validate a supplied origin through `fm-project-origin-lib.sh`.
 For a domain whose subject is the firstmate repo itself, a deliberate `--no-projects` seed creates a project-less home whose crews take pooled worktrees of that repo instead of separate clones.
 The signal cannot be mixed with project names or omitted accidentally, and a populated home cannot be converted in place; the full seed contract is in [configuration.md](configuration.md#secondmate-routes-datasecondmatesmd).
 Herdr secondmate and child placement follows the launcher-binding contract in [Watching and task containers](herdr-backend.md#watching-and-task-containers).
