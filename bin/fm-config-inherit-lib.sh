@@ -6,8 +6,7 @@
 # profile rules, primary config/crew-harness=codex makes a secondmate's crewmates
 # spawn on codex too, primary config/backlog-backend=manual makes that home
 # hand-edit backlog files too, primary config/backend pins that home's local
-# runtime-backend default for future spawns, primary config/startup-memory-budget
-# bounds that home's startup-memory curation, and primary
+# runtime-backend default for future spawns, and primary
 # config/herdr-presentation-spaces carries the same Herdr presentation-projection
 # preference - an absent primary file and an absent destination file both mean
 # the same unconfigured default, so the generic absence mirror below converges
@@ -51,9 +50,6 @@
 # reconciled by the ordinary remote sync/update path before the transfer
 # succeeds; there is no separate allowlist version negotiation.
 #
-# shellcheck source=bin/fm-startup-memory-budget-lib.sh
-. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-startup-memory-budget-lib.sh"
-
 # The one shared data file in this inheritance contract. There is deliberately
 # no shared learnings file.
 FM_SHARED_CAPTAIN_FILE="captain-shared.md"
@@ -63,7 +59,7 @@ FM_SHARED_CAPTAIN_MODE="444"
 # The declared inheritable set (space-separated, config-dir-relative item paths).
 # Extend here to inherit more of the primary's local config; override via the
 # environment only in tests. Items must not contain whitespace.
-FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json crew-harness backlog-backend backend herdr-presentation-spaces startup-memory-budget trace-context}"
+FM_INHERITABLE_CONFIG="${FM_INHERITABLE_CONFIG:-crew-dispatch.json crew-harness backlog-backend backend herdr-presentation-spaces trace-context}"
 
 # Items whose value is a home-SESSION enablement decision rather than durable
 # local configuration. They are inherited at the launch convergence point, where
@@ -454,47 +450,6 @@ propagate_inheritable_config() {
     fi
     src="$src_config/$item"
     dest="$dest_config/$item"
-    # This one scalar config is consumed as a local safety boundary, so reject
-    # every unsafe or malformed source/destination artifact before the generic
-    # byte-copy behavior below can treat it as ordinary inherited material.
-    if [ "$item" = "$FM_STARTUP_MEMORY_BUDGET_FILE" ]; then
-      if [ -e "$src_config" ] || [ -L "$src_config" ]; then
-        if ! fm_startup_memory_budget_config_dir_safe "$src_config"; then
-          reason="unsafe primary config directory: $FM_STARTUP_MEMORY_BUDGET_ERROR"
-          warn_inheritable_config_error "$item" "$src_config" "$reason"
-          record_inheritable_config_result "$item" error "$reason"
-          rc=1
-          continue
-        fi
-      fi
-      if [ -e "$dest_config" ] || [ -L "$dest_config" ]; then
-        if ! fm_startup_memory_budget_config_dir_safe "$dest_config"; then
-          reason="unsafe destination config directory: $FM_STARTUP_MEMORY_BUDGET_ERROR"
-          warn_inheritable_config_error "$item" "$dest_config" "$reason"
-          record_inheritable_config_result "$item" error "$reason"
-          rc=1
-          continue
-        fi
-      fi
-      if [ -e "$src" ] || [ -L "$src" ]; then
-        if ! fm_startup_memory_budget_file_valid "$src"; then
-          reason="unsafe or invalid primary source: $FM_STARTUP_MEMORY_BUDGET_ERROR"
-          warn_inheritable_config_error "$item" "$src" "$reason"
-          record_inheritable_config_result "$item" error "$reason"
-          rc=1
-          continue
-        fi
-      fi
-      if [ -e "$dest" ] || [ -L "$dest" ]; then
-        if ! fm_startup_memory_budget_file_valid "$dest"; then
-          reason="unsafe or invalid destination: $FM_STARTUP_MEMORY_BUDGET_ERROR"
-          warn_inheritable_config_error "$item" "$dest" "$reason"
-          record_inheritable_config_result "$item" error "$reason"
-          rc=1
-          continue
-        fi
-      fi
-    fi
     if [ -f "$src" ]; then
       if ! destination_allows_inherited_item "$dest_config" "$item"; then
         reason=$(inheritable_config_skip_reason)

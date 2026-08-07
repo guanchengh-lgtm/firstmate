@@ -82,9 +82,8 @@
 # and it has really been truncated in practice - a 70KB digest arrived as lines
 # 1-435 of 578, cutting off eight lines before the live-task inventory. What a
 # truncated tail drops must therefore be the CHEAPEST thing to lose. Curated
-# memory is stable session to session, is already governed by a captain-set
-# budget (config/startup-memory-budget), and is recoverable with one targeted
-# read; live fleet identity - which tasks exist, their windows, worktrees,
+# memory is stable session to session and recoverable with one targeted read;
+# live fleet identity - which tasks exist, their windows, worktrees,
 # backends, and endpoint liveness - changes every session and is exactly what
 # recovery depends on. So fleet state goes first and the memory files absorb the
 # truncation. The read-once contract moves ahead of both for the same reason: a
@@ -763,9 +762,8 @@ fi
 
 # --- 8. context digest -----------------------------------------------------
 # Last of the bulk sections deliberately: curated memory is stable session to
-# session, already governed by config/startup-memory-budget, and recoverable
-# with one targeted read, so it is the cheapest thing for a truncated tail to
-# take (see this file's ORDERING note).
+# session and recoverable with one targeted read, so it is the cheapest thing
+# for a truncated tail to take (see this file's ORDERING note).
 stage context
 section "CONTEXT"
 print_file_or_absent "$DATA/projects.md" "data/projects.md"

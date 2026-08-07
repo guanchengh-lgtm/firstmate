@@ -169,7 +169,6 @@ family_for_basename() {
     fm-remote-secondmate-trace-context.test.sh|\
     fm-secondmate-harness.test.sh|fm-secondmate-lifecycle-e2e.test.sh|\
     fm-secondmate-liveness.test.sh|fm-secondmate-safety.test.sh|fm-secondmate-sync.test.sh|\
-    fm-startup-memory-budget.test.sh|\
     fm-send-secondmate-marker.test.sh|fm-shared-captain-inheritance.test.sh)
       printf '%s\n' secondmate
       ;;
@@ -423,7 +422,6 @@ tests/fm-sessionstart-nudge.test.sh 264
 tests/fm-shared-captain-inheritance.test.sh 3506
 tests/fm-spawn-dispatch-profile.test.sh 41351
 tests/fm-spawn-worktree-settle.test.sh 4598
-tests/fm-startup-memory-budget.test.sh 4260
 tests/fm-subagent-pretool-check.test.sh 901
 tests/fm-supervision-events.test.sh 413
 tests/fm-tangle-guard.test.sh 7230
@@ -886,10 +884,6 @@ families_for_changed_path() {
       printf '%s\n' real-herdr-gated
       printf '%s\n' live-harness-optin
       printf '%s\n' afk
-      ;;
-    bin/fm-startup-memory-budget.sh|bin/fm-startup-memory-budget-lib.sh)
-      printf '%s\n' secondmate
-      printf '%s\n' session-bootstrap
       ;;
     bin/fm-secondmate*|bin/fm-remote*|bin/fm-on.sh|bin/fm-home-seed.sh|\
     bin/fm-backlog-handoff.sh|bin/fm-backlog-receive.sh|bin/fm-procevent-remote-reply.sh|\

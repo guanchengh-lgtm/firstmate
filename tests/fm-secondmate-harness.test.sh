@@ -15,10 +15,10 @@
 #   B) Inheritance. The primary pushes a declared, extensible set of LOCAL
 #      (gitignored) config items - config/crew-dispatch.json, config/crew-harness,
 #      config/backlog-backend, config/backend, config/herdr-presentation-spaces,
-#      config/startup-memory-budget, and config/trace-context -
+#      and config/trace-context -
 #      down into each secondmate home's config/, so the secondmate's OWN crewmates,
 #      dispatch profiles, backlog backend, runtime-backend default, Herdr
-#      presentation choice, startup-memory budget, and trace context inherit the
+#      presentation choice, and trace context inherit the
 #      primary's settings. For config/herdr-presentation-spaces, an absent
 #      primary file and an absent destination file both mean the same
 #      unconfigured default, so the generic absence mirror converges that item
@@ -940,7 +940,7 @@ new_world() {
     printf 'projects/\nstate/\ndata/\n.no-mistakes/\n'
     [ "$dispatch_ignore" = no ] || printf 'config/crew-dispatch.json\n'
     printf 'config/crew-harness\nconfig/secondmate-harness\nconfig/backlog-backend\n'
-    printf 'config/backend\nconfig/herdr-presentation-spaces\nconfig/startup-memory-budget\n'
+    printf 'config/backend\nconfig/herdr-presentation-spaces\n'
   } > "$w/main/.gitignore"
   printf 'v1\n' > "$w/main/AGENTS.md"
   printf 'r1\n' > "$w/main/README.md"
@@ -1277,10 +1277,9 @@ test_bootstrap_sweep_defers_dispatch_on_stale_unignored_home() {
   pass "B9 bootstrap sweep defers new inherited config until the home ignores it"
 }
 
-# The primary bootstrap always materializes the startup-memory default, so an
-# otherwise empty inherited surface converges that one visible value while
+# An otherwise empty inherited surface leaves optional config absent while
 # ordinary tracked-file fast-forward behavior remains unchanged.
-test_bootstrap_sweep_materializes_and_inherits_memory_default() {
+test_bootstrap_sweep_keeps_optional_config_absent() {
   local w c1
   w=$(new_world boot-noop)
   c1=$(git -C "$w/main" rev-parse HEAD)
@@ -1297,13 +1296,9 @@ test_bootstrap_sweep_materializes_and_inherits_memory_default() {
   [ -e "$w/sm/config/crew-dispatch.json" ] && fail "default-only sweep created a home crew-dispatch.json"
   [ -e "$w/sm/config/crew-harness" ] && fail "default-only sweep created a home crew-harness"
   [ -e "$w/sm/config/backend" ] && fail "default-only sweep created a home backend"
-  [ "$(cat "$w/home/config/startup-memory-budget")" = 7500 ] \
-    || fail "primary bootstrap did not materialize the startup-memory default"
-  [ "$(cat "$w/sm/config/startup-memory-budget")" = 7500 ] \
-    || fail "default-only sweep did not converge startup-memory-budget"
   [ "$(git -C "$w/sm" rev-parse HEAD)" = "$head" ] \
     || fail "default-only sweep did not still fast-forward the tracked files"
-  pass "B10 bootstrap sweep materializes and inherits the startup-memory default while fast-forwarding"
+  pass "B10 bootstrap sweep keeps optional config absent while fast-forwarding"
 }
 
 # config/backend: present and absent primary state converges exactly.
@@ -2361,7 +2356,6 @@ cat > "$w/main/bin/fm-spawn.sh" <<SH
 . '$w/main/bin/fm-config-inherit-lib.sh'
 printf '%s' spawn >> '$log'
 printf '%s' codex > '$w/sm/config/crew-harness'
-printf '%s\n' 7500 > '$w/sm/config/startup-memory-budget'
 SH
   chmod +x "$w/main/bin/fm-spawn.sh"
   fakebin=$(make_fake_toolchain "$w")
@@ -2487,7 +2481,7 @@ test_spawn_fallback_chain_and_crew_scout_unaffected
 test_bootstrap_sweep_propagates_and_reconverges
 test_bootstrap_sweep_propagates_when_tracked_current
 test_bootstrap_sweep_defers_dispatch_on_stale_unignored_home
-test_bootstrap_sweep_materializes_and_inherits_memory_default
+test_bootstrap_sweep_keeps_optional_config_absent
 test_backend_inheritance_present_and_absent
 test_presentation_inheritance_default_on_and_opt_out
 test_bootstrap_sweep_surfaces_config_propagation_failure
