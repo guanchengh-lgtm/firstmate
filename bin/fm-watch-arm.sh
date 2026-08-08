@@ -32,6 +32,8 @@
 #   watcher: FAILED - cycle ended without an actionable reason
 #                                                        - a clean cycle ended with no wake and no
 #                                                          verified healthy successor
+#   signal: queued wakes pending redelivery              - a prior actionable close was queued but
+#                                                          has not been drained
 # It NEVER reports started/attached/healthy off a stale beacon or a dead/reused pid: a
 # stale-beacon or dead-pid holder either self-heals (the fresh child steals the
 # dead lock per the singleton self-eviction/steal path and is confirmed) or this
@@ -79,6 +81,10 @@ esac
 CONFIRM_TIMEOUT=${FM_ARM_CONFIRM_TIMEOUT:-$ARM_CONFIRM_DEFAULT}
 # Poll interval while attached to an existing healthy watcher.
 ATTACH_POLL=${FM_ARM_ATTACH_POLL:-0.5}
+# Give a handling turn already entering fm-wake-drain.sh one small window to
+# consume its queue before an arm declares that the prior delivery was lost.
+QUEUE_REDELIVERY_GRACE=${FM_WATCH_QUEUE_REDELIVERY_GRACE:-1}
+case "$QUEUE_REDELIVERY_GRACE" in ''|*[!0-9]*) QUEUE_REDELIVERY_GRACE=1 ;; esac
 CYCLE_LOG="$STATE/.watch-cycle-exits.log"
 CYCLE_LOG_LOCK="$STATE/.watch-cycle-exits.lock"
 CYCLE_LOG_MAX_BYTES=${FM_WATCH_CYCLE_LOG_MAX_BYTES:-262144}
@@ -372,12 +378,34 @@ print_watch_output() {
   [ -s "$out" ] && cat "$out"
 }
 
+# A queued wake can outlive the async notification that originally announced it.
+# Ordinary arms therefore reannounce a still-undrained queue before starting or
+# attaching to another watcher cycle. Pi and OpenCode pass the predecessor arm
+# pid while they launch a successor before delivering the original wake; that
+# known in-flight handoff must establish continuity instead of recursively
+# reannouncing the same queue.
+pending_queue_needs_redelivery() {
+  local predecessor=${FM_WATCH_PREDECESSOR_ARM_PID:-}
+  case "$predecessor" in
+    ''|0|*[!0-9]*) ;;
+    *) return 1 ;;
+  esac
+  fm_wake_queue_pending || return 1
+  [ "$QUEUE_REDELIVERY_GRACE" -eq 0 ] || sleep "$QUEUE_REDELIVERY_GRACE"
+  fm_wake_queue_pending
+}
+
 mode=arm
 case "${1:-}" in
   ''|arm|--arm) mode=arm ;;
   --restart) mode=restart ;;
   *) echo "usage: $(basename "$0") [--restart]" >&2; exit 2 ;;
 esac
+
+if pending_queue_needs_redelivery; then
+  echo "signal: queued wakes pending redelivery"
+  exit 0
+fi
 
 if [ "$mode" = restart ]; then
   # Home-scoped stop: only the watcher pid recorded in THIS home's lock.
