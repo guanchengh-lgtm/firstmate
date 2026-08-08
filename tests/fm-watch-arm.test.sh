@@ -61,6 +61,29 @@ start_attached_arm() {  # <state> <fakebin> <arm-out> <confirm-timeout>
     || fail "arm did not attach to the live watcher: $(cat "$armout")"
 }
 
+test_undrained_wake_is_redelivered_on_next_arm() {
+  local dir state fakebin armout status rows
+  dir=$(make_case undrained-wake-redelivery)
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  armout="$dir/arm.out"
+  append_wake "$state" signal demo.status "signal: $state/demo.status" \
+    || fail "could not seed the undrained actionable wake"
+
+  PATH="$fakebin:$PATH" FM_STATE_OVERRIDE="$state" FM_ARM_CONFIRM_TIMEOUT=1 \
+    FM_WATCH_QUEUE_REDELIVERY_GRACE=0 \
+    "$WATCH_ARM" > "$armout" &
+  ARM_PID=$!
+  wait_for_exit "$ARM_PID" 60
+  status=$?
+  expect_code 0 "$status" "an arm with an undrained actionable wake must close promptly"
+  grep -Fx 'signal: queued wakes pending redelivery' "$armout" >/dev/null \
+    || fail "the next arm did not reannounce its undrained wake: $(cat "$armout")"
+  rows=$(awk -F '\t' 'NF >= 5 { count++ } END { print count + 0 }' "$state/.wake-queue")
+  [ "$rows" -eq 1 ] || fail "redelivery changed the authoritative queued record count ($rows)"
+  pass "watch-arm: an undrained actionable wake closes the next arm for redelivery"
+}
+
 test_attached_arm_reports_the_delivered_wake() {
   local dir state fakebin out armout status
   dir=$(make_case attached-delivered-wake)
@@ -70,6 +93,9 @@ test_attached_arm_reports_the_delivered_wake() {
   armout="$dir/arm.out"
   start_seed_watcher "$state" "$fakebin" "$out"
   start_attached_arm "$state" "$fakebin" "$armout" 1
+  sleep 1
+  is_live_non_zombie "$ARM_PID" \
+    || fail "an attached arm closed without a wake while the durable queue was empty: $(cat "$armout")"
 
   # A real captain-relevant status change: the watcher records it in the durable
   # queue, prints its one reason line to its own stdout, and exits.
@@ -146,6 +172,7 @@ test_attached_arm_still_fails_on_a_wake_it_did_not_deliver() {
   pass "watch-arm: a cycle that delivered no wake of its own still fails loudly"
 }
 
+test_undrained_wake_is_redelivered_on_next_arm
 test_attached_arm_reports_the_delivered_wake
 test_attached_arm_reports_the_delivered_wake_after_drain
 test_attached_arm_still_fails_on_a_wake_it_did_not_deliver
