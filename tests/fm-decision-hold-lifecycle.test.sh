@@ -609,12 +609,17 @@ test_product_idea_attestation_contract() {
   ( umask 000
     run_decisions "$private" complete "$private_origin" --none --no-ideas >/dev/null
   ) || fail "private ledger creation failed under a permissive caller umask"
-  private_mode=$(stat -f '%Lp' "$private/data/product-ideas.md" 2>/dev/null \
-    || stat -c '%a' "$private/data/product-ideas.md")
+  # Platform-detect stat(1): GNU treats -f as --file-system and can emit a dump
+  # before failing, so never use the `stat -f || stat -c` fallback here.
+  if [ "$(uname)" = Darwin ]; then
+    private_mode=$(stat -f %Lp "$private/data/product-ideas.md")
+    private_dir_mode=$(stat -f %Lp "$private/data")
+  else
+    private_mode=$(stat -c %a "$private/data/product-ideas.md")
+    private_dir_mode=$(stat -c %a "$private/data")
+  fi
   [ "$private_mode" = 600 ] \
     || fail "lazy ledger was not private under permissive umask: $private_mode"
-  private_dir_mode=$(stat -f '%Lp' "$private/data" 2>/dev/null \
-    || stat -c '%a' "$private/data")
   [ "$private_dir_mode" = 700 ] \
     || fail "lazy data dir was not private under permissive umask: $private_dir_mode"
 
