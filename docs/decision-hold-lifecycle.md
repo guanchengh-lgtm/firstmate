@@ -40,7 +40,7 @@ It resolves every repeated `blocked-by:` edge against structured Done records, k
 Its secondmate-home summary classifies an actionable captain hold as `captain_decision` and preserves blocked captain holds as queued work in the owning home.
 
 `bin/fm-bearings-snapshot.sh` projects actionable captain holds into `decisions_open` and leaves blocked captain holds in ordinary queued gates.
-It also counts unscheduled rows across the canonical main data root and readable registered secondmate ledgers, and discloses unreadable, malformed, unavailable, remote, or truncated ledgers and registries in `ideas_warnings` instead of silently treating them as empty.
+It also counts unscheduled rows across the canonical main data root and readable registered secondmate ledgers; an absent ledger in a readable home counts as zero, while unreadable, malformed, unavailable, remote, or truncated ledgers and registries are disclosed in `ideas_warnings` instead of silently treating those incomplete cases as empty.
 It excludes completed kind `captain` records from Recently Landed.
 The projection remains read-only and does not inspect historical prose.
 
