@@ -14,13 +14,14 @@ The `hold` subcommand maps an originating work id and stable decision key to `<o
 It creates a kind `captain` backlog item when absent and invokes `tasks-axi hold <id> --reason <reason> --kind captain` on every retry.
 It rejects an identity collision, a changed title, and attempts to reopen an already resolved identity.
 
-The `complete` subcommand unions reviewed decision keys and product-idea ids into origin metadata while the task metadata is live.
-It verifies each attested idea against the active home's ledger and requires that row's source to point back to the completing origin's report section.
+The `complete` subcommand requires both a decision inventory and an idea inventory attestation on every pass.
+It accepts `--none` or decision keys for the decision side, and exactly one of `--ideas <PI-id>...` or `--no-ideas` for the idea side, while rejecting invalid combinations.
+It unions reviewed decision keys and product-idea ids into origin metadata while the task metadata is live.
+It verifies each attested idea against the active home's ledger and requires that row's source to point back to the completing origin's report section without a line number.
 An explicit no-idea inventory creates the script-owned ledger template lazily.
 A new idea marker distinguishes post-upgrade completions, while `verify` grandfathers metadata carrying only the earlier completed decision attestation.
 A post-teardown visual review can complete against the surviving report and durable holds without recreating volatile task metadata.
-It accepts `--none` as an explicit semantic inventory result, not as inferred absence.
-It verifies every listed identity against tasks-axi before recording completion.
+It verifies every listed decision identity against tasks-axi before recording completion.
 For an open keyed status decision, it appends a `captain-held [key=<key>]: ...` transfer event only after the matching backlog hold is durable.
 `bin/fm-classify-lib.sh` recognizes that transfer as closing the live status copy without claiming that the captain has answered it.
 
@@ -39,7 +40,7 @@ It resolves every repeated `blocked-by:` edge against structured Done records, k
 Its secondmate-home summary classifies an actionable captain hold as `captain_decision` and preserves blocked captain holds as queued work in the owning home.
 
 `bin/fm-bearings-snapshot.sh` projects actionable captain holds into `decisions_open` and leaves blocked captain holds in ordinary queued gates.
-It also counts unscheduled rows across readable registered-home ledgers and discloses every unreadable or malformed ledger instead of silently treating it as empty.
+It also counts unscheduled rows across the canonical main data root and readable registered secondmate ledgers, and discloses unreadable, malformed, unavailable, remote, or truncated ledgers and registries in `ideas_warnings` instead of silently treating them as empty.
 It excludes completed kind `captain` records from Recently Landed.
 The projection remains read-only and does not inspect historical prose.
 
