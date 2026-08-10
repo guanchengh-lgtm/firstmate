@@ -38,6 +38,7 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
    For registered secondmates, use the snapshot's structured-home classification and provenance.
    A parent event or bounded terminal contradiction is fallback evidence, never authority over readable structured home state.
    Structured captain-held decisions come from `decision-hold-lifecycle` and appear under `decisions_open`.
+   Render a nonzero `ideas_unscheduled` count as one Charted Next line, and name any `ideas_warnings` disclosure rather than presenting an incomplete count as complete.
    Do not scrape reports, visual-review artifacts, raw status-event tails, or visible conversation history to supplement current state.
    A queued item under `gates` only becomes "next work" when its blocker is gone and its time/date gate has arrived.
    Until then it stays queued with the reason.
@@ -75,7 +76,7 @@ Every `/bearings` chat response renders EXACTLY these four sections, in THIS ord
    Empty-state: "No recent completions are in the current baseline."
 3. **Underway** - live work progressing on its own, one line of current state per direct report.
    Empty-state: "Nothing is underway."
-4. **Charted Next** - queued or gated work waiting on the fleet or a date, plus action-free fleet-integrity warnings, never on the captain.
+4. **Charted Next** - queued or gated work waiting on the fleet or a date, a nonzero unscheduled-product-idea count, plus action-free fleet-integrity warnings, never on the captain.
    Empty-state: "Nothing is queued."
 
 Rules that keep the contract unambiguous:

@@ -56,6 +56,9 @@
 #   -h,--help        usage
 #
 # Output contract: `fm-bearings.v1`. Read-only; no locks, no mutation, no reports.
+# `ideas_unscheduled` counts readable main and registered secondmate ledgers.
+# `ideas_warnings` names ledgers that could not be read or parsed, so an
+# incomplete count is never presented as a silent zero.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -107,7 +110,8 @@ Default is LOCAL-ONLY (no network); --include-prs is the only path that fetches.
 
 Default fields: schema, home, generated, prs, in_flight{id,kind,state,doing},
   secondmates{id,state,doing,provenance,freshness,age_seconds,contradiction,reason},
-  decisions_open{id,key,verb,summary,owner}, landed{id,what,artifact,owner},
+  decisions_open{id,key,verb,summary,owner}, ideas_unscheduled,
+  ideas_warnings{home,path,reason}, landed{id,what,artifact,owner},
   gates{id,title,blocked_by,reason,owner}, reports{id,path}, recorded_prs{id,url},
   unhealthy_endpoints{...} (only when non-empty), omitted{surface,reveal}.
 landed merges this home's Done with registered secondmate homes' Done, bounded by
@@ -178,6 +182,91 @@ else
 fi
 HOME_LABEL=$(printf '%s' "$SNAP" | jq -er '.fm_home | strings | split("/") | (.[-2:] | join("/"))') \
   || { echo "fm-bearings-snapshot: invalid canonical snapshot" >&2; exit 1; }
+IDEA_MAIN_HOME=$(printf '%s' "$SNAP" | jq -er '.fm_home | strings') \
+  || { echo "fm-bearings-snapshot: canonical home is unavailable" >&2; exit 1; }
+IDEA_MAIN_DATA=$(printf '%s' "$SNAP" | jq -er '.roots.data | strings') \
+  || { echo "fm-bearings-snapshot: canonical data path is unavailable" >&2; exit 1; }
+
+IDEAS_UNSCHEDULED=0
+IDEAS_WARNINGS='[]'
+
+idea_warning_add() {  # <home-label> <path> <reason>
+  IDEAS_WARNINGS=$(jq -n \
+    --argjson warnings "$IDEAS_WARNINGS" --arg home "$1" --arg path "$2" --arg reason "$3" \
+    '$warnings + [{home:$home,path:$path,reason:$reason}]')
+}
+
+idea_ledger_count() {  # <ledger-path>
+  local ledger=$1 mode
+  [ -e "$ledger" ] || { printf '0\n'; return 0; }
+  if stat -f '%Lp' "$ledger" >/dev/null 2>&1; then
+    mode=$(stat -f '%Lp' "$ledger" 2>/dev/null || true)
+  else
+    mode=$(stat -c '%a' "$ledger" 2>/dev/null || true)
+  fi
+  [ -f "$ledger" ] || return 2
+  case "$mode" in ''|*[!0-7]*) return 2 ;; esac
+  [ $((8#$mode & 0444)) -ne 0 ] || return 2
+  awk -F '|' '
+    function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
+    function valid_status(s) {
+      return s == "unscheduled" \
+        || s ~ /^parked \(captain [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\)$/ \
+        || s ~ /^scheduled -> [A-Za-z0-9._-]+$/ \
+        || s ~ /^shipped \(was [A-Za-z0-9._-]+\)$/ \
+        || s ~ /^dropped \([^()]+\)$/
+    }
+    /^\|[[:space:]]*ID[[:space:]]*\|[[:space:]]*Idea[[:space:]]*\|[[:space:]]*Status[[:space:]]*\|[[:space:]]*Source[[:space:]]*\|[[:space:]]*$/ { header++; next }
+    /^\|[[:space:]-]+\|[[:space:]-]+\|[[:space:]-]+\|[[:space:]-]+\|[[:space:]]*$/ { separator++; next }
+    /^[[:space:]]*$/ || /^#/ || /^<!--[[:space:][:print:]]*-->$/ { next }
+    /^\|/ {
+      if (NF != 6) { malformed=1; next }
+      id=trim($2); idea=trim($3); status=trim($4); source=trim($5)
+      if (id !~ /^PI-[0-9][0-9][0-9]$/ || idea == "" || !valid_status(status) \
+          || source !~ /^data\/[A-Za-z0-9._-]+\/report\.md#[^#[:space:]].*$/ \
+          || source ~ /:[0-9]+([^-0-9]|$)/ || seen[id]++) malformed=1
+      if (status == "unscheduled") count++
+      next
+    }
+    { malformed=1 }
+    END {
+      if (header != 1 || separator != 1 || malformed) exit 3
+      print count + 0
+    }
+  ' "$ledger"
+}
+
+count_idea_ledger() {  # <home-label> <home-path>
+  local label=$1 ledger="$2/data/product-ideas.md" count rc
+  if count=$(idea_ledger_count "$ledger"); then
+    IDEAS_UNSCHEDULED=$((IDEAS_UNSCHEDULED + count))
+    return 0
+  else
+    rc=$?
+  fi
+  if [ "$rc" -eq 2 ]; then
+    idea_warning_add "$label" "$ledger" "ledger is unreadable"
+  else
+    idea_warning_add "$label" "$ledger" "ledger is malformed"
+  fi
+}
+
+count_idea_ledger "(main)" "$IDEA_MAIN_HOME"
+while IFS=$'\t' read -r mate_id mate_home mate_remote; do
+  [ -n "$mate_id" ] || continue
+  if [ "$mate_remote" = true ]; then
+    idea_warning_add "$mate_id" "${mate_home:-unknown}/data/product-ideas.md" "remote ledger is not readable from the local snapshot"
+  elif [ -z "$mate_home" ]; then
+    idea_warning_add "$mate_id" "unknown" "registered home path is unavailable"
+  else
+    count_idea_ledger "$mate_id" "$mate_home"
+  fi
+done <<EOF
+$(printf '%s' "$SNAP" | jq -r '.secondmate_current.records[]? | [.id, (.home // ""), (.remote // false)] | @tsv')
+EOF
+if [ "$(printf '%s' "$SNAP" | jq -r '.secondmate_current.truncated // 0')" -gt 0 ]; then
+  idea_warning_add "(registry)" "$IDEA_MAIN_DATA/secondmates.md" "registered homes were omitted by the snapshot bound"
+fi
 
 # --- optional live PR enrichment (the ONLY network path) --------------------
 PR_STATUS='not_requested (run: /bearings include PRs)'
@@ -298,7 +387,9 @@ MODEL=$(printf '%s' "$SNAP" | jq \
   --argjson pr_repos_shown "$PR_REPOS_SHOWN" \
   --argjson pr_rows_capped "$PR_ROWS_CAPPED" \
   --argjson pr_rows_min_total "$PR_ROWS_MIN_TOTAL" \
-  --argjson candidate_prs "$CANDIDATE_PRS" '
+  --argjson candidate_prs "$CANDIDATE_PRS" \
+  --argjson ideas_unscheduled "$IDEAS_UNSCHEDULED" \
+  --argjson ideas_warnings "$IDEAS_WARNINGS" '
   def trunc($n): if . == null then null else
     (tostring | gsub("\\s+"; " ") | if (length > $n) then (.[:$n] + "…") else . end) end;
   def round_robin_landed($n):
@@ -426,6 +517,8 @@ MODEL=$(printf '%s' "$SNAP" | jq \
       in_flight: (if $all_in_flight == 1 then $in_flight_all else $in_flight_all[:$in_flight_n] end),
       secondmates: (if $all_secondmates == 1 then $secondmates_all else $secondmates_all[:$secondmates_n] end),
       decisions_open: (if $all_decisions == 1 then $decisions_all else $decisions_all[:$decisions_n] end),
+      ideas_unscheduled: $ideas_unscheduled,
+      ideas_warnings: $ideas_warnings,
       landed: ($done | map({id, what:(.title | trunc(70)),
                             artifact:(.pr_url // .report_path // .local_note // "-"),owner:.home_id})),
       gates: (if $all_queued == 1 then $gates_all else $gates_all[:$gates_n] end),

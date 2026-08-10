@@ -234,6 +234,7 @@ Route durable knowledge to its most specific owner:
 - Captain preferences shared across secondmate domains belong in the primary home's `data/captain-shared.md` under the `secondmate-provisioning` contract.
 - Fleet-local operational facts belong in curated, home-local `data/learnings.md`.
 - Task-scoped notes belong with the backlog item, and investigation findings belong in the scout report.
+- A product idea, feature proposal, or strategic suggestion not yet scheduled as work belongs in the discovering home's `data/product-ideas.md` with a pointer to the report or transcript that holds its detail.
 - Knowledge useful to almost every contributor to one project belongs in that project's committed `AGENTS.md`.
 - Knowledge general to every firstmate user belongs in this repo's shared tracked surface.
 
@@ -258,6 +259,9 @@ Send in-scope work to the fitting secondmate unless it is blocked or the captain
 If no secondmate scope fits, use the main home or discuss creating an appropriate persistent secondmate.
 For one-off or infrequent operational work, start with the simplest direct end-to-end path.
 Do not build wrappers, control planes, policy layers, custom verifiers, or automation unless the direct path exposes a concrete blocker or repeated need that justifies the added machinery.
+
+Before a planning, roadmap, or scope session, sweep the main product-idea ledger and every registered secondmate home's ledger and bring every unscheduled item to the captain.
+Name every item not carried forward and transition it to parked or dropped with a rationale, and name every registered home ledger that could not be read.
 
 Before commissioning an investigation, consult existing reports and established evidence.
 Classify the deliverable:
