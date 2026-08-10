@@ -169,9 +169,9 @@ create_idea_ledger() {
     [ -f "$ledger" ] || fail "product idea ledger path is not a regular file: $ledger"
     return 0
   fi
-  mkdir -p "$DATA"
-  umask 077
-  cat > "$ledger" <<'EOF'
+  ( umask 077
+    mkdir -p "$DATA" || exit 1
+    cat > "$ledger" <<'EOF'
 # Product ideas
 
 <!-- Columns: ID | Idea | Status | Source. -->
@@ -182,6 +182,7 @@ create_idea_ledger() {
 | ID | Idea | Status | Source |
 | --- | --- | --- | --- |
 EOF
+  ) || fail "cannot create product idea ledger: $ledger"
 }
 
 verify_idea_row() {  # <origin-id> <idea-id>

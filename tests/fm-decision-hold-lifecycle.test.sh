@@ -556,7 +556,7 @@ test_resolve_matches_quoted_blocked_by_edges() {
 }
 
 test_product_idea_attestation_contract() {
-  local home origin grandfather absent wrong matching
+  local home origin grandfather absent wrong matching shapes private private_origin private_mode private_dir_mode
   home=$(make_home idea-attestation)
   origin=sample-idea-review
   mkdir -p "$home/data/$origin"
@@ -601,6 +601,22 @@ test_product_idea_attestation_contract() {
   assert_grep "ideas_reviewed=1" "$home/state/$origin.meta" "idea review marker was not persisted"
   assert_grep "idea_ids=" "$home/state/$origin.meta" "empty idea id inventory was not persisted"
   run_decisions "$home" verify "$origin" >/dev/null || fail "no-idea completion did not verify"
+
+  private=$(make_home private-idea-ledger)
+  private_origin=private-ledger-review
+  rm -rf "$private/data"
+  write_origin_meta "$private" "$private_origin"
+  ( umask 000
+    run_decisions "$private" complete "$private_origin" --none --no-ideas >/dev/null
+  ) || fail "private ledger creation failed under a permissive caller umask"
+  private_mode=$(stat -f '%Lp' "$private/data/product-ideas.md" 2>/dev/null \
+    || stat -c '%a' "$private/data/product-ideas.md")
+  [ "$private_mode" = 600 ] \
+    || fail "lazy ledger was not private under permissive umask: $private_mode"
+  private_dir_mode=$(stat -f '%Lp' "$private/data" 2>/dev/null \
+    || stat -c '%a' "$private/data")
+  [ "$private_dir_mode" = 700 ] \
+    || fail "lazy data dir was not private under permissive umask: $private_dir_mode"
 
   cat >> "$home/data/product-ideas.md" <<EOF
 | PI-001 | Add a sample route preview | unscheduled | data/$origin/report.md#Ideas |
@@ -710,6 +726,25 @@ EOF
   fi
   assert_grep "must have one well-formed row" "$shapes/line-range-source.err" \
     "line-range source failure was not explicit"
+  cp "$shapes/ledger-template.md" "$shapes/data/product-ideas.md"
+  printf '| PI-001 | Idea with terminal colon line pointer | unscheduled | data/%s/report.md#Ideas:12 |\n' "$origin" \
+    >> "$shapes/data/product-ideas.md"
+  if run_decisions "$shapes" complete "$origin" --none --ideas PI-001 \
+    > "$shapes/colon-line-source.out" 2> "$shapes/colon-line-source.err"; then
+    fail "source with terminal #Ideas:12 line pointer passed completion"
+  fi
+  assert_grep "must have one well-formed row" "$shapes/colon-line-source.err" \
+    "terminal colon line-number source failure was not explicit"
+  cp "$shapes/ledger-template.md" "$shapes/data/product-ideas.md"
+  printf '| PI-001 | Idea under quarterly heading | unscheduled | data/%s/report.md#Q2:2026-plan |\n' "$origin" \
+    >> "$shapes/data/product-ideas.md"
+  run_decisions "$shapes" complete "$origin" --none --ideas PI-001 >/dev/null \
+    || fail "origin-bound source with #Q2:2026-plan heading was refused"
+  cp "$shapes/ledger-template.md" "$shapes/data/product-ideas.md"
+  printf '| PI-001 | Idea under phased heading | unscheduled | data/%s/report.md#Phase:1-rollout |\n' "$origin" \
+    >> "$shapes/data/product-ideas.md"
+  run_decisions "$shapes" complete "$origin" --none --ideas PI-001 >/dev/null \
+    || fail "origin-bound source with #Phase:1-rollout heading was refused"
   cp "$shapes/ledger-template.md" "$shapes/data/product-ideas.md"
   printf '| PI-001 | Good target idea | unscheduled | data/%s/report.md#Ideas |\n' "$origin" \
     >> "$shapes/data/product-ideas.md"
