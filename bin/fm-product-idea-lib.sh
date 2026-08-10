@@ -40,7 +40,8 @@ fm_product_idea_ledger_count() {  # <ledger-path>
     }
     function valid_source(s) {
       return s ~ /^data\/[A-Za-z0-9._-]+\/report\.md#[^#[:space:]].*$/ \
-        && s !~ /:[0-9]+([^-0-9]|$)/
+        && s !~ /:[0-9]+([^-0-9]|$)/ \
+        && s !~ /#L?[0-9]+(-L?[0-9]+)?$/
     }
     /^\|[[:space:]]*ID[[:space:]]*\|[[:space:]]*Idea[[:space:]]*\|[[:space:]]*Status[[:space:]]*\|[[:space:]]*Source[[:space:]]*\|[[:space:]]*$/ { header++; next }
     /^\|[[:space:]-]+\|[[:space:]-]+\|[[:space:]-]+\|[[:space:]-]+\|[[:space:]]*$/ { separator++; next }
@@ -77,7 +78,8 @@ fm_product_idea_verify_row() {  # <ledger-path> <origin-id> <idea-id>
     }
     function valid_source(s) {
       return s ~ /^data\/[A-Za-z0-9._-]+\/report\.md#[^#[:space:]].*$/ \
-        && s !~ /:[0-9]+([^-0-9]|$)/
+        && s !~ /:[0-9]+([^-0-9]|$)/ \
+        && s !~ /#L?[0-9]+(-L?[0-9]+)?$/
     }
     /^\|/ {
       if (NF != 6) next

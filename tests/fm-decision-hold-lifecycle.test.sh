@@ -684,6 +684,33 @@ EOF
   assert_grep "must have one well-formed row" "$shapes/bad-source.err" \
     "invalid source shape failure was not explicit"
   cp "$shapes/ledger-template.md" "$shapes/data/product-ideas.md"
+  printf '| PI-001 | Idea with GitHub line pointer | unscheduled | data/%s/report.md#L12 |\n' "$origin" \
+    >> "$shapes/data/product-ideas.md"
+  if run_decisions "$shapes" complete "$origin" --none --ideas PI-001 \
+    > "$shapes/line-source.out" 2> "$shapes/line-source.err"; then
+    fail "source with #L12 line pointer passed completion"
+  fi
+  assert_grep "must have one well-formed row" "$shapes/line-source.err" \
+    "line-number source failure was not explicit"
+  cp "$shapes/ledger-template.md" "$shapes/data/product-ideas.md"
+  printf '| PI-001 | Idea with bare numeric pointer | unscheduled | data/%s/report.md#12 |\n' "$origin" \
+    >> "$shapes/data/product-ideas.md"
+  if run_decisions "$shapes" complete "$origin" --none --ideas PI-001 \
+    > "$shapes/bare-line-source.out" 2> "$shapes/bare-line-source.err"; then
+    fail "source with bare #12 line pointer passed completion"
+  fi
+  assert_grep "must have one well-formed row" "$shapes/bare-line-source.err" \
+    "bare line-number source failure was not explicit"
+  cp "$shapes/ledger-template.md" "$shapes/data/product-ideas.md"
+  printf '| PI-001 | Idea with line range pointer | unscheduled | data/%s/report.md#L12-L20 |\n' "$origin" \
+    >> "$shapes/data/product-ideas.md"
+  if run_decisions "$shapes" complete "$origin" --none --ideas PI-001 \
+    > "$shapes/line-range-source.out" 2> "$shapes/line-range-source.err"; then
+    fail "source with #L12-L20 line range passed completion"
+  fi
+  assert_grep "must have one well-formed row" "$shapes/line-range-source.err" \
+    "line-range source failure was not explicit"
+  cp "$shapes/ledger-template.md" "$shapes/data/product-ideas.md"
   printf '| PI-001 | Good target idea | unscheduled | data/%s/report.md#Ideas |\n' "$origin" \
     >> "$shapes/data/product-ideas.md"
   printf '| PI-002 | Sibling with bad status | pending | data/%s/report.md#Ideas |\n' "$origin" \
