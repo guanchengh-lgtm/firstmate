@@ -17,9 +17,9 @@ It rejects an identity collision, a changed title, and attempts to reopen an alr
 The `complete` subcommand requires both a decision inventory and an idea inventory attestation on every pass.
 It accepts `--none` or decision keys for the decision side, and exactly one of `--ideas <PI-id>...` or `--no-ideas` for the idea side, while rejecting invalid combinations.
 It unions reviewed decision keys and product-idea ids into origin metadata while the task metadata is live.
-It verifies each attested idea against the active home's ledger and requires that row's source to point back to the completing origin's report section without a line number.
+It validates the full active-home ledger grammar and every unioned idea id, requiring each matching row's Source to cite the completing origin's report section without a line number, and rejects missing, malformed, mismatched, and line-number references.
 An explicit no-idea inventory creates the script-owned ledger template lazily.
-A new idea marker distinguishes post-upgrade completions, while `verify` grandfathers metadata carrying only the earlier completed decision attestation.
+Post-upgrade completions persist `ideas_reviewed=1` with the unioned `idea_ids`, while `verify` grandfathers metadata that still carries only the earlier completed decision attestation.
 A post-teardown visual review can complete against the surviving report and durable holds without recreating volatile task metadata.
 It verifies every listed decision identity against tasks-axi before recording completion.
 For an open keyed status decision, it appends a `captain-held [key=<key>]: ...` transfer event only after the matching backlog hold is durable.

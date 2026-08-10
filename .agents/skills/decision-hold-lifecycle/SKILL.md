@@ -31,7 +31,7 @@ Bearings reads the resulting structured state and must never compensate by scrap
 1. Read the complete investigation result and complete the visual review before declaring either complete.
 2. Inventory genuine unresolved choices that require the captain and unscheduled product ideas that need durable discovery.
 3. For each choice, choose a stable key and use the script's `hold` command with a concise title, reason, and repository.
-4. Append each unscheduled idea to the originating home's `data/product-ideas.md` with its report path and section heading.
+4. Append each unscheduled idea to the originating home's `data/product-ideas.md` as a well-formed `PI-NNN` row whose Source is `data/<origin-id>/report.md#<section-heading>`, never a line number.
 5. Run the script's `complete` command with the decision inventory (`--none` or every unresolved key) and the idea inventory (`--ideas <PI-id>...` or `--no-ideas`) for that review pass.
 6. Relay the choices to the captain as decisions from Bearings' Captain's Call section under `AGENTS.md` section 9; do not use the word hold in captain chat.
 7. After the captain decides, record dependent work with normal tasks-axi commands and block it by the hold identity.

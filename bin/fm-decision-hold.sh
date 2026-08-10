@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
-# fm-decision-hold.sh - deterministic mechanics for durable captain decisions.
+# fm-decision-hold.sh - deterministic mechanics for durable captain decisions and
+# product-idea completion attestation.
 #
 # The semantic policy is owned once by
 # .agents/skills/decision-hold-lifecycle/SKILL.md. This script never reads report,
-# visual-review, chat, or terminal prose to guess whether a decision exists.
-# The invoking agent inventories unresolved decisions, assigns stable keys, and
-# routes dependent work. This script supplies deterministic identities, creates
-# and verifies structured tasks-axi captain holds, records completion attestation
-# in the originating task's metadata, and closes a hold only after a durable
-# decision record has been linked to existing dependent work.
+# visual-review, chat, or terminal prose to guess whether a decision or idea exists.
+# The invoking agent inventories unresolved decisions and unscheduled product ideas,
+# assigns stable decision keys, appends idea ledger rows, and routes dependent work.
+# This script supplies deterministic identities, creates and verifies structured
+# tasks-axi captain holds, validates the active home's product-idea ledger, records
+# completion attestation in the originating task's metadata, and closes a hold only
+# after a durable decision record has been linked to existing dependent work.
 #
 # A hold identity is <origin-id>-decision-<decision-key>. Origin ids and decision
 # keys must already be privacy-safe slugs. Repeating `hold` with the same identity
@@ -33,6 +35,9 @@
 # home-local PI-NNN ids and cannot be combined with `--no-ideas`; `--no-ideas`
 # means this pass found no new ideas and does not erase an earlier idea inventory.
 # Decision keys and idea ids from later review passes are unioned idempotently.
+# `complete` validates the full active-home ledger grammar and every unioned idea
+# id against an origin-bound Source. `verify` grandfathers pre-upgrade metadata
+# that carries only the earlier completed decision attestation.
 # A post-teardown visual review can complete against the surviving report and
 # holds without recreating task state.
 #
