@@ -1,16 +1,16 @@
 ---
 name: decision-hold-lifecycle
 description: >-
-  Agent-only policy for completing investigations and visual reviews without losing unresolved captain decisions.
+  Agent-only policy for completing investigations and visual reviews without losing unresolved captain decisions or unscheduled product ideas.
   Load before treating an investigation, scout report, structured review, or Lavish review as complete, before ending a visual review that exposed a decision, and when recording or routing the captain's answer.
 user-invocable: false
 metadata:
   internal: true
 ---
 
-# Durable unresolved-decision lifecycle
+# Durable unresolved-decision and product-idea lifecycle
 
-This skill is the single policy owner for unresolved captain decisions discovered by an investigation or visual review.
+This skill is the single policy owner for unresolved captain decisions and unscheduled product ideas discovered by an investigation or visual review.
 
 ## Policy
 
