@@ -648,8 +648,41 @@ EOF
     > "$wrong/wrong-source.out" 2> "$wrong/wrong-source.err"; then
     fail "idea row citing another origin passed"
   fi
-  assert_grep "must have one row whose Source cites data/$origin/report.md" "$wrong/wrong-source.err" \
+  assert_grep "must have one well-formed row whose Source cites data/$origin/report.md" "$wrong/wrong-source.err" \
     "wrong idea source failure did not name the origin-bound requirement"
+
+  shapes=$(make_home invalid-idea-shapes)
+  mkdir -p "$shapes/data/$origin"
+  write_origin_meta "$shapes" "$origin"
+  printf '# Report\n\n## Ideas\nShape cases.\n' > "$shapes/data/$origin/report.md"
+  run_decisions "$shapes" complete "$origin" --none --no-ideas >/dev/null
+  cp "$shapes/data/product-ideas.md" "$shapes/ledger-template.md"
+  printf '| PI-001 |  | unscheduled | data/%s/report.md#Ideas |\n' "$origin" \
+    >> "$shapes/data/product-ideas.md"
+  if run_decisions "$shapes" complete "$origin" --none --ideas PI-001 \
+    > "$shapes/empty-idea.out" 2> "$shapes/empty-idea.err"; then
+    fail "empty idea text passed completion"
+  fi
+  assert_grep "must have one well-formed row" "$shapes/empty-idea.err" \
+    "empty idea text failure was not explicit"
+  cp "$shapes/ledger-template.md" "$shapes/data/product-ideas.md"
+  printf '| PI-001 | Idea with bad status | pending | data/%s/report.md#Ideas |\n' "$origin" \
+    >> "$shapes/data/product-ideas.md"
+  if run_decisions "$shapes" complete "$origin" --none --ideas PI-001 \
+    > "$shapes/bad-status.out" 2> "$shapes/bad-status.err"; then
+    fail "non-contract status passed completion"
+  fi
+  assert_grep "must have one well-formed row" "$shapes/bad-status.err" \
+    "invalid status failure was not explicit"
+  cp "$shapes/ledger-template.md" "$shapes/data/product-ideas.md"
+  printf '| PI-001 | Idea with spaced heading | unscheduled | data/%s/report.md# Ideas |\n' "$origin" \
+    >> "$shapes/data/product-ideas.md"
+  if run_decisions "$shapes" complete "$origin" --none --ideas PI-001 \
+    > "$shapes/bad-source.out" 2> "$shapes/bad-source.err"; then
+    fail "source with space after # passed completion"
+  fi
+  assert_grep "must have one well-formed row" "$shapes/bad-source.err" \
+    "invalid source shape failure was not explicit"
 
   grandfather=$(make_home grandfathered-idea-gate)
   write_origin_meta "$grandfather" pre-upgrade-review
@@ -711,6 +744,31 @@ test_secondmate_idea_inventory_and_bearings_count() {
       and (.ideas_warnings | any(.home == "sample-mate" and .reason == "ledger is unreadable"))
   ' >/dev/null || fail "Bearings silently counted an unreadable ledger as zero: $json"
   chmod 600 "$mate/data/product-ideas.md"
+
+  chmod 000 "$main/data/secondmates.md"
+  json=$(run_bearings "$main") || fail "Bearings crashed when the secondmate registry was unreadable"
+  printf '%s' "$json" | jq -e '
+    (.ideas_warnings | any(.home == "(registry)" and (.reason | startswith("registry unavailable:"))))
+  ' >/dev/null || fail "Bearings hid an unavailable registry from ideas_warnings: $json"
+  chmod 600 "$main/data/secondmates.md"
+
+  printf -- '- sample-mate - synthetic scope (home: %s; scope: sample reviews; projects: sample; added 2026-07-14)\n' \
+    "$mate" > "$main/data/secondmates.md"
+  printf -- '- extra-mate - synthetic scope (home: %s; scope: more reviews; projects: sample; added 2026-07-14)\n' \
+    "$mate" >> "$main/data/secondmates.md"
+  json=$(FM_SNAPSHOT_REGISTRY_RECORDS=1 PATH="$main/fakebin:$PATH" FM_HOME="$main" \
+    FM_BEARINGS_NOW=2026-07-14T12:00:00Z "$BEARINGS" --json) \
+    || fail "Bearings crashed when registry records were truncated"
+  printf '%s' "$json" | jq -e '
+    (.ideas_warnings | any(.home == "(registry)" and .reason == "registry records were truncated"))
+  ' >/dev/null || fail "Bearings hid truncated registry records from ideas_warnings: $json"
+
+  json=$(FM_SNAPSHOT_REGISTRY_LINES=1 PATH="$main/fakebin:$PATH" FM_HOME="$main" \
+    FM_BEARINGS_NOW=2026-07-14T12:00:00Z "$BEARINGS" --json) \
+    || fail "Bearings crashed when registry input was truncated"
+  printf '%s' "$json" | jq -e '
+    (.ideas_warnings | any(.home == "(registry)" and .reason == "registry input was truncated"))
+  ' >/dev/null || fail "Bearings hid truncated registry input from ideas_warnings: $json"
 
   pass "secondmate ideas stay home-local and Bearings discloses complete and incomplete counts"
 }

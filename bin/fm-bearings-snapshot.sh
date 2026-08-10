@@ -66,6 +66,9 @@ FLEET="$SCRIPT_DIR/fm-fleet-snapshot.sh"
 # shellcheck source=bin/fm-timeout-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-timeout-lib.sh"
+# shellcheck source=bin/fm-product-idea-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-product-idea-lib.sh"
 
 # Bounds (overridable for tests / large fleets).
 FM_BEARINGS_LANDED=${FM_BEARINGS_LANDED:-6}
@@ -196,49 +199,9 @@ idea_warning_add() {  # <home-label> <path> <reason>
     '$warnings + [{home:$home,path:$path,reason:$reason}]')
 }
 
-idea_ledger_count() {  # <ledger-path>
-  local ledger=$1 mode
-  [ -e "$ledger" ] || { printf '0\n'; return 0; }
-  if stat -f '%Lp' "$ledger" >/dev/null 2>&1; then
-    mode=$(stat -f '%Lp' "$ledger" 2>/dev/null || true)
-  else
-    mode=$(stat -c '%a' "$ledger" 2>/dev/null || true)
-  fi
-  [ -f "$ledger" ] || return 2
-  case "$mode" in ''|*[!0-7]*) return 2 ;; esac
-  [ $((8#$mode & 0444)) -ne 0 ] || return 2
-  awk -F '|' '
-    function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
-    function valid_status(s) {
-      return s == "unscheduled" \
-        || s ~ /^parked \(captain [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\)$/ \
-        || s ~ /^scheduled -> [A-Za-z0-9._-]+$/ \
-        || s ~ /^shipped \(was [A-Za-z0-9._-]+\)$/ \
-        || s ~ /^dropped \([^()]+\)$/
-    }
-    /^\|[[:space:]]*ID[[:space:]]*\|[[:space:]]*Idea[[:space:]]*\|[[:space:]]*Status[[:space:]]*\|[[:space:]]*Source[[:space:]]*\|[[:space:]]*$/ { header++; next }
-    /^\|[[:space:]-]+\|[[:space:]-]+\|[[:space:]-]+\|[[:space:]-]+\|[[:space:]]*$/ { separator++; next }
-    /^[[:space:]]*$/ || /^#/ || /^<!--[[:space:][:print:]]*-->$/ { next }
-    /^\|/ {
-      if (NF != 6) { malformed=1; next }
-      id=trim($2); idea=trim($3); status=trim($4); source=trim($5)
-      if (id !~ /^PI-[0-9][0-9][0-9]$/ || idea == "" || !valid_status(status) \
-          || source !~ /^data\/[A-Za-z0-9._-]+\/report\.md#[^#[:space:]].*$/ \
-          || source ~ /:[0-9]+([^-0-9]|$)/ || seen[id]++) malformed=1
-      if (status == "unscheduled") count++
-      next
-    }
-    { malformed=1 }
-    END {
-      if (header != 1 || separator != 1 || malformed) exit 3
-      print count + 0
-    }
-  ' "$ledger"
-}
-
 count_idea_ledger() {  # <home-label> <home-path>
   local label=$1 ledger="$2/data/product-ideas.md" count rc
-  if count=$(idea_ledger_count "$ledger"); then
+  if count=$(fm_product_idea_ledger_count "$ledger"); then
     IDEAS_UNSCHEDULED=$((IDEAS_UNSCHEDULED + count))
     return 0
   else
@@ -266,6 +229,16 @@ $(printf '%s' "$SNAP" | jq -r '.secondmate_current.records[]? | [.id, (.home // 
 EOF
 if [ "$(printf '%s' "$SNAP" | jq -r '.secondmate_current.truncated // 0')" -gt 0 ]; then
   idea_warning_add "(registry)" "$IDEA_MAIN_DATA/secondmates.md" "registered homes were omitted by the snapshot bound"
+fi
+if [ "$(printf '%s' "$SNAP" | jq -r '.secondmate_current.registry.available == false')" = true ]; then
+  idea_warning_add "(registry)" "$IDEA_MAIN_DATA/secondmates.md" \
+    "registry unavailable: $(printf '%s' "$SNAP" | jq -r '.secondmate_current.registry.reason // "registered secondmate table unavailable"')"
+fi
+if [ "$(printf '%s' "$SNAP" | jq -r '.secondmate_current.registry.input_truncated == true')" = true ]; then
+  idea_warning_add "(registry)" "$IDEA_MAIN_DATA/secondmates.md" "registry input was truncated"
+fi
+if [ "$(printf '%s' "$SNAP" | jq -r '.secondmate_current.registry.records_truncated == true')" = true ]; then
+  idea_warning_add "(registry)" "$IDEA_MAIN_DATA/secondmates.md" "registry records were truncated"
 fi
 
 # --- optional live PR enrichment (the ONLY network path) --------------------

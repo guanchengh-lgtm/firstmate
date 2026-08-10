@@ -64,6 +64,9 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 # shellcheck source=bin/fm-tasks-axi-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
+# shellcheck source=bin/fm-product-idea-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-product-idea-lib.sh"
 
 usage() {
   awk '
@@ -186,20 +189,7 @@ verify_idea_row() {  # <origin-id> <idea-id>
   validate_idea_id "$idea_id"
   [ -f "$ledger" ] \
     || fail "product idea ledger is absent: $ledger; append $idea_id with a source citing data/$origin/report.md#<section-heading>"
-  if awk -F '|' -v wanted="$idea_id" -v source_prefix="data/$origin/report.md#" '
-    function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
-    /^\|/ {
-      id = trim($2)
-      if (id != wanted) next
-      found++
-      source = trim($5)
-      if (index(source, source_prefix) == 1 && length(source) > length(source_prefix) && source !~ /:[0-9]+([^-0-9]|$)/) good++
-    }
-    END {
-      if (found == 0) exit 4
-      if (found != 1 || good != 1) exit 3
-    }
-  ' "$ledger"; then
+  if fm_product_idea_verify_row "$ledger" "$origin" "$idea_id"; then
     return 0
   else
     rc=$?
@@ -207,7 +197,7 @@ verify_idea_row() {  # <origin-id> <idea-id>
   if [ "$rc" -eq 4 ]; then
     fail "product idea $idea_id is missing from $ledger"
   fi
-  fail "product idea $idea_id must have one row whose Source cites data/$origin/report.md#<section-heading> without a line number"
+  fail "product idea $idea_id must have one well-formed row whose Source cites data/$origin/report.md#<section-heading> without a line number"
 }
 
 origin_open_decisions() {  # <origin-id>
