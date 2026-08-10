@@ -603,7 +603,7 @@ test_product_idea_attestation_contract() {
   run_decisions "$home" verify "$origin" >/dev/null || fail "no-idea completion did not verify"
 
   private=$(make_home private-idea-ledger)
-  private_origin=private-ledger-review
+  private_origin='private-ledger-review'
   rm -rf "$private/data"
   write_origin_meta "$private" "$private_origin"
   ( umask 000
