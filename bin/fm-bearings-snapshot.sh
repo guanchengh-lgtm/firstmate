@@ -185,8 +185,6 @@ else
 fi
 HOME_LABEL=$(printf '%s' "$SNAP" | jq -er '.fm_home | strings | split("/") | (.[-2:] | join("/"))') \
   || { echo "fm-bearings-snapshot: invalid canonical snapshot" >&2; exit 1; }
-IDEA_MAIN_HOME=$(printf '%s' "$SNAP" | jq -er '.fm_home | strings') \
-  || { echo "fm-bearings-snapshot: canonical home is unavailable" >&2; exit 1; }
 IDEA_MAIN_DATA=$(printf '%s' "$SNAP" | jq -er '.roots.data | strings') \
   || { echo "fm-bearings-snapshot: canonical data path is unavailable" >&2; exit 1; }
 
@@ -199,8 +197,8 @@ idea_warning_add() {  # <home-label> <path> <reason>
     '$warnings + [{home:$home,path:$path,reason:$reason}]')
 }
 
-count_idea_ledger() {  # <home-label> <home-path>
-  local label=$1 ledger="$2/data/product-ideas.md" count rc
+count_idea_ledger() {  # <home-label> <ledger-path>
+  local label=$1 ledger=$2 count rc
   if count=$(fm_product_idea_ledger_count "$ledger"); then
     IDEAS_UNSCHEDULED=$((IDEAS_UNSCHEDULED + count))
     return 0
@@ -214,7 +212,7 @@ count_idea_ledger() {  # <home-label> <home-path>
   fi
 }
 
-count_idea_ledger "(main)" "$IDEA_MAIN_HOME"
+count_idea_ledger "(main)" "$IDEA_MAIN_DATA/product-ideas.md"
 while IFS=$'\t' read -r mate_id mate_home mate_remote; do
   [ -n "$mate_id" ] || continue
   if [ "$mate_remote" = true ]; then
@@ -222,7 +220,7 @@ while IFS=$'\t' read -r mate_id mate_home mate_remote; do
   elif [ -z "$mate_home" ]; then
     idea_warning_add "$mate_id" "unknown" "registered home path is unavailable"
   else
-    count_idea_ledger "$mate_id" "$mate_home"
+    count_idea_ledger "$mate_id" "$mate_home/data/product-ideas.md"
   fi
 done <<EOF
 $(printf '%s' "$SNAP" | jq -r '.secondmate_current.records[]? | [.id, (.home // ""), (.remote // false)] | @tsv')

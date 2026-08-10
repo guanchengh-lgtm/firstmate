@@ -683,6 +683,35 @@ EOF
   fi
   assert_grep "must have one well-formed row" "$shapes/bad-source.err" \
     "invalid source shape failure was not explicit"
+  cp "$shapes/ledger-template.md" "$shapes/data/product-ideas.md"
+  printf '| PI-001 | Good target idea | unscheduled | data/%s/report.md#Ideas |\n' "$origin" \
+    >> "$shapes/data/product-ideas.md"
+  printf '| PI-002 | Sibling with bad status | pending | data/%s/report.md#Ideas |\n' "$origin" \
+    >> "$shapes/data/product-ideas.md"
+  if run_decisions "$shapes" complete "$origin" --none --ideas PI-001 \
+    > "$shapes/sibling-bad.out" 2> "$shapes/sibling-bad.err"; then
+    fail "well-formed target row hid a malformed sibling"
+  fi
+  assert_grep "must have one well-formed row" "$shapes/sibling-bad.err" \
+    "malformed sibling failure was not explicit"
+  cp "$shapes/ledger-template.md" "$shapes/data/product-ideas.md"
+  printf '| PI-001 | Good target idea | unscheduled | data/%s/report.md#Ideas |\n' "$origin" \
+    >> "$shapes/data/product-ideas.md"
+  printf 'not a table row\n' >> "$shapes/data/product-ideas.md"
+  if run_decisions "$shapes" complete "$origin" --none --ideas PI-001 \
+    > "$shapes/junk-line.out" 2> "$shapes/junk-line.err"; then
+    fail "well-formed target row hid non-table junk"
+  fi
+  assert_grep "must have one well-formed row" "$shapes/junk-line.err" \
+    "junk-line ledger failure was not explicit"
+  printf '# Product ideas\n\n| PI-001 | Headerless good idea | unscheduled | data/%s/report.md#Ideas |\n' \
+    "$origin" > "$shapes/data/product-ideas.md"
+  if run_decisions "$shapes" complete "$origin" --none --ideas PI-001 \
+    > "$shapes/headerless.out" 2> "$shapes/headerless.err"; then
+    fail "headerless ledger with a good target row passed completion"
+  fi
+  assert_grep "must have one well-formed row" "$shapes/headerless.err" \
+    "headerless ledger failure was not explicit"
 
   grandfather=$(make_home grandfathered-idea-gate)
   write_origin_meta "$grandfather" pre-upgrade-review
@@ -769,6 +798,30 @@ test_secondmate_idea_inventory_and_bearings_count() {
   printf '%s' "$json" | jq -e '
     (.ideas_warnings | any(.home == "(registry)" and .reason == "registry input was truncated"))
   ' >/dev/null || fail "Bearings hid truncated registry input from ideas_warnings: $json"
+
+  override=$(make_home idea-data-override)
+  alt_data="$override/alt-data"
+  mkdir -p "$alt_data" "$override/data"
+  cat > "$alt_data/product-ideas.md" <<'EOF'
+# Product ideas
+
+| ID | Idea | Status | Source |
+| --- | --- | --- | --- |
+| PI-007 | Override-only idea | unscheduled | data/main-idea-review/report.md#Ideas |
+EOF
+  cat > "$override/data/product-ideas.md" <<'EOF'
+# Product ideas
+
+| ID | Idea | Status | Source |
+| --- | --- | --- | --- |
+| PI-008 | Default-path decoy | unscheduled | data/main-idea-review/report.md#Ideas |
+| PI-009 | Second default-path decoy | unscheduled | data/main-idea-review/report.md#Ideas |
+EOF
+  json=$(PATH="$override/fakebin:$PATH" FM_HOME="$override" FM_DATA_OVERRIDE="$alt_data" \
+    FM_BEARINGS_NOW=2026-07-14T12:00:00Z "$BEARINGS" --json) \
+    || fail "Bearings crashed with FM_DATA_OVERRIDE for the main idea ledger"
+  printf '%s' "$json" | jq -e '.ideas_unscheduled == 1' >/dev/null \
+    || fail "Bearings ignored roots.data for the main idea ledger: $json"
 
   pass "secondmate ideas stay home-local and Bearings discloses complete and incomplete counts"
 }

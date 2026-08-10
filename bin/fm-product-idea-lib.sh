@@ -10,10 +10,12 @@
 #       ledger which counts as 0. Exit 2 when unreadable. Exit 3 when malformed.
 #
 #   fm_product_idea_verify_row <ledger-path> <origin-id> <idea-id>
-#       Exit 0 when exactly one well-formed row for idea-id cites
+#       Exit 0 when the ledger is fully well-formed under the count contract and
+#       exactly one well-formed row for idea-id cites
 #       data/<origin-id>/report.md#<section-heading> without a line number.
-#       Exit 4 when the id is absent. Exit 3 when present but not origin-bound
-#       or not well-formed under the shared row contract.
+#       Exit 4 when the ledger is well-formed and the id is absent. Exit 3 when
+#       the ledger is malformed, or the row is present but not origin-bound or
+#       not well-formed under the shared row contract.
 set -u
 
 fm_product_idea_ledger_count() {  # <ledger-path>
@@ -61,6 +63,9 @@ fm_product_idea_ledger_count() {  # <ledger-path>
 
 fm_product_idea_verify_row() {  # <ledger-path> <origin-id> <idea-id>
   local ledger=$1 origin=$2 idea_id=$3
+  if ! fm_product_idea_ledger_count "$ledger" >/dev/null; then
+    return 3
+  fi
   awk -F '|' -v wanted="$idea_id" -v source_prefix="data/$origin/report.md#" '
     function trim(s) { sub(/^[[:space:]]+/, "", s); sub(/[[:space:]]+$/, "", s); return s }
     function valid_status(s) {
