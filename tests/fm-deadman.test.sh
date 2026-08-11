@@ -171,6 +171,83 @@ test_hostile_config_is_data() {
   pass "configuration is parsed as allowlisted data, never sourced"
 }
 
+test_corrupt_deadman_state_self_faults() {
+  local dir rc before after
+
+  # Corrupt installed-at must exit 2 during first-arm, not rewrite grace start.
+  dir=$(new_case corrupt-installed-at)
+  rm -f "$dir/install/armed"
+  printf 'not-a-timestamp\n' > "$dir/install/installed-at"
+  set_mtime "$dir/home/state/.last-watcher-beat" 0
+  set +e
+  run_probe "$dir" 1000 >/dev/null 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "corrupt installed-at exited $rc instead of 2"
+  [ "$(cat "$dir/install/installed-at")" = "not-a-timestamp" ] \
+    || fail "corrupt installed-at was rewritten instead of self-faulting"
+  [ ! -e "$dir/install/armed" ] || fail "corrupt installed-at still armed the deadman"
+
+  # Corrupt last-run-at must exit 2 before sleep/wake gap math runs.
+  dir=$(new_case corrupt-last-run-at)
+  printf 'bogus\n' > "$dir/install/last-run-at"
+  set_mtime "$dir/home/state/.last-watcher-beat" 1000
+  set +e
+  run_probe "$dir" 1000 >/dev/null 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "corrupt last-run-at exited $rc instead of 2"
+  [ "$(cat "$dir/install/last-run-at")" = "bogus" ] \
+    || fail "corrupt last-run-at was overwritten instead of self-faulting"
+  [ ! -e "$dir/install/wake-grace-until" ] \
+    || fail "corrupt last-run-at still started sleep/wake grace"
+
+  # Corrupt wake-grace-until must exit 2, not treat grace as missing/expired.
+  dir=$(new_case corrupt-wake-grace)
+  printf '1000\n' > "$dir/install/last-run-at"
+  printf 'not-unix\n' > "$dir/install/wake-grace-until"
+  set_mtime "$dir/home/state/.last-watcher-beat" 0
+  set +e
+  run_probe "$dir" 1060 >/dev/null 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "corrupt wake-grace-until exited $rc instead of 2"
+  [ "$(cat "$dir/install/wake-grace-until")" = "not-unix" ] \
+    || fail "corrupt wake-grace-until was cleared instead of self-faulting"
+  [ "$(notify_count "$dir/notify.log")" -eq 0 ] \
+    || fail "corrupt wake-grace-until continued into paging"
+
+  # Corrupt last-success-at must exit 2 rather than skipping cooldown and re-paging.
+  dir=$(new_case corrupt-last-success)
+  set_mtime "$dir/home/state/.last-watcher-beat" 0
+  run_probe "$dir" 1000
+  printf 'xyz\n' > "$dir/install/last-success-at"
+  before=$(notify_count "$dir/notify.log")
+  set +e
+  run_probe "$dir" 1060 >/dev/null 2>&1
+  rc=$?
+  set -e
+  after=$(notify_count "$dir/notify.log")
+  [ "$rc" -eq 2 ] || fail "corrupt last-success-at exited $rc instead of 2"
+  [ "$after" -eq "$before" ] \
+    || fail "corrupt last-success-at still delivered a page instead of self-faulting"
+  [ "$(cat "$dir/install/last-success-at")" = "xyz" ] \
+    || fail "corrupt last-success-at was rewritten instead of self-faulting"
+
+  # Missing timestamps remain non-faulting (return 1 path).
+  dir=$(new_case missing-timestamps)
+  rm -f "$dir/install/armed" "$dir/install/installed-at"
+  set_mtime "$dir/home/state/.last-watcher-beat" 0
+  set +e
+  run_probe "$dir" 1000 >/dev/null 2>&1
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "missing installed-at exited $rc instead of 0"
+  [ -f "$dir/install/installed-at" ] || fail "missing installed-at did not start first-arm grace"
+
+  pass "corrupt deadman timestamps self-fault in the main shell"
+}
+
 test_notify_only_and_concurrent_lock() {
   local dir fakebin slow p1 p2 rc
   dir=$(new_case no-spawn)
@@ -381,6 +458,7 @@ test_flap_resets_confirmation
 test_cooldown_and_failed_delivery
 test_first_arm_and_sleep_wake_grace
 test_hostile_config_is_data
+test_corrupt_deadman_state_self_faults
 test_notify_only_and_concurrent_lock
 test_term_reaps_notifier_and_releases_lock
 test_installer_and_plist
