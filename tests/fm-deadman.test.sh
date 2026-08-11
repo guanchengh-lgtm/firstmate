@@ -348,18 +348,26 @@ SH
   [ "$(cat "$install/deadman.conf")" = "auto" ] || fail "default install did not write auto channel"
   [ "$(notify_count "$dir/notify.log")" -eq 1 ] || fail "default install skipped mandatory canary"
 
-  if ! command -v plutil >/dev/null 2>&1; then
-    fail "plutil is required to assert LaunchAgent PATH parity"
+  if command -v plutil >/dev/null 2>&1; then
+    plutil -lint "$plist" >/dev/null || fail "default-install plist failed plutil lint"
+    path_value=$(plutil -extract EnvironmentVariables.PATH raw -o - "$plist") \
+      || fail "plist PATH could not be decoded via plutil"
+  else
+    path_value=$(python3 - "$plist" <<'PY'
+import plistlib
+import sys
+
+with open(sys.argv[1], "rb") as fh:
+    data = plistlib.load(fh)
+print(data["EnvironmentVariables"]["PATH"])
+PY
+) || fail "plist PATH could not be decoded via plistlib"
   fi
-  plutil -lint "$plist" >/dev/null || fail "default-install plist failed plutil lint"
-  path_value=$(plutil -extract EnvironmentVariables.PATH raw -o - "$plist") \
-    || fail "plist PATH could not be decoded"
   [ "$path_value" = "$expected_path" ] || fail "plist PATH does not match installer PATH"
 
   # Live LaunchAgent environment must resolve the same PATH-dependent binary
   # the installer could see (herdr under the pinned PATH entry).
-  PATH=$(plutil -extract EnvironmentVariables.PATH raw -o - "$plist") \
-    command -v herdr >/dev/null 2>&1 \
+  PATH="$path_value" command -v herdr >/dev/null 2>&1 \
     || fail "LaunchAgent PATH cannot resolve herdr the canary environment could see"
   [ "$(PATH=$path_value command -v herdr)" = "$canary_bin/herdr" ] \
     || fail "LaunchAgent PATH resolved a different herdr than the installer PATH"
