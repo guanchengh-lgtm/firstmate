@@ -172,7 +172,7 @@ test_hostile_config_is_data() {
 }
 
 test_notify_only_and_concurrent_lock() {
-  local dir fakebin slow p1 p2
+  local dir fakebin slow p1 p2 rc
   dir=$(new_case no-spawn)
   set_mtime "$dir/home/state/.last-watcher-beat" 0
   fakebin="$dir/fakebin"
@@ -205,7 +205,26 @@ SH
   wait "$p1"
   wait "$p2"
   [ "$(notify_count "$dir/notify.log")" -eq 1 ] || fail "concurrent invocations delivered more than one page"
-  pass "probe is notify-only and concurrent invocations serialize"
+
+  dir=$(new_case canary-lock)
+  mkdir "$dir/install/.probe.lock"
+  set +e
+  FM_DEADMAN_INSTALL_DIR="$dir/install" \
+    FM_DEADMAN_NOW=1000 \
+    FM_DEADMAN_NOTIFY_EXEC="$NOTIFIER" \
+    FM_TEST_NOTIFY_LOG="$dir/notify.log" \
+    "$ROOT/bin/fm-deadman.sh" --canary
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "canary under lock contention exited $rc instead of 1"
+  [ "$(notify_count "$dir/notify.log")" -eq 0 ] || fail "canary under lock contention still delivered a notification"
+  set +e
+  run_probe "$dir" 1000
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "normal probe under lock contention exited $rc instead of 0"
+  [ "$(notify_count "$dir/notify.log")" -eq 0 ] || fail "normal probe under lock contention delivered a notification"
+  pass "probe is notify-only; concurrent probes serialize; canary fails closed on lock"
 }
 
 test_installer_and_plist() {

@@ -232,6 +232,10 @@ main() {
   NOW=${FM_DEADMAN_NOW:-$(date +%s)}
   valid_uint "$NOW" || self_fault "current time must be an unsigned integer"
   if ! acquire_lock; then
+    if [ "$mode" = --canary ]; then
+      journal "canary failed: another invocation holds the lock"
+      exit 1
+    fi
     journal "probe skipped: another invocation holds the lock"
     exit 0
   fi
