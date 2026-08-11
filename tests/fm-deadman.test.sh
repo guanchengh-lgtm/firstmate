@@ -227,6 +227,70 @@ SH
   pass "probe is notify-only; concurrent probes serialize; canary fails closed on lock"
 }
 
+test_term_reaps_notifier_and_releases_lock() {
+  local dir slow pid rc notifier_pid i
+  dir=$(new_case term-signal)
+  set_mtime "$dir/home/state/.last-watcher-beat" 0
+  run_probe "$dir" 1000
+  [ "$(notify_count "$dir/notify.log")" -eq 0 ] || fail "setup first sample paged"
+
+  slow="$dir/slow-notifier"
+  cat > "$slow" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$$" > "$FM_TEST_NOTIFY_PID"
+sleep 30
+printf '%s|%s\n' "$1" "$2" >> "$FM_TEST_NOTIFY_LOG"
+SH
+  chmod +x "$slow"
+
+  rm -f "$dir/notify.pid" "$dir/notify.log"
+  FM_DEADMAN_INSTALL_DIR="$dir/install" \
+    FM_DEADMAN_NOW=1060 \
+    FM_DEADMAN_NOTIFY_EXEC="$slow" \
+    FM_TEST_NOTIFY_LOG="$dir/notify.log" \
+    FM_TEST_NOTIFY_PID="$dir/notify.pid" \
+    "$ROOT/bin/fm-deadman.sh" & pid=$!
+
+  i=0
+  while [ ! -f "$dir/notify.pid" ] && [ "$i" -lt 50 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ -f "$dir/notify.pid" ] || fail "notifier did not start before TERM"
+  notifier_pid=$(cat "$dir/notify.pid")
+
+  kill -TERM "$pid"
+  set +e
+  wait "$pid"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail "TERM probe exited 0 instead of nonzero"
+
+  [ ! -d "$dir/install/.probe.lock" ] || fail "TERM left probe lock behind"
+
+  i=0
+  while kill -0 "$notifier_pid" 2>/dev/null && [ "$i" -lt 50 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  ! kill -0 "$notifier_pid" 2>/dev/null || fail "TERM left notifier process orphaned"
+
+  [ "$(notify_count "$dir/notify.log")" -eq 0 ] || fail "TERM allowed notifier to complete a page"
+
+  run_probe "$dir" 1120
+  [ "$(notify_count "$dir/notify.log")" -eq 1 ] || fail "post-TERM probe did not deliver exactly one page"
+
+  set_mtime "$dir/home/state/.last-watcher-beat" 2000
+  set +e
+  run_probe "$dir" 2000
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "healthy probe exited $rc"
+  [ ! -d "$dir/install/.probe.lock" ] || fail "healthy probe left lock behind"
+
+  pass "TERM cleanup reaps notifier, releases lock, exits nonzero; normal exit stays zero"
+}
+
 test_installer_and_plist() {
   local dir plist install program
   dir="$TMP_ROOT/installer"
@@ -262,4 +326,5 @@ test_cooldown_and_failed_delivery
 test_first_arm_and_sleep_wake_grace
 test_hostile_config_is_data
 test_notify_only_and_concurrent_lock
+test_term_reaps_notifier_and_releases_lock
 test_installer_and_plist

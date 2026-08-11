@@ -214,6 +214,23 @@ acquire_lock() {
   mkdir "$LOCK_DIR" 2>/dev/null
 }
 
+release_probe() {
+  if [ "${DEADMAN_CLEANUP_DONE:-}" = 1 ]; then
+    return 0
+  fi
+  DEADMAN_CLEANUP_DONE=1
+  trap - EXIT INT TERM
+  if declare -F fm_notify_stop_active >/dev/null 2>&1; then
+    fm_notify_stop_active
+  fi
+  rmdir "$LOCK_DIR" 2>/dev/null || true
+}
+
+handle_probe_signal() {
+  release_probe
+  exit 1
+}
+
 main() {
   local mode=${1:-} first_sample sample_time sample_class delta last_success summary
   case "$mode" in
@@ -239,7 +256,9 @@ main() {
     journal "probe skipped: another invocation holds the lock"
     exit 0
   fi
-  trap 'rmdir "$LOCK_DIR" 2>/dev/null || true' EXIT INT TERM
+  DEADMAN_CLEANUP_DONE=
+  trap release_probe EXIT
+  trap handle_probe_signal INT TERM
 
   if [ "$mode" = --canary ]; then
     summary="FIRSTMATE DEADMAN CANARY - notification path is working for $FM_HOME"
