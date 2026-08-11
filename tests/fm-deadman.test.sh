@@ -419,11 +419,16 @@ SH
     /bin/bash "$ROOT/bin/fm-deadman-install.sh" --fm-home "$dir/home" >/dev/null
   rc=$?
   set -e
-  [ "$rc" -eq 0 ] || fail "default no-channel install exited $rc under /bin/bash"
+  if [ "$(uname)" = Darwin ]; then
+    [ "$rc" -eq 0 ] || fail "default no-channel install exited $rc under /bin/bash on macOS"
+    [ "$(notify_count "$dir/notify.log")" -eq 1 ] || fail "default install skipped mandatory canary"
+  else
+    [ "$rc" -eq 1 ] || fail "default no-channel install did not fail its unavailable-platform canary"
+    [ "$(notify_count "$dir/notify.log")" -eq 0 ] || fail "unavailable-platform canary reported delivery"
+  fi
   [ -x "$install/fm-deadman.sh" ] || fail "default install did not create stable probe copy"
   [ -f "$install/deadman.conf" ] || fail "default install did not write channel config"
   [ "$(cat "$install/deadman.conf")" = "auto" ] || fail "default install did not write auto channel"
-  [ "$(notify_count "$dir/notify.log")" -eq 1 ] || fail "default install skipped mandatory canary"
 
   if command -v plutil >/dev/null 2>&1; then
     plutil -lint "$plist" >/dev/null || fail "default-install plist failed plutil lint"
@@ -442,12 +447,12 @@ PY
   fi
   [ "$path_value" = "$expected_path" ] || fail "plist PATH does not match installer PATH"
 
-  # Live LaunchAgent environment must resolve the same PATH-dependent binary
-  # the installer could see (herdr under the pinned PATH entry).
+  # The live LaunchAgent environment must retain the installer's PATH so an
+  # explicitly configured non-absolute channel resolves predictably.
   PATH="$path_value" command -v herdr >/dev/null 2>&1 \
-    || fail "LaunchAgent PATH cannot resolve herdr the canary environment could see"
+    || fail "LaunchAgent PATH cannot resolve herdr from the installer PATH"
   [ "$(PATH=$path_value command -v herdr)" = "$canary_bin/herdr" ] \
-    || fail "LaunchAgent PATH resolved a different herdr than the installer PATH"
+    || fail "LaunchAgent PATH resolved a different herdr than the pinned installer PATH"
 
   pass "default no-channel install writes auto and pins installer PATH in plist"
 }
