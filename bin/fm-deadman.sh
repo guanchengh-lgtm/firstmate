@@ -214,6 +214,7 @@ acquire_lock() {
   mkdir "$LOCK_DIR" 2>/dev/null
 }
 
+# shellcheck disable=SC2329 # invoked by EXIT trap after probe lock acquisition
 release_probe() {
   if [ "${DEADMAN_CLEANUP_DONE:-}" = 1 ]; then
     return 0
@@ -226,6 +227,7 @@ release_probe() {
   rmdir "$LOCK_DIR" 2>/dev/null || true
 }
 
+# shellcheck disable=SC2329 # invoked by INT/TERM traps after probe lock acquisition
 handle_probe_signal() {
   release_probe
   exit 1
