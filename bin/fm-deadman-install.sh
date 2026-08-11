@@ -111,6 +111,7 @@ uninstall_deadman() {
   rm -f "$INSTALL_DIR/installed-at" "$INSTALL_DIR/armed" "$INSTALL_DIR/first-stale"
   rm -f "$INSTALL_DIR/last-run-at" "$INSTALL_DIR/wake-grace-until" "$INSTALL_DIR/last-success-at"
   rm -f "$INSTALL_DIR/deadman.journal" "$INSTALL_DIR/deadman.stdout.log" "$INSTALL_DIR/deadman.stderr.log"
+  rmdir "$INSTALL_DIR/.probe.lock" 2>/dev/null || true
   rmdir "$INSTALL_DIR" 2>/dev/null || true
   printf 'Uninstalled com.firstmate.deadman.\n'
 }
