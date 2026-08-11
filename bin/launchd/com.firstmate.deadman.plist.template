@@ -8,6 +8,11 @@
   <array>
     <string>__DEADMAN_SCRIPT__</string>
   </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__PATH__</string>
+  </dict>
   <key>RunAtLoad</key>
   <true/>
   <key>StartInterval</key>

@@ -43,14 +43,16 @@ sed_replacement() {
 }
 
 write_plist() {
-  local script stdout_log stderr_log tmp
+  local script stdout_log stderr_log path_value tmp
   script=$(printf '%s' "$INSTALL_DIR/fm-deadman.sh" | xml_escape | sed_replacement)
   stdout_log=$(printf '%s' "$INSTALL_DIR/deadman.stdout.log" | xml_escape | sed_replacement)
   stderr_log=$(printf '%s' "$INSTALL_DIR/deadman.stderr.log" | xml_escape | sed_replacement)
+  path_value=$(printf '%s' "${PATH-}" | xml_escape | sed_replacement)
   tmp="$PLIST.tmp.$$"
   sed -e "s|__DEADMAN_SCRIPT__|$script|g" \
     -e "s|__STDOUT_LOG__|$stdout_log|g" \
-    -e "s|__STDERR_LOG__|$stderr_log|g" "$TEMPLATE" > "$tmp"
+    -e "s|__STDERR_LOG__|$stderr_log|g" \
+    -e "s|__PATH__|$path_value|g" "$TEMPLATE" > "$tmp"
   chmod 644 "$tmp"
   mv -f "$tmp" "$PLIST"
 }
@@ -144,13 +146,15 @@ fi
 
 case "$FM_HOME_VALUE" in /*) ;; *) printf 'fm-deadman-install: FM_HOME must be absolute.\n' >&2; exit 2 ;; esac
 case "$FM_HOME_VALUE" in *$'\n'*|*$'\r'*) printf 'fm-deadman-install: FM_HOME must be one line.\n' >&2; exit 2 ;; esac
-for channel in "${CHANNELS[@]}"; do
-  case "$channel" in
-    *$'\n'*|*$'\r'*|'') printf 'fm-deadman-install: each channel must be one non-empty line.\n' >&2; exit 2 ;;
-    off|auto|default|osascript|herdr|command:*) ;;
-    *) printf 'fm-deadman-install: unrecognized channel directive.\n' >&2; exit 2 ;;
-  esac
-done
+if [ "${#CHANNELS[@]}" -gt 0 ]; then
+  for channel in "${CHANNELS[@]}"; do
+    case "$channel" in
+      *$'\n'*|*$'\r'*|'') printf 'fm-deadman-install: each channel must be one non-empty line.\n' >&2; exit 2 ;;
+      off|auto|default|osascript|herdr|command:*) ;;
+      *) printf 'fm-deadman-install: unrecognized channel directive.\n' >&2; exit 2 ;;
+    esac
+  done
+fi
 [ -r "$SOURCE_PROBE" ] && [ -r "$SOURCE_NOTIFY" ] && [ -r "$TEMPLATE" ] || {
   printf 'fm-deadman-install: source files are incomplete.\n' >&2
   exit 2

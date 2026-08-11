@@ -319,6 +319,54 @@ test_installer_and_plist() {
   pass "installer writes a valid stable-copy LaunchAgent and sends a canary"
 }
 
+test_installer_default_channel_and_path_parity() {
+  local dir plist install path_value expected_path rc canary_bin
+  dir="$TMP_ROOT/installer-default"
+  install="$dir/Application Support/Firstmate/deadman"
+  plist="$dir/LaunchAgents/com.firstmate.deadman.plist"
+  canary_bin="$dir/pathbin"
+  mkdir -p "$dir/home/state" "$canary_bin"
+  : > "$dir/home/state/.last-watcher-beat"
+  # Distinct PATH entry the LaunchAgent must inherit so non-absolute channel
+  # commands resolve the same way the installer canary did.
+  expected_path="$canary_bin:/usr/bin:/bin:/usr/sbin:/sbin"
+  cat > "$canary_bin/herdr" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$canary_bin/herdr"
+
+  set +e
+  PATH="$expected_path" FM_DEADMAN_INSTALL_DIR="$install" FM_DEADMAN_PLIST="$plist" \
+    FM_DEADMAN_NOTIFY_EXEC="$NOTIFIER" FM_TEST_NOTIFY_LOG="$dir/notify.log" \
+    /bin/bash "$ROOT/bin/fm-deadman-install.sh" --fm-home "$dir/home" >/dev/null
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "default no-channel install exited $rc under /bin/bash"
+  [ -x "$install/fm-deadman.sh" ] || fail "default install did not create stable probe copy"
+  [ -f "$install/deadman.conf" ] || fail "default install did not write channel config"
+  [ "$(cat "$install/deadman.conf")" = "auto" ] || fail "default install did not write auto channel"
+  [ "$(notify_count "$dir/notify.log")" -eq 1 ] || fail "default install skipped mandatory canary"
+
+  if ! command -v plutil >/dev/null 2>&1; then
+    fail "plutil is required to assert LaunchAgent PATH parity"
+  fi
+  plutil -lint "$plist" >/dev/null || fail "default-install plist failed plutil lint"
+  path_value=$(plutil -extract EnvironmentVariables.PATH raw -o - "$plist") \
+    || fail "plist PATH could not be decoded"
+  [ "$path_value" = "$expected_path" ] || fail "plist PATH does not match installer PATH"
+
+  # Live LaunchAgent environment must resolve the same PATH-dependent binary
+  # the installer could see (herdr under the pinned PATH entry).
+  PATH=$(plutil -extract EnvironmentVariables.PATH raw -o - "$plist") \
+    command -v herdr >/dev/null 2>&1 \
+    || fail "LaunchAgent PATH cannot resolve herdr the canary environment could see"
+  [ "$(PATH=$path_value command -v herdr)" = "$canary_bin/herdr" ] \
+    || fail "LaunchAgent PATH resolved a different herdr than the installer PATH"
+
+  pass "default no-channel install writes auto and pins installer PATH in plist"
+}
+
 test_age_boundary_and_double_sample
 test_missing_future_and_unreadable
 test_flap_resets_confirmation
@@ -328,3 +376,4 @@ test_hostile_config_is_data
 test_notify_only_and_concurrent_lock
 test_term_reaps_notifier_and_releases_lock
 test_installer_and_plist
+test_installer_default_channel_and_path_parity
