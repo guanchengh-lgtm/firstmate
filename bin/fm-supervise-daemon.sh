@@ -146,6 +146,8 @@ set -u
 FM_DAEMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$FM_DAEMON_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
+# shellcheck source=bin/fm-notify-lib.sh
+. "$FM_DAEMON_DIR/fm-notify-lib.sh"
 
 # Shared tmux pane primitives for supervisor injection (busy/composer detection
 # + verify-retry submit). Sourced at top level so BOTH the executed daemon and
@@ -865,24 +867,15 @@ wedge_alarm_emit() {  # <channel> <summary>
 # `auto` (no OS channel on this platform) logs that the durable marker is the
 # only signal. Every notifier routes through the test-forced recorder seam.
 wedge_alarm_notify() {  # <summary> <marker>
-  local summary=$1 marker=$2 ch
-  local -a channels=()
-  while IFS= read -r ch; do
-    [ -n "$ch" ] || continue
-    channels+=("$ch")
-  done < <(wedge_alarm_configured_channels)
-  for ch in "${channels[@]}"; do
-    [ "$ch" = off ] && return 0
-  done
-  for ch in "${channels[@]}"; do
-    case "$ch" in auto|default) ch=$(wedge_alarm_platform_default) ;; esac
-    case "$ch" in
-      '') log "wedge alarm: no OS-level alert channel on $(uname); durable marker $marker is the only signal - set config/wedge-alarm (e.g. a command: directive)" ;;
-      osascript|herdr) wedge_alarm_emit "$ch" "$summary" || true ;;
-      command:*) wedge_alarm_emit command "$summary" "${ch#command:}" || true ;;
-      *) log "wedge alarm: unrecognized active-alert channel directive (redacted); marker still written" ;;
-    esac
-  done
+  local summary=$1 marker=$2
+  local FM_NOTIFY_CONFIG_FILE="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}/wedge-alarm"
+  local FM_NOTIFY_CHANNEL=${FM_WEDGE_ALARM_CHANNEL:-}
+  local FM_NOTIFY_EXEC=${FM_WEDGE_ALARM_EXEC:-}
+  local FM_NOTIFY_TIMEOUT_SECS=${FM_WEDGE_ALARM_TIMEOUT_SECS:-$WEDGE_ALARM_TIMEOUT_SECS_DEFAULT}
+  local FM_NOTIFY_TITLE="firstmate: away-mode escalations WEDGED"
+  local FM_NOTIFY_LOG_PREFIX="wedge alarm: "
+  local FM_NOTIFY_UNKNOWN_SUFFIX="marker still written"
+  fm_notify "$summary" "durable marker $marker is the only signal" || true
   return 0
 }
 
