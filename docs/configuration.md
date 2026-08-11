@@ -239,6 +239,15 @@ The Kimi installer requires an existing regular non-symlink `~/.kimi-code/config
 Its `remove` action excises only the marker-delimited Firstmate region and removes Firstmate's hook files.
 For Pi and pi-signed secondmate launches, `fm-spawn.sh` starts the selected executable with `-e` pointed at the secondmate home's own tracked `.pi/extensions/fm-primary-pi-watch.ts` and `.pi/extensions/fm-primary-turnend-guard.ts`, both already present from the secondmate home's git worktree.
 
+## Durable SoT program registry (data/sot-programs.tsv / config/sot-programs.tsv)
+
+An optional home-local registry can ask session-start bootstrap to notice when a completed multi-task program still lacks a standing source-of-truth pointer in `data/captain.md` or files directly under `data/decisions/`.
+Lookup order is `data/sot-programs.tsv`, then `config/sot-programs.tsv`.
+An absent or empty registry stays silent.
+[`bin/fm-sot-pointer-check.sh`](../bin/fm-sot-pointer-check.sh)'s header owns the row format, Done-source gate, match surface, `SOT_GAP` line, default exit-zero detect-only mode, and `--strict` / `--registry` flags.
+Bootstrap runs that check in detect-only mode so clean homes stay quiet and gaps surface without blocking session start or auto-editing captain material.
+See [`sot-programs.example.tsv`](sot-programs.example.tsv) for a non-live copyable shape.
+
 ## Crew dispatch profiles (config/crew-dispatch.json)
 
 `config/crew-dispatch.json` is an optional local, gitignored file containing natural-language rules that firstmate reads before dispatching a crewmate or scout.
