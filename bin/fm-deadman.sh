@@ -101,10 +101,12 @@ read_config() {
 
 read_timestamp() {
   local path=$1 value
+  TIMESTAMP=
   [ -e "$path" ] || return 1
   IFS= read -r value < "$path" || self_fault "cannot read deadman state: $path"
   valid_uint "$value" || self_fault "invalid deadman timestamp: $path"
-  printf '%s\n' "$value"
+  TIMESTAMP=$value
+  return 0
 }
 
 beacon_mtime() {
@@ -156,11 +158,12 @@ arm_if_ready() {
     journal "armed after healthy beacon"
     return 0
   fi
-  if ! installed_at=$(read_timestamp "$INSTALL_DIR/installed-at"); then
+  if ! read_timestamp "$INSTALL_DIR/installed-at"; then
     atomic_write "$INSTALL_DIR/installed-at" "$NOW" || self_fault "cannot create first-arm timestamp"
     journal "first-arm grace started"
     return 1
   fi
+  installed_at=$TIMESTAMP
   if [ "$NOW" -lt "$installed_at" ] || [ $((NOW - installed_at)) -lt "$FIRST_ARM_GRACE_SECS" ]; then
     journal "first-arm grace: $PROBE_CLASS"
     return 1
@@ -172,7 +175,8 @@ arm_if_ready() {
 
 apply_sleep_wake_grace() {
   local last_run grace_until delta
-  if last_run=$(read_timestamp "$INSTALL_DIR/last-run-at"); then
+  if read_timestamp "$INSTALL_DIR/last-run-at"; then
+    last_run=$TIMESTAMP
     delta=$((NOW - last_run))
     if [ "$delta" -lt 0 ] || [ "$delta" -gt "$SLEEP_GAP_DETECT_SECS" ]; then
       grace_until=$((NOW + WAKE_GRACE_SECS))
@@ -182,7 +186,8 @@ apply_sleep_wake_grace() {
     fi
   fi
   atomic_write "$INSTALL_DIR/last-run-at" "$NOW" || self_fault "cannot record probe time"
-  if grace_until=$(read_timestamp "$INSTALL_DIR/wake-grace-until"); then
+  if read_timestamp "$INSTALL_DIR/wake-grace-until"; then
+    grace_until=$TIMESTAMP
     if [ "$NOW" -lt "$grace_until" ]; then
       journal "sleep/wake grace active"
       return 1
@@ -296,7 +301,8 @@ main() {
     exit 0
   fi
 
-  if last_success=$(read_timestamp "$INSTALL_DIR/last-success-at"); then
+  if read_timestamp "$INSTALL_DIR/last-success-at"; then
+    last_success=$TIMESTAMP
     [ "$NOW" -ge "$last_success" ] || self_fault "successful-page timestamp is in the future"
     if [ $((NOW - last_success)) -lt "$COOLDOWN_SECS" ]; then
       journal "unhealthy but successful-page cooldown active: $PROBE_CLASS"
