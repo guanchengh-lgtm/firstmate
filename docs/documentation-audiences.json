@@ -318,6 +318,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/project-write-guard.md",
+      "audience": "maintainer-architecture"
+    },
+    {
       "path": "docs/remote-secondmates.md",
       "audience": "operator-current"
     },
