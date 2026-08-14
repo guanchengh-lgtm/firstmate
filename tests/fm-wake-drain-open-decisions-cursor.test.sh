@@ -12,6 +12,8 @@ set -u
 
 # shellcheck source=tests/wake-helpers.sh
 . "$(dirname "${BASH_SOURCE[0]}")/wake-helpers.sh"
+# shellcheck source=bin/fm-classify-lib.sh
+. "$ROOT/bin/fm-classify-lib.sh"
 
 DRAIN="$ROOT/bin/fm-wake-drain.sh"
 
@@ -37,6 +39,40 @@ append_filler() {  # <file> <count>
 # incremental fold call (last matching line in the probe log).
 last_probe_bytes() {  # <probe-file> <status-file>
   grep -F "$(printf '%s\t' "$2")" "$1" 2>/dev/null | tail -1 | cut -f2
+}
+
+test_incremental_and_whole_file_folds_agree_on_both_key_positions() {
+  local dir status whole incremental expected
+  dir=$(make_case cursor-grammar-parity)
+  status="$dir/state/task-grammar.status"
+  cat > "$status" <<'EOF'
+needs-decision [key=canonical]: canonical note
+needs-decision: [key=route] route note
+blocked:   [key=access] access note
+resolved: [key=route] route selected
+needs-decision: bare note
+EOF
+
+  whole=$(status_open_decisions "$status")
+  incremental=$(status_open_decisions_incremental "$status")
+  expected=$(printf 'canonical\tneeds-decision\tcanonical note\naccess\tblocked\taccess note\ndefault\tneeds-decision\tbare note')
+  [ "$whole" = "$expected" ] \
+    || fail "the whole-file fold produced the wrong mixed-grammar open set: $whole"
+  [ "$incremental" = "$whole" ] \
+    || fail "the incremental fold disagreed with the whole-file fold: incremental=$incremental whole=$whole"
+
+  cat >> "$status" <<'EOF'
+resolved: [key=canonical] canonical selected
+resolved [key=access]: access restored
+resolved: bare selected
+EOF
+  whole=$(status_open_decisions "$status")
+  incremental=$(status_open_decisions_incremental "$status")
+  [ -z "$whole" ] || fail "the whole-file fold left mixed-grammar decisions open: $whole"
+  [ "$incremental" = "$whole" ] \
+    || fail "the incremental fold disagreed after mixed-grammar resolutions: incremental=$incremental whole=$whole"
+
+  pass "incremental and whole-file folds agree for canonical, post-colon, and bare decision lines"
 }
 
 test_buried_decision_survives_many_growing_drains_and_resolution_clears_it() {
@@ -286,6 +322,7 @@ test_previous_fold_cache_is_refolded_under_current_semantics() {
   ident=$(sed -n 's/^ident=//p' "$cursor")
   status_bytes=$(LC_ALL=C wc -c < "$status" | tr -d '[:space:]')
   {
+    printf 'version=2\n'
     printf 'offset=%s\n' "$status_bytes"
     printf 'ident=%s\n' "$ident"
     printf 'pending-reply-abcdef0123456789\tblocked\tforged decision'
@@ -312,6 +349,7 @@ test_previous_fold_cache_is_refolded_under_current_semantics() {
 }
 
 test_truncated_log_falls_back_to_a_full_refold_not_a_dropped_decision
+test_incremental_and_whole_file_folds_agree_on_both_key_positions
 test_same_size_rewrite_is_detected_via_inode_identity
 test_read_failure_never_silently_returns_empty
 test_cursor_cache_read_failure_refolds_authoritative_status

@@ -54,6 +54,70 @@ test_explicit_resolution_closes_it() {
   pass "an explicit resolved [key=X] closes the keyed decision"
 }
 
+test_post_colon_keys_stay_distinct_and_notes_drop_the_token() {
+  local dir state out
+  dir=$(make_case post-colon-keys)
+  state="$dir/state"
+  out="$dir/drain.out"
+  printf 'needs-decision: [key=route] choose north or south\n' > "$state/task-post.status"
+  printf 'needs-decision:   [key=access] choose open or restricted\n' >> "$state/task-post.status"
+
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed on post-colon decision keys"
+
+  grep -F 'task-post [key=route] needs-decision: choose north or south' "$out" >/dev/null \
+    || fail "the first post-colon key did not remain a distinct open decision: $(cat "$out")"
+  grep -F 'task-post [key=access] needs-decision: choose open or restricted' "$out" >/dev/null \
+    || fail "the second post-colon key collapsed into the first: $(cat "$out")"
+  if grep -F 'needs-decision: [key=' "$out" >/dev/null; then
+    fail "a post-colon key token leaked into the extracted decision note: $(cat "$out")"
+  fi
+
+  printf 'resolved: [key=route] chose north\n' >> "$state/task-post.status"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed after a post-colon resolution"
+  if grep -F '[key=route]' "$out" >/dev/null; then
+    fail "a post-colon resolution did not close its exact key: $(cat "$out")"
+  fi
+  grep -F 'task-post [key=access] needs-decision: choose open or restricted' "$out" >/dev/null \
+    || fail "resolving one post-colon key closed the other: $(cat "$out")"
+
+  printf 'resolved [key=access]: chose restricted\n' >> "$state/task-post.status"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed after the canonical resolution"
+  if grep -F 'OPEN DECISIONS' "$out" >/dev/null; then
+    fail "the remaining post-colon decision did not close via a canonical resolution: $(cat "$out")"
+  fi
+  pass "post-colon keys stay distinct, close by exact key, and are stripped from notes"
+}
+
+test_pre_colon_key_wins_and_bare_lines_still_use_default() {
+  local dir state out
+  dir=$(make_case grammar-precedence)
+  state="$dir/state"
+  out="$dir/drain.out"
+  printf 'needs-decision [key=canonical]: [key=secondary] choose one\n' > "$state/task-grammar.status"
+  printf 'needs-decision: legacy unkeyed choice\n' >> "$state/task-grammar.status"
+  printf 'needs-decision: [key=bad key] invalid keyed choice\n' >> "$state/task-grammar.status"
+
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed on key precedence and a bare decision"
+  grep -F 'task-grammar [key=canonical] needs-decision: choose one' "$out" >/dev/null \
+    || fail "the canonical pre-colon key did not win or the post-colon token remained in the note: $(cat "$out")"
+  if grep -F '[key=secondary]' "$out" >/dev/null; then
+    fail "the post-colon key overrode the canonical pre-colon key: $(cat "$out")"
+  fi
+  grep -F 'task-grammar needs-decision: legacy unkeyed choice' "$out" >/dev/null \
+    || fail "a bare needs-decision line no longer folded to the default key: $(cat "$out")"
+  if grep -F 'invalid keyed choice' "$out" >/dev/null; then
+    fail "an invalid post-colon key slug entered the open-decision set: $(cat "$out")"
+  fi
+
+  printf 'resolved [key=canonical]: chose one\n' >> "$state/task-grammar.status"
+  printf 'resolved: legacy choice cleared\n' >> "$state/task-grammar.status"
+  FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed after canonical and bare resolutions"
+  if grep -F 'OPEN DECISIONS' "$out" >/dev/null; then
+    fail "canonical or bare default resolution failed to close its decision: $(cat "$out")"
+  fi
+  pass "the pre-colon key wins when both are present and bare lines still fold to default"
+}
+
 test_reserved_key_namespace_is_owned_by_its_library() {
   local dir state out
   dir=$(make_case reserved-key)
@@ -218,6 +282,8 @@ test_over_long_decision_note_is_capped_with_a_marker() {
 test_buried_decision_still_surfaces
 test_over_long_decision_note_is_capped_with_a_marker
 test_explicit_resolution_closes_it
+test_post_colon_keys_stay_distinct_and_notes_drop_the_token
+test_pre_colon_key_wins_and_bare_lines_still_use_default
 test_later_unrelated_terminal_line_does_not_close_it
 test_reserved_key_namespace_is_owned_by_its_library
 test_no_open_decisions_prints_nothing
