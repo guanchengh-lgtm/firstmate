@@ -205,7 +205,36 @@ test_prefers_upstream_without_push() {
   pass "T2 upstream is preferred per code root and the update path never pushes"
 }
 
-# --- T3: README-only change does not trigger a reread ----------------------
+# --- T3: fetch before branch resolution honors upstream's different default --
+test_upstream_default_without_remote_head() {
+  local w out upstream_tip upstream_main
+  w=$(new_world t8)
+  add_upstream "$w"
+
+  # Upstream defaults to master while origin defaults to main. The updater has
+  # no local upstream/HEAD symref, so it must fetch before choosing its base.
+  git -C "$w/upstream-seed" checkout -qb master
+  printf 'upstream master\n' >> "$w/upstream-seed/README.md"
+  git -C "$w/upstream-seed" add -A
+  git -C "$w/upstream-seed" commit -qm upstream-master
+  git -C "$w/upstream-seed" push -q origin master
+  git -C "$w/upstream.git" symbolic-ref HEAD refs/heads/master
+  upstream_tip=$(git -C "$w/upstream.git" rev-parse master)
+  upstream_main=$(git -C "$w/upstream.git" rev-parse main)
+  [ "$upstream_tip" != "$upstream_main" ] || fail "fixture upstream main and master tips match"
+  git -C "$w/main" show-ref --verify --quiet refs/remotes/upstream/HEAD \
+    && fail "fixture unexpectedly has upstream/HEAD"
+  git -C "$w/main" checkout -qb master
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "firstmate: updated " "firstmate fast-forwarded from upstream/master"
+  [ "$(git -C "$w/main" rev-parse HEAD)" = "$upstream_tip" ] \
+    || fail "firstmate did not use upstream's fetched master branch"
+  pass "T3 fetched upstream default wins when upstream/HEAD is absent"
+}
+
+# --- T4: README-only change does not trigger a reread ----------------------
 test_reread_gate_is_instruction_only() {
   local w out
   w=$(new_world t3)
@@ -371,6 +400,7 @@ test_unsafe_secondmate_home_skipped_before_git_update() {
 
 test_updates_main_and_secondmate
 test_prefers_upstream_without_push
+test_upstream_default_without_remote_head
 test_reread_gate_is_instruction_only
 test_dirty_secondmate_skipped
 test_diverged_secondmate_skipped

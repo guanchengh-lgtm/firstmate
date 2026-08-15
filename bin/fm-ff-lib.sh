@@ -36,16 +36,27 @@ first_line() {
 }
 
 default_branch() {
-  local dir=$1 preferred_remote=${2:-origin} ref branch remote
-  for remote in "$preferred_remote" origin; do
-    [ "$remote" = origin ] || [ "$preferred_remote" != origin ] || continue
-    ref=$(git -C "$dir" symbolic-ref --quiet --short "refs/remotes/$remote/HEAD" 2>/dev/null || true)
-    if [ -n "$ref" ]; then
-      echo "${ref#"$remote"/}"
+  local dir=$1 preferred_remote=${2:-origin} ref branch
+  ref=$(git -C "$dir" symbolic-ref --quiet --short "refs/remotes/$preferred_remote/HEAD" 2>/dev/null || true)
+  if [ -n "$ref" ]; then
+    echo "${ref#"$preferred_remote"/}"
+    return 0
+  fi
+  # A plain fetch does not create refs/remotes/<remote>/HEAD. Prefer a known
+  # branch on the selected remote before falling back to origin's default.
+  for branch in main master; do
+    if git -C "$dir" show-ref --verify --quiet "refs/remotes/$preferred_remote/$branch"; then
+      echo "$branch"
       return 0
     fi
-    [ "$remote" != origin ] || break
   done
+  if [ "$preferred_remote" != origin ]; then
+    ref=$(git -C "$dir" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+    if [ -n "$ref" ]; then
+      echo "${ref#origin/}"
+      return 0
+    fi
+  fi
   for branch in main master; do
     if git -C "$dir" show-ref --verify --quiet "refs/heads/$branch"; then
       echo "$branch"
@@ -53,6 +64,14 @@ default_branch() {
     fi
   done
   return 1
+}
+
+# Resolve a remote's advertised default branch. Used only after update-remote
+# has fetched; local-HEAD sync must remain entirely local.
+advertised_default_branch() {
+  local dir=$1 remote=$2
+  git -C "$dir" ls-remote --symref "$remote" HEAD 2>/dev/null | \
+    awk '$1 == "ref:" && $3 == "HEAD" { sub("^refs/heads/", "", $2); print $2; exit }'
 }
 
 # Resolve the PRIMARY checkout's current default-branch commit - the local-HEAD
@@ -317,14 +336,16 @@ ff_target() {
       echo "$label: skipped: no upstream or origin remote"
       return 0
     }
-    default=$(default_branch "$dir" "$remote") || {
-      echo "$label: skipped: cannot determine default branch"
-      return 0
-    }
     if ! fetch_once "$dir" "$remote"; then
       echo "$label: skipped: fetch from $remote failed"
       return 0
     fi
+    default=$(advertised_default_branch "$dir" "$remote")
+    default=${default:-$(default_branch "$dir" "$remote" || true)}
+    [ -n "$default" ] || {
+      echo "$label: skipped: cannot determine default branch"
+      return 0
+    }
     base="$remote/$default"
   else
     default=$(default_branch "$dir") || {
