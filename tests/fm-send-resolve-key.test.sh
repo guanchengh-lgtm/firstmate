@@ -132,6 +132,30 @@ test_answer_send_closes_open_decision() {
   pass "fm-send --resolve-key: the answer send itself closes the open decision"
 }
 
+test_post_colon_key_is_resolvable() {
+  local dir fb log home rc out
+  dir="$TMP_ROOT/post-colon"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"
+  home=$(setup_home post-colon)
+  fm_write_meta "$home/state/post.meta" "window=sess:fm-post" "kind=ship"
+  printf 'needs-decision: [key=rendering] choose canvas or SVG\n' > "$home/state/post.status"
+
+  out=$(drain_out "$home")
+  printf '%s' "$out" | grep -F 'post [key=rendering] needs-decision: choose canvas or SVG' >/dev/null \
+    || fail "precondition: the post-colon decision should list under its real key: $out"
+
+  run_send "$fb" "$home" "$log" post --resolve-key rendering "use SVG"; rc=$?
+  expect_code 0 "$rc" "--resolve-key should accept a key parsed after the colon"
+  assert_contains "$(cat "$log")" "use SVG" "the answer to a post-colon key should reach the worker"
+  grep -F 'resolved [key=rendering]: answered: use SVG' "$home/state/post.status" >/dev/null \
+    || fail "fm-send did not append the closing line for a post-colon key"
+  out=$(drain_out "$home")
+  if printf '%s' "$out" | grep -F 'OPEN DECISIONS' >/dev/null; then
+    fail "the answered post-colon decision still lists as open: $out"
+  fi
+  pass "fm-send --resolve-key accepts and closes a key written after the colon"
+}
+
 test_answer_starts_work_never_orphans() {
   local dir fb log home rc out
   dir="$TMP_ROOT/starts-work"; mkdir -p "$dir"
@@ -191,6 +215,8 @@ test_not_open_key_refuses_before_send() {
     "$SEND" t4 --resolve-key mistyped "the answer" >/dev/null 2>"$err"; rc=$?
   [ "$rc" -ne 0 ] || fail "a not-open key should refuse"
   assert_contains "$(cat "$err")" "--resolve-key 'mistyped'" "the refusal should name the bad key"
+  assert_contains "$(cat "$err")" "Re-check the OPEN DECISIONS listing" \
+    "the refusal should still point at the authoritative open-decision listing"
   assert_contains "$(cat "$err")" "nothing was sent" "the refusal should state nothing was sent"
   [ ! -s "$log" ] || fail "a refused answer still typed text: $(cat "$log")"
   if grep -F 'resolved' "$home/state/t4.status" >/dev/null; then
@@ -396,6 +422,7 @@ test_flag_misuse_refuses() {
 }
 
 test_answer_send_closes_open_decision
+test_post_colon_key_is_resolvable
 test_answer_starts_work_never_orphans
 test_routine_steer_never_closes
 test_not_open_key_refuses_before_send

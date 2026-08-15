@@ -160,13 +160,16 @@ status_is_paused_or_captain_held() {  # <status-line>
 # rule 6), so closure never depends on a busy worker's discipline.
 #
 # Decision key grammar (backward-compatible with the existing "<verb>: <note>"
-# format): an OPTIONAL "[key=<slug>]" token sits between the verb and the colon,
+# format): an OPTIONAL "[key=<slug>]" token canonically sits between the verb
+# and the colon, and is also accepted immediately after the colon,
 #   needs-decision [key=api-shape]: <summary>
+#   needs-decision: [key=api-shape] <summary>
 #   resolved       [key=api-shape]: <how it was decided>
+# When both positions carry a token, the canonical pre-colon token wins.
 # A line with no token uses the key "default", preserving the historical
 # one-open-decision-per-task behavior (a bare "resolved:" closes "default").
 # The three parsers are pure reads of a single line; the verb parser strips any
-# key token before the colon so the leading word is recovered cleanly.
+# pre-colon token, and the note parser strips a valid leading post-colon token.
 status_line_verb() {  # <status-line> -> leading verb word
   local v=${1%%:*}
   v=${v%%\[key=*}
@@ -174,25 +177,60 @@ status_line_verb() {  # <status-line> -> leading verb word
   v=${v%"${v##*[![:space:]]}"}
   printf '%s' "$v"
 }
-status_line_note() {  # <status-line> -> text after the first colon, trimmed
+status_line_note() {  # <status-line> -> note with a valid leading key stripped
+  local n k
   case "$1" in
-    *:*) local n=${1#*:}; printf '%s' "${n#"${n%%[![:space:]]*}"}" ;;
+    *:*)
+      n=${1#*:}
+      n=${n#"${n%%[![:space:]]*}"}
+      case "$n" in
+        \[key=*\]*)
+          k=${n#\[key=}
+          k=${k%%\]*}
+          case "$k" in
+            ''|*[!A-Za-z0-9._-]*) : ;;
+            *)
+              n=${n#*\]}
+              n=${n#"${n%%[![:space:]]*}"}
+              ;;
+          esac
+          ;;
+      esac
+      printf '%s' "$n"
+      ;;
     *) printf '%s' "$1" ;;
   esac
 }
 _fm_decision_key() {  # <status-line> -> key slug, or "default" when no token
-  local prefix=${1%%:*} k
+  local prefix=${1%%:*} suffix k
   case "$prefix" in
     *\[key=*\]*)
       k=${prefix#*\[key=}
       k=${k%%\]*}
       case "$k" in
         ''|*[!A-Za-z0-9._-]*) return 1 ;;
-        *) printf '%s' "$k" ;;
+        *) printf '%s' "$k"; return 0 ;;
       esac
       ;;
-    *) printf 'default' ;;
   esac
+  case "$1" in
+    *:*)
+      suffix=${1#*:}
+      suffix=${suffix#"${suffix%%[![:space:]]*}"}
+      case "$suffix" in
+        \[key=*\]*)
+          k=${suffix#\[key=}
+          k=${k%%\]*}
+          case "$k" in
+            ''|*[!A-Za-z0-9._-]*) return 1 ;;
+            *) printf '%s' "$k" ;;
+          esac
+          return 0
+          ;;
+      esac
+      ;;
+  esac
+  printf 'default'
 }
 # Drop the record for <key> from a newline-terminated "<key>\t<verb>\t<note>" set.
 # Portable (no associative arrays) so the fold runs on bash 3.2 as well as 4+.
@@ -384,7 +422,7 @@ _fm_open_decisions_cursor_path() {  # <status-file>
   printf '%s/.%s.open-decisions-cursor' "$dir" "${base%.status}"
 }
 
-FM_OPEN_DECISIONS_FOLD_VERSION=2
+FM_OPEN_DECISIONS_FOLD_VERSION=3
 
 # Portable device:inode identity for the rotation/recreation check below.
 _fm_open_decisions_file_ident() {  # <file> -> "dev:inode", empty on I/O failure
