@@ -46,6 +46,30 @@ Set the local, gitignored `config/backlog-backend` file to `manual` to force man
 Absent or `tasks-axi` selects the default tasks-axi backend.
 The file format is unchanged in both modes; tasks-axi and manual edits produce the same `## In flight`, `## Queued`, and `## Done` sections.
 
+## GitHub issue intake (config/issue-intake.json)
+
+`config/issue-intake.json` is an optional local, gitignored file that selects GitHub repositories whose labeled open issues may enter the Firstmate backlog.
+This section is the single owner of its schema.
+The canonical shape is:
+
+```json
+{
+  "repos": ["owner/name"],
+  "label": "fm:task",
+  "approve_label": "fm:approved"
+}
+```
+
+`repos` is a non-empty array of unique GitHub `owner/name` repository names, and `label` is the non-empty intake label queried in every repository.
+`approve_label` is an optional non-empty approval label and defaults to `fm:approved` when omitted.
+Unknown keys, duplicate repositories, malformed repository names, empty labels, control characters, symlinks, and every other malformed config are rejected before GitHub is read or backlog state is changed.
+An issue authored by the repository owner is eligible immediately, while an issue from any other author remains skipped unless it also carries the approval label.
+Eligible issues become queued `ship` items through compatible `tasks-axi`, with repository, issue number, and full GitHub URL provenance in the item body.
+Successful intake identities are retained locally in `state/issue-intake.seen`; unauthorized issues are not marked seen so later approval can make them eligible.
+Run `bin/fm-issue-intake.sh --dry-run` to inspect counts without mutating state or the backlog.
+Run `bin/fm-issue-intake.sh --install-check` to create and authenticate the single `state/issue-intake.check.sh` watcher check after configuring a home.
+The script header and `--help` output own exact polling, deduplication, state-row, summary, and generated-check mechanics.
+
 ## Runtime backend (config/backend / FM_BACKEND)
 
 For spawn-capable adapters, the runtime session-provider backend controls where task windows/endpoints are created, captured, sent to, watched, and killed.
