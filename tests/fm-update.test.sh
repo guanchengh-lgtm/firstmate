@@ -208,7 +208,7 @@ test_prefers_upstream_without_push() {
 # --- T3: fetch before branch resolution honors upstream's different default --
 test_upstream_default_without_remote_head() {
   local w out upstream_tip upstream_main
-  w=$(new_world t8)
+  w=$(new_world t3)
   add_upstream "$w"
 
   # Upstream defaults to master while origin defaults to main. The updater has
@@ -237,7 +237,7 @@ test_upstream_default_without_remote_head() {
 # --- T4: README-only change does not trigger a reread ----------------------
 test_reread_gate_is_instruction_only() {
   local w out
-  w=$(new_world t3)
+  w=$(new_world t4)
   add_sm "$w" sm1
   bump_origin "$w" readme
 
@@ -247,13 +247,13 @@ test_reread_gate_is_instruction_only() {
   assert_contains "$out" "reread-firstmate: no" "non-instruction change skips reread"
   # The secondmate still advanced, so it is still nudged (update-based nudge).
   assert_contains "$out" "nudge-secondmates: fm-sm1" "advanced secondmate still nudged"
-  pass "T3 reread gates on instruction surface, nudge on advancement"
+  pass "T4 reread gates on instruction surface, nudge on advancement"
 }
 
-# --- T4: dirty secondmate is skipped, its edit preserved -------------------
+# --- T5: dirty secondmate is skipped, its edit preserved -------------------
 test_dirty_secondmate_skipped() {
   local w out
-  w=$(new_world t4)
+  w=$(new_world t5)
   add_sm "$w" sm1
   bump_origin "$w" instr
   printf 'uncommitted local edit\n' >> "$w/sm1/AGENTS.md"
@@ -264,13 +264,13 @@ test_dirty_secondmate_skipped() {
   assert_not_contains "$out" "fm-sm1" "skipped secondmate is not nudged"
   grep -q 'uncommitted local edit' "$w/sm1/AGENTS.md" \
     || fail "dirty edit was discarded"
-  pass "T4 dirty secondmate skipped, local edit preserved"
+  pass "T5 dirty secondmate skipped, local edit preserved"
 }
 
-# --- T5: diverged secondmate is skipped, its commit preserved --------------
+# --- T6: diverged secondmate is skipped, its commit preserved --------------
 test_diverged_secondmate_skipped() {
   local w out before
-  w=$(new_world t5)
+  w=$(new_world t6)
   add_sm "$w" sm1
   # Local commit on the secondmate's detached HEAD makes it diverge from origin.
   printf 'fork work\n' > "$w/sm1/AGENTS.md"
@@ -285,13 +285,13 @@ test_diverged_secondmate_skipped() {
   assert_not_contains "$out" "fm-sm1" "diverged secondmate is not nudged"
   [ "$(git -C "$w/sm1" rev-parse HEAD)" = "$before" ] \
     || fail "diverged secondmate HEAD moved (unlanded work at risk)"
-  pass "T5 diverged secondmate skipped, local commit preserved"
+  pass "T6 diverged secondmate skipped, local commit preserved"
 }
 
-# --- T6: idempotent; second run reports already current --------------------
+# --- T7: idempotent; second run reports already current --------------------
 test_idempotent_already_current() {
   local w out
-  w=$(new_world t6)
+  w=$(new_world t7)
   add_sm "$w" sm1
   bump_origin "$w" instr
   run_update "$w" >/dev/null   # first run advances both
@@ -302,10 +302,10 @@ test_idempotent_already_current() {
   assert_contains "$out" "secondmate sm1: already current" "secondmate already current"
   assert_contains "$out" "reread-firstmate: no" "no reread when nothing changed"
   assert_contains "$out" "nudge-secondmates: none" "no nudge when nothing advanced"
-  pass "T6 idempotent: a second run is a no-op"
+  pass "T7 idempotent: a second run is a no-op"
 }
 
-# --- T7: registry backstop + dedup + self-exclusion, one world -------------
+# --- T8: registry backstop + dedup + self-exclusion, one world -------------
 # One world carries every secondmate-resolution edge at once:
 #   reg1 - registered in secondmates.md only, NO live meta (registry backstop);
 #   sm1  - present in BOTH meta and the registry (must be processed exactly once);
@@ -314,7 +314,7 @@ test_idempotent_already_current() {
 # is processed once, and IS nudged; the firstmate repo is never re-processed.
 test_registry_backstop_dedup_and_self_exclusion() {
   local w out count
-  w=$(new_world t7)
+  w=$(new_world t8)
   add_sm "$w" sm1
   git -C "$w/main" worktree add -q --detach "$w/reg1" main
   printf 'reg1\n' > "$w/reg1/.fm-secondmate-home"
@@ -339,7 +339,7 @@ test_registry_backstop_dedup_and_self_exclusion() {
   nudge_line=$(printf '%s\n' "$out" | grep '^nudge-secondmates:')
   assert_contains "$nudge_line" "fm-sm1" "live-meta secondmate is nudged"
   assert_not_contains "$nudge_line" "reg1" "registry-only secondmate without live metadata is not nudged"
-  pass "T7 registry backstop resolves, dedups meta+registry, excludes the firstmate repo"
+  pass "T8 registry backstop resolves, dedups meta+registry, excludes the firstmate repo"
 }
 
 # --- T9: firstmate repo on a feature branch is skipped ---------------------
