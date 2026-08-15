@@ -3,9 +3,8 @@
 # firstmate repo and every registered secondmate home.
 #
 # The guarantees under test mirror fm-fleet-sync.sh and prime directive #3:
-#   - The running firstmate repo (on its default branch) fast-forwards from
-#     origin; a leased secondmate home (detached HEAD on the default branch)
-#     fast-forwards the same way.
+#   - The running firstmate repo and each secondmate home fast-forward from
+#     upstream when configured, otherwise origin.
 #   - FAST-FORWARD ONLY: a dirty, diverged, offline, or wrong-branch target is
 #     skipped and reported, never forced or stashed, so unlanded work survives.
 #   - The update is a single-parent fast-forward (never a merge commit) and a
@@ -87,12 +86,50 @@ bump_origin() {
   git -C "$w/seed" push -q origin main
 }
 
+# Add an upstream remote containing the initial origin commit, plus a checkout
+# that can advance upstream independently from the fork-facing origin.
+add_upstream() {
+  local w=$1
+  git clone -q --bare "file://$w/origin.git" "$w/upstream.git"
+  git -C "$w/upstream.git" symbolic-ref HEAD refs/heads/main
+  git -C "$w/main" remote add upstream "file://$w/upstream.git"
+  git clone -q "file://$w/upstream.git" "$w/upstream-seed"
+  git -C "$w/upstream-seed" config user.email fmtest@example.com
+  git -C "$w/upstream-seed" config user.name fmtest
+}
+
+bump_upstream() {
+  local w=$1 mode=$2
+  printf 'u-%s\n' "$mode" >> "$w/upstream-seed/README.md"
+  if [ "$mode" = instr ]; then
+    printf 'upstream-v2\n' > "$w/upstream-seed/AGENTS.md"
+    printf 'echo upstream\n' > "$w/upstream-seed/bin/tool.sh"
+    printf 'upstream-s2\n' > "$w/upstream-seed/.agents/skills/note.md"
+  fi
+  git -C "$w/upstream-seed" add -A
+  git -C "$w/upstream-seed" commit -qm "upstream-$mode"
+  git -C "$w/upstream-seed" push -q origin main
+}
+
+add_standalone_sm() {
+  local w=$1 id=$2
+  git clone -q "file://$w/origin.git" "$w/$id"
+  git -C "$w/$id" remote add upstream "file://$w/upstream.git"
+  git -C "$w/$id" checkout -q --detach HEAD
+  {
+    printf 'window=main:fm-%s\n' "$id"
+    printf 'kind=secondmate\n'
+    printf 'home=%s/%s\n' "$w" "$id"
+  } > "$w/home/state/$id.meta"
+  printf '%s\n' "$id" > "$w/$id/.fm-secondmate-home"
+}
+
 run_update() {
   local w=$1
   FM_ROOT_OVERRIDE="$w/main" FM_HOME="$w/home" "$UPDATE" 2>/dev/null
 }
 
-# --- T1: main + secondmate behind, instruction change; FF, not a merge ------
+# --- T1: no upstream falls back to origin; FF, not a merge ------------------
 # Combines the former T1 (fast-forward + reread + nudge signalling) and T2
 # (the advance is a single-parent fast-forward, never a merge commit) into one
 # world so both contracts are proven against the same update run.
@@ -108,6 +145,8 @@ test_updates_main_and_secondmate() {
   assert_contains "$out" "secondmate sm1: updated " "secondmate fast-forwarded"
   assert_contains "$out" "reread-firstmate: yes" "instruction change triggers reread"
   assert_contains "$out" "nudge-secondmates: fm-sm1" "updated secondmate is nudged"
+  git -C "$w/main" remote get-url upstream >/dev/null 2>&1 \
+    && fail "origin fallback fixture unexpectedly has an upstream remote"
 
   # Fast-forward landed: HEAD == origin/main on both targets.
   [ "$(git -C "$w/main" rev-parse HEAD)" = "$(git -C "$w/main" rev-parse origin/main)" ] \
@@ -124,10 +163,78 @@ test_updates_main_and_secondmate() {
     || fail "firstmate tip is not a single-parent fast-forward"
   [ "$(git -C "$w/sm1" rev-list --parents -n1 HEAD | wc -w | tr -d ' ')" -eq 2 ] \
     || fail "secondmate tip is not a single-parent fast-forward"
-  pass "T1 main + secondmate fast-forward (single-parent), reread + nudge signalled"
+  pass "T1 absent upstream falls back to origin for main and secondmate"
 }
 
-# --- T3: README-only change does not trigger a reread ----------------------
+# --- T2: upstream wins independently for every code root and is fetch-only --
+test_prefers_upstream_without_push() {
+  local w out upstream_before upstream_after origin_tip trace
+  w=$(new_world t2)
+  add_sm "$w" linked
+  add_upstream "$w"
+  add_standalone_sm "$w" standalone
+
+  # Fork origin and product upstream advance to different commits from the same
+  # base, so choosing the wrong remote is observable rather than accidentally
+  # reaching the same tip.
+  bump_origin "$w" readme
+  bump_upstream "$w" instr
+  upstream_before=$(git -C "$w/upstream.git" rev-parse main)
+  origin_tip=$(git -C "$w/origin.git" rev-parse main)
+  trace="$w/update.git-trace"
+
+  out=$(GIT_TRACE="$trace" run_update "$w")
+  upstream_after=$(git -C "$w/upstream.git" rev-parse main)
+
+  assert_contains "$out" "firstmate: updated " "firstmate fast-forwarded from upstream"
+  assert_contains "$out" "secondmate linked: updated " "linked secondmate fast-forwarded from upstream"
+  assert_contains "$out" "secondmate standalone: updated " "standalone secondmate fast-forwarded from its upstream"
+  [ "$(git -C "$w/main" rev-parse HEAD)" = "$upstream_before" ] \
+    || fail "firstmate did not land on upstream/main"
+  [ "$(git -C "$w/linked" rev-parse HEAD)" = "$upstream_before" ] \
+    || fail "linked secondmate did not land on upstream/main"
+  [ "$(git -C "$w/standalone" rev-parse HEAD)" = "$upstream_before" ] \
+    || fail "standalone secondmate did not land on its upstream/main"
+  [ "$(git -C "$w/main" rev-parse HEAD)" != "$origin_tip" ] \
+    || fail "updater used origin even though upstream was configured"
+  [ "$upstream_after" = "$upstream_before" ] \
+    || fail "the update path changed the upstream repository"
+  if grep -Eq '(^|[[:space:]])push([[:space:]]|$)' "$trace"; then
+    fail "the update path invoked git push against a fetch-only upstream"
+  fi
+  pass "T2 upstream is preferred per code root and the update path never pushes"
+}
+
+# --- T3: fetch before branch resolution honors upstream's different default --
+test_upstream_default_without_remote_head() {
+  local w out upstream_tip upstream_main
+  w=$(new_world t8)
+  add_upstream "$w"
+
+  # Upstream defaults to master while origin defaults to main. The updater has
+  # no local upstream/HEAD symref, so it must fetch before choosing its base.
+  git -C "$w/upstream-seed" checkout -qb master
+  printf 'upstream master\n' >> "$w/upstream-seed/README.md"
+  git -C "$w/upstream-seed" add -A
+  git -C "$w/upstream-seed" commit -qm upstream-master
+  git -C "$w/upstream-seed" push -q origin master
+  git -C "$w/upstream.git" symbolic-ref HEAD refs/heads/master
+  upstream_tip=$(git -C "$w/upstream.git" rev-parse master)
+  upstream_main=$(git -C "$w/upstream.git" rev-parse main)
+  [ "$upstream_tip" != "$upstream_main" ] || fail "fixture upstream main and master tips match"
+  git -C "$w/main" show-ref --verify --quiet refs/remotes/upstream/HEAD \
+    && fail "fixture unexpectedly has upstream/HEAD"
+  git -C "$w/main" checkout -qb master
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "firstmate: updated " "firstmate fast-forwarded from upstream/master"
+  [ "$(git -C "$w/main" rev-parse HEAD)" = "$upstream_tip" ] \
+    || fail "firstmate did not use upstream's fetched master branch"
+  pass "T3 fetched upstream default wins when upstream/HEAD is absent"
+}
+
+# --- T4: README-only change does not trigger a reread ----------------------
 test_reread_gate_is_instruction_only() {
   local w out
   w=$(new_world t3)
@@ -292,6 +399,8 @@ test_unsafe_secondmate_home_skipped_before_git_update() {
 }
 
 test_updates_main_and_secondmate
+test_prefers_upstream_without_push
+test_upstream_default_without_remote_head
 test_reread_gate_is_instruction_only
 test_dirty_secondmate_skipped
 test_diverged_secondmate_skipped

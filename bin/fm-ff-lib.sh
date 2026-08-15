@@ -5,7 +5,8 @@
 # This is the one implementation of "advance a firstmate checkout to a base by a
 # clean fast-forward, never forcing, merging, or stashing" used by every sync
 # path:
-#   - /updatefirstmate (bin/fm-update.sh) pulls from origin: base_mode "origin".
+#   - /updatefirstmate (bin/fm-update.sh) pulls from the preferred update remote:
+#     upstream when configured, otherwise origin; base_mode "update-remote".
 #   - the local-HEAD secondmate sync (bin/fm-spawn.sh on launch, bin/fm-bootstrap.sh
 #     on startup) follows the PRIMARY checkout's current default-branch commit:
 #     base_mode is that local commit, with NO fetch and no origin dependency.
@@ -13,7 +14,7 @@
 # A linked-worktree secondmate home already holds the primary's commit in the
 # shared object store, so its local-HEAD sync is a purely local fast-forward that
 # never touches the network. A standalone clone moves through that path only when
-# it already has the target; otherwise it is skipped until the origin path updates it.
+# it already has the target; otherwise it is skipped until the update-remote path updates it.
 # A tracked-files fast-forward never touches the gitignored operational dirs
 # (data/, state/, config/, projects/, .no-mistakes/), so it cannot disturb a
 # secondmate's backlog, projects, or in-flight work.
@@ -35,11 +36,26 @@ first_line() {
 }
 
 default_branch() {
-  local dir=$1 ref branch
-  ref=$(git -C "$dir" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+  local dir=$1 preferred_remote=${2:-origin} ref branch
+  ref=$(git -C "$dir" symbolic-ref --quiet --short "refs/remotes/$preferred_remote/HEAD" 2>/dev/null || true)
   if [ -n "$ref" ]; then
-    echo "${ref#origin/}"
+    echo "${ref#"$preferred_remote"/}"
     return 0
+  fi
+  # A plain fetch does not create refs/remotes/<remote>/HEAD. Prefer a known
+  # branch on the selected remote before falling back to origin's default.
+  for branch in main master; do
+    if git -C "$dir" show-ref --verify --quiet "refs/remotes/$preferred_remote/$branch"; then
+      echo "$branch"
+      return 0
+    fi
+  done
+  if [ "$preferred_remote" != origin ]; then
+    ref=$(git -C "$dir" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+    if [ -n "$ref" ]; then
+      echo "${ref#origin/}"
+      return 0
+    fi
   fi
   for branch in main master; do
     if git -C "$dir" show-ref --verify --quiet "refs/heads/$branch"; then
@@ -48,6 +64,14 @@ default_branch() {
     fi
   done
   return 1
+}
+
+# Resolve a remote's advertised default branch. Used only after update-remote
+# has fetched; local-HEAD sync must remain entirely local.
+advertised_default_branch() {
+  local dir=$1 remote=$2
+  git -C "$dir" ls-remote --symref "$remote" HEAD 2>/dev/null | \
+    awk '$1 == "ref:" && $3 == "HEAD" { sub("^refs/heads/", "", $2); print $2; exit }'
 }
 
 # Resolve the PRIMARY checkout's current default-branch commit - the local-HEAD
@@ -196,20 +220,35 @@ validate_secondmate_home() {
   VALIDATED_HOME="$abs_home"
 }
 
+# Select the fetch-only source for a self-update. A configured upstream wins;
+# origin remains the fallback and continues to own pushes and pull requests.
+self_update_remote() {
+  local dir=$1 remote url
+  for remote in upstream origin; do
+    url=$(git -C "$dir" remote get-url "$remote" 2>/dev/null || true)
+    if [ -n "$url" ]; then
+      printf '%s\n' "$remote"
+      return 0
+    fi
+  done
+  return 1
+}
+
 # A single fetch refreshes every worktree that shares an object store, so fetch
-# each distinct git-common-dir at most once. Used ONLY by the origin base mode;
-# the local-HEAD sync never fetches.
+# each distinct git-common-dir and remote at most once. Used ONLY by the
+# update-remote base mode; the local-HEAD sync never fetches.
 FETCHED=""
 fetch_once() {
-  local dir=$1 common
+  local dir=$1 remote=$2 common fetch_key
   common=$(git -C "$dir" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)
+  fetch_key="$common:$remote"
   if [ -n "$common" ]; then
     case " $FETCHED " in
-      *" $common "*) return 0 ;;
+      *" $fetch_key "*) return 0 ;;
     esac
   fi
-  if git -C "$dir" fetch origin --prune --quiet 2>/dev/null; then
-    [ -n "$common" ] && FETCHED="$FETCHED $common"
+  if git -C "$dir" fetch "$remote" --prune --quiet 2>/dev/null; then
+    [ -n "$common" ] && FETCHED="$FETCHED $fetch_key"
     return 0
   fi
   return 1
@@ -265,8 +304,8 @@ live_secondmate_meta_records() {
 #   FF_INSTR  = comma list of changed instruction paths (only when updated)
 #
 # base_mode selects where the fast-forward base comes from:
-#   origin       - fetch origin and advance to origin/<default> (the /updatefirstmate
-#                  path); requires an origin remote and network reachability.
+#   update-remote - fetch upstream when configured, otherwise origin, and
+#                   advance to <remote>/<default> (the /updatefirstmate path).
 #   <commit-ish> - advance to that LOCAL commit with NO fetch and no origin
 #                  dependency (the local-HEAD secondmate sync). The commit must
 #                  already exist in the target's object store, which it always does
@@ -290,24 +329,29 @@ ff_target() {
     return 0
   fi
 
-  local default base cur instr local_rev base_rev before after out
-  default=$(default_branch "$dir") || {
-    echo "$label: skipped: cannot determine default branch"
-    return 0
-  }
-
   # Resolve the fast-forward base from base_mode (see header).
-  if [ "$base_mode" = origin ]; then
-    if ! git -C "$dir" remote get-url origin >/dev/null 2>&1; then
-      echo "$label: skipped: no origin remote"
+  local default base cur instr local_rev base_rev before after out remote
+  if [ "$base_mode" = update-remote ]; then
+    remote=$(self_update_remote "$dir") || {
+      echo "$label: skipped: no upstream or origin remote"
+      return 0
+    }
+    if ! fetch_once "$dir" "$remote"; then
+      echo "$label: skipped: fetch from $remote failed"
       return 0
     fi
-    if ! fetch_once "$dir"; then
-      echo "$label: skipped: fetch failed"
+    default=$(advertised_default_branch "$dir" "$remote")
+    default=${default:-$(default_branch "$dir" "$remote" || true)}
+    [ -n "$default" ] || {
+      echo "$label: skipped: cannot determine default branch"
       return 0
-    fi
-    base="origin/$default"
+    }
+    base="$remote/$default"
   else
+    default=$(default_branch "$dir") || {
+      echo "$label: skipped: cannot determine default branch"
+      return 0
+    }
     base="$base_mode"
   fi
 
