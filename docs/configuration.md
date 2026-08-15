@@ -60,9 +60,9 @@ The canonical shape is:
 }
 ```
 
-`repos` is a non-empty array of unique GitHub `owner/name` repository names, and `label` is the non-empty intake label queried in every repository.
+`repos` is a non-empty array of GitHub `owner/name` repository names that must be unique case-insensitively, and `label` is the non-empty intake label queried in every repository.
 `approve_label` is an optional non-empty approval label and defaults to `fm:approved` when omitted.
-Unknown keys, duplicate repositories, malformed repository names, empty labels, control characters, symlinks, and every other malformed config are rejected before GitHub is read or backlog state is changed.
+Unknown keys, case-insensitive duplicate repositories, malformed repository names, empty labels, control characters, symlinks, and every other malformed config are rejected before GitHub is read or backlog state is changed.
 An issue authored by the repository owner is eligible immediately, while an issue from any other author remains skipped unless it also carries the approval label.
 Eligible issues become queued `ship` items through compatible `tasks-axi`, with repository, issue number, and full GitHub URL provenance in the item body.
 Successful intake identities are retained locally in `state/issue-intake.seen`; unauthorized issues are not marked seen so later approval can make them eligible.

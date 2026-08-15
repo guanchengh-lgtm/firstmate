@@ -6,9 +6,13 @@
 # This script owns intake mechanics: it reads open issues carrying the configured
 # intake label through gh-axi, admits repository-owner issues immediately, admits
 # other authors only with the configured approval label, and creates deterministic
-# queued tasks through the compatible tasks-axi backend.
+# collision-resistant queued task identities through the compatible tasks-axi
+# backend as issue-<sha256(lowercase-repo)[0:32]>-<number>.
 # Each successful intake is recorded as one tab-separated repo, issue number, and
 # full URL row in state/issue-intake.seen so later runs are idempotent.
+# If the backlog item already exists with the same GitHub URL, the run records the
+# identity as seen without counting new work, recovering a prior queue success
+# that never landed in the seen file.
 # Unauthorized issues are not recorded as seen because adding the approval label
 # later must make them eligible.
 #
