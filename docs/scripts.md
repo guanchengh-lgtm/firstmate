@@ -26,6 +26,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-remote-doctor.sh`    | Check, and with `--fix` repair, one remote account's second-mate readiness (remote job worker, Herdr, Aqua launch agents, PATH, and required tools) |
 | `fm-backlog-handoff.sh`  | Validate and delegate queued backlog-item moves into a secondmate home               |
 | `fm-backlog-receive.sh`  | Idempotently ingest one confined remote handoff outbox through tasks-axi             |
+| `fm-issue-intake.sh`     | Queue authorized labeled GitHub issues and install their authenticated watcher check |
 | `fm-decision-hold.sh`    | Create, verify, complete, and resolve durable captain-held decisions and product-idea completion attestations |
 | `fm-decision-ledger.sh`  | Render captain-facing decisions from read-only tasks-axi backlog state into a Markdown ledger |
 | `fm-product-idea-lib.sh` | Shared product-idea ledger row and unscheduled-count grammar for completion and Bearings |
