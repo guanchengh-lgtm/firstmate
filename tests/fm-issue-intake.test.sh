@@ -9,6 +9,22 @@ INTAKE="$ROOT/bin/fm-issue-intake.sh"
 TMP_ROOT=$(fm_test_tmproot fm-issue-intake)
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
 
+# shellcheck source=bin/fm-pr-lib.sh
+. "$ROOT/bin/fm-pr-lib.sh"
+
+assert_queued_task_ids_creation_valid() {
+  local home=$1 path id
+  [ -d "$home/bodies" ] || fail "queued task body directory missing: $home/bodies"
+  shopt -s nullglob
+  for path in "$home/bodies"/*; do
+    id=${path##*/}
+    fm_task_id_creation_valid "$id" \
+      || fail "queued task id rejected by creation contract: $id"
+    [ "${#id}" -le 64 ] || fail "queued task id exceeds 64 characters: $id"
+  done
+  shopt -u nullglob
+}
+
 file_mode() {
   if [ "$(uname)" = Darwin ]; then
     stat -f %Lp "$1"
@@ -188,6 +204,7 @@ test_dedupes_and_enforces_authorization() {
     || fail "backlog body lost full URL provenance"
   [ "$(find "$home/bodies" -type f | wc -l | tr -d ' ')" -eq 2 ] \
     || fail "unauthorized issue created a backlog item"
+  assert_queued_task_ids_creation_valid "$home"
 
   second=$(run_intake "$home" "$fakebin") || fail "second intake run failed"
   assert_contains "$second" 'new=0' "second run queued duplicate work"
@@ -287,6 +304,11 @@ test_repository_task_ids_do_not_flatten_names() {
   [ "$calls" -eq 2 ] || fail "distinct repository identities collided in tasks-axi"
   [ "$(find "$home/bodies" -type f | wc -l | tr -d ' ')" -eq 2 ] \
     || fail "distinct repository identities shared one backlog body"
+  assert_queued_task_ids_creation_valid "$home"
+  id_a=$(basename "$(grep -Fl 'https://github.com/a-b/c/issues/1' "$home/bodies"/*)")
+  id_b=$(basename "$(grep -Fl 'https://github.com/a/b-c/issues/1' "$home/bodies"/*)")
+  [ -n "$id_a" ] && [ -n "$id_b" ] || fail "collision fixture backlog bodies were missing"
+  [ "$id_a" != "$id_b" ] || fail "distinct repositories produced identical task ids"
   pass "issue intake keeps dash-separated repository identities distinct"
 }
 

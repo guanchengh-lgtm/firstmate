@@ -217,7 +217,7 @@ task_id_for_issue() {
     fail "shasum or sha256sum is required"
   fi
   [ -n "$hash" ] || fail "could not derive issue task identity"
-  printf 'issue-%s-%s\n' "$hash" "$2"
+  printf 'issue-%s-%s\n' "${hash:0:32}" "$2"
 }
 
 tasks_axi() {
