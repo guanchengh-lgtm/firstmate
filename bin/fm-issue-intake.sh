@@ -16,6 +16,9 @@
 # that never landed in the seen file.
 # Issues awaiting approval are not recorded as seen because adding the approval
 # label later must make them eligible.
+# Normal and dry-run summaries count those skips as skipped-awaiting-approval and
+# identify each as repo#number:reason, where reason is one of untrusted-author,
+# unclassified, or denied-class.
 #
 # The install-check action writes one mode-0700 state/issue-intake.check.sh shim
 # and authenticates it with fm-check-register.sh.
