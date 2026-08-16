@@ -1010,31 +1010,41 @@ printf '%s' "$SNAPSHOT" | jq -e '.secondmate_current.records | any(.id == "local
 pass "fleet snapshot projects mixed local and remote structured state"
 rm -f "$PARENT/state/.wake-queue"
 
-# The remote code root prefers its own upstream independently, then the
-# persistent home imports and fast-forwards to that host-local commit without
-# touching project clones.
+# The remote home can select origin even when the host code root has upstream,
+# then the persistent home imports and fast-forwards to that host-local commit
+# without touching project clones.
 REMOTE_UPSTREAM="$TMP_ROOT/firstmate-upstream.git"
 git clone -q --bare "file://$REMOTE_ORIGIN" "$REMOTE_UPSTREAM"
 git -C "$REMOTE_UPSTREAM" symbolic-ref HEAD refs/heads/main
 git -C "$REMOTE_ROOT" remote add upstream "file://$REMOTE_UPSTREAM"
-REMOTE_SEED="$TMP_ROOT/firstmate-seed"
-git clone -q "file://$REMOTE_UPSTREAM" "$REMOTE_SEED"
-git -C "$REMOTE_SEED" config user.email test@example.com
-git -C "$REMOTE_SEED" config user.name Test
-printf 'remote update probe\n' > "$REMOTE_SEED/REMOTE_UPDATE_PROBE"
-git -C "$REMOTE_SEED" add REMOTE_UPDATE_PROBE
-git -C "$REMOTE_SEED" commit -qm 'advance remote code root'
-git -C "$REMOTE_SEED" push -q origin main
+REMOTE_UPSTREAM_SEED="$TMP_ROOT/firstmate-upstream-seed"
+git clone -q "file://$REMOTE_UPSTREAM" "$REMOTE_UPSTREAM_SEED"
+git -C "$REMOTE_UPSTREAM_SEED" config user.email test@example.com
+git -C "$REMOTE_UPSTREAM_SEED" config user.name Test
+printf 'upstream update probe\n' > "$REMOTE_UPSTREAM_SEED/UPSTREAM_UPDATE_PROBE"
+git -C "$REMOTE_UPSTREAM_SEED" add UPSTREAM_UPDATE_PROBE
+git -C "$REMOTE_UPSTREAM_SEED" commit -qm 'advance remote upstream'
+git -C "$REMOTE_UPSTREAM_SEED" push -q origin main
+REMOTE_ORIGIN_SEED="$TMP_ROOT/firstmate-origin-seed"
+git clone -q "file://$REMOTE_ORIGIN" "$REMOTE_ORIGIN_SEED"
+git -C "$REMOTE_ORIGIN_SEED" config user.email test@example.com
+git -C "$REMOTE_ORIGIN_SEED" config user.name Test
+printf 'origin update probe\n' > "$REMOTE_ORIGIN_SEED/ORIGIN_UPDATE_PROBE"
+git -C "$REMOTE_ORIGIN_SEED" add ORIGIN_UPDATE_PROBE
+git -C "$REMOTE_ORIGIN_SEED" commit -qm 'advance remote origin'
+git -C "$REMOTE_ORIGIN_SEED" push -q origin main
+printf 'origin\n' > "$REMOTE_HOME/config/update-remote"
 UPDATE_OUT=$(remote_env "$ROOT/bin/fm-on.sh" ios fm-remote-secondmate-control.sh update ios)
 assert_contains "$UPDATE_OUT" 'synced:' "remote update did not report a host-local fast-forward"
-[ "$(git -C "$REMOTE_ROOT" rev-parse HEAD)" = "$(git -C "$REMOTE_UPSTREAM" rev-parse main)" ] \
-  || fail "remote code root did not prefer its configured upstream"
-[ "$(git -C "$REMOTE_ROOT" rev-parse HEAD)" != "$(git -C "$REMOTE_ORIGIN" rev-parse main)" ] \
-  || fail "remote code root updated from origin despite its configured upstream"
+[ "$(git -C "$REMOTE_ROOT" rev-parse HEAD)" = "$(git -C "$REMOTE_ORIGIN" rev-parse main)" ] \
+  || fail "remote code root did not honor the remote home's configured origin"
+[ "$(git -C "$REMOTE_ROOT" rev-parse HEAD)" != "$(git -C "$REMOTE_UPSTREAM" rev-parse main)" ] \
+  || fail "remote code root used upstream despite the remote home's configured origin"
 [ "$(git -C "$REMOTE_HOME" rev-parse HEAD)" = "$(git -C "$REMOTE_ROOT" rev-parse HEAD)" ] \
   || fail "remote persistent home did not fast-forward to its code-root commit"
-assert_present "$REMOTE_HOME/REMOTE_UPDATE_PROBE" "remote update did not materialize the code-root commit"
-pass "remote update imports and fast-forwards the persistent home on its configured host"
+assert_present "$REMOTE_HOME/ORIGIN_UPDATE_PROBE" "remote update did not materialize the configured-origin commit"
+assert_absent "$REMOTE_HOME/UPSTREAM_UPDATE_PROBE" "remote update materialized the unselected upstream commit"
+pass "remote update honors the remote home's local update-remote preference"
 
 rm -f "$TMP_ROOT/doctor.repaired"
 : > "$DOCTOR_LOG"

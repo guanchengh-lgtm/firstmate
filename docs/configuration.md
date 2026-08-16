@@ -24,6 +24,14 @@ Wake, watcher, away-mode, and Relay-specific state mechanics remain with their n
 `AGENTS.md` retains the run-once and read-once operator rules, lock-refusal safety, installation consent, and direct-report recovery boundaries because those facts apply at every session start.
 Ordinary dead-direct-report recovery is owned by `stuck-crewmate-recovery`, while persistent-secondmate recovery is owned by `secondmate-provisioning`.
 
+## Self-update remote (config/update-remote)
+
+`config/update-remote` is an optional local, gitignored file under the effective Firstmate home that selects the fetch-only Git remote used by `/updatefirstmate` for that home's code root.
+The file must be empty or contain exactly one remote-name token on one line, with no whitespace or control characters.
+When the file is absent or empty, `/updatefirstmate` preserves its default preference for `upstream` when that remote exists and `origin` otherwise.
+When the file contains a remote name, that remote must exist in the home's Git repository or the self-update refuses with an error instead of falling back.
+This setting is not inherited into secondmate homes because each home's remote topology is local to that home.
+
 ## Pi Calm preference (config/calm)
 
 The Pi Calm extension stores the captain's home-local presentation choice in gitignored `config/calm` under the effective Firstmate home, resolved from `FM_HOME`, then `FM_ROOT_OVERRIDE`, then the tracked code root derived from the extension path, or under `FM_CONFIG_OVERRIDE` when that test and specialized-setup override is present.
