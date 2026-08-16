@@ -56,16 +56,23 @@ The canonical shape is:
 {
   "repos": ["owner/name"],
   "label": "fm:task",
-  "approve_label": "fm:approved"
+  "approve_label": "fm:approved",
+  "trusted_authors": ["trusted-bot[bot]"],
+  "deny_classes": ["ship", "money", "credentials", "destructive", "locked-look"]
 }
 ```
 
 `repos` is a non-empty array of GitHub `owner/name` repository names that must be unique case-insensitively, and `label` is the non-empty intake label queried in every repository.
 `approve_label` is an optional non-empty approval label and defaults to `fm:approved` when omitted.
+`trusted_authors` is an optional array of non-empty GitHub login strings and defaults to an empty array, preserving approval-only intake for non-owner authors.
+`deny_classes` is an optional array of non-empty class tokens and defaults to an empty array.
 Unknown keys, case-insensitive duplicate repositories, malformed repository names, empty labels, control characters, symlinks, and every other malformed config are rejected before GitHub is read or backlog state is changed.
-An issue authored by the repository owner is eligible immediately, while an issue from any other author remains skipped unless it also carries the approval label.
+An issue authored by the repository owner is eligible immediately, with no change from approval or class configuration.
+Any non-owner issue carrying the approval label is eligible immediately.
+A non-owner issue without the approval label is eligible only when its author matches `trusted_authors` case-insensitively, it has at least one `class:<token>` label, and none of its class tokens matches `deny_classes` case-insensitively.
+An untrusted author, a trusted author without a class label, or a trusted author with any denied class remains awaiting approval, even when another allowed class is present.
 Eligible issues become queued `ship` items through compatible `tasks-axi`, with repository, issue number, and full GitHub URL provenance in the item body.
-Successful intake identities are retained locally in `state/issue-intake.seen`; unauthorized issues are not marked seen so later approval can make them eligible.
+Successful intake identities are retained locally in `state/issue-intake.seen`; issues awaiting approval are not marked seen so later approval can make them eligible.
 Run `bin/fm-issue-intake.sh --dry-run` to inspect counts without mutating state or the backlog.
 Run `bin/fm-issue-intake.sh --install-check` to create and authenticate the single `state/issue-intake.check.sh` watcher check after configuring a home.
 The script header and `--help` output own exact polling, deduplication, state-row, summary, and generated-check mechanics.
