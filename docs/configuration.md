@@ -29,7 +29,7 @@ Ordinary dead-direct-report recovery is owned by `stuck-crewmate-recovery`, whil
 `config/update-remote` is an optional local, gitignored file under the effective Firstmate home that selects the fetch-only Git remote used by `/updatefirstmate` for that home's code root.
 The file must be empty or contain exactly one remote-name token on one line, with no whitespace or control characters.
 When the file is absent or empty, `/updatefirstmate` preserves its default preference for `upstream` when that remote exists and `origin` otherwise.
-When the file contains a remote name, that remote must exist in the home's Git repository or the self-update refuses with an error instead of falling back.
+When the file contains a remote name, that remote must exist in the code-root repository being updated or the self-update refuses with an error instead of falling back.
 This setting is not inherited into secondmate homes because each home's remote topology is local to that home.
 
 ## Pi Calm preference (config/calm)
