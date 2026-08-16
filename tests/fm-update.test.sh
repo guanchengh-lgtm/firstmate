@@ -3,8 +3,9 @@
 # firstmate repo and every registered secondmate home.
 #
 # The guarantees under test mirror fm-fleet-sync.sh and prime directive #3:
-#   - The running firstmate repo and each secondmate home fast-forward from
-#     upstream when configured, otherwise origin.
+#   - The running firstmate repo and each secondmate home fast-forward from its
+#     configured update remote when set, otherwise upstream when configured,
+#     then origin.
 #   - FAST-FORWARD ONLY: a dirty, diverged, offline, or wrong-branch target is
 #     skipped and reported, never forced or stashed, so unlanded work survives.
 #   - The update is a single-parent fast-forward (never a merge commit) and a
@@ -34,7 +35,7 @@ TMP_ROOT=$(fm_test_tmproot fm-update-tests)
 new_world() {
   local name=$1 w
   w="$TMP_ROOT/$name"
-  mkdir -p "$w/home/state" "$w/home/data"
+  mkdir -p "$w/home/state" "$w/home/data" "$w/home/config"
   # Fresh watcher beacon keeps fm-guard quiet.
   touch "$w/home/state/.last-watcher-beat"
 
@@ -203,6 +204,88 @@ test_prefers_upstream_without_push() {
     fail "the update path invoked git push against a fetch-only upstream"
   fi
   pass "T2 upstream is preferred per code root and the update path never pushes"
+}
+
+test_configured_origin_overrides_upstream() {
+  local w out origin_tip upstream_tip
+  w=$(new_world configured-origin)
+  add_sm "$w" linked
+  add_upstream "$w"
+
+  bump_origin "$w" readme
+  bump_upstream "$w" instr
+  origin_tip=$(git -C "$w/origin.git" rev-parse main)
+  upstream_tip=$(git -C "$w/upstream.git" rev-parse main)
+  printf 'origin\n' > "$w/home/config/update-remote"
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "firstmate: updated " "configured origin fast-forwarded firstmate"
+  [ "$(git -C "$w/main" rev-parse HEAD)" = "$origin_tip" ] \
+    || fail "configured origin did not win over upstream"
+  [ "$(git -C "$w/main" rev-parse HEAD)" != "$upstream_tip" ] \
+    || fail "updater used upstream despite configured origin"
+  [ "$(git -C "$w/linked" rev-parse HEAD)" = "$upstream_tip" ] \
+    || fail "primary update-remote preference was inherited by secondmate"
+  pass "configured origin overrides upstream only for its own home"
+}
+
+test_empty_config_preserves_default_remote_preference() {
+  local w out upstream_tip
+  w=$(new_world empty-config)
+  add_upstream "$w"
+  bump_upstream "$w" readme
+  upstream_tip=$(git -C "$w/upstream.git" rev-parse main)
+  : > "$w/home/config/update-remote"
+
+  out=$(run_update "$w")
+
+  assert_contains "$out" "firstmate: updated " "empty config preserved default remote preference"
+  [ "$(git -C "$w/main" rev-parse HEAD)" = "$upstream_tip" ] \
+    || fail "empty update-remote did not preserve upstream preference"
+  pass "empty update-remote preserves upstream-then-origin preference"
+}
+
+test_missing_configured_remote_refuses_update() {
+  local w out before
+  w=$(new_world missing-configured-remote)
+  bump_origin "$w" instr
+  before=$(git -C "$w/main" rev-parse HEAD)
+  printf 'fork\n' > "$w/home/config/update-remote"
+
+  if out=$(run_update "$w"); then
+    fail "missing configured remote did not refuse the update"
+  fi
+
+  assert_contains "$out" "firstmate: error: configured update remote 'fork' does not exist" \
+    "missing configured remote reported clearly"
+  [ "$(git -C "$w/main" rev-parse HEAD)" = "$before" ] \
+    || fail "missing configured remote moved firstmate HEAD"
+  pass "missing configured remote refuses the self-update"
+}
+
+assert_malformed_update_remote_refused() {
+  local name=$1 content=$2 w out before
+  w=$(new_world "malformed-$name")
+  bump_origin "$w" instr
+  before=$(git -C "$w/main" rev-parse HEAD)
+  printf '%b' "$content" > "$w/home/config/update-remote"
+
+  if out=$(run_update "$w"); then
+    fail "malformed $name update remote did not refuse the update"
+  fi
+
+  assert_contains "$out" "firstmate: error: malformed config/update-remote" \
+    "malformed $name update remote reported clearly"
+  [ "$(git -C "$w/main" rev-parse HEAD)" = "$before" ] \
+    || fail "malformed $name update remote moved firstmate HEAD"
+}
+
+test_malformed_update_remote_refuses_update() {
+  assert_malformed_update_remote_refused whitespace 'origin upstream\n'
+  assert_malformed_update_remote_refused multiline 'origin\nupstream\n'
+  assert_malformed_update_remote_refused control 'origin\r\n'
+  pass "malformed update-remote content refuses the self-update"
 }
 
 # --- T3: fetch before branch resolution honors upstream's different default --
@@ -398,8 +481,40 @@ test_unsafe_secondmate_home_skipped_before_git_update() {
   pass "T11 unsafe secondmate home is not fast-forwarded"
 }
 
+test_secondmate_bad_update_remote_continues_fleet() {
+  local w out origin_tip before_bad
+  w=$(new_world secondmate-bad-config)
+  add_sm "$w" bad
+  add_sm "$w" good
+  bump_origin "$w" instr
+  origin_tip=$(git -C "$w/origin.git" rev-parse main)
+  before_bad=$(git -C "$w/bad" rev-parse HEAD)
+  mkdir -p "$w/bad/config"
+  printf 'origin upstream\n' > "$w/bad/config/update-remote"
+
+  if ! out=$(run_update "$w"); then
+    fail "secondmate config error aborted the update fleet"
+  fi
+
+  assert_contains "$out" "firstmate: updated " "firstmate still updated"
+  assert_contains "$out" "secondmate bad: error: malformed config/update-remote" \
+    "bad secondmate refused loudly"
+  assert_contains "$out" "secondmate good: updated " "later secondmate still updated"
+  assert_contains "$out" "reread-firstmate: yes" "summary still printed after secondmate error"
+  assert_contains "$out" "nudge-secondmates: fm-good" "only the advanced secondmate is nudged"
+  [ "$(git -C "$w/good" rev-parse HEAD)" = "$origin_tip" ] \
+    || fail "good secondmate did not advance after sibling config error"
+  [ "$(git -C "$w/bad" rev-parse HEAD)" = "$before_bad" ] \
+    || fail "bad secondmate moved despite configured-remote refusal"
+  pass "secondmate update-remote refusal keeps the fleet sweep running"
+}
+
 test_updates_main_and_secondmate
 test_prefers_upstream_without_push
+test_configured_origin_overrides_upstream
+test_empty_config_preserves_default_remote_preference
+test_missing_configured_remote_refuses_update
+test_malformed_update_remote_refuses_update
 test_upstream_default_without_remote_head
 test_reread_gate_is_instruction_only
 test_dirty_secondmate_skipped
@@ -409,5 +524,6 @@ test_registry_backstop_dedup_and_self_exclusion
 test_firstmate_wrong_branch_skipped
 test_firstmate_detached_head_skipped
 test_unsafe_secondmate_home_skipped_before_git_update
+test_secondmate_bad_update_remote_continues_fleet
 
 echo "# all fm-update tests passed"

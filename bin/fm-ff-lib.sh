@@ -5,8 +5,9 @@
 # This is the one implementation of "advance a firstmate checkout to a base by a
 # clean fast-forward, never forcing, merging, or stashing" used by every sync
 # path:
-#   - /updatefirstmate (bin/fm-update.sh) pulls from the preferred update remote:
-#     upstream when configured, otherwise origin; base_mode "update-remote".
+#   - /updatefirstmate (bin/fm-update.sh) pulls from config/update-remote when
+#     set, otherwise upstream when configured, then origin; base_mode
+#     "update-remote".
 #   - the local-HEAD secondmate sync (bin/fm-spawn.sh on launch, bin/fm-bootstrap.sh
 #     on startup) follows the PRIMARY checkout's current default-branch commit:
 #     base_mode is that local commit, with NO fetch and no origin dependency.
@@ -220,14 +221,51 @@ validate_secondmate_home() {
   VALIDATED_HOME="$abs_home"
 }
 
-# Select the fetch-only source for a self-update. A configured upstream wins;
-# origin remains the fallback and continues to own pushes and pull requests.
+# Select the fetch-only source for a self-update. A valid home-local preference
+# wins; otherwise upstream wins, with origin as the final fallback. Sets
+# SELF_UPDATE_REMOTE on success and SELF_UPDATE_REMOTE_ERROR on configuration
+# failure so callers can distinguish an absent default remote from a bad
+# explicit preference without command-substitution subshells losing the reason.
+SELF_UPDATE_REMOTE=""
+SELF_UPDATE_REMOTE_ERROR=""
 self_update_remote() {
-  local dir=$1 remote url
+  local dir=$1 config_dir=${2:-$1/config} config_file configured remote url
+  SELF_UPDATE_REMOTE=""
+  SELF_UPDATE_REMOTE_ERROR=""
+  config_file="$config_dir/update-remote"
+
+  if [ -e "$config_file" ] || [ -L "$config_file" ]; then
+    if [ ! -f "$config_file" ]; then
+      SELF_UPDATE_REMOTE_ERROR="malformed config/update-remote; expected one remote-name token with no whitespace or control characters"
+      return 2
+    fi
+    if [ -s "$config_file" ]; then
+      configured=$(LC_ALL=C awk '
+        NR > 1 { exit 1 }
+        $0 == "" || $0 ~ /[[:space:][:cntrl:]]/ { exit 1 }
+        { value = $0 }
+        END {
+          if (NR != 1 || value == "") exit 1
+          printf "%s", value
+        }
+      ' "$config_file" 2>/dev/null) || {
+        SELF_UPDATE_REMOTE_ERROR="malformed config/update-remote; expected one remote-name token with no whitespace or control characters"
+        return 2
+      }
+      url=$(git -C "$dir" remote get-url -- "$configured" 2>/dev/null || true)
+      if [ -z "$url" ]; then
+        SELF_UPDATE_REMOTE_ERROR="configured update remote '$configured' does not exist"
+        return 2
+      fi
+      SELF_UPDATE_REMOTE="$configured"
+      return 0
+    fi
+  fi
+
   for remote in upstream origin; do
-    url=$(git -C "$dir" remote get-url "$remote" 2>/dev/null || true)
+    url=$(git -C "$dir" remote get-url -- "$remote" 2>/dev/null || true)
     if [ -n "$url" ]; then
-      printf '%s\n' "$remote"
+      SELF_UPDATE_REMOTE="$remote"
       return 0
     fi
   done
@@ -304,8 +342,9 @@ live_secondmate_meta_records() {
 #   FF_INSTR  = comma list of changed instruction paths (only when updated)
 #
 # base_mode selects where the fast-forward base comes from:
-#   update-remote - fetch upstream when configured, otherwise origin, and
-#                   advance to <remote>/<default> (the /updatefirstmate path).
+#   update-remote - fetch the home-local configured remote when set, otherwise
+#                   upstream when configured, then origin, and advance to
+#                   <remote>/<default> (the /updatefirstmate path).
 #   <commit-ish> - advance to that LOCAL commit with NO fetch and no origin
 #                  dependency (the local-HEAD secondmate sync). The commit must
 #                  already exist in the target's object store, which it always does
@@ -317,6 +356,7 @@ FF_STATUS=""
 FF_INSTR=""
 ff_target() {
   local dir=$1 label=$2 base_mode=$3 allow_detached=${4:-no} ignore_seed_marker=${5:-no}
+  local update_config=${6:-$dir/config} remote_status
   FF_STATUS="skipped"
   FF_INSTR=""
 
@@ -332,10 +372,17 @@ ff_target() {
   # Resolve the fast-forward base from base_mode (see header).
   local default base cur instr local_rev base_rev before after out remote
   if [ "$base_mode" = update-remote ]; then
-    remote=$(self_update_remote "$dir") || {
+    if self_update_remote "$dir" "$update_config"; then
+      remote=$SELF_UPDATE_REMOTE
+    else
+      remote_status=$?
+      if [ "$remote_status" -eq 2 ]; then
+        echo "$label: error: $SELF_UPDATE_REMOTE_ERROR"
+        return 1
+      fi
       echo "$label: skipped: no upstream or origin remote"
       return 0
-    }
+    fi
     if ! fetch_once "$dir" "$remote"; then
       echo "$label: skipped: fetch from $remote failed"
       return 0
@@ -442,7 +489,7 @@ process_secondmate() {
   esac
   FF_SEEN_HOMES="$FF_SEEN_HOMES $home_real"
 
-  ff_target "$home_real" "secondmate $id" "$base_mode" yes yes
+  ff_target "$home_real" "secondmate $id" "$base_mode" yes yes "$home_real/config" || true
   if [ "$FF_STATUS" = "updated" ] && [ -n "$window" ]; then
     if [ "$nudge_requires_instr" = yes ] && [ -z "$FF_INSTR" ]; then
       return 0

@@ -17,8 +17,8 @@ Only `AGENTS.md`, `bin/`, and `.agents/skills/` are a running firstmate instruct
 This skill performs that pull for the running main firstmate and every secondmate, without disturbing any in-flight work.
 
 The update is **fast-forward only** - the same sanctioned self-write as the fleet sync firstmate already runs.
-Each code root fetches from `upstream` when that remote is configured and otherwise keeps the stock `origin` behavior; this selection is fetch-only, while `origin` remains the push and pull-request target.
-For a remote route, it applies that same rule to the configured Firstmate code root on its host, then guardedly fast-forwards the persistent home to that code-root commit.
+Each code root fetches from the per-home source selected by [`config/update-remote`](../../../docs/configuration.md#self-update-remote-configupdate-remote); this selection is fetch-only, while `origin` remains the push and pull-request target.
+For a remote route, that remote home's `config/update-remote` preference selects the fetch source for the host code root, then the skill guardedly fast-forwards the persistent home to that code-root commit.
 It never forces, never creates a merge commit, never stashes, and advances a target only on a clean fast-forward; anything dirty, diverged, offline, or on the wrong branch is skipped and reported.
 A tracked-files fast-forward leaves the gitignored operational dirs (data/, state/, config/, projects/, .no-mistakes/) untouched, so a secondmate's in-flight work is never disrupted.
 This touches only the firstmate repo and its own worktrees, never anything under `projects/`.
