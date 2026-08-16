@@ -44,6 +44,19 @@ write_config() {
 JSON
 }
 
+write_class_config() {
+  local home=$1
+  mkdir -p "$home/config"
+  cat > "$home/config/issue-intake.json" <<'JSON'
+{
+  "repos": ["Octo/widgets"],
+  "label": "fm:task",
+  "trusted_authors": ["trusted-bot[bot]"],
+  "deny_classes": ["ship", "money", "credentials", "destructive", "locked-look"]
+}
+JSON
+}
+
 make_fake_tools() {
   local dir=$1 fakebin
   fakebin=$(fm_fakebin "$dir")
@@ -69,6 +82,21 @@ if [ "${1:-}" = issue ] && [ "${2:-}" = list ]; then
       'count: 1' \
       'issues[1]{number,title,state,author,created}:' \
       "  1,$title,open,$author,1d ago"
+    exit 0
+  fi
+  if [ "${FM_TEST_CLASS_GATE:-0}" = 1 ]; then
+    cat <<'OUT'
+count: 8
+issues[8]{number,title,state,author,created}:
+  1,Owner task,open,Octo,1d ago
+  2,Approved task,open,alice,1d ago
+  3,Untrusted class task,open,bob,1d ago
+  4,Trusted allowed task,open,trusted-bot[bot],1d ago
+  5,Trusted unclassified task,open,trusted-bot[bot],1d ago
+  6,Trusted denied task,open,trusted-bot[bot],1d ago
+  7,Trusted mixed task,open,trusted-bot[bot],1d ago
+  8,Trusted approved denied task,open,trusted-bot[bot],1d ago
+OUT
     exit 0
   fi
   cat <<'OUT'
@@ -99,7 +127,11 @@ if [ "${1:-}" = api ]; then
     */issues/1)
       title='Owner task'
       author=Octo
-      labels='["fm:task"]'
+      if [ "${FM_TEST_CLASS_GATE:-0}" = 1 ]; then
+        labels='["fm:task","class:ship"]'
+      else
+        labels='["fm:task"]'
+      fi
       url='https://github.com/Octo/widgets/issues/1'
       number=1
       ;;
@@ -111,11 +143,52 @@ if [ "${1:-}" = api ]; then
       number=2
       ;;
     */issues/3)
-      title='Unapproved task'
-      author=bob
-      labels='["fm:task"]'
+      if [ "${FM_TEST_CLASS_GATE:-0}" = 1 ]; then
+        title='Untrusted class task'
+        author=bob
+        labels='["fm:task","class:docs"]'
+      else
+        title='Unapproved task'
+        author=bob
+        labels='["fm:task"]'
+      fi
       url='https://github.com/Octo/widgets/issues/3'
       number=3
+      ;;
+    */issues/4)
+      title='Trusted allowed task'
+      author='Trusted-Bot[bot]'
+      labels='["fm:task","CLASS:docs"]'
+      url='https://github.com/Octo/widgets/issues/4'
+      number=4
+      ;;
+    */issues/5)
+      title='Trusted unclassified task'
+      author='trusted-bot[bot]'
+      labels='["fm:task"]'
+      url='https://github.com/Octo/widgets/issues/5'
+      number=5
+      ;;
+    */issues/6)
+      title='Trusted denied task'
+      author='trusted-bot[bot]'
+      labels='["fm:task","class:MONEY"]'
+      url='https://github.com/Octo/widgets/issues/6'
+      number=6
+      ;;
+    */issues/7)
+      title='Trusted mixed task'
+      author='trusted-bot[bot]'
+      labels='["fm:task","class:docs","class:ship"]'
+      url='https://github.com/Octo/widgets/issues/7'
+      number=7
+      ;;
+    */issues/8)
+      title='Trusted approved denied task'
+      author='trusted-bot[bot]'
+      labels='["fm:task","class:credentials","fm:approved"]'
+      url='https://github.com/Octo/widgets/issues/8'
+      number=8
       ;;
     *) exit 9 ;;
   esac
@@ -175,6 +248,7 @@ run_intake() {
   PATH="$fakebin:$BASE_PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
     FM_TEST_GH_AXI_LOG="$home/gh-axi.log" FM_TEST_TASKS_LOG="$home/tasks.log" \
     FM_TEST_BODY_DIR="$home/bodies" FM_TEST_COLLISION_REPOS="${FM_TEST_COLLISION_REPOS:-0}" \
+    FM_TEST_CLASS_GATE="${FM_TEST_CLASS_GATE:-0}" \
     "$INTAKE" "$@"
 }
 
@@ -187,7 +261,9 @@ test_dedupes_and_enforces_authorization() {
 
   first=$(run_intake "$home" "$fakebin") || fail "first intake run failed"
   assert_contains "$first" 'new=2' "owner and approved issues were not queued"
-  assert_contains "$first" 'skipped-unauthorized=1' "unauthorized issue was not counted"
+  assert_contains "$first" 'skipped-awaiting-approval=1' "unauthorized issue was not counted"
+  assert_contains "$first" 'Octo/widgets#3:untrusted-author' \
+    "unauthorized issue and reason were not named"
   calls=$(wc -l < "$home/tasks.log" | tr -d ' ')
   [ "$calls" -eq 2 ] || fail "expected two queued tasks, got $calls"
   seen=$(wc -l < "$home/state/issue-intake.seen" | tr -d ' ')
@@ -223,7 +299,9 @@ test_dry_run_does_not_mutate() {
 
   out=$(run_intake "$home" "$fakebin" --dry-run) || fail "dry run failed"
   assert_contains "$out" 'would-ingest=2' "dry run did not report eligible issues"
-  assert_contains "$out" 'skipped-unauthorized=1' "dry run did not count unauthorized issues"
+  assert_contains "$out" 'skipped-awaiting-approval=1' "dry run did not count unauthorized issues"
+  assert_contains "$out" 'Octo/widgets#3:untrusted-author' \
+    "dry run did not name unauthorized issue and reason"
   [ ! -e "$home/state" ] || fail "dry run created state"
   [ ! -e "$home/tasks.log" ] || fail "dry run called tasks-axi add"
   [ -z "$(find "$home/bodies" -mindepth 1 -print -quit)" ] \
@@ -248,6 +326,67 @@ test_malformed_config_refuses_before_github() {
   [ ! -e "$home/gh-axi.log" ] || fail "malformed config reached GitHub"
   [ ! -e "$home/state" ] || fail "malformed config mutated state"
   pass "issue intake refuses malformed config before external reads"
+}
+
+test_malformed_class_gate_config_refuses_before_github() {
+  local home fakebin out rc config
+  home="$TMP_ROOT/malformed-class-gate"
+  mkdir -p "$home/config" "$home/bodies"
+  fakebin=$(make_fake_tools "$home")
+
+  for config in \
+    '{"repos":["Octo/widgets"],"label":"fm:task","trusted_authors":"trusted-bot[bot]"}' \
+    '{"repos":["Octo/widgets"],"label":"fm:task","deny_classes":"money"}' \
+    '{"repos":["Octo/widgets"],"label":"fm:task","trusted_authors":[7]}' \
+    '{"repos":["Octo/widgets"],"label":"fm:task","deny_classes":[false]}'
+  do
+    printf '%s\n' "$config" > "$home/config/issue-intake.json"
+    rm -f -- "$home/gh-axi.log"
+    set +e
+    out=$(run_intake "$home" "$fakebin" 2>&1)
+    rc=$?
+    set -e
+    [ "$rc" -ne 0 ] || fail "malformed class-gate config succeeded: $config"
+    assert_contains "$out" 'malformed config' \
+      "malformed class-gate config lacked a loud diagnostic"
+    [ ! -e "$home/gh-axi.log" ] || fail "malformed class-gate config reached GitHub"
+  done
+  pass "issue intake refuses malformed class-gate arrays before external reads"
+}
+
+test_class_gate_dispatches_only_allowed_trusted_work() {
+  local home fakebin first second calls seen
+  home="$TMP_ROOT/class-gate"
+  mkdir -p "$home/bodies"
+  write_class_config "$home"
+  fakebin=$(make_fake_tools "$home")
+
+  first=$(FM_TEST_CLASS_GATE=1 run_intake "$home" "$fakebin") \
+    || fail "class-gate intake run failed"
+  assert_contains "$first" 'new=4' \
+    "owner, approved, allowed trusted, and approved denied issues were not queued"
+  assert_contains "$first" 'skipped-awaiting-approval=4' \
+    "class-gate skipped count was wrong"
+  assert_contains "$first" 'Octo/widgets#3:untrusted-author' \
+    "untrusted classed issue reason was not named"
+  assert_contains "$first" 'Octo/widgets#5:unclassified' \
+    "trusted unclassified issue reason was not named"
+  assert_contains "$first" 'Octo/widgets#6:denied-class' \
+    "trusted denied issue reason was not named"
+  assert_contains "$first" 'Octo/widgets#7:denied-class' \
+    "denied class did not override allowed class"
+  calls=$(wc -l < "$home/tasks.log" | tr -d ' ')
+  [ "$calls" -eq 4 ] || fail "expected four queued class-gate tasks, got $calls"
+  seen=$(wc -l < "$home/state/issue-intake.seen" | tr -d ' ')
+  [ "$seen" -eq 4 ] || fail "expected four seen class-gate rows, got $seen"
+
+  second=$(FM_TEST_CLASS_GATE=1 run_intake "$home" "$fakebin") \
+    || fail "second class-gate intake run failed"
+  assert_contains "$second" 'new=0' "second class-gate run queued duplicate work"
+  assert_contains "$second" 'already-seen=4' "second class-gate run lost seen work"
+  calls=$(wc -l < "$home/tasks.log" | tr -d ' ')
+  [ "$calls" -eq 4 ] || fail "second class-gate run called tasks-axi again"
+  pass "issue intake class gate fails closed and remains idempotent"
 }
 
 test_malformed_repository_names_refuse() {
@@ -370,6 +509,8 @@ test_check_mode_wakes_only_for_new_work() {
 test_dedupes_and_enforces_authorization
 test_dry_run_does_not_mutate
 test_malformed_config_refuses_before_github
+test_malformed_class_gate_config_refuses_before_github
+test_class_gate_dispatches_only_allowed_trusted_work
 test_malformed_repository_names_refuse
 test_case_alias_repositories_refuse
 test_repository_task_ids_do_not_flatten_names

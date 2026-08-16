@@ -4,17 +4,18 @@
 # docs/configuration.md owns the config/issue-intake.json schema and operator
 # setup contract.
 # This script owns intake mechanics: it reads open issues carrying the configured
-# intake label through gh-axi, admits repository-owner issues immediately, admits
-# other authors only with the configured approval label, and creates deterministic
-# collision-resistant queued task identities through the compatible tasks-axi
-# backend as issue-<sha256(lowercase-repo)[0:32]>-<number>.
+# intake label through gh-axi, admits repository-owner issues immediately, and
+# admits other authors with the configured approval label or through the trusted
+# author class gate configured in docs/configuration.md.
+# It creates deterministic collision-resistant queued task identities through the
+# compatible tasks-axi backend as issue-<sha256(lowercase-repo)[0:32]>-<number>.
 # Each successful intake is recorded as one tab-separated repo, issue number, and
 # full URL row in state/issue-intake.seen so later runs are idempotent.
 # If the backlog item already exists with the same GitHub URL, the run records the
 # identity as seen without counting new work, recovering a prior queue success
 # that never landed in the seen file.
-# Unauthorized issues are not recorded as seen because adding the approval label
-# later must make them eligible.
+# Issues awaiting approval are not recorded as seen because adding the approval
+# label later must make them eligible.
 #
 # The install-check action writes one mode-0700 state/issue-intake.check.sh shim
 # and authenticates it with fm-check-register.sh.
@@ -92,7 +93,7 @@ validate_config() {
   jq -e '
     type == "object" and
     (has("repos") and has("label")) and
-    ((keys - ["approve_label", "label", "repos"]) | length == 0) and
+    ((keys - ["approve_label", "deny_classes", "label", "repos", "trusted_authors"]) | length == 0) and
     (.repos | type == "array" and length > 0) and
     (.repos | all(
       type == "string" and
@@ -109,9 +110,19 @@ validate_config() {
       (test("[\u0000-\u001f\u007f]") | not)) and
     ((has("approve_label") | not) or
       (.approve_label | type == "string" and length > 0 and
-        (test("[\u0000-\u001f\u007f]") | not)))
+        (test("[\u0000-\u001f\u007f]") | not))) and
+    ((has("trusted_authors") | not) or
+      (.trusted_authors | type == "array" and all(
+        type == "string" and length > 0 and
+        (test("[\u0000-\u001f\u007f]") | not)
+      ))) and
+    ((has("deny_classes") | not) or
+      (.deny_classes | type == "array" and all(
+        type == "string" and length > 0 and
+        (test("[\u0000-\u001f\u007f]") | not)
+      )))
   ' "$CONFIG_FILE" >/dev/null 2>&1 \
-    || fail "malformed config: expected repos, label, and optional approve_label only"
+    || fail "malformed config: expected repos, label, and optional approve_label, trusted_authors, and deny_classes only"
 }
 
 prepare_state() {
@@ -210,6 +221,25 @@ label_present() {
     'any(.[]; ascii_downcase == ($expected | ascii_downcase))' >/dev/null
 }
 
+class_label_present() {
+  local labels=$1
+  printf '%s\n' "$labels" | jq -e '
+    any(.[]; . as $label |
+      ($label | ascii_downcase | startswith("class:")) and
+      (($label | length) > 6))
+  ' >/dev/null
+}
+
+denied_class_present() {
+  local labels=$1 deny_classes=$2
+  printf '%s\n' "$labels" | jq -e --argjson deny_classes "$deny_classes" '
+    any(.[]; . as $label |
+      ($label | ascii_downcase | startswith("class:")) and
+      (($label[6:] | ascii_downcase) as $token |
+        any($deny_classes[]; ascii_downcase == $token)))
+  ' >/dev/null
+}
+
 task_id_for_issue() {
   local canonical hash
   canonical=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
@@ -282,10 +312,13 @@ install_check() {
 }
 
 run_intake() {
-  local intake_label approve_label repo owner number numbers
+  local intake_label approve_label trusted_authors deny_classes
+  local repo owner number numbers skip_reason skipped_issues=
   local new_count=0 skipped_count=0 seen_count=0 eligible_count=0
   intake_label=$(jq -r '.label' "$CONFIG_FILE")
   approve_label=$(jq -r '.approve_label // "fm:approved"' "$CONFIG_FILE")
+  trusted_authors=$(jq -c '.trusted_authors // []' "$CONFIG_FILE")
+  deny_classes=$(jq -c '.deny_classes // []' "$CONFIG_FILE")
 
   while IFS= read -r repo; do
     [ -n "$repo" ] || continue
@@ -301,8 +334,22 @@ run_intake() {
       if [ "$(printf '%s' "$ISSUE_AUTHOR" | tr '[:upper:]' '[:lower:]')" != \
         "$(printf '%s' "$owner" | tr '[:upper:]' '[:lower:]')" ] \
         && ! label_present "$ISSUE_LABELS" "$approve_label"; then
-        skipped_count=$((skipped_count + 1))
-        continue
+        skip_reason=
+        if ! label_present "$trusted_authors" "$ISSUE_AUTHOR"; then
+          skip_reason=untrusted-author
+        elif ! class_label_present "$ISSUE_LABELS"; then
+          skip_reason=unclassified
+        elif denied_class_present "$ISSUE_LABELS" "$deny_classes"; then
+          skip_reason=denied-class
+        fi
+        if [ -n "$skip_reason" ]; then
+          skipped_count=$((skipped_count + 1))
+          if [ -n "$skipped_issues" ]; then
+            skipped_issues="$skipped_issues,"
+          fi
+          skipped_issues="$skipped_issues$repo#$number:$skip_reason"
+          continue
+        fi
       fi
       eligible_count=$((eligible_count + 1))
       if [ "$DRY_RUN" -eq 1 ]; then
@@ -323,11 +370,11 @@ run_intake() {
       printf 'issue intake: %s new GitHub issue(s) queued\n' "$new_count"
     fi
   elif [ "$DRY_RUN" -eq 1 ]; then
-    printf 'issue intake dry-run: would-ingest=%s skipped-unauthorized=%s already-seen=%s\n' \
-      "$eligible_count" "$skipped_count" "$seen_count"
+    printf 'issue intake dry-run: would-ingest=%s skipped-awaiting-approval=%s skipped=[%s] already-seen=%s\n' \
+      "$eligible_count" "$skipped_count" "$skipped_issues" "$seen_count"
   else
-    printf 'issue intake: new=%s skipped-unauthorized=%s already-seen=%s\n' \
-      "$new_count" "$skipped_count" "$seen_count"
+    printf 'issue intake: new=%s skipped-awaiting-approval=%s skipped=[%s] already-seen=%s\n' \
+      "$new_count" "$skipped_count" "$skipped_issues" "$seen_count"
   fi
 }
 
