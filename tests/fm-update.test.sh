@@ -481,6 +481,34 @@ test_unsafe_secondmate_home_skipped_before_git_update() {
   pass "T11 unsafe secondmate home is not fast-forwarded"
 }
 
+test_secondmate_bad_update_remote_continues_fleet() {
+  local w out origin_tip before_bad
+  w=$(new_world secondmate-bad-config)
+  add_sm "$w" bad
+  add_sm "$w" good
+  bump_origin "$w" instr
+  origin_tip=$(git -C "$w/origin.git" rev-parse main)
+  before_bad=$(git -C "$w/bad" rev-parse HEAD)
+  mkdir -p "$w/bad/config"
+  printf 'origin upstream\n' > "$w/bad/config/update-remote"
+
+  if ! out=$(run_update "$w"); then
+    fail "secondmate config error aborted the update fleet"
+  fi
+
+  assert_contains "$out" "firstmate: updated " "firstmate still updated"
+  assert_contains "$out" "secondmate bad: error: malformed config/update-remote" \
+    "bad secondmate refused loudly"
+  assert_contains "$out" "secondmate good: updated " "later secondmate still updated"
+  assert_contains "$out" "reread-firstmate: yes" "summary still printed after secondmate error"
+  assert_contains "$out" "nudge-secondmates: fm-good" "only the advanced secondmate is nudged"
+  [ "$(git -C "$w/good" rev-parse HEAD)" = "$origin_tip" ] \
+    || fail "good secondmate did not advance after sibling config error"
+  [ "$(git -C "$w/bad" rev-parse HEAD)" = "$before_bad" ] \
+    || fail "bad secondmate moved despite configured-remote refusal"
+  pass "secondmate update-remote refusal keeps the fleet sweep running"
+}
+
 test_updates_main_and_secondmate
 test_prefers_upstream_without_push
 test_configured_origin_overrides_upstream
@@ -496,5 +524,6 @@ test_registry_backstop_dedup_and_self_exclusion
 test_firstmate_wrong_branch_skipped
 test_firstmate_detached_head_skipped
 test_unsafe_secondmate_home_skipped_before_git_update
+test_secondmate_bad_update_remote_continues_fleet
 
 echo "# all fm-update tests passed"
