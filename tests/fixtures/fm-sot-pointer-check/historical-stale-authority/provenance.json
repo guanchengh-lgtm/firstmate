@@ -1,0 +1,15 @@
+{
+  "derived": true,
+  "source_date": "2026-08-19",
+  "project_commit": "0d8bb3bb62ada54197185924bfc4ce1908432b1a",
+  "project_pr": 98,
+  "ship_task": "tv-gamma-look-ship",
+  "superseded_hold": "tv-gamma-impl-intake-decision-level-coincidence",
+  "decision_file": "data/decisions/tv-gamma-look-lock-2026-08-15.md",
+  "sha256": {
+    "decision.fixture": "7dc374688804e78e1bbbba03f36bc0f6ab7a3f5b87b1f838c83a0421a7f1a1da",
+    "backlog.fixture": "88a95057f8697a6c960f322f9c19b2b90d4da3cfb31c8800ebea47897b617082",
+    "open-hold.fixture": "9a5057cce7138157be52a003244878d07be7f39ffa90dab61abc9e11239bfeff",
+    "done-archive.fixture": "26bc452bc63d2f7d1f41e99501bceca8702989f365ad639361b522c0e09ca7af"
+  }
+}

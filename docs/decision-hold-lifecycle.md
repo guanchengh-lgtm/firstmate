@@ -33,6 +33,11 @@ It records the decision digest and routed task identities as a retry identity in
 An exact retry can finish a partial routing operation, while a changed decision or routed-task set is rejected.
 A failed intermediate step leaves the hold open.
 
+The `supersede` subcommand handles a later decision lock and ship that already became authoritative before an older hold was reconciled.
+It closes exactly one active hold only after binding it to one ordinary home-relative file under `data/decisions/` and one exact already-Done ship task.
+The binding records and later revalidates the decision path, decision digest, and shipped-task identity.
+The read-only `state` subcommand is the shared resolver for session recovery and durable-SoT checks, and reports only `open`, `resolved`, or `superseded` after validating the corresponding structured state.
+
 ## Structured read surfaces
 
 `bin/fm-fleet-snapshot.sh` parses canonical tasks-axi `(hold: ...)` and `(hold-kind: captain)` metadata alongside existing backlog fields.
@@ -50,6 +55,7 @@ Verification date: 2026-07-14.
 Additional quoted `blocked_by` regression verification date: 2026-07-17.
 Plural blocker-readiness and mixed-home projection verification date: 2026-07-22.
 Product-idea inventory and Bearings-count verification date: 2026-08-10.
+Retrospective supersession and shared state-resolution verification date: 2026-08-19.
 
 The focused end-to-end regression uses only synthetic `sample` identities and decision text.
 It begins with a completed investigation and visual review whose genuine unresolved choice exists only in the report.
@@ -63,6 +69,7 @@ $ bash tests/fm-decision-hold-lifecycle.test.sh
 ok - report-only unresolved decision is reproduced and completion refuses before loss
 ok - non-forced scout teardown always requires durable inventory verification
 ok - captain holds are idempotent, distinct, teardown-safe, Bearings-visible, and durably routed before close
+ok - later shipped authority binds and supersedes one exact captain hold
 ok - completion and verification validate origins before constructing paths
 ok - ended visual review follows the same decision-hold completion owner
 ok - resolved findings and decision-like prose do not create false holds

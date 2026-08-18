@@ -1,0 +1,75 @@
+{
+  "size": "full",
+  "form": "ci-gated rule",
+  "shape": "an older leftover hold or chat-derived pick remains actionable after a later durable decision lock or shipped task supersedes it",
+  "structure": "fm-decision-hold supersession records bind an exact captain-hold identity to one ordinary decision record and one already-Done ship task; sot-programs.tsv rows register the existing program, source-task, pointer, and hold identities",
+  "ground_truth_precedent": {
+    "repository": "guanchengh-lgtm/firstmate",
+    "pull_request": 8,
+    "merge_commit": "3513127679733aeb4419e5bc153a63027a583929",
+    "contract": "session start surfaces missing durable source-of-truth pointers"
+  },
+  "rules": [
+    "R-SOT-POINTER",
+    "R-SOT-SUPERSEDED-HOLD",
+    "OPEN-PICKS-DURABLE-STATE"
+  ],
+  "fixture": "derived",
+  "fixture_generator": "tests/fixtures/fm-sot-pointer-check/generate-historical-stale-authority.sh",
+  "fixture_artifact": "tests/fixtures/fm-sot-pointer-check/historical-stale-authority",
+  "fixture_source": {
+    "date": "2026-08-19",
+    "project_commit": "0d8bb3bb62ada54197185924bfc4ce1908432b1a",
+    "project_pull_request": 98,
+    "derivation": "the generator checks out the exact shipping commit, extracts the historical open hold, decision, and shipped task, applies the production supersession command to derive canonical clean state, and preserves the extracted hold row as the reversible mutation"
+  },
+  "regression": {
+    "test": "tests/fm-sot-pointer-check.test.sh",
+    "exact_counts": [0, 1, 2],
+    "round_trip": "canonical clean backlog -> mechanically reopened historical hold -> exact one finding -> production rebind -> original canonical SHA-256",
+    "provenance": "all four fixture artifact SHA-256 values are asserted against provenance.json"
+  },
+  "ci_gate": ".github/workflows/ci.yml runs bin/fm-test-run.sh --check-coverage and all portable lanes; the test inventory includes tests/fm-sot-pointer-check.test.sh",
+  "structural_failure_exit": 2,
+  "findings_exit": {
+    "detect_only": 0,
+    "strict": 1,
+    "exact_count_mismatch": 1
+  },
+  "outside_voice_review": {
+    "report": "data/ov-fm-recurring-defect-durable-sot/report.md",
+    "verdict": "initial snapshot rejected",
+    "disposition": "replaced chat-only OPEN PICKS, row-shape hold inference, hand-written historical breakage, incomplete exact counts, and fail-open registry paths with durable state reconciliation and derived regression evidence"
+  },
+  "adversary_rounds": 3,
+  "adversary_findings": [
+    {
+      "round": 1,
+      "severity": "none",
+      "result": "no findings"
+    },
+    {
+      "round": 2,
+      "severity": "medium",
+      "result": "a missing pointer skipped stale-hold evaluation, and a comment-only data registry shadowed populated config",
+      "disposition": "fixed with combined-rule evaluation, effective-registry fallback, and regression coverage"
+    },
+    {
+      "round": 3,
+      "severity": "high",
+      "result": "multi-marker chat could hide an open durable hold, and fixture provenance hashes were not asserted",
+      "disposition": "fixed with per-identity durable resolution, marker deduplication, and four-artifact SHA-256 assertions"
+    }
+  ],
+  "adversary_verdict": "three-round cap completed; every finding was fixed and regression-covered; no fourth round was run",
+  "limits": [
+    "the registry validates only registered relationships and cannot discover an omitted program row",
+    "unkeyed chat remains visible only as non-actionable unverified context",
+    "the checker never infers captain intent from prose and never closes a hold automatically"
+  ],
+  "skipped": [
+    "automatic registry generation because no authoritative complete program inventory exists",
+    "automatic hold closure because only fm-decision-hold supersede may record the exact later authority",
+    "private-home rollout because this disposable worktree was instructed not to ship or modify the operating home"
+  ]
+}

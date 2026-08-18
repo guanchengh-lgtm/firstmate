@@ -27,6 +27,9 @@
 #   fm-decision-hold.sh verify <origin-id>
 #   fm-decision-hold.sh resolve <origin-id> <decision-key> \
 #     --decision-file <path> --routed-to <task-id> [--routed-to <task-id>...]
+#   fm-decision-hold.sh supersede <origin-id> <decision-key> \
+#     --decision-file data/decisions/<file> --shipped-task <task-id>
+#   fm-decision-hold.sh state <hold-id> [--binding]
 #
 # `complete` is the shared investigation and visual-review completion gate.
 # `--none` is an explicit semantic attestation that the just-reviewed surface has
@@ -55,6 +58,11 @@
 # It writes the captain decision and routed identities into the hold body, clears
 # those dependency edges, and only then marks the hold Done. A failure before the
 # final step leaves the captain hold open.
+# `supersede` is the retrospective counterpart for a later authority that already
+# shipped. It closes one active hold only after binding it to one ordinary decision
+# record under data/decisions/ and one already-Done ship task. `state` is the sole
+# read-only resolver used by session start and durable-SoT checks; it revalidates
+# those live bindings before reporting open, resolved, or superseded.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -106,6 +114,16 @@ sha256_text() {  # <text>
     printf '%s' "$1" | shasum -a 256 | awk '{print $1}'
   elif command -v sha256sum >/dev/null 2>&1; then
     printf '%s' "$1" | sha256sum | awk '{print $1}'
+  else
+    fail "shasum or sha256sum is required"
+  fi
+}
+
+sha256_file() {  # <path>
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
   else
     fail "shasum or sha256sum is required"
   fi
@@ -236,6 +254,110 @@ verify_hold_active() {  # <hold-id>
   [ "$hold_kind" = captain ] || fail "backlog item $id is not held for the captain"
 }
 
+normalize_decision_path() {  # <path>
+  local supplied=$1 relative component prefix old_ifs
+  case "$supplied" in
+    "$FM_HOME"/data/decisions/*) relative=${supplied#"$FM_HOME"/} ;;
+    data/decisions/*) relative=$supplied ;;
+    *) fail "decision file must be home-relative under data/decisions/: $supplied" ;;
+  esac
+  case "$relative" in
+    *//*|*/./*|*/../*|*/.|*/..) fail "decision file path is not canonical: $supplied" ;;
+  esac
+  prefix=$FM_HOME
+  old_ifs=$IFS
+  IFS=/
+  for component in $relative; do
+    IFS=$old_ifs
+    prefix="$prefix/$component"
+    [ ! -L "$prefix" ] || fail "decision file path contains a symlink: $relative"
+    IFS=/
+  done
+  IFS=$old_ifs
+  [ -f "$FM_HOME/$relative" ] || fail "decision file is not a regular file: $relative"
+  [ -r "$FM_HOME/$relative" ] || fail "decision file is not readable: $relative"
+  [ -s "$FM_HOME/$relative" ] || fail "decision file must not be empty: $relative"
+  [ "$(LC_ALL=C wc -c < "$FM_HOME/$relative" | tr -d '[:space:]')" -le 8192 ] \
+    || fail "decision file exceeds 8192 bytes: $relative"
+  printf '%s\n' "$relative"
+}
+
+verify_shipped_task() {  # <task-id>
+  local id=$1 show state kind
+  validate_slug shipped-task "$id"
+  show=$(task_show "$id") || fail "shipped task $id does not exist in the active home"
+  state=$(show_field "$show" state)
+  kind=$(show_field "$show" kind)
+  [ "$state" = "done" ] || fail "shipped task $id is not Done (state=$state)"
+  [ "$kind" = ship ] || fail "shipped task $id is not kind ship (kind=$kind)"
+}
+
+supersession_fields() {  # <hold-id> <body>
+  local id=$1 body=$2 fields
+  body=${body#\"}
+  body=${body%\"}
+  case "$body" in
+    'Supersession recorded by fm-decision-hold.\nDecision path: '*)
+      fields=${body#'Supersession recorded by fm-decision-hold.\nDecision path: '}
+      ;;
+    *) return 1 ;;
+  esac
+  case "$fields" in
+    *'\nDecision digest: '*'\nShipped task: '*) : ;;
+    *) fail "captain hold $id has an invalid supersession identity record" ;;
+  esac
+  SUPERSESSION_PATH=${fields%%\\n*}
+  fields=${fields#*\\nDecision digest: }
+  SUPERSESSION_DIGEST=${fields%%\\n*}
+  SUPERSESSION_TASK=${fields#*\\nShipped task: }
+  case "$SUPERSESSION_TASK" in *'\n'*) fail "captain hold $id has trailing supersession fields" ;; esac
+}
+
+verify_supersession_binding() {  # <hold-id> <body>
+  local id=$1 body=$2 relative actual_digest
+  supersession_fields "$id" "$body" || return 1
+  relative=$(normalize_decision_path "$SUPERSESSION_PATH")
+  [ "$relative" = "$SUPERSESSION_PATH" ] || fail "captain hold $id records a non-canonical decision path"
+  case "$SUPERSESSION_DIGEST" in
+    ''|*[!0-9a-f]*) fail "captain hold $id records an invalid decision digest" ;;
+  esac
+  [ "${#SUPERSESSION_DIGEST}" -eq 64 ] || fail "captain hold $id records an invalid decision digest"
+  actual_digest=$(sha256_file "$FM_HOME/$relative")
+  [ "$actual_digest" = "$SUPERSESSION_DIGEST" ] \
+    || fail "captain hold $id decision record digest no longer matches"
+  verify_shipped_task "$SUPERSESSION_TASK"
+}
+
+hold_state() {  # <hold-id>
+  local id=$1 show state held kind hold_kind body
+  validate_slug hold-id "$id"
+  show=$(task_show "$id") || fail "captain hold $id is absent from $FM_HOME/data/backlog.md"
+  state=$(show_field "$show" state)
+  held=$(show_field "$show" held)
+  kind=$(show_field "$show" kind)
+  hold_kind=$(show_field "$show" hold_kind)
+  body=$(show_field "$show" body)
+  [ "$kind" = captain ] || fail "backlog item $id is not kind captain"
+  if [ "$state" = queued ] && [ "$held" = yes ] && [ "$hold_kind" = captain ]; then
+    printf 'open\n'
+    return 0
+  fi
+  if [ "$state" = "done" ]; then
+    case "$body" in
+      *"Resolution recorded by fm-decision-hold."*"Routed work:"*)
+        printf 'resolved\n'
+        return 0
+        ;;
+      *"Supersession recorded by fm-decision-hold."*)
+        verify_supersession_binding "$id" "$body"
+        printf 'superseded\n'
+        return 0
+        ;;
+    esac
+  fi
+  fail "captain hold $id has no valid durable state"
+}
+
 verify_hold_resolved() {  # <hold-id>
   local id=$1 show state kind body
   show=$(task_show "$id") || return 1
@@ -264,9 +386,77 @@ verify_hold_durable() {  # <hold-id>
   if [ "$state" = "done" ] && [ "$kind" = captain ]; then
     case "$body" in
       *"Resolution recorded by fm-decision-hold."*"Routed work:"*) return 0 ;;
+      *"Supersession recorded by fm-decision-hold."*)
+        verify_supersession_binding "$id" "$body"
+        return 0
+        ;;
     esac
   fi
   fail "captain decision $id is neither actively held nor durably resolved"
+}
+
+command_state() {
+  local id=${1:-} with_binding=0 state show body
+  [ "$#" -ge 1 ] && [ "$#" -le 2 ] || { usage >&2; exit 2; }
+  if [ "$#" -eq 2 ]; then
+    [ "$2" = --binding ] || { usage >&2; exit 2; }
+    with_binding=1
+  fi
+  require_tasks_axi
+  state=$(hold_state "$id")
+  if [ "$with_binding" -eq 0 ]; then
+    printf '%s\n' "$state"
+    return 0
+  fi
+  if [ "$state" = superseded ]; then
+    show=$(task_show "$id")
+    body=$(show_field "$show" body)
+    supersession_fields "$id" "$body" || fail "captain hold $id has no supersession identity record"
+    printf '%s\t%s\t%s\n' "$state" "$SUPERSESSION_PATH" "$SUPERSESSION_TASK"
+  else
+    printf '%s\t-\t-\n' "$state"
+  fi
+}
+
+command_supersede() {
+  local origin=${1:-} key=${2:-} decision_file='' shipped_task='' id show body relative digest current
+  [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+  shift 2
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --decision-file) shift; decision_file=${1:-} ;;
+      --shipped-task) shift; shipped_task=${1:-} ;;
+      *) usage >&2; exit 2 ;;
+    esac
+    shift
+  done
+  validate_slug origin-id "$origin"
+  validate_slug decision-key "$key"
+  [ -n "$decision_file" ] || fail "--decision-file is required"
+  [ -n "$shipped_task" ] || fail "--shipped-task is required"
+  require_tasks_axi
+  relative=$(normalize_decision_path "$decision_file")
+  digest=$(sha256_file "$FM_HOME/$relative")
+  verify_shipped_task "$shipped_task"
+  id=$(hold_id "$origin" "$key")
+  if current=$(hold_state "$id" 2>/dev/null) && [ "$current" = superseded ]; then
+    show=$(task_show "$id")
+    body=$(show_field "$show" body)
+    supersession_fields "$id" "$body" || fail "captain hold $id has no supersession identity record"
+    [ "$SUPERSESSION_PATH" = "$relative" ] || fail "captain hold $id records a different decision path"
+    [ "$SUPERSESSION_DIGEST" = "$digest" ] || fail "captain hold $id records a different decision record"
+    [ "$SUPERSESSION_TASK" = "$shipped_task" ] || fail "captain hold $id records a different shipped task"
+    printf 'superseded: %s -> %s, %s\n' "$id" "$relative" "$shipped_task"
+    return 0
+  fi
+  verify_hold_active "$id"
+  body=$(printf 'Supersession recorded by fm-decision-hold.\nDecision path: %s\nDecision digest: %s\nShipped task: %s' \
+    "$relative" "$digest" "$shipped_task")
+  tasks_axi update "$id" --body "$body" >/dev/null \
+    || fail "could not bind later authority to captain hold $id"
+  tasks_axi "done" "$id" >/dev/null || fail "could not close superseded captain hold $id"
+  [ "$(hold_state "$id")" = superseded ] || fail "captain hold $id did not retain its supersession binding"
+  printf 'superseded: %s -> %s, %s\n' "$id" "$relative" "$shipped_task"
 }
 
 verify_resolution_identity() {
@@ -590,6 +780,8 @@ case "${1:-}" in
   complete) shift; command_complete "$@" ;;
   verify) shift; command_verify "$@" ;;
   resolve) shift; command_resolve "$@" ;;
+  supersede) shift; command_supersede "$@" ;;
+  state) shift; command_state "$@" ;;
   -h|--help) usage ;;
   *) usage >&2; exit 2 ;;
 esac

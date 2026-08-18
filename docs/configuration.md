@@ -282,10 +282,16 @@ For Pi and pi-signed secondmate launches, `fm-spawn.sh` starts the selected exec
 ## Durable SoT program registry (data/sot-programs.tsv / config/sot-programs.tsv)
 
 An optional home-local registry can ask session-start bootstrap to notice when a completed multi-task program still lacks a standing source-of-truth pointer in `data/captain.md` or files directly under `data/decisions/`.
-Lookup order is `data/sot-programs.tsv`, then `config/sot-programs.tsv`.
-An absent or empty registry stays silent.
-[`bin/fm-sot-pointer-check.sh`](../bin/fm-sot-pointer-check.sh)'s header owns the row format, Done-source gate, match surface, `SOT_GAP` line, default exit-zero detect-only mode, and `--strict` / `--registry` flags.
-Bootstrap runs that check in detect-only mode so clean homes stay quiet and gaps surface without blocking session start or auto-editing captain material.
+Lookup uses the first effective ordinary file in this order: `data/sot-programs.tsv`, then `config/sot-programs.tsv`.
+An empty or comment-only data registry cannot shadow populated config, and both absent or ineffective stays silent.
+The optional fourth registry field names captain-held backlog identities that a later pointer and completed source tasks supersede.
+Each named hold becomes clean only when `fm-decision-hold.sh supersede` binds it to an exact decision file matching the row pointer and an exact already-Done ship task named among the row sources.
+This surfaces an older tentative pick that remains live or lacks that exact binding after a later durable lock or shipped task became authoritative.
+[`bin/fm-sot-pointer-check.sh`](../bin/fm-sot-pointer-check.sh)'s header owns the row format, Done-source gate, match surface, rule ids, `SOT_GAP` lines, structural exit 2, default exit-zero detect-only mode, `--strict`, `--registry`, and exact-count regression flags.
+Bootstrap runs that check in detect-only mode so findings surface without blocking session start or auto-editing captain material, while registry structural failures remain loud.
+The check covers only relationships registered from existing task, pointer, and captain-hold identities.
+It does not infer supersession from chat, report prose, or arbitrary project commits, and it does not close a hold automatically.
+The current full recurring-defect claims and adversary outcome are recorded in [`verification/durable-sot-recurring-defect-claims.json`](verification/durable-sot-recurring-defect-claims.json).
 See [`sot-programs.example.tsv`](sot-programs.example.tsv) for a non-live copyable shape.
 
 ## Crew dispatch profiles (config/crew-dispatch.json)

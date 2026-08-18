@@ -8,7 +8,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | Script                   | Purpose                                                                              |
 | ------------------------ | ------------------------------------------------------------------------------------ |
 | `fm-session-start.sh`    | Compose lock, bootstrap, and wake drain into the single ordered session-start digest |
-| `fm-prior-session-fold.sh` | Print the bounded PRIOR SESSION fold of live jobs, open picks, and lock-changing captain words |
+| `fm-prior-session-fold.sh` | Print the bounded PRIOR SESSION fold of live jobs, durable keyed open picks, unverified pick context, and lock-changing captain words |
 | `fm-sessionstart-nudge.sh` | Print the native session-start hook nudge when the primary has not already run the digest |
 | `fm-sessionstart-run.sh` | Route a native session-open hook to the full digest, a context re-emit, or the nudge |
 | `fm-operational-input.sh` | Construct and parse the canonical cross-language operational-input protocol |
@@ -28,7 +28,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-backlog-handoff.sh`  | Validate and delegate queued backlog-item moves into a secondmate home               |
 | `fm-backlog-receive.sh`  | Idempotently ingest one confined remote handoff outbox through tasks-axi             |
 | `fm-issue-intake.sh`     | Queue authorized labeled GitHub issues and install their authenticated watcher check |
-| `fm-decision-hold.sh`    | Create, verify, complete, and resolve durable captain-held decisions and product-idea completion attestations |
+| `fm-decision-hold.sh`    | Create, verify, complete, resolve, supersede, and read durable captain-held decisions and product-idea completion attestations |
 | `fm-decision-ledger.sh`  | Render captain-facing decisions from read-only tasks-axi backlog state into a Markdown ledger |
 | `fm-product-idea-lib.sh` | Shared product-idea ledger row and unscheduled-count grammar for completion and Bearings |
 | `fm-brief.sh`            | Scaffold ship (explicit `--mode`), scout, secondmate-charter, and Herdr-lab briefs   |
