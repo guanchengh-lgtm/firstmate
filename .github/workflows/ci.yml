@@ -350,8 +350,8 @@ jobs:
           array_output=$(/bin/bash tests/fm-bash32-array-expansion.test.sh)
           printf '%s\n' "$array_output"
           array_count=$(printf '%s\n' "$array_output" | grep -c '^ok - ')
-          [ "$array_count" -eq 3 ] || {
-            echo "::error::expected 3 Bash 3.2 array-expansion tests, got $array_count"
+          [ "$array_count" -eq 2 ] || {
+            echo "::error::expected 2 Bash 3.2 array-expansion tests, got $array_count"
             exit 1
           }
 

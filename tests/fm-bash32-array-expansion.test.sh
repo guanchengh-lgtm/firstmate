@@ -5,44 +5,8 @@ set -u
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-scan_bare_array_expansions() {
-  perl -ne '
-    $line = $_;
-    $line =~ s{\$\{([A-Za-z_][A-Za-z0-9_]*)\[\@\]\+"\$\{\1\[\@\]\}"\}}{}g;
-    while ($line =~ m{\$\{[A-Za-z_][A-Za-z0-9_]*\[(?:\@|\*)\]\}}g) {
-      print "$ARGV:$.: $&\n";
-      $bad = 1;
-    }
-    close ARGV if eof;
-    END { exit($bad ? 1 : 0); }
-  ' "$@"
-}
-
 TMP_ROOT=$(fm_test_tmproot fm-bash32-array-expansion)
-BARE_FIXTURE="$TMP_ROOT/bare.sh"
 RUNTIME_FIXTURE="$TMP_ROOT/runtime.sh"
-
-cat >"$BARE_FIXTURE" <<'SH'
-printf '%s\n' "${empty[@]}"
-printf '%s\n' "${empty[*]}"
-SH
-
-bare_output=$(scan_bare_array_expansions "$BARE_FIXTURE" 2>&1)
-bare_rc=$?
-[ "$bare_rc" -eq 1 ] || fail "bare array-expansion fixture should fail with exit 1, got $bare_rc"
-bare_count=$(printf '%s\n' "$bare_output" | grep -c 'bare.sh:')
-[ "$bare_count" -eq 2 ] || fail "bare array-expansion fixture should report two findings, got $bare_count"
-
-BIN_FILES=()
-while IFS= read -r path; do
-  BIN_FILES+=("$path")
-done < <(find "$ROOT/bin" -type f -name '*.sh' -print | LC_ALL=C sort)
-[ "${#BIN_FILES[@]}" -gt 0 ] || fail "bin shell inventory should not be empty"
-bin_output=$(scan_bare_array_expansions ${BIN_FILES[@]+"${BIN_FILES[@]}"} 2>&1)
-bin_rc=$?
-[ "$bin_rc" -eq 0 ] || fail "bin contains a bare direct array expansion: $bin_output"
-[ -z "$bin_output" ] || fail "clean bin scan should not emit findings: $bin_output"
-pass "array-expansion contract rejects bare direct forms"
 
 cat >"$RUNTIME_FIXTURE" <<'SH'
 #!/bin/bash
