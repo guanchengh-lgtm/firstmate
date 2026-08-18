@@ -915,7 +915,7 @@ SH
 # still leads, live fleet identity now outranks curated memory, and the
 # read-once contract arrives before the payload it governs.
 test_output_ordering_diagnostics_lead() {
-  local rec root home fakebin out lock_line boot_line wake_line read_once_line
+  local rec root home fakebin out lock_line boot_line wake_line read_once_line prior_line
   local context_line fleet_line next_line inventory_line missing_line
   rec=$(new_world ordering)
   IFS='|' read -r root home fakebin <<EOF
@@ -935,13 +935,14 @@ EOF
   boot_line=$(printf '%s\n' "$out" | grep -n '^BOOTSTRAP$' | head -1 | cut -d: -f1)
   wake_line=$(printf '%s\n' "$out" | grep -n '^WAKE QUEUE$' | head -1 | cut -d: -f1)
   read_once_line=$(printf '%s\n' "$out" | grep -n '^READ-ONCE CONTRACT$' | head -1 | cut -d: -f1)
+  prior_line=$(printf '%s\n' "$out" | grep -n '^PRIOR SESSION$' | head -1 | cut -d: -f1)
   context_line=$(printf '%s\n' "$out" | grep -n '^CONTEXT$' | head -1 | cut -d: -f1)
   fleet_line=$(printf '%s\n' "$out" | grep -n '^FLEET STATE$' | head -1 | cut -d: -f1)
   next_line=$(printf '%s\n' "$out" | grep -n '^NEXT STEP$' | head -1 | cut -d: -f1)
   inventory_line=$(printf '%s\n' "$out" | grep -n '^--- task-a ---$' | head -1 | cut -d: -f1)
 
   if [ -z "$lock_line" ] || [ -z "$boot_line" ] || [ -z "$wake_line" ] \
-    || [ -z "$read_once_line" ] || [ -z "$context_line" ] || [ -z "$fleet_line" ] \
+    || [ -z "$read_once_line" ] || [ -z "$prior_line" ] || [ -z "$context_line" ] || [ -z "$fleet_line" ] \
     || [ -z "$next_line" ] || [ -z "$inventory_line" ]; then
     fail "one or more section headers missing from digest: $out"
   fi
@@ -952,7 +953,8 @@ EOF
   [ "$boot_line" -lt "$wake_line" ] || fail "BOOTSTRAP did not precede WAKE QUEUE"
   [ "$wake_line" -lt "$read_once_line" ] || fail "WAKE QUEUE did not precede the read-once contract"
 
-  [ "$read_once_line" -lt "$fleet_line" ] || fail "the read-once contract did not precede FLEET STATE"
+  [ "$read_once_line" -lt "$prior_line" ] || fail "the read-once contract did not precede PRIOR SESSION"
+  [ "$prior_line" -lt "$fleet_line" ] || fail "PRIOR SESSION did not precede FLEET STATE"
   [ "$fleet_line" -lt "$context_line" ] || fail "FLEET STATE did not precede CONTEXT"
   [ "$context_line" -lt "$next_line" ] || fail "CONTEXT did not precede NEXT STEP"
 
@@ -987,6 +989,8 @@ EOF
     "the read-once contract lost its core instruction"
   assert_contains "$out" "STARTUP TRUNCATED banner named the stage that would have printed it" \
     "the read-once contract does not void itself for a stage that never ran"
+  assert_contains "$out" "the PRIOR SESSION fold reported missing, unreadable, parse-failed, or" \
+    "the read-once contract did not allow only the targeted incomplete prior-session reread"
   assert_contains "$out" "The READ-ONCE CONTRACT" \
     "the closing reminder does not point back at the contract"
 
@@ -1746,7 +1750,7 @@ EOF
   assert_contains "$out" "RUNTIME BOUND" "the truncation banner did not name the bound it hit"
   assert_contains "$out" 'stopped during the "bootstrap" stage' "the truncation banner did not name the incomplete stage"
   assert_contains "$out" "RECONCILE these stages" "the truncation banner did not tell the agent what to reconcile"
-  assert_contains "$out" "wake-queue supervision-instructions read-once fleet-state network-checks context next-step" \
+  assert_contains "$out" "wake-queue supervision-instructions read-once prior-session fleet-state network-checks context next-step" \
     "the truncation banner did not list every stage that never ran"
   assert_not_contains "$out" "NEXT STEP" "a truncated digest claimed to have reached its closing reminder"
   assert_absent "$home/state/.session-start-complete" \
