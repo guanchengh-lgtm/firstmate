@@ -347,6 +347,14 @@ jobs:
           done < "$shell_inventory"
           [ "$parse_fail" -eq 0 ] || { echo "::error::stock macOS Bash 3.2 parse sweep failed"; exit 1; }
 
+          array_output=$(/bin/bash tests/fm-bash32-array-expansion.test.sh)
+          printf '%s\n' "$array_output"
+          array_count=$(printf '%s\n' "$array_output" | grep -c '^ok - ')
+          [ "$array_count" -eq 3 ] || {
+            echo "::error::expected 3 Bash 3.2 array-expansion tests, got $array_count"
+            exit 1
+          }
+
           snapshot_output=$(/bin/bash tests/fm-fleet-snapshot-view.test.sh)
           printf '%s\n' "$snapshot_output"
           snapshot_count=$(printf '%s\n' "$snapshot_output" | grep -c '^ok - ')

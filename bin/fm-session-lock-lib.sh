@@ -29,7 +29,7 @@ FM_HARNESS_NAMES=(claude codex opencode grok kimi pi-signed pi)
 fm_harness_path_name() {  # <path>
   local path=$1 name
   [ -n "$path" ] || return 1
-  for name in "${FM_HARNESS_NAMES[@]}"; do
+  for name in ${FM_HARNESS_NAMES[@]+"${FM_HARNESS_NAMES[@]}"}; do
     case "/$path/" in
       */"$name"/*) printf '%s' "$name"; return 0 ;;
     esac

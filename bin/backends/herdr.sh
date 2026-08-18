@@ -3401,7 +3401,7 @@ fm_backend_herdr_wait_transition() {  # <session> <timeout_secs> <state_dir> <pa
   # Map each window to its herdr pane id (strip the leading "<session>:").
   local w pane_id
   local pane_ids=()
-  for w in "${windows[@]}"; do
+  for w in ${windows[@]+"${windows[@]}"}; do
     pane_id=${w#*:}
     if [ -z "$pane_id" ] || [ "$pane_id" = "$w" ]; then
       continue
@@ -3426,7 +3426,7 @@ fm_backend_herdr_wait_transition() {  # <session> <timeout_secs> <state_dir> <pa
     rm -rf "$fifo_dir" 2>/dev/null || true
     return 2
   fi
-  "${reader[@]}" "$sock" "$timeout" "${pane_ids[@]}" > "$fifo" 2>/dev/null &
+  ${reader[@]+"${reader[@]}"} "$sock" "$timeout" ${pane_ids[@]+"${pane_ids[@]}"} > "$fifo" 2>/dev/null &
   reader_pid=$!
   if ! exec 9< "$fifo"; then
     kill "$reader_pid" 2>/dev/null || true
@@ -3443,7 +3443,7 @@ fm_backend_herdr_wait_transition() {  # <session> <timeout_secs> <state_dir> <pa
   # newer edges accumulate in the active stream. `working` panes clear their
   # marker here too.
   if [ "$rc" -ne 2 ]; then
-    for w in "${windows[@]}"; do
+    for w in ${windows[@]+"${windows[@]}"}; do
       pane_id=${w#*:}
       if [ -z "$pane_id" ] || [ "$pane_id" = "$w" ]; then
         continue

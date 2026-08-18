@@ -316,7 +316,7 @@ cmd_start() {
   [ ! -e "$out" ] && [ ! -L "$out" ] || die "cannot safely stage output"
   (umask 077; : > "$out") || die "cannot stage output"
   STAGED_OUTPUT=$out
-  "${ARGV[@]}" 2>/dev/null | perl -e '
+  ${ARGV[@]+"${ARGV[@]}"} 2>/dev/null | perl -e '
     use strict;
     use warnings;
     my $limit = shift;
@@ -340,7 +340,7 @@ cmd_start() {
     }
     exit($truncated ? 3 : 0);
   ' "$MAX_OUTPUT_BYTES" > "$out"
-  local pipe_status=("${PIPESTATUS[@]}") truncated=0
+  local pipe_status=(${PIPESTATUS[@]+"${PIPESTATUS[@]}"}) truncated=0
   rc=${pipe_status[0]}
   bound_rc=${pipe_status[1]}
   case "$bound_rc" in

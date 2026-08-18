@@ -97,7 +97,7 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 TMP_FILES=()
 cleanup_tmp_files() {
   if [ "${#TMP_FILES[@]}" -gt 0 ]; then
-    rm -f "${TMP_FILES[@]}"
+    rm -f ${TMP_FILES[@]+"${TMP_FILES[@]}"}
   fi
 }
 trap cleanup_tmp_files EXIT
@@ -193,7 +193,7 @@ if [ "${#ARGS[@]}" -lt 1 ]; then
   usage
   exit 2
 fi
-set -- "${ARGS[@]}"
+set -- ${ARGS[@]+"${ARGS[@]}"}
 
 case "$1" in
   --text-file)

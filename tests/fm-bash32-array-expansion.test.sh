@@ -1,0 +1,102 @@
+#!/usr/bin/env bash
+# Regression contract for empty arrays under stock macOS Bash 3.2 with nounset.
+set -u
+
+# shellcheck source=tests/lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+scan_bare_array_expansions() {
+  perl -ne '
+    $line = $_;
+    $line =~ s{\$\{([A-Za-z_][A-Za-z0-9_]*)\[\@\]\+"\$\{\1\[\@\]\}"\}}{}g;
+    while ($line =~ m{\$\{[A-Za-z_][A-Za-z0-9_]*\[(?:\@|\*)\]\}}g) {
+      print "$ARGV:$.: $&\n";
+      $bad = 1;
+    }
+    close ARGV if eof;
+    END { exit($bad ? 1 : 0); }
+  ' "$@"
+}
+
+TMP_ROOT=$(fm_test_tmproot fm-bash32-array-expansion)
+BARE_FIXTURE="$TMP_ROOT/bare.sh"
+RUNTIME_FIXTURE="$TMP_ROOT/runtime.sh"
+
+cat >"$BARE_FIXTURE" <<'SH'
+printf '%s\n' "${empty[@]}"
+printf '%s\n' "${empty[*]}"
+SH
+
+bare_output=$(scan_bare_array_expansions "$BARE_FIXTURE" 2>&1)
+bare_rc=$?
+[ "$bare_rc" -eq 1 ] || fail "bare array-expansion fixture should fail with exit 1, got $bare_rc"
+bare_count=$(printf '%s\n' "$bare_output" | grep -c 'bare.sh:')
+[ "$bare_count" -eq 2 ] || fail "bare array-expansion fixture should report two findings, got $bare_count"
+
+BIN_FILES=()
+while IFS= read -r path; do
+  BIN_FILES+=("$path")
+done < <(find "$ROOT/bin" -type f -name '*.sh' -print | LC_ALL=C sort)
+[ "${#BIN_FILES[@]}" -gt 0 ] || fail "bin shell inventory should not be empty"
+bin_output=$(scan_bare_array_expansions ${BIN_FILES[@]+"${BIN_FILES[@]}"} 2>&1)
+bin_rc=$?
+[ "$bin_rc" -eq 0 ] || fail "bin contains a bare direct array expansion: $bin_output"
+[ -z "$bin_output" ] || fail "clean bin scan should not emit findings: $bin_output"
+pass "array-expansion contract rejects bare direct forms"
+
+cat >"$RUNTIME_FIXTURE" <<'SH'
+#!/bin/bash
+set -u
+
+print_argv() {
+  local label=$1 item
+  shift
+  printf '%s argc=%s' "$label" "$#"
+  for item in "$@"; do
+    printf ' <%s>' "$item"
+  done
+  printf '\n'
+}
+
+empty=()
+empty_loop=()
+for item in ${empty[@]+"${empty[@]}"}; do
+  empty_loop+=("$item")
+done
+empty_copy=(${empty[@]+"${empty[@]}"})
+printf 'empty loop=%s copy=%s star=<%s>\n' \
+  "${#empty_loop[@]}" "${#empty_copy[@]}" "${empty[*]-}"
+print_argv empty ${empty[@]+"${empty[@]}"}
+
+values=("one two" "" three)
+nonempty_loop=()
+for item in ${values[@]+"${values[@]}"}; do
+  nonempty_loop+=("$item")
+done
+nonempty_copy=(${values[@]+"${values[@]}"})
+[ "${nonempty_loop[0]}" = "one two" ] || exit 31
+[ -z "${nonempty_loop[1]}" ] || exit 32
+[ "${nonempty_loop[2]}" = three ] || exit 33
+[ "${nonempty_copy[0]}" = "one two" ] || exit 34
+[ -z "${nonempty_copy[1]}" ] || exit 35
+[ "${nonempty_copy[2]}" = three ] || exit 36
+printf 'nonempty loop=%s copy=%s star=<%s>\n' \
+  "${#nonempty_loop[@]}" "${#nonempty_copy[@]}" "${values[*]-}"
+print_argv nonempty ${values[@]+"${values[@]}"}
+SH
+
+runtime_output=$(/bin/bash "$RUNTIME_FIXTURE")
+runtime_rc=$?
+[ "$runtime_rc" -eq 0 ] || fail "guarded runtime fixture failed under /bin/bash -u with exit $runtime_rc"
+empty_output=$(printf '%s\n' "$runtime_output" | sed -n '1,2p')
+expected_empty=$(printf '%s\n' 'empty loop=0 copy=0 star=<>' 'empty argc=0')
+[ "$empty_output" = "$expected_empty" ] || fail "empty arrays changed guarded behavior: $empty_output"
+pass "guarded empty arrays stay nounset-safe"
+
+nonempty_output=$(printf '%s\n' "$runtime_output" | sed -n '3,4p')
+expected_nonempty=$(printf '%s\n' \
+  'nonempty loop=3 copy=3 star=<one two  three>' \
+  'nonempty argc=3 <one two> <> <three>')
+[ "$nonempty_output" = "$expected_nonempty" ] \
+  || fail "nonempty arrays changed element boundaries: $nonempty_output"
+pass "guarded nonempty arrays preserve element boundaries"

@@ -616,7 +616,7 @@ worker_run_job() { # <account-home> <job-dir>
   }
   set +e
   WORKER_PREEMPTIBLE=$preemptible
-  worker_run_with_timeout "$job" "$remaining" "${child_env[@]}" \
+  worker_run_with_timeout "$job" "$remaining" ${child_env[@]+"${child_env[@]}"} \
     "$command_path" "${argv[@]:1}" < "$job/stdin" > "$stdout_pipe" 2> "$stderr_pipe"
   rc=$?
   WORKER_PREEMPTIBLE=0

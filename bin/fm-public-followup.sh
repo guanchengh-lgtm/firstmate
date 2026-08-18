@@ -120,7 +120,7 @@ die() { printf 'fm-public-followup: %s\n' "$1" >&2; exit "${2:-2}"; }
 
 PF_TEMP_FILES=()
 pf_cleanup_temp_files() {
-  [ "${#PF_TEMP_FILES[@]}" -eq 0 ] || rm -f -- "${PF_TEMP_FILES[@]}"
+  [ "${#PF_TEMP_FILES[@]}" -eq 0 ] || rm -f -- ${PF_TEMP_FILES[@]+"${PF_TEMP_FILES[@]}"}
 }
 trap pf_cleanup_temp_files EXIT
 

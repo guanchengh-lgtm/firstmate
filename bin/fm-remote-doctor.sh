@@ -312,7 +312,7 @@ check_remote_job_worker() {
 report_required_tools() {
   local tool resolved harness
   MISSING=()
-  for tool in "${REQUIRED_TOOLS[@]}"; do
+  for tool in ${REQUIRED_TOOLS[@]+"${REQUIRED_TOOLS[@]}"}; do
     resolved=$(command -v "$tool" 2>/dev/null || true)
     if [ -n "$resolved" ] && [ -x "$resolved" ]; then
       if [ "$tool" = tasks-axi ] && ! fm_tasks_axi_compatible; then
@@ -326,7 +326,7 @@ report_required_tools() {
       MISSING+=("$tool")
     fi
   done
-  for harness in "${HARNESS_TOOLS[@]}"; do
+  for harness in ${HARNESS_TOOLS[@]+"${HARNESS_TOOLS[@]}"}; do
     resolved=$(command -v "$harness" 2>/dev/null || true)
     if [ -n "$resolved" ] && [ -x "$resolved" ]; then
       printf 'required harness=%s:%s\n' "$harness" "$resolved"
@@ -426,14 +426,14 @@ repair_tool_wrapper() { # <tool>
 
 repair_required_wrappers() {
   local tool resolved
-  for tool in "${REQUIRED_TOOLS[@]}"; do
+  for tool in ${REQUIRED_TOOLS[@]+"${REQUIRED_TOOLS[@]}"}; do
     repair_tool_wrapper "$tool" || true
   done
-  for tool in "${HARNESS_TOOLS[@]}"; do
+  for tool in ${HARNESS_TOOLS[@]+"${HARNESS_TOOLS[@]}"}; do
     resolved=$(command -v "$tool" 2>/dev/null || true)
     [ -z "$resolved" ] || [ ! -x "$resolved" ] || return 0
   done
-  for tool in "${HARNESS_TOOLS[@]}"; do
+  for tool in ${HARNESS_TOOLS[@]+"${HARNESS_TOOLS[@]}"}; do
     fm_remote_job_manager_tool "${HOME:-}" "$tool" >/dev/null 2>&1 || continue
     repair_tool_wrapper "$tool" && return 0
   done
@@ -763,7 +763,7 @@ if [ "${FM_REMOTE_JOB_ACTIVE:-}" = 1 ] || ! remote_job_identity_ok; then
 else
   report_required_tools_from_worker
 fi
-for tool in "${OPTIONAL_TOOLS[@]}"; do
+for tool in ${OPTIONAL_TOOLS[@]+"${OPTIONAL_TOOLS[@]}"}; do
   if resolved=$(command -v "$tool" 2>/dev/null); then
     printf 'optional %s=%s\n' "$tool" "$resolved"
   else
@@ -785,7 +785,7 @@ for i in ${GAPS[@]+"${GAPS[@]}"}; do
 done
 
 if [ "${#MISSING[@]}" -gt 0 ]; then
-  printf 'error: required tools do not resolve on the remote runtime PATH: %s\n' "${MISSING[*]}" >&2
+  printf 'error: required tools do not resolve on the remote runtime PATH: %s\n' "${MISSING[*]-}" >&2
   printf 'fix: install each one where it resolves on the path reported above, or put a wrapper script for it in %s/.local/bin, which is always on that PATH.\n' "${HOME:-~}" >&2
   printf 'fix: tools in an unselected nvm version or outside the discovered asdf or mise paths need an absolute wrapper; see docs/remote-secondmates.md for the wrapper recipe.\n' >&2
 fi

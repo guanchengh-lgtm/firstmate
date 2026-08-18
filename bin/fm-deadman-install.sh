@@ -98,7 +98,7 @@ write_channels() {
     if [ "${#CHANNELS[@]}" -eq 0 ]; then
       printf 'auto\n'
     else
-      for channel in "${CHANNELS[@]}"; do
+      for channel in ${CHANNELS[@]+"${CHANNELS[@]}"}; do
         printf '%s\n' "$channel"
       done
     fi > "$tmp")
@@ -147,7 +147,7 @@ fi
 case "$FM_HOME_VALUE" in /*) ;; *) printf 'fm-deadman-install: FM_HOME must be absolute.\n' >&2; exit 2 ;; esac
 case "$FM_HOME_VALUE" in *$'\n'*|*$'\r'*) printf 'fm-deadman-install: FM_HOME must be one line.\n' >&2; exit 2 ;; esac
 if [ "${#CHANNELS[@]}" -gt 0 ]; then
-  for channel in "${CHANNELS[@]}"; do
+  for channel in ${CHANNELS[@]+"${CHANNELS[@]}"}; do
     case "$channel" in
       *$'\n'*|*$'\r'*|'') printf 'fm-deadman-install: each channel must be one non-empty line.\n' >&2; exit 2 ;;
       off|auto|default|osascript|herdr|command:*) ;;

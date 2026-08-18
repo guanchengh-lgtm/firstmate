@@ -133,6 +133,7 @@ now_ms() {
 family_for_basename() {
   case "$1" in
     fm-arm-pretool-check.test.sh|fm-ask-user-authority.test.sh|\
+    fm-bash32-array-expansion.test.sh|\
     fm-brief.test.sh|fm-vendor-auth-probe.test.sh|\
     fm-calm-pi-extension.test.sh|fm-cd-pretool-check.test.sh|\
     fm-composer-ghost.test.sh|fm-composer-lib.test.sh|\
@@ -613,7 +614,7 @@ run_coverage_guard() {
       rm -rf "$tmp"
       return 1
     fi
-    printf '%s\n' "${SCRIPTS[@]}" >>"$tmp/serial_shards_raw"
+    printf '%s\n' ${SCRIPTS[@]+"${SCRIPTS[@]}"} >>"$tmp/serial_shards_raw"
     shard=$((shard + 1))
   done
   SCRIPTS=()
@@ -847,6 +848,9 @@ families_for_changed_path() {
       ;;
     bin/fm-test-run.sh|bin/fm-test-isolation-proof.sh)
       printf '%s\n' pure-contract-unit
+      ;;
+    bin/fm-notify-lib.sh)
+      printf '%s\n' "__script__:fm-deadman.test.sh"
       ;;
     bin/backends/herdr*|bin/fm-herdr-lab.sh|tests/herdr-test-safety.sh)
       printf '%s\n' real-herdr-gated
@@ -1094,7 +1098,7 @@ apply_exclude_families() {
   for s in "${SCRIPTS[@]+"${SCRIPTS[@]}"}"; do
     fam=$(family_for_basename "$(basename "$s")")
     keep=1
-    for ex in "${EXCLUDE_FAMILIES[@]}"; do
+    for ex in ${EXCLUDE_FAMILIES[@]+"${EXCLUDE_FAMILIES[@]}"}; do
       if [ "$fam" = "$ex" ]; then
         keep=0
         break
@@ -1335,10 +1339,10 @@ fi
 if [ "${MODE:-}" = "aggregate" ]; then
   [ -n "$AGGREGATE_OUT" ] || die "--aggregate-json requires an output path"
   [ "${#SCRIPTS[@]}" -gt 0 ] || die "--aggregate-json requires at least one input timing JSON"
-  for s in "${SCRIPTS[@]}"; do
+  for s in ${SCRIPTS[@]+"${SCRIPTS[@]}"}; do
     [ -f "$s" ] || die "aggregate input not found: $s"
   done
-  aggregate_timing_json "$AGGREGATE_OUT" "${SCRIPTS[@]}"
+  aggregate_timing_json "$AGGREGATE_OUT" ${SCRIPTS[@]+"${SCRIPTS[@]}"}
   exit 0
 fi
 
@@ -1371,9 +1375,9 @@ case "${MODE:-}" in
     ;;
   scripts)
     # Normalize and re-add through add_script for consistent paths.
-    raw=("${SCRIPTS[@]}")
+    raw=(${SCRIPTS[@]+"${SCRIPTS[@]}"})
     SCRIPTS=()
-    for s in "${raw[@]}"; do
+    for s in ${raw[@]+"${raw[@]}"}; do
       add_script "$s"
     done
     SELECTION_DESC="scripts"
@@ -1385,7 +1389,7 @@ esac
 
 apply_exclude_families
 if [ "${#EXCLUDE_FAMILIES[@]}" -gt 0 ]; then
-  SELECTION_DESC="${SELECTION_DESC};exclude-family=$(IFS=,; printf '%s' "${EXCLUDE_FAMILIES[*]}")"
+  SELECTION_DESC="${SELECTION_DESC};exclude-family=$(IFS=,; printf '%s' "${EXCLUDE_FAMILIES[*]-}")"
 fi
 if [ -n "$FAIL_ON_GATE_SKIP" ]; then
   SELECTION_DESC="${SELECTION_DESC};fail-on-gate-skip=$FAIL_ON_GATE_SKIP"
@@ -1418,14 +1422,14 @@ if [ "${#SCRIPTS[@]}" -eq 0 ]; then
 fi
 
 # Verify selected scripts exist before starting.
-for s in "${SCRIPTS[@]}"; do
+for s in ${SCRIPTS[@]+"${SCRIPTS[@]}"}; do
   [ -f "$s" ] || die "test script not found: $s"
   [ -x "$s" ] || [ -r "$s" ] || die "test script not readable: $s"
 done
 
 # --jobs N>1 only for the proven-isolated set. Stateful families stay serial.
 if [ "$JOBS" -gt 1 ]; then
-  for s in "${SCRIPTS[@]}"; do
+  for s in ${SCRIPTS[@]+"${SCRIPTS[@]}"}; do
     if ! is_proven_isolated_script "$s"; then
       die "--jobs $JOBS refused: $s is not in the proven-isolated set (see bin/fm-test-isolation-proof.sh --list). Stateful families stay serial."
     fi
@@ -1542,7 +1546,7 @@ run_one_serial() {
 }
 
 if [ "$JOBS" -eq 1 ]; then
-  for script in "${SCRIPTS[@]}"; do
+  for script in ${SCRIPTS[@]+"${SCRIPTS[@]}"}; do
     run_one_serial "$script"
   done
 else
@@ -1613,7 +1617,7 @@ else
     done
   }
 
-  for script in "${SCRIPTS[@]}"; do
+  for script in ${SCRIPTS[@]+"${SCRIPTS[@]}"}; do
     while [ "$active_workers" -ge "$JOBS" ]; do
       wait_one_completed_job_worker
     done
