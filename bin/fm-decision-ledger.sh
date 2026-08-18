@@ -243,11 +243,11 @@ done < <(printf '%s\n' "$LIST_OUTPUT" | sed -n 's/^  \([A-Za-z0-9._-][A-Za-z0-9.
 
 SELECTED_RECENT=''
 if [ "$RECENT_LIMIT" -gt 0 ] && [ "${#RECENT_ROWS[@]}" -gt 0 ]; then
-  SELECTED_RECENT=$(printf '%s\n' "${RECENT_ROWS[@]}" | LC_ALL=C sort -t $'\t' -k2,2r -k3,3 | head -n "$RECENT_LIMIT")
+  SELECTED_RECENT=$(printf '%s\n' ${RECENT_ROWS[@]+"${RECENT_ROWS[@]}"} | LC_ALL=C sort -t $'\t' -k2,2r -k3,3 | head -n "$RECENT_LIMIT")
 fi
 
 ALL_ROWS=$(
-  if [ "${#OPEN_ROWS[@]}" -gt 0 ]; then printf '%s\n' "${OPEN_ROWS[@]}"; fi
+  if [ "${#OPEN_ROWS[@]}" -gt 0 ]; then printf '%s\n' ${OPEN_ROWS[@]+"${OPEN_ROWS[@]}"}; fi
   if [ -n "$SELECTED_RECENT" ]; then printf '%s\n' "$SELECTED_RECENT"; fi
 )
 

@@ -364,7 +364,7 @@ remote_handoff() { # <secondmate-id> <keys...>
   in_flight=()
   done_items=()
   not_queued=()
-  for key in "${requested[@]}"; do
+  for key in ${requested[@]+"${requested[@]}"}; do
     out_section=$(backlog_key_section "$outbox" "$key" 2>/dev/null || true)
     main_section=$(backlog_key_section "$MAIN_BACKLOG" "$key" 2>/dev/null || true)
     if [ -n "$out_section" ]; then
@@ -382,14 +382,14 @@ remote_handoff() { # <secondmate-id> <keys...>
   done
   if [ "${#in_flight[@]}" -gt 0 ] || [ "${#done_items[@]}" -gt 0 ] \
     || [ "${#not_queued[@]}" -gt 0 ] || [ "${#missing[@]}" -gt 0 ]; then
-    [ "${#in_flight[@]}" -eq 0 ] || echo "error: refusing to hand off in-flight backlog items: ${in_flight[*]}" >&2
-    [ "${#done_items[@]}" -eq 0 ] || echo "error: refusing to hand off Done backlog items: ${done_items[*]}" >&2
-    [ "${#not_queued[@]}" -eq 0 ] || echo "error: refusing to hand off non-Queued outbox or backlog items: ${not_queued[*]}" >&2
-    [ "${#missing[@]}" -eq 0 ] || echo "error: no backlog or pending outbox item matched: ${missing[*]}" >&2
+    [ "${#in_flight[@]}" -eq 0 ] || echo "error: refusing to hand off in-flight backlog items: ${in_flight[*]-}" >&2
+    [ "${#done_items[@]}" -eq 0 ] || echo "error: refusing to hand off Done backlog items: ${done_items[*]-}" >&2
+    [ "${#not_queued[@]}" -eq 0 ] || echo "error: refusing to hand off non-Queued outbox or backlog items: ${not_queued[*]-}" >&2
+    [ "${#missing[@]}" -eq 0 ] || echo "error: no backlog or pending outbox item matched: ${missing[*]-}" >&2
     echo "       nothing new was staged." >&2
     return 1
   fi
-  for key in "${to_move[@]}"; do
+  for key in ${to_move[@]+"${to_move[@]}"}; do
     while IFS= read -r line; do
       printf 'error: refusing to hand off %s: non-2-space continuation line: %s\n' "$key" "$line" >&2
       return 1
@@ -397,7 +397,7 @@ remote_handoff() { # <secondmate-id> <keys...>
   done
   seed_backlog_scaffold "$outbox"
   if [ "${#to_move[@]}" -gt 0 ]; then
-    if ! mv_out=$(tasks-axi mv "${to_move[@]}" --file "$MAIN_BACKLOG" --to "$outbox" 2>&1); then
+    if ! mv_out=$(tasks-axi mv ${to_move[@]+"${to_move[@]}"} --file "$MAIN_BACKLOG" --to "$outbox" 2>&1); then
       [ -z "$mv_out" ] || printf '%s\n' "$mv_out" >&2
       echo "error: atomic outbox staging failed; nothing new was handed off" >&2
       return 1
@@ -406,10 +406,10 @@ remote_handoff() { # <secondmate-id> <keys...>
   # A hard local kill can land tasks-axi's target persist before its source
   # persist. The outbox is already authoritative in that state, so converge by
   # deleting only duplicates that tasks-axi itself confirms are dependency-safe.
-  remove_interrupted_source_duplicates "$outbox" "${requested[@]}" || return 1
+  remove_interrupted_source_duplicates "$outbox" ${requested[@]+"${requested[@]}"} || return 1
   remote_deliver_outbox "$id" "$outbox" || return 1
-  echo "handed off ${#requested[@]} item(s) to remote secondmate $id: ${requested[*]}"
-  [ "${#already[@]}" -eq 0 ] || echo "  already staged (recovered): ${already[*]}"
+  echo "handed off ${#requested[@]} item(s) to remote secondmate $id: ${requested[*]-}"
+  [ "${#already[@]}" -eq 0 ] || echo "  already staged (recovered): ${already[*]-}"
 }
 
 with_remote_route_locks() { # <secondmate-id> <function> <args...>
@@ -501,19 +501,19 @@ done
 
 FAILED=0
 if [ "${#IN_FLIGHT[@]}" -gt 0 ]; then
-  echo "error: refusing to hand off in-flight backlog items: ${IN_FLIGHT[*]}" >&2
+  echo "error: refusing to hand off in-flight backlog items: ${IN_FLIGHT[*]-}" >&2
   FAILED=1
 fi
 if [ "${#DONE[@]}" -gt 0 ]; then
-  echo "error: refusing to hand off Done (historical) backlog items: ${DONE[*]}; handoffs move in-scope queued work only - Done records stay with their home and are pruned/archived." >&2
+  echo "error: refusing to hand off Done (historical) backlog items: ${DONE[*]-}; handoffs move in-scope queued work only - Done records stay with their home and are pruned/archived." >&2
   FAILED=1
 fi
 if [ "${#NOT_QUEUED[@]}" -gt 0 ]; then
-  echo "error: refusing to hand off non-queued backlog items: ${NOT_QUEUED[*]}; handoffs move in-scope queued work only." >&2
+  echo "error: refusing to hand off non-queued backlog items: ${NOT_QUEUED[*]-}; handoffs move in-scope queued work only." >&2
   FAILED=1
 fi
 if [ "${#MISSING[@]}" -gt 0 ]; then
-  echo "error: no backlog item matched these keys in $MAIN_BACKLOG: ${MISSING[*]}" >&2
+  echo "error: no backlog item matched these keys in $MAIN_BACKLOG: ${MISSING[*]-}" >&2
   FAILED=1
 fi
 if [ "$FAILED" -ne 0 ]; then
@@ -527,7 +527,7 @@ if [ "${#TO_MOVE[@]}" -eq 0 ]; then
 fi
 
 FAILED=0
-for key in "${TO_MOVE[@]}"; do
+for key in ${TO_MOVE[@]+"${TO_MOVE[@]}"}; do
   while IFS= read -r line; do
     printf 'error: refusing to hand off %s: non-2-space continuation line: %s\n' \
       "$key" "$line" >&2
@@ -560,7 +560,7 @@ fi
 # together and, on any failure, neither backlog's content changes - the only
 # cleanup is a scaffold we just created. tasks-axi writes both its success and
 # error output to stdout, so capture it and surface it only on failure.
-if ! MV_OUT=$(tasks-axi mv "${TO_MOVE[@]}" --file "$MAIN_BACKLOG" --to "$SUB_BACKLOG" 2>&1); then
+if ! MV_OUT=$(tasks-axi mv ${TO_MOVE[@]+"${TO_MOVE[@]}"} --file "$MAIN_BACKLOG" --to "$SUB_BACKLOG" 2>&1); then
   if [ "$SUB_CREATED" -eq 1 ]; then
     rm -f "$SUB_BACKLOG"
   fi
@@ -571,8 +571,8 @@ if ! MV_OUT=$(tasks-axi mv "${TO_MOVE[@]}" --file "$MAIN_BACKLOG" --to "$SUB_BAC
   exit 1
 fi
 
-echo "handed off ${#TO_MOVE[@]} item(s) to $ID: ${TO_MOVE[*]}"
+echo "handed off ${#TO_MOVE[@]} item(s) to $ID: ${TO_MOVE[*]-}"
 echo "  into $SUB_BACKLOG"
 if [ "${#ALREADY[@]}" -gt 0 ]; then
-  echo "  already present (skipped): ${ALREADY[*]}"
+  echo "  already present (skipped): ${ALREADY[*]-}"
 fi

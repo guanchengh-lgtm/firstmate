@@ -206,10 +206,10 @@ TAB=$(printf '\t')
 TARGET=""
 HIT_ROOT=""
 HIT_KIND=""
-for candidate in "${PATHS[@]}"; do
+for candidate in ${PATHS[@]+"${PATHS[@]}"}; do
   resolved=$(fm_project_write_resolve "$candidate") || continue
   [ -n "$resolved" ] || continue
-  for entry in "${PROTECTED[@]}"; do
+  for entry in ${PROTECTED[@]+"${PROTECTED[@]}"}; do
     kind=${entry%%"$TAB"*}
     root=${entry#*"$TAB"}
     if fm_project_write_path_under "$resolved" "$root"; then

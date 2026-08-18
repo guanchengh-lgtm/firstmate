@@ -91,7 +91,7 @@ all_sources_done() {
   local -a source_ids
   IFS=, read -r -a source_ids <<< "$source_csv"
   [ "${#source_ids[@]}" -gt 0 ] || return 1
-  for source_id in "${source_ids[@]}"; do
+  for source_id in ${source_ids[@]+"${source_ids[@]}"}; do
     source_id=$(trim_space "$source_id")
     [ -n "$source_id" ] || return 1
     task_is_done "$source_id" || return 1

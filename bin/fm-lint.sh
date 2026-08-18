@@ -68,7 +68,7 @@ fm_lint_worker() {  # <manifest> <output-dir> <shard-index>
     trap 'fm_lint_worker_stop; exit 129' HUP
     trap 'fm_lint_worker_stop; exit 130' INT
     trap 'fm_lint_worker_stop; exit 143' TERM
-    "$FM_LINT_SHELLCHECK" --norc --external-sources -- "${roots[@]}" > "$output.out" 2>&1 &
+    "$FM_LINT_SHELLCHECK" --norc --external-sources -- ${roots[@]+"${roots[@]}"} > "$output.out" 2>&1 &
     FM_LINT_WORKER_SHELLCHECK_PID=$!
     wait "$FM_LINT_WORKER_SHELLCHECK_PID" || rc=$?
     FM_LINT_WORKER_SHELLCHECK_PID=
@@ -213,7 +213,7 @@ if [ "$LIST_FILES" -eq 1 ]; then
     printf 'fm-lint.sh: --list-files does not accept explicit paths.\n' >&2
     exit 2
   }
-  [ "$ROOT_COUNT" -eq 0 ] || printf '%s\n' "${ROOTS[@]}"
+  [ "$ROOT_COUNT" -eq 0 ] || printf '%s\n' ${ROOTS[@]+"${ROOTS[@]}"}
   exit 0
 fi
 
@@ -287,7 +287,7 @@ done
 
 index=1
 : > "$WEIGHTS"
-for path in "${ROOTS[@]}"; do
+for path in ${ROOTS[@]+"${ROOTS[@]}"}; do
   case "$path" in
     *"$TAB"*|*$'\n'*)
       printf 'fm-lint.sh: paths containing tabs or newlines are not supported: %s\n' "$path" >&2
@@ -437,13 +437,13 @@ if [ -n "$TELEMETRY" ]; then
   TELEMETRY_LOAD_END=$(fm_lint_load_average)
   TELEMETRY_CPU_END=$(fm_lint_aggregate_cpu)
 
-  direct_lines=$(awk 'END {print NR + 0}' "${ROOTS[@]}" 2>/dev/null || printf 'unavailable')
+  direct_lines=$(awk 'END {print NR + 0}' ${ROOTS[@]+"${ROOTS[@]}"} 2>/dev/null || printf 'unavailable')
   direct_bytes=0
   : > "$TMP_ROOT/content-cksums"
   : > "$TMP_ROOT/source-targets"
   source_directives=0
   source_boundaries=0
-  for path in "${ROOTS[@]}"; do
+  for path in ${ROOTS[@]+"${ROOTS[@]}"}; do
     if [ -f "$path" ]; then
       bytes=$(wc -c < "$path" 2>/dev/null | tr -d '[:space:]')
       case "$bytes" in ''|*[!0-9]*) bytes=0 ;; esac

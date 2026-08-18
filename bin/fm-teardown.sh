@@ -1433,7 +1433,7 @@ EOF
       fi
     done
     if [ "${#remaining_pids[@]}" -gt 0 ]; then
-      echo "teardown: force-killing leaked $label process(es) for $ID: ${remaining_pids[*]}" >&2
+      echo "teardown: force-killing leaked $label process(es) for $ID: ${remaining_pids[*]-}" >&2
       if ! task_pids_under_roots "$@"; then
         echo "REFUSED: cannot determine leaked processes under ${TASK_PIDS_FAILED_DIR:-<missing>} for $ID (lsof failed); preserving the worktree/tasktmp for manual inspection or retry." >&2
         return 1

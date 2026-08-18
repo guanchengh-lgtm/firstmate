@@ -179,10 +179,10 @@ fm_notify() {
   while IFS= read -r ch; do
     [ -n "$ch" ] && channels+=("$ch")
   done < <(fm_notify_configured_channels)
-  for ch in "${channels[@]}"; do
+  for ch in ${channels[@]+"${channels[@]}"}; do
     [ "$ch" = off ] && return 1
   done
-  for ch in "${channels[@]}"; do
+  for ch in ${channels[@]+"${channels[@]}"}; do
     case "$ch" in auto|default) ch=$(fm_notify_platform_default) ;; esac
     case "$ch" in
       '') fm_notify_log "no OS-level alert channel on $(uname); ${marker:-no durable marker}; configure a command: directive" ;;

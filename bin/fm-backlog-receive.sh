@@ -141,7 +141,7 @@ KEYS=()
 while IFS= read -r key; do
   [ -n "$key" ] && KEYS+=("$key")
 done < <(list_keys "$DELIVERED")
-for key in "${KEYS[@]}"; do
+for key in ${KEYS[@]+"${KEYS[@]}"}; do
   section=$(backlog_key_section "$DELIVERED" "$key") || die "delivered key disappeared during classification: $key"
   [ "$section" = '## Queued' ] || die "delivered outbox contains non-Queued item $key under $section"
 done
@@ -154,7 +154,7 @@ if [ ! -f "$DEST" ]; then
 fi
 TO_MOVE=()
 ALREADY=()
-for key in "${KEYS[@]}"; do
+for key in ${KEYS[@]+"${KEYS[@]}"}; do
   if backlog_key_section "$DEST" "$key" >/dev/null 2>&1; then
     ALREADY+=("$key")
   else
@@ -164,12 +164,12 @@ done
 
 if [ "${#TO_MOVE[@]}" -gt 0 ]; then
   fm_tasks_axi_compatible || die "a compatible tasks-axi is required for atomic backlog receipt; run bin/fm-bootstrap.sh for the required version"
-  if ! MOVE_OUT=$(run_move "${TO_MOVE[@]}" 2>&1); then
+  if ! MOVE_OUT=$(run_move ${TO_MOVE[@]+"${TO_MOVE[@]}"} 2>&1); then
     recovered=0
     for lock in "$DELIVERED.lock" "$DEST.lock"; do
       if remove_dead_stale_lock "$lock"; then recovered=1; fi
     done
-    if [ "$recovered" -ne 1 ] || ! MOVE_OUT=$(run_move "${TO_MOVE[@]}" 2>&1); then
+    if [ "$recovered" -ne 1 ] || ! MOVE_OUT=$(run_move ${TO_MOVE[@]+"${TO_MOVE[@]}"} 2>&1); then
       [ "$DEST_CREATED" -eq 0 ] || rm -f -- "$DEST"
       [ -z "$MOVE_OUT" ] || printf '%s\n' "$MOVE_OUT" >&2
       die "atomic backlog receipt failed; delivered outbox is preserved for retry"
@@ -177,7 +177,7 @@ if [ "${#TO_MOVE[@]}" -gt 0 ]; then
   fi
 fi
 
-for key in "${KEYS[@]}"; do
+for key in ${KEYS[@]+"${KEYS[@]}"}; do
   backlog_key_section "$DEST" "$key" >/dev/null 2>&1 \
     || die "receipt verification failed for $key; delivered outbox is preserved"
 done

@@ -126,7 +126,7 @@ fm_pr_gitlab_host_valid() {
     .*|*.|*..*|*[!a-z0-9.-]*) return 1 ;;
   esac
   IFS=. read -ra labels <<< "$host"
-  for label in "${labels[@]}"; do
+  for label in ${labels[@]+"${labels[@]}"}; do
     [ "${#label}" -ge 1 ] && [ "${#label}" -le 63 ] || return 1
     case "$label" in
       -*|*-) return 1 ;;
@@ -148,7 +148,7 @@ fm_pr_gitlab_path_valid() {
   esac
   IFS=/ read -ra segments <<< "$path"
   [ "${#segments[@]}" -ge 2 ] && [ "${#segments[@]}" -le 20 ] || return 1
-  for segment in "${segments[@]}"; do
+  for segment in ${segments[@]+"${segments[@]}"}; do
     [ "${#segment}" -ge 1 ] && [ "${#segment}" -le 255 ] || return 1
     case "$segment" in
       .|..|-*|*.git|*.atom|*[!A-Za-z0-9._-]*) return 1 ;;

@@ -777,10 +777,10 @@ refuse_populated_projectless_home() {
 
   echo "error: cannot seed project-less secondmate home $home because it contains project data" >&2
   if [ "${#clones[@]}" -gt 0 ]; then
-    printf 'error: projects/ entries: %s\n' "$(join_projects "${clones[@]}")" >&2
+    printf 'error: projects/ entries: %s\n' "$(join_projects ${clones[@]+"${clones[@]}"})" >&2
   fi
   if [ "${#registry_projects[@]}" -gt 0 ]; then
-    printf 'error: data/projects.md entries: %s\n' "$(join_projects "${registry_projects[@]}")" >&2
+    printf 'error: data/projects.md entries: %s\n' "$(join_projects ${registry_projects[@]+"${registry_projects[@]}"})" >&2
   fi
   echo "error: retire or clean this home first before seeding with --no-projects" >&2
   return 1
@@ -813,7 +813,7 @@ seed_home() {
     fi
   done
   if [ "${#filtered[@]}" -gt 0 ]; then
-    set -- "${filtered[@]}"
+    set -- ${filtered[@]+"${filtered[@]}"}
   else
     set --
   fi

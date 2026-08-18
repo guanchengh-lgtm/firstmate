@@ -323,7 +323,7 @@ fi
 
 [ "${#CANDIDATES[@]}" -gt 0 ] || die "candidate set is empty; refusing isolation proof"
 
-for s in "${CANDIDATES[@]}"; do
+for s in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
   [ -f "$s" ] || die "candidate not found: $s"
 done
 
@@ -398,7 +398,7 @@ wait_one_slot() {
 }
 
 idx=0
-for script in "${CANDIDATES[@]}"; do
+for script in ${CANDIDATES[@]+"${CANDIDATES[@]}"}; do
   idx=$((idx + 1))
   work="$PROOF_ROOT/w$idx"
   # Create then chmod: mkdir -m can still be umask-adjusted on some platforms.

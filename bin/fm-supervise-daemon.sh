@@ -508,7 +508,7 @@ sync_pause_markers_from_signal() {  # <state> <signal files>
   local state=$1 paths=$2 f last task win
   local -a files
   read -r -a files <<<"$paths"
-  for f in "${files[@]}"; do
+  for f in ${files[@]+"${files[@]}"}; do
     case "$f" in *.status) ;; *) continue ;; esac
     [ -e "$f" ] || continue
     last=$(last_status_line "$f")
@@ -869,10 +869,10 @@ wedge_alarm_notify() {  # <summary> <marker>
     [ -n "$ch" ] || continue
     channels+=("$ch")
   done < <(wedge_alarm_configured_channels)
-  for ch in "${channels[@]}"; do
+  for ch in ${channels[@]+"${channels[@]}"}; do
     [ "$ch" = off ] && return 0
   done
-  for ch in "${channels[@]}"; do
+  for ch in ${channels[@]+"${channels[@]}"}; do
     case "$ch" in auto|default) ch=$(wedge_alarm_platform_default) ;; esac
     case "$ch" in
       '') log "wedge alarm: no OS-level alert channel on $(uname); durable marker $marker is the only signal - set config/wedge-alarm (e.g. a command: directive)" ;;
@@ -1175,7 +1175,7 @@ should_force_self() {  # <reason>
   [ -n "$skip" ] || return 1
   local -a prefixes
   IFS='|' read -ra prefixes <<<"$skip"
-  for prefix in "${prefixes[@]}"; do
+  for prefix in ${prefixes[@]+"${prefixes[@]}"}; do
     [ -n "$prefix" ] || continue
     [ "$reason" != "${reason#"$prefix"}" ] && return 0
   done
@@ -1441,7 +1441,7 @@ fm_super_main() {
       [ -n "$t" ] && [ $((now - t)) -lt "$CRASH_WINDOW" ] && keep+=("$t")
     done
     keep+=("$now")
-    crash_times=("${keep[@]}")
+    crash_times=(${keep[@]+"${keep[@]}"})
     if [ "${#crash_times[@]}" -gt "$CRASH_THRESHOLD" ]; then
       log "ERROR: watcher crashed ${#crash_times[@]} times within ${CRASH_WINDOW}s; backing off ${CRASH_BACKOFF}s"
       crash_times=()

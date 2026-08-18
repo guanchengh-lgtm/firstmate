@@ -130,7 +130,7 @@ if [ ! -f "$BRIEF" ]; then
   if [ "$NO_PROJECTS" -eq 1 ]; then
     "$SCRIPT_DIR/fm-brief.sh" "$ID" --secondmate --no-projects >/dev/null
   else
-    "$SCRIPT_DIR/fm-brief.sh" "$ID" --secondmate "${PROJECT_NAMES[@]}" >/dev/null
+    "$SCRIPT_DIR/fm-brief.sh" "$ID" --secondmate ${PROJECT_NAMES[@]+"${PROJECT_NAMES[@]}"} >/dev/null
   fi
   BRIEF_CREATED=1
 fi
