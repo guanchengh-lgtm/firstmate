@@ -408,7 +408,7 @@ test_implicit_registry_and_decisions_symlinks_fail_closed() {
 }
 
 test_historical_checkout_fixture_reverses_clean_to_one_and_back() {
-  local home hold clean_hash roundtrip_hash clean_rows broken_rows out rc expected artifact expected_hash actual_hash
+  local home hold clean_hash roundtrip_hash clean_rows broken_rows out rc expected artifact expected_hash actual_hash source_date
   home=$(new_home historical-checkout)
   enable_tasks "$home"
   mkdir -p "$home/data/decisions"
@@ -417,6 +417,11 @@ test_historical_checkout_fixture_reverses_clean_to_one_and_back() {
   cp "$HISTORICAL_FIXTURE/registry.fixture" "$home/data/sot-programs.tsv"
   hold=tv-gamma-impl-intake-decision-level-coincidence
   expected="SOT_GAP: gamma-look-ship-20260815 - captain hold $hold is open, not bound to the later authority"
+  source_date=$(jq -r '.source_date // empty' "$HISTORICAL_FIXTURE/provenance.json")
+  case "$source_date" in
+    [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) : ;;
+    *) fail "historical fixture provenance lacks a canonical source_date" ;;
+  esac
 
   FM_HOME="$home" "$CHECK" \
     --expect-rule R-SOT-SUPERSEDED-HOLD --expect-count 0 >/dev/null \
@@ -443,6 +448,12 @@ test_historical_checkout_fixture_reverses_clean_to_one_and_back() {
   FM_HOME="$home" "$CHECK" \
     --expect-rule R-SOT-SUPERSEDED-HOLD --expect-count 0 >/dev/null \
     || fail "rebound derived fixture was not clean"
+  # tasks-axi stamps (done YYYY-MM-DD) from the local wall clock. The generator
+  # pins that stamp to provenance.source_date so the checked-in backlog bytes stay
+  # stable across timezones; mirror that pin before the round-trip hash compare.
+  sed -E 's/\(done [0-9]{4}-[0-9]{2}-[0-9]{2}\)/(done '"$source_date"')/' \
+    "$home/data/backlog.md" > "$home/data/backlog.pinned"
+  mv "$home/data/backlog.pinned" "$home/data/backlog.md"
   roundtrip_hash=$(shasum -a 256 "$home/data/backlog.md" | awk '{print $1}')
   [ "$roundtrip_hash" = "$clean_hash" ] \
     || fail "derived fixture did not round-trip to its canonical backlog hash"
