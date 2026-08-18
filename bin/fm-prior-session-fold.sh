@@ -7,10 +7,15 @@
 #   scope: <targeted coverage disclosure>
 #   LIVE JOBS
 #   OPEN PICKS
+#   UNVERIFIED PICK CONTEXT
 #   CAPTAIN LOCK WORDS
 #   fold-status: parsed within bound | INCOMPLETE: <reason>
 #
-# The fold extracts only live jobs, unanswered picks, and captain words that answered a pick or explicitly changed a lock.
+# OPEN PICKS contains only assistant questions carrying an exact `[hold=<id>]`
+# marker whose durable state still resolves to open through fm-decision-hold.sh.
+# Decision-like chat without that identity is non-actionable UNVERIFIED PICK
+# CONTEXT. A chat answer never closes a durable hold; resolved or superseded
+# durable state wins over older transcript text.
 # It does not ingest GBrain, Graphify, or Obsidian because those are not the resume floor.
 # It does not claim 100% coverage of all chat.
 # The source is the prior top-level Pi or Claude session JSONL whose recorded working directory matches this FM_HOME.
@@ -85,10 +90,12 @@ FM_PRIOR_FOLD_HOME="$FM_HOME" \
 FM_PRIOR_FOLD_BUDGET="$BUDGET" \
 FM_PRIOR_FOLD_MEMORY_TOKENS="$MEMORY_TOKENS" \
 FM_PRIOR_FOLD_TOKEN_CAP="$TOKEN_CAP" \
+FM_PRIOR_FOLD_DECISION_SCRIPT="$SCRIPT_DIR/fm-decision-hold.sh" \
 "$NODE_BIN" - > "$TMP_OUTPUT" 2>/dev/null <<'JS'
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const { spawnSync } = require("child_process");
 
 const rule = "=".repeat(80);
 const home = fs.realpathSync.native(process.env.FM_PRIOR_FOLD_HOME);
@@ -250,8 +257,10 @@ if (!source) process.exit();
 const liveJobs = [];
 let liveJobsUncertain = false;
 let openPicks = [];
+let unverifiedPicks = [];
 const captainWords = [];
 const decisionAsk = /captain'?s call|needs-decision|\bpick\b(?!\s+up\b)|\bchoose\b|\bwhich (?:option|path|one|lane|approach)\b|\bdecision\b[^.?!]*\?/i;
+const holdMarker = /\[hold=([A-Za-z0-9._-]+)\]/g;
 const liveJob = /\b(?:underway|under way|in flight|live jobs?|working:|paused:|checks? running|work (?:is )?running)/i;
 const aggregateLiveJob = /^live jobs?:/i;
 const terminalJob = /\b(?:done:|failed:|cancelled|canceled|merged|finished|completed|checks? green)/i;
@@ -265,6 +274,25 @@ const strongLockWord = new RegExp(
   "i",
 );
 const terseAnswer = /^(?:(?:(?:let'?s|let us)\s+)?(?:do|take|use|select|choose|pick)\s+|the\s+|(?:option|path|lane)\s+)?(?:both|all|neither|first|second|third|yes|no|a|b|c|1|2|3)(?:\b|[.):])/i;
+
+function durableHoldState(id) {
+  const result = spawnSync(process.env.FM_PRIOR_FOLD_DECISION_SCRIPT, ["state", id], {
+    cwd: home,
+    env: process.env,
+    encoding: "utf8",
+    timeout: 10000,
+  });
+  if (result.error || result.status !== 0) {
+    const diagnostic = String(result.stderr || result.error || "state resolver failed")
+      .replace(/\s+/g, " ").trim();
+    throw new Error(`durable hold ${id} could not be resolved${diagnostic ? `: ${diagnostic}` : ""}`);
+  }
+  const state = String(result.stdout).trim();
+  if (!["open", "resolved", "superseded"].includes(state)) {
+    throw new Error(`durable hold ${id} returned invalid state: ${state || "(empty)"}`);
+  }
+  return state;
+}
 
 function foldMessage(message) {
   const compact = snippet(message.text);
@@ -280,14 +308,22 @@ function foldMessage(message) {
       liveJobs.length = 0;
       liveJobsUncertain = true;
     }
-    if (decisionAsk.test(message.text)) addUnique(openPicks, compact);
+    if (decisionAsk.test(message.text)) {
+      const ids = [...new Set([...message.text.matchAll(holdMarker)].map((match) => match[1]))];
+      if (ids.length > 0) {
+        const states = ids.map(durableHoldState);
+        if (states.includes("open")) addUnique(openPicks, compact);
+      } else {
+        addUnique(unverifiedPicks, compact);
+      }
+    }
     return;
   }
 
-  if (openPicks.length && (strongLockWord.test(message.text)
+  if ((openPicks.length || unverifiedPicks.length) && (strongLockWord.test(message.text)
       || (compact.length <= 240 && terseAnswer.test(compact)))) {
     addUnique(captainWords, compact);
-    openPicks.pop();
+    if (unverifiedPicks.length) unverifiedPicks.pop();
   } else if (strongLockWord.test(message.text)) {
     addUnique(captainWords, compact);
   }
@@ -344,6 +380,7 @@ async function main() {
       ? [...liveJobs, "INCOMPLETE: a later terminal update made the earlier live-job snapshot unsafe to reuse."]
       : liveJobs],
     ["OPEN PICKS", openPicks],
+    ["UNVERIFIED PICK CONTEXT", unverifiedPicks],
     ["CAPTAIN LOCK WORDS", captainWords],
   ];
   let rendered = render(items, false);
@@ -367,7 +404,9 @@ async function main() {
   process.stdout.write(rendered);
 }
 
-main().catch(() => incomplete("prior session parser failed.", source));
+main().catch((error) => incomplete(error && error.message
+  ? `prior session durable decision reconciliation failed: ${error.message}.`
+  : "prior session parser failed.", source));
 JS
 NODE_STATUS=$?
 

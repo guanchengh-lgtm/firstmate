@@ -1,0 +1,44 @@
+# Gamma level look — captain lock (2026-08-15)
+
+Source: Lavish design-consultation board `.lavish/gamma-level-look-board.html` (captain picks queued
+2026-08-15, all six questions answered). Inputs folded: `data/tv-gamma-level-ux-pulse/report.md`,
+`data/tv-gamma-level-look-voice/report.md`, `data/gamma-method-grill/codex-design-voice-2026-08-14.txt`,
+`data/gamma-method-grill/north-star-2026-08-14.md`.
+
+## Locked look (captain picks, verbatim option ids)
+
+1. **Label (Q1=C, Q1b=C2):** `<strike> · GEX <nn>%` — e.g. `780 · GEX 22%`. Whole percents. Magnitude
+   stub before the label text, scaled on a FIXED 0–30% GEX-share axis (never night-relative). Bare percent
+   forbidden. Strike always printed on the line.
+2. **Strength (Q2=S1):** rank-weighted lines — rank 1 solid 2px/90% opacity, rank 2 solid 1px/68%,
+   rank 3 dotted 1px/48%. Labels never fade below 80% opacity. No shaded zones, no reach bars.
+3. **Regime (Q3=R1+hover, Q3b=R1b):** one quiet `size.tiny` chip `GEX <MMM DD> CLOSE · <REGIME>`
+   (e.g. `GEX AUG 13 CLOSE · STABILIZING`). Stale: regime word REPLACED by STALE
+   (`GEX AUG 11 CLOSE · STALE`) and every level desaturates to grey — a stale regime claim is never shown.
+   Every ranked-level hover carries a per-wall regime sentence:
+   - Stabilizing: "dealer hedging tends to fade moves into this level today."
+   - Amplifying: "dealer hedging can accelerate moves through this level today."
+4. **Hover template (locked draft):**
+   `Call Wall · rank 1 · 780.00` / `GEX 22.4% of side |net GEX| in ranked band · 1.8× next call strike` /
+   regime sentence / `As of <date> close. Reference level, not a forecast.`
+5. **Data freshness (Q4=I2):** nightly mint PLUS one morning refresh ~09:45 ET after opening flow, with
+   the visible reload cue when a newer book exists (same pattern as tradingview-tools PR #95). Chip shows
+   the mint time for the morning book. Levels never move silently mid-session (platform mints once per load).
+6. **Flip:** dotted, own hue, labeled `flip` — visually unlike any wall (unchanged from proposal).
+7. **Never:** shaded zones, rank-only tokens as level names, bare percent, silent restyles.
+   Palette: calls cyan family, puts ember family; red/green stays owned by candles.
+
+## Explicitly not chosen
+
+- Glyph-only label (B), stub-only label (D), `GEX SHARE` full wording (C1), percent-first (C3),
+  mixed verbosity (C4), two-line label (C5).
+- Reach-bars strength grammar (S2) — offered including a later-trial option; captain took plain S1.
+- Regime-as-wall-texture (R2). Corner dashboard chips beyond the single R1b chip.
+- Hourly refresh (I3); nightly-only (I1); defer-to-calibration (I4).
+
+## Consequences
+
+- Chart flips from two walls to all ranked levels (top-3/side, 3% floor, gex-v1.2 #97 rule) once this
+  look ships; review trims, never reveals.
+- Ship task: implement the look in the gamma levels template (no-mistakes, Pine brain dispatch).
+- Infra task: morning-refresh pipeline run + publish + reload-cue wiring (separate work item).

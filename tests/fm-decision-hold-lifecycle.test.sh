@@ -281,6 +281,58 @@ EOF
   pass "captain holds are idempotent, distinct, teardown-safe, Bearings-visible, and durably routed before close"
 }
 
+test_later_shipped_authority_supersedes_exact_hold() {
+  local home origin hold state show digest
+  home=$(make_home superseded-hold)
+  origin=sample-old-review
+  mkdir -p "$home/data/$origin" "$home/data/decisions"
+  tasks_in "$home" add "$origin" "Review the old sample choice" --kind scout --repo sample --start >/dev/null \
+    || fail "could not create supersession origin"
+  write_origin_meta "$home" "$origin"
+  printf '# Old sample review\n\nOne choice was initially open.\n' > "$home/data/$origin/report.md"
+  hold=$(run_decisions "$home" hold "$origin" route \
+    --title "Choose the old sample route" --reason "captain route choice pending" --repo sample) \
+    || fail "could not create supersession hold"
+  state=$(run_decisions "$home" state "$hold") \
+    || fail "active hold state could not be resolved"
+  [ "$state" = open ] || fail "active hold resolved as $state"
+
+  tasks_in "$home" add sample-ranked-ship "Ship the later ranked route" --kind ship --repo sample >/dev/null \
+    || fail "could not create later shipped task"
+  tasks_in "$home" "done" sample-ranked-ship >/dev/null \
+    || fail "could not complete later shipped task"
+  cat > "$home/data/decisions/sample-ranked-route.md" <<'EOF'
+# Ranked route lock
+
+The later ranked route supersedes the old review choice.
+EOF
+  run_decisions "$home" supersede "$origin" route \
+    --decision-file data/decisions/sample-ranked-route.md --shipped-task sample-ranked-ship >/dev/null \
+    || fail "later shipped authority did not supersede the exact hold"
+  run_decisions "$home" supersede "$origin" route \
+    --decision-file data/decisions/sample-ranked-route.md --shipped-task sample-ranked-ship >/dev/null \
+    || fail "identical supersession retry was not idempotent"
+  state=$(run_decisions "$home" state "$hold") \
+    || fail "superseded hold state could not be resolved"
+  [ "$state" = superseded ] || fail "later authority resolved hold as $state"
+  show=$(tasks_in "$home" show "$hold" --full)
+  assert_contains "$show" "state: done" "superseded hold stayed live"
+  assert_contains "$show" 'Decision path: data/decisions/sample-ranked-route.md' \
+    "superseded hold lost its exact decision path"
+  assert_contains "$show" 'Shipped task: sample-ranked-ship' \
+    "superseded hold lost its exact shipped task"
+
+  digest=$(shasum -a 256 "$home/data/decisions/sample-ranked-route.md" | awk '{print $1}')
+  printf '# Changed authority\n' > "$home/data/decisions/sample-ranked-route.md"
+  if run_decisions "$home" state "$hold" > "$home/drifted-state.out" 2> "$home/drifted-state.err"; then
+    fail "state resolver trusted a changed decision record"
+  fi
+  assert_grep "digest no longer matches" "$home/drifted-state.err" \
+    "changed authority did not fail closed"
+  printf '%s\n' "$digest" >/dev/null
+  pass "later shipped authority binds and supersedes one exact captain hold"
+}
+
 test_scout_teardown_always_requires_inventory_verification() {
   local home id
   home=$(make_home unconditional-teardown)
@@ -897,6 +949,7 @@ test_uninventoried_report_decision_refuses_completion
 
 test_scout_teardown_always_requires_inventory_verification
 test_structured_holds_survive_teardown_and_route_resolution
+test_later_shipped_authority_supersedes_exact_hold
 test_origin_slug_validation_precedes_path_construction
 test_visual_review_uses_shared_completion_owner
 test_none_inventory_and_resolved_prose_do_not_create_holds

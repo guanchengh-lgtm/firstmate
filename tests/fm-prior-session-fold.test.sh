@@ -16,6 +16,24 @@ new_home() {
   printf '%s\n' "$home"
 }
 
+enable_tasks() {  # <home>
+  local home=$1
+  cp "$ROOT/.tasks.toml" "$home/.tasks.toml"
+  cat > "$home/data/backlog.md" <<'EOF'
+## In flight
+
+## Queued
+
+## Done
+EOF
+}
+
+run_decision() {  # <home> <args...>
+  local home=$1
+  shift
+  FM_HOME="$home" "$ROOT/bin/fm-decision-hold.sh" "$@"
+}
+
 run_fold() {
   local home=$1 log=$2
   FM_HOME="$home" FM_PRIOR_SESSION_LOG="$log" "$FOLD"
@@ -53,7 +71,11 @@ test_pick_and_lock_words_appear_but_aside_does_not() {
   assert_contains "$out" 'Both paths, and keep rollout on hold.' \
     "captain pick answer did not appear in lock words"
   assert_contains "$out" 'Which lane should deploy next?' \
-    "unanswered pick disappeared after an unrelated captain aside"
+    "unverified pick context disappeared after an unrelated captain aside"
+  assert_contains "$out" $'OPEN PICKS\n(none found)' \
+    "unkeyed chat question became an actionable open pick"
+  assert_contains "$out" 'UNVERIFIED PICK CONTEXT' \
+    "unkeyed chat question lacked its non-actionable classification"
   assert_not_contains "$out" 'The weather is pleasant today.' \
     "unrelated captain aside leaked into fold"
   assert_not_contains "$out" 'Skill reference says pick compact output.' \
@@ -61,6 +83,47 @@ test_pick_and_lock_words_appear_but_aside_does_not() {
   assert_contains "$out" 'fold-status: parsed within bound.' \
     "valid bounded fixture did not report parsed status"
   pass "fold keeps live work and lock-changing captain words but drops asides"
+}
+
+test_open_picks_follow_durable_hold_state() {
+  local home log out open_hold superseded_hold
+  home=$(new_home durable-picks)
+  enable_tasks "$home"
+  mkdir -p "$home/data/open-review" "$home/data/old-review" "$home/data/decisions"
+  printf '# Open review\n' > "$home/data/open-review/report.md"
+  printf '# Old review\n' > "$home/data/old-review/report.md"
+  open_hold=$(run_decision "$home" hold open-review route \
+    --title "Choose the open route" --reason "captain route pending" --repo sample) \
+    || fail "could not create open durable hold"
+  superseded_hold=$(run_decision "$home" hold old-review wall \
+    --title "Choose the old wall" --reason "captain wall pending" --repo sample) \
+    || fail "could not create superseded durable hold"
+  (cd "$home" && tasks-axi add ranked-look-ship "Ship ranked look" --kind ship --repo sample >/dev/null)
+  (cd "$home" && tasks-axi "done" ranked-look-ship >/dev/null)
+  cat > "$home/data/decisions/ranked-look-lock.md" <<'EOF'
+# Ranked look lock
+
+The later ranked look lock supersedes the older wall pick.
+EOF
+  run_decision "$home" supersede old-review wall \
+    --decision-file data/decisions/ranked-look-lock.md --shipped-task ranked-look-ship >/dev/null \
+    || fail "could not bind later authority to old hold"
+
+  log="$home/prior.jsonl"
+  printf '%s\n' \
+    "{\"type\":\"session\",\"cwd\":\"$home\"}" \
+    "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Which path should remain open? [hold=$open_hold] or [hold=$superseded_hold] or [hold=$open_hold]\"}]}}" \
+    "{\"type\":\"message\",\"message\":{\"role\":\"assistant\",\"content\":[{\"type\":\"text\",\"text\":\"Which option should ship? [hold=$superseded_hold]\"}]}}" \
+    > "$log"
+
+  out=$(run_fold "$home" "$log")
+  assert_contains "$out" "Which path should remain open? [hold=$open_hold] or [hold=$superseded_hold] or [hold=$open_hold]" \
+    "multi-marker question hid its active durable hold from OPEN PICKS"
+  assert_not_contains "$out" "Which option should ship? [hold=$superseded_hold]" \
+    "older chat pick stayed live after later lock and ship authority"
+  assert_contains "$out" $'UNVERIFIED PICK CONTEXT\n(none found)' \
+    "keyed durable picks were mislabeled unverified"
+  pass "OPEN PICKS follows exact durable hold state and later authority wins"
 }
 
 test_terminal_update_removes_finished_live_job() {
@@ -296,6 +359,7 @@ test_parse_failure_exits_two_and_stays_incomplete() {
 
 test_missing_log_is_loudly_incomplete
 test_pick_and_lock_words_appear_but_aside_does_not
+test_open_picks_follow_durable_hold_state
 test_terminal_update_removes_finished_live_job
 test_separate_live_updates_accumulate
 test_uncorrelated_terminal_update_discloses_live_job_uncertainty
