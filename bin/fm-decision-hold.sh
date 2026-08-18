@@ -10,7 +10,8 @@
 # This script supplies deterministic identities, creates and verifies structured
 # tasks-axi captain holds, validates the active home's product-idea ledger, records
 # completion attestation in the originating task's metadata, and closes a hold only
-# after a durable decision record has been linked to existing dependent work.
+# after a durable decision record is linked to existing dependent work (`resolve`)
+# or bound to an already-Done ship task (`supersede`).
 #
 # A hold identity is <origin-id>-decision-<decision-key>. Origin ids and decision
 # keys must already be privacy-safe slugs. Repeating `hold` with the same identity

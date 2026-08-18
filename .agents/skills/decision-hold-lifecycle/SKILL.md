@@ -42,5 +42,5 @@ Bearings reads the resulting structured state and must never compensate by scrap
 
 For retrospective reconciliation, use `supersede` instead of inventing dependent work after the fact, then confirm `state <hold-id>` reports `superseded`.
 
-`bin/fm-decision-hold.sh --help` owns command syntax, identity construction, completion attestation, retry behavior, and close ordering.
+`bin/fm-decision-hold.sh --help` owns command syntax, identity construction, completion attestation, retry behavior, supersession binding, state resolution, and close ordering.
 `docs/decision-hold-lifecycle.md` records the mechanism and regression evidence without restating this policy.

@@ -281,7 +281,7 @@ For Pi and pi-signed secondmate launches, `fm-spawn.sh` starts the selected exec
 
 ## Durable SoT program registry (data/sot-programs.tsv / config/sot-programs.tsv)
 
-An optional home-local registry can ask session-start bootstrap to notice when a completed multi-task program still lacks a standing source-of-truth pointer in `data/captain.md` or files directly under `data/decisions/`.
+An optional home-local registry can ask session-start bootstrap to notice when a completed multi-task program still lacks a standing source-of-truth pointer in `data/captain.md` or files directly under `data/decisions/`, or still leaves a named older captain hold unbound after later durable authority shipped.
 Lookup uses the first effective ordinary file in this order: `data/sot-programs.tsv`, then `config/sot-programs.tsv`.
 An empty or comment-only data registry cannot shadow populated config, and both absent or ineffective stays silent.
 The optional fourth registry field names captain-held backlog identities that a later pointer and completed source tasks supersede.

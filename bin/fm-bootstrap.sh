@@ -12,6 +12,7 @@
 #                 "CREW_DISPATCH: invalid config/crew-dispatch.json - <reason>",
 #                 "SOT_GAP: <program_id> - <missing pointer or superseded hold detail>",
 #                 "SOT_GAP: registry invalid - <structural failure>",
+#                 "SOT_GAP: checker failed with status <n>",
 #                 "FLEET_SYNC: <repo>: skipped|recovered|STUCK: <detail>",
 #                 "PR_CHECK_MIGRATION: <private remediation>",
 #                 "TANGLE: <remediation>",
