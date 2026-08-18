@@ -12,10 +12,10 @@
 # belong in a script, not in N agent turns.
 #
 # COMPOSITION, NOT DUPLICATION: this script calls fm-lock.sh, fm-bootstrap.sh,
-# fm-wake-drain.sh, and fm-startup-network.sh as real subprocesses and prints
-# their real output. It never re-implements their logic; all
-# sequencing/formatting logic added here stays local to this file. Those four
-# scripts remain fully working
+# fm-wake-drain.sh, fm-prior-session-fold.sh, and fm-startup-network.sh as real
+# subprocesses and prints their real output. It never re-implements their logic;
+# all sequencing/formatting logic added here stays local to this file. Those
+# five scripts remain fully working
 # standalone with unchanged default behavior - other flows (fm-bootstrap.sh
 # install <tools> after consent, /updatefirstmate, the afk daemon, existing
 # tests) still call them directly. The one seam this script needed -
@@ -41,7 +41,8 @@
 #   4. supervision-instructions - the one emitted operating block for the
 #                       detected primary harness.
 #   5. read-once contract - the do-not-re-read contract covering every source
-#                       represented by the two digests below.
+#                       represented by the prior-session fold and the two
+#                       digests below.
 #   6. prior session  - the bounded targeted fold from the prior Pi or Claude
 #                       JSONL for this home, owned by
 #                       bin/fm-prior-session-fold.sh.
@@ -71,7 +72,7 @@
 # call. The five that did - `gh auth status`, secondmate liveness, secondmate
 # convergence, pending remote handoff delivery, and the fleet-sync fetch - are
 # started as one detached bounded worker right after the lock (step 1) and
-# harvested at step 7 without ever blocking on it. bin/fm-startup-network.sh
+# harvested at step 8 without ever blocking on it. bin/fm-startup-network.sh
 # owns that stage and its safety argument; bin/fm-bootstrap.sh remains the owner
 # of the sweeps themselves and still runs every one of them.
 # The digest is therefore composed from local reads and local subprocesses only,
@@ -90,10 +91,12 @@
 # read; live fleet identity - which tasks exist, their windows, worktrees,
 # backends, and endpoint liveness - changes every session and is exactly what
 # recovery depends on. So fleet state goes first and the memory files absorb the
-# truncation. The read-once contract moves ahead of both for the same reason: a
-# contract that only arrives after the payload it governs is the first thing a
-# truncated digest loses, and it carries the truncation caveat that keeps it
-# honest when a stage below it never ran.
+# truncation. The prior-session fold sits ahead of fleet state as a bounded
+# targeted resume input, not a second fleet-state reader. The read-once contract
+# moves ahead of the fold and both digests for the same reason: a contract that
+# only arrives after the payload it governs is the first thing a truncated
+# digest loses, and it carries the truncation caveat that keeps it honest when a
+# stage below it never ran.
 # The LOCK/BOOTSTRAP/WAKE-QUEUE safety preamble keeps its order: it establishes
 # mutation authority and this turn's work queue before anything else is read.
 #
@@ -120,8 +123,8 @@
 # session has no dispatch, spawn, steer, or merge action for that verdict to gate.
 # Only projection cleanup, the six bootstrap mutating sweeps, and the
 # wake-queue drain are skipped.
-# The context and fleet-state digests
-# below are always read-only, so they run unconditionally in both modes.
+# The prior-session fold and the context and fleet-state digests below are
+# always read-only, so they run unconditionally in both modes.
 #
 # BACKLOG DIGEST: the startup listing is a RECOVERY input, not a reporting
 # surface, so it carries what this turn can act on and nothing else.
@@ -641,11 +644,12 @@ fi
   --x-mode "$X_MODE_PRESENT"
 
 # --- 5. read-once contract -------------------------------------------------
-# Ahead of the two digests it governs, not after them: a truncated tail is
-# exactly what drops a closing reminder, and this contract is what stops the
-# next turn from re-reading everything the digest just printed. Because it now
-# arrives BEFORE its subject, it also names the one condition that voids it -
-# a stage that never ran, which the truncation banner names by stage.
+# Ahead of the prior-session fold and the two digests it governs, not after
+# them: a truncated tail is exactly what drops a closing reminder, and this
+# contract is what stops the next turn from re-reading everything the digest
+# just printed. Because it now arrives BEFORE its subject, it also names the
+# one condition that voids it - a stage that never ran, which the truncation
+# banner names by stage.
 stage read-once
 section "READ-ONCE CONTRACT"
 cat <<'EOF'
