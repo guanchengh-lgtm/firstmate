@@ -79,6 +79,10 @@ test_terminal_update_removes_finished_live_job() {
     "terminal update left finished work classified as live"
   assert_contains "$out" 'current job is running.' \
     "later live job disappeared after terminal reconciliation"
+  assert_not_contains "$out" 'INCOMPLETE: a later terminal update made the earlier live-job snapshot unsafe to reuse.' \
+    "fresh live job after terminal clear still reported live-job uncertainty"
+  assert_contains "$out" 'fold-status: parsed within bound.' \
+    "finished-then-new live job did not report a clean parsed fold"
   pass "terminal updates remove finished jobs from live fold"
 }
 
@@ -201,6 +205,53 @@ test_discovery_skips_current_and_reads_prior_claude_log() {
   pass "discovery excludes current JSONL and parses prior Claude schema"
 }
 
+test_discovery_finds_pi_treehouse_session_dir() {
+  local home pi_root sessions prior current out encoded_leaf wrong_leaf
+  home=$(new_home "treehouse.home")
+  home=$(cd "$home" && pwd -P)
+  mkdir -p "$TMP_ROOT/pi-agent"
+  pi_root=$(cd "$TMP_ROOT/pi-agent" && pwd -P)
+  # Match Pi session-manager encoding against the same realpath Node will use.
+  home=$(node -e 'process.stdout.write(require("fs").realpathSync.native(process.argv[1]))' "$home")
+  encoded_leaf="--${home#/}--"
+  encoded_leaf=${encoded_leaf//\//-}
+  wrong_leaf=$(printf '%s' "$encoded_leaf" | tr '.' '-')
+  sessions="$pi_root/sessions/$encoded_leaf"
+  prior="$sessions/prior.jsonl"
+  current="$sessions/current.jsonl"
+  mkdir -p "$sessions" "$pi_root/sessions/$wrong_leaf"
+  printf '%s\n' \
+    "{\"type\":\"session\",\"cwd\":\"$home\"}" \
+    '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Underway: pi treehouse prior job is running."}]}}' \
+    > "$prior"
+  printf '%s\n' \
+    "{\"type\":\"session\",\"cwd\":\"$home\"}" \
+    '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Underway: wrong alnum-encoded dir must not win."}]}}' \
+    > "$pi_root/sessions/$wrong_leaf/decoy.jsonl"
+  sleep 1
+  printf '%s\n' \
+    "{\"type\":\"session\",\"cwd\":\"$home\"}" \
+    '{"type":"message","message":{"role":"user","content":[{"type":"text","text":"Current pi session aside must not appear."}]}}' \
+    > "$current"
+
+  out=$(FM_HOME="$home" PI_CODING_AGENT_DIR="$pi_root" "$FOLD")
+  assert_contains "$out" "source: $prior" \
+    "Pi discovery missed the dotted treehouse session directory"
+  assert_contains "$out" 'treehouse.home' \
+    "Pi source path lost the dotted treehouse leaf encoding"
+  assert_not_contains "$out" "sessions/$wrong_leaf/" \
+    "Pi discovery used Claude-style alnum encoding that flattens dots"
+  assert_contains "$out" 'pi treehouse prior job is running.' \
+    "Pi prior live job did not appear without session-dir overrides"
+  assert_not_contains "$out" 'wrong alnum-encoded dir must not win.' \
+    "Pi discovery read the decoy alnum-encoded session directory"
+  assert_not_contains "$out" 'Current pi session aside must not appear.' \
+    "Pi discovery folded the current session instead of the prior session"
+  assert_contains "$out" 'fold-status: parsed within bound.' \
+    "Pi treehouse discovery did not report a clean parsed fold"
+  pass "default Pi discovery finds dotted treehouse session dirs"
+}
+
 test_over_budget_fold_discloses_truncation() {
   local home log out bytes
   home=$(new_home truncated)
@@ -252,6 +303,7 @@ test_pick_relative_answer_forms_resolve_only_latest_pick
 test_ordinary_action_asides_do_not_change_locks
 test_polite_work_lock_commands_are_retained
 test_discovery_skips_current_and_reads_prior_claude_log
+test_discovery_finds_pi_treehouse_session_dir
 test_over_budget_fold_discloses_truncation
 test_parse_failure_exits_two_and_stays_incomplete
 

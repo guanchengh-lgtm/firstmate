@@ -126,8 +126,13 @@ function ordinaryFile(candidate) {
   }
 }
 
-function encodedHome() {
+function encodedClaudeProjectDir() {
   return home.replace(/[^A-Za-z0-9]/g, "-");
+}
+
+function encodedPiSessionDir() {
+  const stripped = home.replace(/^[/\\]/, "");
+  return `--${stripped.replace(/[/\\:]/g, "-")}--`;
 }
 
 function recordedCwd(candidate) {
@@ -173,14 +178,14 @@ function discover() {
   }
 
   const piBase = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent");
-  const piRoot = process.env.PI_CODING_AGENT_SESSION_DIR || path.join(piBase, "sessions");
+  const piRoot = path.join(piBase, "sessions");
   const claudeBase = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
-  const encoded = encodedHome();
+  const claudeEncoded = encodedClaudeProjectDir();
   const dirs = process.env.FM_PRIOR_SESSION_DIRS
     ? process.env.FM_PRIOR_SESSION_DIRS.split(path.delimiter).filter(Boolean)
     : [
-        process.env.PI_CODING_AGENT_SESSION_DIR || path.join(piRoot, `-${encoded}--`),
-        path.join(claudeBase, "projects", encoded),
+        process.env.PI_CODING_AGENT_SESSION_DIR || path.join(piRoot, encodedPiSessionDir()),
+        path.join(claudeBase, "projects", claudeEncoded),
       ];
   const candidates = dirs.flatMap(directJsonlFiles)
     .filter(ordinaryFile)
@@ -266,8 +271,11 @@ function foldMessage(message) {
   if (message.role === "assistant") {
     if (liveJob.test(message.text)) {
       if (aggregateLiveJob.test(message.text)) liveJobs.length = 0;
+      const wasEmpty = liveJobs.length === 0;
       addUnique(liveJobs, compact);
-      if (aggregateLiveJob.test(message.text)) liveJobsUncertain = false;
+      if (aggregateLiveJob.test(message.text) || (wasEmpty && liveJobs.length > 0)) {
+        liveJobsUncertain = false;
+      }
     } else if (terminalJob.test(message.text) && liveJobs.length) {
       liveJobs.length = 0;
       liveJobsUncertain = true;
