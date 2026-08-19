@@ -94,16 +94,19 @@ Never use headroom, runway, pace, or reserve to silently replace that reasoning 
 4. Prefer supported runway evidence that projects availability through the inspectable likely-completion horizon.
    Known evidence that does not reach that horizon is inferior to known evidence that does, even when its signed reserve is less negative.
    Preserve projection confidence and basis, the limiting window, and the horizon estimate in the rationale rather than hiding them in a score or model-specific heuristic.
-5. When two comparable candidates both have supported evidence that they can finish through that horizon, prefer spending the applicable quota pool whose next reset is sooner.
-   This reset precedence applies even when their remaining headroom or usable runway differs, because both candidates have already cleared the completion requirement.
+5. When two comparable candidates both have supported evidence that they can finish through that horizon, strongly prefer spending an applicable quota pool that resets in about one day while it still has substantial headroom, and do not conserve that pool.
+   Otherwise, treat a meaningfully sooner reset as a bias only when that reset is near, typically on the order of two to three days.
+   In that near-window case, prefer spending the sooner-resetting applicable quota pool even when its remaining headroom is lower.
+   If both resets are on a similar farther horizon, such as roughly four to six days, do not prefer the earlier reset and instead prefer the candidate with more applicable effective headroom.
+   These time examples calibrate judgment rather than define rigid cutoffs, so consider the actual reset distance, task horizon, available headroom, and confidence in each timestamp.
    Compare only known reset timestamps for applicable pools, and treat an absent or unknown next reset as uncertainty rather than inventing an ordering.
-6. For candidates not resolved by completion viability and reset precedence, compare applicable effective headroom and usable runway.
+6. For candidates not resolved by completion viability, the near-reset bias, or the farther-horizon headroom comparison, compare applicable effective headroom and usable runway.
    Eliminate a candidate only when another candidate Pareto-dominates it on both dimensions, with at least one dimension strictly better.
    Establish dominance only from comparable known evidence, never by treating absent, `unknown`, or unmeasurable headroom or runway as zero or as a healthy value.
 7. Resolve remaining uncertainty explicitly.
    An authenticated candidate with unknown or unmeasurable headroom or runway stays eligible and cannot be silently excluded or assumed sustainable.
    Prefer known viable evidence when otherwise comparable, and report uncertainty or ask the captain when it still prevents a justified choice.
-8. Use pace and signed reserve only as later diagnostic tie-break evidence among candidates still unresolved after headroom, runway, likely-completion viability, next reset, and uncertainty.
+8. Use pace and signed reserve only as later diagnostic tie-break evidence among candidates still unresolved after headroom, runway, likely-completion viability, the near-reset judgment, and uncertainty.
    Pace and reserve never rescue a clearly inferior completion prospect.
    Do not collapse these facts into an opaque composite score.
 9. Older schemas or absent runway/pace fields: do not crash, fabricate runway or pace, treat absence as healthy, or silently exclude a candidate.
