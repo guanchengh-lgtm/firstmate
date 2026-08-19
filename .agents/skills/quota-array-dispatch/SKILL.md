@@ -26,6 +26,7 @@ For each candidate, preserve explicit `harness`, `model`, and `provider`; `harne
 
 - task/profile fit and required reasoning class
 - applicable effective headroom (`effectivePercentRemaining`) from the established provider/model scope
+- next reset for the applicable quota pool, including its window identity and reset timestamp
 - usable runway status, `usableRunwaySeconds`, `projectedExhaustedAt`, `limitingWindowId`, `projectionConfidence`, `projectionBasis`, and any `unmeasurableWindowIds`
 - the task-completion horizon and the evidence and confidence used to estimate it
 - effective pace, signed reserve per window, and worst reserve (`worstReservePercentPoints` or minimum signed reserve) for later diagnostic tie-breaking
@@ -90,24 +91,27 @@ Never use headroom, runway, pace, or reserve to silently replace that reasoning 
    Do not invent a generic percentage floor or treat a low percentage as an automatic failure.
 3. Keep the strongest-reasoning class when every candidate is tight or completion evidence is poor.
    Dispatch inside that class when a candidate can proceed, or report that its strongest-class choice cannot proceed rather than downgrading it to conserve quota.
-4. Compare comparable-fit candidates on their applicable effective headroom and usable runway.
-   Eliminate a candidate only when another candidate Pareto-dominates it on both dimensions, with at least one dimension strictly better.
-   Establish dominance only from comparable known evidence, never by treating absent, `unknown`, or unmeasurable headroom or runway as zero or as a healthy value.
-5. Prefer supported runway evidence that projects availability through the inspectable likely-completion horizon.
+4. Prefer supported runway evidence that projects availability through the inspectable likely-completion horizon.
    Known evidence that does not reach that horizon is inferior to known evidence that does, even when its signed reserve is less negative.
    Preserve projection confidence and basis, the limiting window, and the horizon estimate in the rationale rather than hiding them in a score or model-specific heuristic.
-6. Resolve remaining uncertainty explicitly.
+5. When two comparable candidates both have supported evidence that they can finish through that horizon, prefer spending the applicable quota pool whose next reset is sooner.
+   This reset precedence applies even when their remaining headroom or usable runway differs, because both candidates have already cleared the completion requirement.
+   Compare only known reset timestamps for applicable pools, and treat an absent or unknown next reset as uncertainty rather than inventing an ordering.
+6. For candidates not resolved by completion viability and reset precedence, compare applicable effective headroom and usable runway.
+   Eliminate a candidate only when another candidate Pareto-dominates it on both dimensions, with at least one dimension strictly better.
+   Establish dominance only from comparable known evidence, never by treating absent, `unknown`, or unmeasurable headroom or runway as zero or as a healthy value.
+7. Resolve remaining uncertainty explicitly.
    An authenticated candidate with unknown or unmeasurable headroom or runway stays eligible and cannot be silently excluded or assumed sustainable.
    Prefer known viable evidence when otherwise comparable, and report uncertainty or ask the captain when it still prevents a justified choice.
-7. Use pace and signed reserve only as later diagnostic tie-break evidence among candidates still unresolved after headroom, runway, likely-completion viability, and uncertainty.
+8. Use pace and signed reserve only as later diagnostic tie-break evidence among candidates still unresolved after headroom, runway, likely-completion viability, next reset, and uncertainty.
    Pace and reserve never rescue a clearly inferior completion prospect.
    Do not collapse these facts into an opaque composite score.
-8. Older schemas or absent runway/pace fields: do not crash, fabricate runway or pace, treat absence as healthy, or silently exclude a candidate.
+9. Older schemas or absent runway/pace fields: do not crash, fabricate runway or pace, treat absence as healthy, or silently exclude a candidate.
    State which evidence is unavailable, retain the candidate, and apply only the comparisons the snapshot supports.
-9. Genuine ties: stop and report every tied candidate for captain choice.
+10. Genuine ties: stop and report every tied candidate for captain choice.
    Do not select by array order, harness name, or another arbitrary identity ordering.
    Report duplicate concrete profiles as a configuration error.
 
-Account for every candidate visibly before selecting or escalating, naming its catalog evidence, provider relation, applicable quota and authentication facts, remaining uncertainty, fit and reasoning class, effective headroom, usable runway, likely-completion reasoning, and later pace or reserve evidence when used.
+Account for every candidate visibly before selecting or escalating, naming its catalog evidence, provider relation, applicable quota and authentication facts, remaining uncertainty, fit and reasoning class, effective headroom, next reset, usable runway, likely-completion reasoning, and later pace or reserve evidence when used.
 A blocked credential report must name `harness`, `model`, authentication surface, and concrete failure evidence; never emit a bare `Grok unauthenticated` statement.
 Never conclude with an unexplained "best quota" label.
