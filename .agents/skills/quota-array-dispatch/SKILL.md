@@ -26,7 +26,7 @@ For each candidate, preserve explicit `harness`, `model`, and `provider`; `harne
 
 - task/profile fit and required reasoning class
 - applicable effective headroom (`effectivePercentRemaining`) from the established provider/model scope
-- next reset timestamps for every applicable quota window on the candidate (`boundedBy` and related window ids), each with its window identity; never collapse multi-window bounds to a single soonest timestamp up front
+- for every applicable quota window on the candidate (`boundedBy` and related window ids): window id, `resetsAt`, and that window's own `percentRemaining`; never collapse multi-window bounds to a single soonest timestamp or reuse scope effective headroom as a stand-in for a window's remaining
 - usable runway status, `usableRunwaySeconds`, `projectedExhaustedAt`, `limitingWindowId`, `projectionConfidence`, `projectionBasis`, and any `unmeasurableWindowIds`
 - the task-completion horizon and the evidence and confidence used to estimate it
 - effective pace, signed reserve per window, and worst reserve (`worstReservePercentPoints` or minimum signed reserve) for later diagnostic tie-breaking
@@ -95,14 +95,15 @@ Never use headroom, runway, pace, or reserve to silently replace that reasoning 
    Known evidence that does not reach that horizon is inferior to known evidence that does, even when its signed reserve is less negative.
    Preserve projection confidence and basis, the limiting window, and the horizon estimate in the rationale rather than hiding them in a score or model-specific heuristic.
 5. When two comparable candidates both have supported evidence that they can finish through that horizon, apply reset bias from the applicable windows rather than from a single collapsed soonest bound.
-   For the near spend-hard bias, evaluate every applicable window on the candidate (every window named by `boundedBy` and the other applicability lists above that carries a known `resetsAt`).
-   Strongly prefer spending a candidate when any of those applicable windows resets in about one day while that pool still has substantial headroom, and do not conserve that pool.
-   Otherwise, treat a meaningfully sooner reset as a bias only when that reset is near, typically on the order of two to three days; again judge that nearness against every applicable window, not only the soonest one.
-   In that near-window case, prefer spending the candidate whose applicable windows include the nearer spend-worthy reset even when its remaining headroom is lower.
-   If no near spend-hard case applies and both candidates' resets sit on a similar farther horizon, such as roughly four to six days, do not prefer the earlier reset and instead prefer the candidate with more applicable effective headroom, reading that far-horizon comparison from the weekly / `seven_day` window among the applicable bounds when one is present rather than from a short rolling window such as `five_hour`.
-   Never sort candidates by soonest bounding-window reset alone; a short window must not invert a far-horizon headroom choice, and a weekly-only peer must not lose a near spend-hard case merely because the other candidate also carries a longer cycle.
+   For the about-one-day spend-hard bias, evaluate every applicable window on the candidate (every window named by `boundedBy` and the other applicability lists above that carries a known `resetsAt` and `percentRemaining`).
+   Strongly prefer spending a candidate when any of those applicable windows resets in about one day while that same window still has substantial `percentRemaining`, and do not conserve that pool.
+   Otherwise, treat a meaningfully sooner reset as a bias only when an applicable window's own reset falls in that multi-day near band, typically on the order of two to three days, and typically among weekly / `seven_day` class windows; do not feed hour-scale windows such as `five_hour` into this middle-band comparator.
+   In that near-window case, prefer spending the candidate whose qualifying multi-day window is the nearer spend-worthy reset even when its remaining headroom is lower.
+   If no near spend-hard or two-to-three-day case applies and both candidates sit on a similar farther horizon, such as roughly four to six days, do not prefer the earlier reset.
+   For that far-horizon remaining-quota comparison, compare each candidate's weekly / `seven_day` window `percentRemaining` directly; fall back to scope `effectivePercentRemaining` only when no such longer-cycle bound exists on that candidate.
+   Never let a short rolling window such as `five_hour` supply the remaining value or invert the far-horizon choice, and never sort candidates by soonest bounding-window reset alone; a weekly-only peer must not lose a near spend-hard case merely because the other candidate also carries a longer cycle.
    These time examples calibrate judgment rather than define rigid cutoffs, so consider the actual reset distance, task horizon, available headroom, and confidence in each timestamp.
-   Compare only known reset timestamps for applicable pools, and treat an absent or unknown next reset as uncertainty rather than inventing an ordering.
+   Compare only known reset timestamps and per-window remaining for applicable pools, and treat an absent or unknown next reset as uncertainty rather than inventing an ordering.
 6. For candidates not resolved by completion viability, the near-reset bias, or the farther-horizon headroom comparison, compare applicable effective headroom and usable runway.
    Eliminate a candidate only when another candidate Pareto-dominates it on both dimensions, with at least one dimension strictly better.
    Establish dominance only from comparable known evidence, never by treating absent, `unknown`, or unmeasurable headroom or runway as zero or as a healthy value.
@@ -118,6 +119,6 @@ Never use headroom, runway, pace, or reserve to silently replace that reasoning 
    Do not select by array order, harness name, or another arbitrary identity ordering.
    Report duplicate concrete profiles as a configuration error.
 
-Account for every candidate visibly before selecting or escalating, naming its catalog evidence, provider relation, applicable quota and authentication facts, remaining uncertainty, fit and reasoning class, effective headroom, each applicable window's next reset, usable runway, likely-completion reasoning, and later pace or reserve evidence when used.
+Account for every candidate visibly before selecting or escalating, naming its catalog evidence, provider relation, applicable quota and authentication facts, remaining uncertainty, fit and reasoning class, effective headroom, each applicable window's id, next reset, and `percentRemaining`, usable runway, likely-completion reasoning, and later pace or reserve evidence when used.
 A blocked credential report must name `harness`, `model`, authentication surface, and concrete failure evidence; never emit a bare `Grok unauthenticated` statement.
 Never conclude with an unexplained "best quota" label.
