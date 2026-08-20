@@ -240,6 +240,6 @@ Before either return or direct removal, teardown asks the target home's process-
 It refuses retirement while that cleanup is uncertain or unavailable, preserving the home and retirement records for a later retry.
 Raw deletion is unsupported because a blocking process-event child can outlive its home.
 
-With `--force`, teardown is the explicit discard path.
+With `--force`, teardown is the explicit discard path for child work after the measure gate still passes; `bin/fm-teardown.sh --help` owns that gate.
 It kills child windows, discards child work and state inside the secondmate home, removes the route, releases the lease, and removes the retired secondmate home.
 Never use `--force` unless the captain explicitly said to discard the work.

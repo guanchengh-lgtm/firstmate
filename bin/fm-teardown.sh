@@ -25,7 +25,15 @@
 # local-only projects additionally accept work merged into the local default
 # branch (firstmate performs that merge after configured approval) as a fallback
 # for the common case where there is no remote at all.
-# Scout tasks (kind=scout in meta) carve out of that check: their worktree is
+# Every teardown, including scouts, secondmates, remote retirements, and
+# --force discards, requires a valid measure at
+# $FM_HOME/data/<task-id>/measure.md.
+# The record has exactly five lines in this order: miss:, number:, pair:, pick:,
+# none:. Either the first four values are all non-empty and none: is empty, or
+# the first four values are empty and none: gives a non-empty reason. This
+# keeps every number with its counter-metric and gives measureless work an
+# explicit reason instead of an empty artifact.
+# Scout tasks (kind=scout in meta) carve out of the landed-work check: their worktree is
 # declared scratch and the report at data/<task-id>/report.md is the work
 # product. Teardown proceeds only once the report exists and the shared
 # decision-hold completion gate verifies its captain-held and product-idea inventory.
@@ -53,9 +61,11 @@
 # never left leased forever. If the treehouse return fails, teardown leaves the
 # leased home and state in place instead of hiding a still-held lease.
 # Usage: fm-teardown.sh <task-id> [--force]
+#        fm-teardown.sh --help
 #   --force skips ordinary-task dirty and landed-work checks, skips scout report
-#   checks, and discards secondmate child work for kind=secondmate. Only use it
-#   when the captain has explicitly said to discard the work.
+#   checks, and discards secondmate child work for kind=secondmate. It never
+#   skips the measure gate. Only use it when the captain has explicitly said to
+#   discard the work.
 #
 # Transient / stale worktree git lock recovery (teardown-lock-race): a crew process
 # killed mid-git-operation can leave a .git/worktrees/<wt>/index.lock (or, for a
@@ -133,6 +143,40 @@
 #     failure never blocks this teardown.
 set -eu
 
+usage() {
+  cat <<'EOF'
+Usage: fm-teardown.sh <task-id> [--force]
+
+Cleanup gate:
+  Every task, including scouts, secondmates, remote retirements, and --force
+  discards, needs a valid measure at $FM_HOME/data/<task-id>/measure.md.
+  The file must contain exactly these five lines in this order:
+
+    miss: <value>
+    number: <value>
+    pair: <value>
+    pick: <value>
+    none:
+
+  Either fill all first four values and leave none: empty, or leave all first
+  four values empty and write none: <why>. Empty files fail. A number never
+  passes without its paired counter-metric.
+
+Options:
+  --force  Skip ordinary-task dirty and landed-work checks, skip scout report
+           checks, and discard secondmate child work. The measure gate remains.
+  -h, --help
+           Show this help.
+EOF
+}
+
+case "${1:-}" in
+  -h|--help)
+    usage
+    exit 0
+    ;;
+esac
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
@@ -175,6 +219,48 @@ FM_LOCK_LOG_PREFIX=teardown
 
 META="$STATE/$ID.meta"
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
+
+validate_measure_at() {  # <data-dir> <task-id>
+  local task_id=$2 measure="$1/$2/measure.md"
+  if [ ! -s "$measure" ]; then
+    echo "REFUSED: task $task_id has no non-empty measure at $measure." >&2
+    echo "Write the five-line measure described by fm-teardown.sh --help; --force does not bypass this gate." >&2
+    return 1
+  fi
+  if ! awk '
+    NR == 1 {
+      if ($0 !~ /^miss:[[:space:]]*/) bad = 1
+      value = $0; sub(/^miss:[[:space:]]*/, "", value); miss = value ~ /[^[:space:]]/
+    }
+    NR == 2 {
+      if ($0 !~ /^number:[[:space:]]*/) bad = 1
+      value = $0; sub(/^number:[[:space:]]*/, "", value); number = value ~ /[^[:space:]]/
+    }
+    NR == 3 {
+      if ($0 !~ /^pair:[[:space:]]*/) bad = 1
+      value = $0; sub(/^pair:[[:space:]]*/, "", value); pair = value ~ /[^[:space:]]/
+    }
+    NR == 4 {
+      if ($0 !~ /^pick:[[:space:]]*/) bad = 1
+      value = $0; sub(/^pick:[[:space:]]*/, "", value); pick = value ~ /[^[:space:]]/
+    }
+    NR == 5 {
+      if ($0 !~ /^none:[[:space:]]*/) bad = 1
+      value = $0; sub(/^none:[[:space:]]*/, "", value); none = value ~ /[^[:space:]]/
+    }
+    NR > 5 { bad = 1 }
+    END {
+      if (NR != 5 || bad) exit 1
+      if (none && !miss && !number && !pair && !pick) exit 0
+      if (!none && miss && number && pair && pick) exit 0
+      exit 1
+    }
+  ' "$measure"; then
+    echo "REFUSED: task $task_id has an invalid measure at $measure." >&2
+    echo "Use all five ordered fields; fill miss/number/pair/pick together, or only none: with a reason." >&2
+    return 1
+  fi
+}
 
 REMOTE_HANDOFF_DIR_PRESENT=0
 REMOTE_HANDOFF_DIR_REAL=
@@ -313,6 +399,7 @@ remote_secondmate_teardown() {
       }
     done
   fi
+  validate_measure_at "$DATA" "$ID" || return 1
   "$SCRIPT_DIR/fm-procevent-remote-reply.sh" retire-quiesce-locked "$ID" "$FORCE" >/dev/null 2>&1 || {
     echo "REFUSED: remote secondmate $ID still has an unhandled captured reply" >&2
     return 1
@@ -1867,6 +1954,23 @@ validate_firstmate_home_children_removal() {
   done
 }
 
+validate_firstmate_home_children_measures() {
+  local home=$1 sub_state child_meta child_id child_kind child_home
+  sub_state="$home/state"
+  [ -d "$sub_state" ] || return 0
+  for child_meta in "$sub_state"/*.meta; do
+    [ -e "$child_meta" ] || continue
+    child_id=$(basename "$child_meta" .meta)
+    validate_measure_at "$home/data" "$child_id" || return 1
+    child_kind=$(meta_value "$child_meta" kind)
+    if [ "$child_kind" = secondmate ]; then
+      child_home=$(meta_value "$child_meta" home)
+      [ -n "$child_home" ] || child_home=$(meta_value "$child_meta" worktree)
+      validate_firstmate_home_children_measures "$child_home" || return 1
+    fi
+  done
+}
+
 TEARDOWN_HERDR_LOCK_RECORDS=
 teardown_release_herdr_locks() {
   local lock_session lock_path
@@ -1893,7 +1997,7 @@ FMEOF
 
 teardown_herdr_require_prerequisites() {  # <task-id>
   local task_id=$1 prerequisite
-  if ! fm_backend_source herdr; then
+  if [ ! -r "$SCRIPT_DIR/backends/herdr.sh" ] || ! fm_backend_source herdr; then
     echo "error: herdr teardown prerequisites are unavailable for $task_id; nothing was changed - restore the adapter and rerun teardown" >&2
     return 1
   fi
@@ -2107,12 +2211,16 @@ remove_secondmate_registry_entry() {
 }
 
 validate_pr_poll_cleanup "$STATE" "$ID" || exit 1
+MEASURE_VALIDATED=0
 
 if [ "$KIND" = secondmate ]; then
   [ -n "$HOME_PATH" ] || HOME_PATH=$WT
   validate_firstmate_home_for_removal "$HOME_PATH" "secondmate home" "$ID" >/dev/null || exit 1
   if [ "$FORCE" = "--force" ]; then
     validate_firstmate_home_children_removal "$HOME_PATH" || exit 1
+    validate_measure_at "$DATA" "$ID" || exit 1
+    validate_firstmate_home_children_measures "$HOME_PATH" || exit 1
+    MEASURE_VALIDATED=1
     if [ "$BACKEND" = herdr ]; then
       teardown_herdr_preflight_target "$T" "$ID" || exit 1
     fi
@@ -2199,6 +2307,10 @@ if [ -d "$WT" ] && [ "$FORCE" != "--force" ]; then
       exit 1
     fi
   fi
+fi
+
+if [ "$MEASURE_VALIDATED" -ne 1 ]; then
+  validate_measure_at "$DATA" "$ID" || exit 1
 fi
 
 # Every landed/discard-work refusal above has now passed (or --force skipped

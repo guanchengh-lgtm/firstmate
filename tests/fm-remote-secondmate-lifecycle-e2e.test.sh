@@ -1134,6 +1134,8 @@ SIBLING_PANE=$(printf '%s' "$SIBLING_CREATE" | jq -r '.result.root_pane.pane_id'
 [ -n "$SIBLING_PANE" ] && [ "$SIBLING_PANE" != null ] \
   || fail "the shared-session sibling fixture did not create a pane"
 printf 'kind=ship\n' > "$REMOTE_HOME/state/child.meta"
+fm_write_none_measure "$PARENT" ios
+fm_write_none_measure_at "$REMOTE_HOME/data/.parent-route" ios
 rm -rf "$PARENT/state/procevent"
 : > "$PARENT/state/procevent"
 if remote_env "$ROOT/bin/fm-teardown.sh" ios >/dev/null 2>&1; then

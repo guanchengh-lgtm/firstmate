@@ -1540,6 +1540,7 @@ yolo=off
 home=$subhome
 projects=alpha
 EOF
+  fm_write_none_measure "$home" domain
   printf '%s\n' '- domain - design domain (home: '"$subhome"'; scope: design domain; projects: alpha; added 2026-06-22)' > "$home/data/secondmates.md"
   fakebin=$(make_fake_tmux "$TMP_ROOT/teardown-fake")
   log="$TMP_ROOT/teardown-fake/tmux.log"
@@ -1817,6 +1818,7 @@ yolo=off
 home=$subhome
 projects=alpha
 EOF
+  fm_write_none_measure "$home" domain
   printf '%s\n' '- domain - design domain (home: '"$subhome"'; scope: design domain; projects: alpha; added 2026-06-22)' > "$home/data/secondmates.md"
   fakebin=$(make_fake_tmux "$TMP_ROOT/teardown-return-fail-fake")
   log="$TMP_ROOT/teardown-return-fail-fake/tmux.log"
@@ -1873,6 +1875,7 @@ yolo=off
 home=$subhome
 projects=alpha
 EOF
+  fm_write_none_measure "$home" domain
   printf '%s\n' '- domain - design domain (home: '"$subhome"'; scope: design domain; projects: alpha; added 2026-06-22)' > "$home/data/secondmates.md"
   fakebin=$(make_fake_tmux "$TMP_ROOT/plain-clone-teardown-fake")
   log="$TMP_ROOT/plain-clone-teardown-fake/tmux.log"
@@ -1918,6 +1921,8 @@ kind=ship
 mode=no-mistakes
 yolo=off
 EOF
+  fm_write_none_measure "$home" domain
+  fm_write_none_measure "$subhome" child
   fakebin=$(make_fake_tmux "$TMP_ROOT/force-teardown-fake")
   log="$TMP_ROOT/force-teardown-fake/tmux.log"
   if PATH="$fakebin:$PATH" FM_HOME="$home" FM_FAKE_TMUX_LOG="$log" FM_FAKE_TMUX_CAPTURE="$TMP_ROOT/force-teardown-fake/pane.txt" \
@@ -2063,6 +2068,8 @@ SH
   mkdir -p "$(dirname "$lock")"
   : > "$lock"
   touch -t 200001010000 "$lock"
+  fm_write_none_measure "$home" domain
+  fm_write_none_measure "$subhome" child
 
   set +e
   PATH="$fakebin:$PATH" FM_HOME="$home" FM_FAKE_TMUX_LOG="$log" FM_FAKE_TMUX_CAPTURE="$TMP_ROOT/force-lock-child-fake/pane.txt" \
@@ -2102,6 +2109,7 @@ yolo=off
 home=$subhome
 projects=alpha
 EOF
+    fm_write_none_measure "$home" domain
     printf '%s\n' '- domain - design domain (home: '"$subhome"'; scope: design domain; projects: alpha; added 2026-06-22)' > "$home/data/secondmates.md"
     fakebin=$(make_fake_tmux "$TMP_ROOT/symlink-inside-teardown-fake-$opdir")
     log="$TMP_ROOT/symlink-inside-teardown-fake-$opdir/tmux.log"

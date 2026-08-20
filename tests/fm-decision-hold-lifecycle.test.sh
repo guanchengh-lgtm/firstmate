@@ -186,6 +186,7 @@ EOF
       and (.gates | any(.id == $route or .id == $access) | not)
   ' >/dev/null || fail "Bearings did not surface structured captain holds: $json"
 
+  fm_write_none_measure "$home" "$id"
   run_teardown "$home" "$id" >/dev/null 2> "$home/teardown.err" \
     || fail "reviewed investigation teardown failed: $(cat "$home/teardown.err")"
   tasks_in "$home" "done" "$id" --report "data/$id/report.md" --keep 0 >/dev/null \
@@ -391,6 +392,7 @@ test_visual_review_uses_shared_completion_owner() {
   printf '# Sample board investigation\n\nThe initial findings need no captain choice.\n' > "$home/data/$id/report.md"
   run_decisions "$home" complete "$id" --none --no-ideas >/dev/null \
     || fail "initial investigation could not pass the shared completion owner"
+  fm_write_none_measure "$home" "$id"
   run_teardown "$home" "$id" >/dev/null 2> "$home/visual-teardown.err" \
     || fail "completed investigation teardown failed: $(cat "$home/visual-teardown.err")"
   tasks_in "$home" "done" "$id" --report "data/$id/report.md" --keep 0 >/dev/null
@@ -453,6 +455,7 @@ test_terminal_single_owner_status_decision_does_not_block_empty_inventory() {
     || fail "terminal single-owner stale status decision blocked empty inventory completion"
   run_decisions "$home" verify "$id" >/dev/null \
     || fail "terminal single-owner stale status decision blocked inventory verification"
+  fm_write_none_measure "$home" "$id"
   run_teardown "$home" "$id" >/dev/null 2> "$home/terminal-teardown.err" \
     || fail "terminal single-owner stale status decision blocked teardown: $(cat "$home/terminal-teardown.err")"
 
@@ -495,6 +498,7 @@ EOF
     || fail "secondmate-owned hold creation failed"
   run_decisions "$mate" complete "$origin" release --no-ideas >/dev/null \
     || fail "secondmate-owned completion failed"
+  fm_write_none_measure "$mate" "$origin"
   run_teardown "$mate" "$origin" >/dev/null 2> "$mate/teardown.err" \
     || fail "secondmate investigation teardown failed: $(cat "$mate/teardown.err")"
   tasks_in "$mate" "done" "$origin" --report "data/$origin/report.md" --keep 0 >/dev/null
