@@ -394,6 +394,8 @@ spawn_secondmate_task() {
 
 teardown_task() {  # <id> <home>
   local id=$1 home=$2
+  mkdir -p "$home/data/$id"
+  printf 'miss:\nnumber:\npair:\npick:\nnone: test fixture\n' > "$home/data/$id/measure.md"
   FM_GATE_REFUSE_BYPASS=1 FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_CONFIG_OVERRIDE="$home/config" \

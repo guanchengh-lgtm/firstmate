@@ -212,6 +212,7 @@ phase_recovery() {
 phase_teardown() {
   local teardown_out
   : > "$LOG"
+  fm_write_none_measure "$HOME_DIR" design
   teardown_out=$(PATH="$FAKEBIN:$PATH" FM_HOME="$HOME_DIR" FM_FAKE_TMUX_LOG="$LOG" FM_FAKE_TMUX_CAPTURE="$PANE" \
     "$ROOT/bin/fm-teardown.sh" design 2>&1) \
     || fail "teardown failed for the empty secondmate home"

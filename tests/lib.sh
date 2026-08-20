@@ -238,12 +238,26 @@ fm_write_meta() {
   done
 }
 
+# fm_write_none_measure_at <data-dir> <task-id> [why]: seed the valid no-measure
+# record required by task teardown in an isolated fixture data directory.
+fm_write_none_measure_at() {
+  local data=$1 id=$2 why=${3:-fixture has no task measure}
+  mkdir -p "$data/$id"
+  printf '%s\n' 'miss:' 'number:' 'pair:' 'pick:' "none: $why" \
+    > "$data/$id/measure.md"
+}
+
+# fm_write_none_measure <home> <task-id> [why]: home-relative convenience.
+fm_write_none_measure() {
+  fm_write_none_measure_at "$1/data" "$2" "${3:-fixture has no task measure}"
+}
+
 # fm_write_secondmate_meta <file> <home> [window] [projects] [harness]: write the
 # standard kind=secondmate meta block used across the secondmate suites. Window
 # defaults to firstmate:fm-<id>, projects defaults to alpha, and harness defaults
 # to echo to match the common case.
 fm_write_secondmate_meta() {
-  local file=$1 home=$2 id window projects=${4:-alpha} harness=${5:-echo}
+  local file=$1 home=$2 id window projects=${4:-alpha} harness=${5:-echo} state_dir
   id=$(basename "$file" .meta)
   window=${3:-firstmate:fm-$id}
   fm_write_meta "$file" \
@@ -257,6 +271,10 @@ fm_write_secondmate_meta() {
     "yolo=off" \
     "home=$home" \
     "projects=$projects"
+  state_dir=$(dirname "$file")
+  if [ "$(basename "$state_dir")" = state ]; then
+    fm_write_none_measure "$(dirname "$state_dir")" "$id"
+  fi
 }
 
 # --- common assertions ------------------------------------------------------
