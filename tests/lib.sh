@@ -34,6 +34,12 @@ FM_TEST_LIB_SOURCED=1
 # strips this to verify real refusal.
 export FM_GATE_REFUSE_BYPASS=1
 
+# Exempt firstmate's own suite from the no-mistakes validation-truth refusal
+# (bin/fm-validation-truth-lib.sh). Those tests drive pr-check, pr-merge, and
+# teardown without a real no-mistakes run. tests/fm-validation-truth.test.sh
+# strips this to verify real refusal.
+export FM_VALIDATION_TRUTH_BYPASS=1
+
 # Resolve the repo root from this library's own location. Consumed by sourcing
 # test files, not by this library, so it reads as "unused" here.
 # shellcheck disable=SC2034

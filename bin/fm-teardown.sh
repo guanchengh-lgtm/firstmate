@@ -84,9 +84,11 @@
 # Usage: fm-teardown.sh <task-id> [--force]
 #        fm-teardown.sh --help
 #   --force skips ordinary-task dirty and landed-work checks, skips scout report
-#   checks, and discards secondmate child work for kind=secondmate. It never
-#   skips the measure gate or the class-repeat gate. Only use it when the
-#   captain has explicitly said to discard the work.
+#   checks, discards secondmate child work for kind=secondmate, and skips the
+#   no-mistakes validation-truth gate (bin/fm-validation-truth-lib.sh) because
+#   discard is not a claim that the ship is green. It never skips the measure
+#   gate or the class-repeat gate. Only use it when the captain has explicitly
+#   said to discard the work.
 #
 # Transient / stale worktree git lock recovery (teardown-lock-race): a crew process
 # killed mid-git-operation can leave a .git/worktrees/<wt>/index.lock (or, for a
@@ -192,8 +194,9 @@ Cleanup gate:
 
 Options:
   --force  Skip ordinary-task dirty and landed-work checks, skip scout report
-           checks, and discard secondmate child work. The measure gate remains.
-           The class-repeat gate remains.
+           checks, discard secondmate child work, and skip the no-mistakes
+           validation-truth gate because discard is not a green claim. The
+           measure gate remains. The class-repeat gate remains.
   -h, --help
            Show this help.
 EOF
@@ -235,6 +238,8 @@ SUB_HOME_PARENT_MARKER=".fm-secondmate-parent"
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-nm-run-lib.sh
 . "$SCRIPT_DIR/fm-nm-run-lib.sh"
+# shellcheck source=bin/fm-validation-truth-lib.sh
+. "$SCRIPT_DIR/fm-validation-truth-lib.sh"
 if [ "$#" -lt 1 ] || ! fm_task_id_path_safe "$1"; then
   echo "error: invalid teardown request" >&2
   exit 2
@@ -2603,6 +2608,9 @@ if [ "$MEASURE_VALIDATED" -ne 1 ]; then
   validate_measure_at "$DATA" "$ID" || exit 1
 fi
 validate_class_repeat_at "$DATA" "$ID" || exit 1
+if [ "$FORCE" != "--force" ]; then
+  fm_require_validation_truth "$META" "$ID" || exit 1
+fi
 
 # Every landed/discard-work refusal above has now passed (or --force skipped
 # them). Fix 1 and Fix 2 (see script header) run here, unconditionally on

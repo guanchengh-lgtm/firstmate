@@ -5,10 +5,12 @@
 set -u
 
 # Herdr backend tests drive the real fm-spawn/fm-teardown but do not source
-# tests/lib.sh, so exempt them from the gate-lifecycle refusal here too (see
-# tests/lib.sh and bin/fm-gate-refuse-lib.sh for why firstmate's own suite,
-# which the no-mistakes gate runs from a gate worktree, must be exempt).
+# tests/lib.sh, so exempt them from the gate-lifecycle and validation-truth
+# refusals here too (see tests/lib.sh, bin/fm-gate-refuse-lib.sh, and
+# bin/fm-validation-truth-lib.sh for why firstmate's own suite, which the
+# no-mistakes gate runs from a gate worktree, must be exempt).
 export FM_GATE_REFUSE_BYPASS=1
+export FM_VALIDATION_TRUTH_BYPASS=1
 
 HERDR_TEST_SAFETY_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=/dev/null

@@ -7,7 +7,8 @@ Harness hook files adapt each enabled primary harness integration's turn-end mec
 
 Related PreToolUse guards deny unsafe commands before execution rather than detecting a blind turn end afterward.
 Their separate owners are [`arm-pretool-check.md`](arm-pretool-check.md), [`cd-guard.md`](cd-guard.md), [`subagent-guard.md`](subagent-guard.md), and [`project-write-guard.md`](project-write-guard.md).
-Do not infer this guard's scope, loop safety, or compatibility tradeoffs for those guards.
+Claude also registers an `AskUserQuestion` PreToolUse that runs the same `bin/fm-sot-speech-check.sh` helper as this guard's speech predicate; that helper's header owns the PreToolUse path.
+Do not infer this guard's scope, loop safety, or compatibility tradeoffs for those other guards.
 
 ## Current invariant
 
@@ -28,8 +29,9 @@ An unmarked checkout or invalid marker falls through to the git-dir check.
 That check keeps crewmate and scout linked worktrees inert because their git dir differs from their git common dir.
 It also requires `AGENTS.md`, `bin/`, and the effective state directory.
 
-For an in-scope primary, before the supervision check, the guard first refuses an unchecked yen126/TradingView login or session-death block from a `tradingview-tools` task; `bin/fm-turnend-guard.sh`'s header owns that session-diagnosis contract and still blocks under Claude `--claude` when `stop_hook_active` is true.
-It then refuses a ready queued ticket that still lacks matching `state/<id>.meta` worker ownership.
+For an in-scope primary, before the supervision check, the guard runs `bin/fm-sot-speech-check.sh` against registered file-backed SoT identifiers, then refuses an unchecked yen126/TradingView login or session-death block from a `tradingview-tools` task, then refuses a ready queued ticket that still lacks matching `state/<id>.meta` worker ownership.
+The speech helper's header owns the registry, read window, declared-unread escape, fail-open cases, and residual coverage.
+`bin/fm-turnend-guard.sh`'s header owns the yen126 session-diagnosis contract and still blocks under Claude `--claude` when `stop_hook_active` is true.
 A spawn or steer leaves that metadata; recording a concrete backlog blocker removes the ticket from `tasks-axi ready`.
 The ready-action check fails open when the tasks-axi backend cannot be read, honors `config/backlog-backend=manual`, has no skip flag, and still blocks under Claude `--claude` when `stop_hook_active` is true.
 
@@ -59,7 +61,7 @@ If `jq` is missing or hook stdin is empty, the guard exits 0 because it cannot s
   Both markers are required because Grok does not inject the same variables into every process kind: grok 0.2.73 set `GROK_AGENT` for child and tool processes, while grok 1.0.0 hook processes carry `GROK_HOOK_EVENT`, `GROK_HOOK_NAME`, `GROK_SESSION_ID`, and `GROK_WORKSPACE_ROOT` but no `GROK_AGENT`.
   A guard keyed on `GROK_AGENT` alone therefore stopped firing on grok 1.0.0, and the resulting Claude-only auto-arm ran synchronously under Grok - Grok has no `asyncRewake`, so it waited on the foregrounded watcher for the declared 28800-second timeout and the Grok turn never ended.
   Do NOT widen this guard to `GROK_SESSION_ID`: Grok injects that into every child process, so it can survive into a Claude session that Grok launched and would silently disable Claude's own continuity.
-  The same marker guard carries every tracked `.claude/settings.json` entry whose event Grok already covers through its own `.grok/hooks/` registration, which is both `Stop` entries, the `SessionStart` entry, and the two `PreToolUse` Bash entries; the two match-all `PreToolUse` entries are the deliberate unguarded exceptions, because no Grok registration covers the subagent-spawn or project-write events, recorded in [`subagent-guard.md`](subagent-guard.md) and [`project-write-guard.md`](project-write-guard.md) "Known residual gap".
+  The same marker guard carries every tracked `.claude/settings.json` entry whose event Grok already covers through its own `.grok/hooks/` registration, which is both `Stop` entries, the `SessionStart` entry, the `AskUserQuestion` SoT-speech `PreToolUse` entry, and the two `PreToolUse` Bash entries; the two match-all `PreToolUse` entries are the deliberate unguarded exceptions, because no Grok registration covers the subagent-spawn or project-write events, recorded in [`subagent-guard.md`](subagent-guard.md) and [`project-write-guard.md`](project-write-guard.md) "Known residual gap".
   `tests/fm-turnend-guard.test.sh` pins that inventory so neither the guarded set nor the exception can change silently.
 
 Claude and Codex can block a Stop directly with exit status 2 and stderr.

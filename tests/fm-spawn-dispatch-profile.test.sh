@@ -606,6 +606,92 @@ test_batch_forwards_shared_profile_flags() {
   pass "batch dispatch forwards shared --harness, --model, and --effort to every pair"
 }
 
+test_spawn_records_map_and_refuses_live_fog() {
+  local rec id out status meta map
+  id=profile-map-fog-z14
+  rec=$(make_spawn_case profile-map-fog claude "$id")
+  read_case_record "$rec"
+  mkdir -p "$HOME_DIR/data/prog" "$HOME_DIR/data/decisions"
+  printf 'lock\n' > "$HOME_DIR/data/decisions/lock.md"
+  map="$HOME_DIR/data/prog/map.md"
+  cat > "$map" <<'EOF'
+# Map
+
+## Not yet specified
+
+- Whether this is still open.
+EOF
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --map data/prog/map.md)
+  status=$?
+  [ "$status" -ne 0 ] || fail "ship spawn accepted a map with live fog"
+  assert_contains "$out" 'live unspecified items' \
+    "fog refusal did not name live unspecified items"
+  assert_absent "$HOME_DIR/state/$id.meta" \
+    "live-fog spawn wrote task metadata"
+
+  cat > "$map" <<'EOF'
+# Map
+
+## Destination
+
+Done without a fog section.
+EOF
+  rec=$(make_spawn_case profile-map-fog-struct claude "$id")
+  read_case_record "$rec"
+  mkdir -p "$HOME_DIR/data/prog"
+  cat > "$HOME_DIR/data/prog/map.md" <<'EOF'
+# Map
+
+## Destination
+
+Done without a fog section.
+EOF
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --map data/prog/map.md)
+  status=$?
+  [ "$status" -ne 0 ] || fail "ship spawn accepted a map missing Not yet specified"
+  assert_contains "$out" 'failed map structure checks' \
+    "structural map failure was mislabeled as live fog"
+  case "$out" in
+    *'live unspecified items'*)
+      fail "structural map failure still used the live-fog primary message"
+      ;;
+  esac
+  assert_absent "$HOME_DIR/state/$id.meta" \
+    "structural-fog spawn wrote task metadata"
+
+  cat > "$map" <<'EOF'
+# Map
+
+## Not yet specified
+
+- [parked 2026-08-21] Overnight loops.
+- [closed data/decisions/lock.md] Exact names.
+EOF
+  rec=$(make_spawn_case profile-map-fog-clean claude "$id")
+  read_case_record "$rec"
+  mkdir -p "$HOME_DIR/data/prog" "$HOME_DIR/data/decisions"
+  printf 'lock\n' > "$HOME_DIR/data/decisions/lock.md"
+  cat > "$HOME_DIR/data/prog/map.md" <<'EOF'
+# Map
+
+## Not yet specified
+
+- [parked 2026-08-21] Overnight loops.
+- [closed data/decisions/lock.md] Exact names.
+EOF
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --map data/prog/map.md)
+  status=$?
+  expect_code 0 "$status" "ship spawn with parked/closed fog should succeed"
+  meta="$HOME_DIR/state/$id.meta"
+  assert_grep 'map=data/prog/map.md' "$meta" \
+    "spawn did not record map= in task metadata"
+  pass "fm-spawn: --map refuses live and structural fog and records a clean map"
+}
+
 test_spawn_records_map_next_and_rejects_invalid_ids() {
   local rec id out status meta bad_id
   id=profile-map-next-z11
@@ -743,6 +829,7 @@ test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata
 test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity
 test_batch_forwards_shared_profile_flags
 test_spawn_records_map_next_and_rejects_invalid_ids
+test_spawn_records_map_and_refuses_live_fog
 test_spawn_refuses_fake_worker_slash_before_endpoint
 test_claude_forwards_firstmate_config_dir_when_set
 test_claude_omits_config_dir_prefix_when_unset

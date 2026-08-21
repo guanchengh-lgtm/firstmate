@@ -1340,12 +1340,16 @@ test_help_documents_measure_contract() {
     "--help omitted the home-local measure path"
   assert_contains "$out" 'exactly these five lines in this order' \
     "--help omitted the five-line format"
-  assert_contains "$out" 'The measure gate remains' \
+  assert_contains "$out" 'measure gate remains' \
     "--help did not say that --force preserves the measure gate"
   assert_contains "$out" 'The class-repeat gate remains' \
     "--help did not say that --force preserves the class-repeat gate"
   assert_contains "$out" 'class-repeat gated' \
     "--help omitted the class-repeat gate"
+  assert_contains "$out" 'validation-truth' \
+    "--help did not say that --force skips validation-truth"
+  assert_contains "$out" 'discard is not a green claim' \
+    "--help did not explain why --force skips validation-truth"
   pass "teardown help owns the five-line measure contract"
 }
 

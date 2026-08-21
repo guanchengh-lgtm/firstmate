@@ -294,6 +294,21 @@ It does not infer supersession from chat, report prose, or arbitrary project com
 The current full recurring-defect claims and adversary outcome are recorded in [`verification/durable-sot-recurring-defect-claims.json`](verification/durable-sot-recurring-defect-claims.json).
 See [`sot-programs.example.tsv`](sot-programs.example.tsv) for a non-live copyable shape.
 
+## SoT speech refuse-hook (data/sot-speech.tsv)
+
+An optional home-local registry can refuse captain-facing content claims about named file-backed sources unless the same session opened those files.
+Lookup uses `$FM_HOME/data/sot-speech.tsv` by default (`FM_SOT_SPEECH_REGISTRY` overrides for tests).
+The registry is private to the home and is never tracked in firstmate git.
+[`bin/fm-sot-speech-check.sh`](../bin/fm-sot-speech-check.sh)'s header owns the row format, turn-end and AskUserQuestion PreToolUse refuse paths, declared-unread escape, fail-open cases, and residual coverage.
+`AGENTS.md` section 9 carries the always-loaded declared-unread sentence.
+
+## Build-map fog check
+
+Session-start bootstrap runs [`bin/fm-map-fog-check.sh`](../bin/fm-map-fog-check.sh) in detect-only mode over ordinary `map.md` files under `data/`, printing `MAP_FOG` lines without blocking start, while structural failures remain loud.
+A ship spawn with `--map` runs the same checker in `--strict` and refuses while fog is live or the map structure fails; scout `--map` records the path without that refuse.
+The checker never writes `[parked]` or `[closed]` tokens; those remain captain-only.
+The script header owns live-fog tokens, `MAP_FOG` lines, structural missing-section failure, `--strict`, and residual coverage.
+
 ## Defect-class name list (data/defect-classes.tsv)
 
 An optional home-local registry binds miss-line phrasings to one class id so cleanup can refuse a second-occurrence ship that did not touch an enforcing file.
