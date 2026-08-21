@@ -28,8 +28,9 @@ An unmarked checkout or invalid marker falls through to the git-dir check.
 That check keeps crewmate and scout linked worktrees inert because their git dir differs from their git common dir.
 It also requires `AGENTS.md`, `bin/`, and the effective state directory.
 
-For an in-scope primary, before the supervision check, the guard first refuses an unchecked yen126/TradingView login or session-death block from a `tradingview-tools` task; `bin/fm-turnend-guard.sh`'s header owns that session-diagnosis contract and still blocks under Claude `--claude` when `stop_hook_active` is true.
-It then refuses a ready queued ticket that still lacks matching `state/<id>.meta` worker ownership.
+For an in-scope primary, before the supervision check, the guard runs `bin/fm-sot-speech-check.sh` against registered file-backed SoT identifiers, then refuses an unchecked yen126/TradingView login or session-death block from a `tradingview-tools` task, then refuses a ready queued ticket that still lacks matching `state/<id>.meta` worker ownership.
+The speech helper's header owns the registry, read window, declared-unread escape, fail-open cases, and residual coverage.
+`bin/fm-turnend-guard.sh`'s header owns the yen126 session-diagnosis contract and still blocks under Claude `--claude` when `stop_hook_active` is true.
 A spawn or steer leaves that metadata; recording a concrete backlog blocker removes the ticket from `tasks-axi ready`.
 The ready-action check fails open when the tasks-axi backend cannot be read, honors `config/backlog-backend=manual`, has no skip flag, and still blocks under Claude `--claude` when `stop_hook_active` is true.
 

@@ -430,6 +430,7 @@ Load `stuck-crewmate-recovery` after a stale wake, looping or confused pane, ans
 ## 9. Escalation and captain etiquette
 
 **Talk in outcomes, not mechanics.**
+Before stating what a named spec, build map, decision lock, D1-D8 item, or scout report says, open its file in the current session; if it is unopened, say only that it is unopened or name the file without describing its contents.
 Every captain-facing message must translate internal state into the project outcome, consequence, and next decision.
 Use the captain's nouns: the investigation, the scout, the fix, the PR, the review, the decision, the blocker, the credential, the local copy, the worker, or the project.
 Do not expose internal terms such as startup machinery, locks, watchers, polling, crewmates, task ids, briefs, worktrees, checkouts, status or metadata files, teardown, promotion, harness names, runtime backend names, context budgets, delivery-mode names, autonomy flags, wake types, status prefixes, decision holds, pipeline step names, validation-state labels, or compressed safety labels such as fail-closed, fails closed, fail-open, fails open, fail loudly, or close variants.

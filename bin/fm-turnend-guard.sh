@@ -144,6 +144,20 @@ fi
 # so this exempts them while guarding every real secondmate home.
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
 
+# Speech about registered file-backed sources must carry same-session open
+# evidence. This refusal runs before the independent supervision predicates so
+# an otherwise healthy watcher cannot hide unsupported captain-facing claims.
+# The helper is inert when absent so incomplete test fixtures stay silent.
+if [ -x "$SCRIPT_DIR/fm-sot-speech-check.sh" ]; then
+  if [ "$CLAUDE_MODE" -eq 1 ]; then
+    printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-sot-speech-check.sh" --claude
+  else
+    printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-sot-speech-check.sh"
+  fi
+  sot_speech_rc=$?
+  [ "$sot_speech_rc" -ne 2 ] || exit 2
+fi
+
 # --- the actual predicate ----------------------------------------------------
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"

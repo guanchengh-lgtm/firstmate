@@ -13,6 +13,9 @@
 #                 "SOT_GAP: <program_id> - <missing pointer or superseded hold detail>",
 #                 "SOT_GAP: registry invalid - <structural failure>",
 #                 "SOT_GAP: checker failed with status <n>",
+#                 "MAP_FOG: <map> - <live unspecified item or closed pointer>",
+#                 "MAP_FOG: registry invalid - <structural failure>",
+#                 "MAP_FOG: checker failed with status <n>",
 #                 "FLEET_SYNC: <repo>: skipped|recovered|STUCK: <detail>",
 #                 "PR_CHECK_MIGRATION: <private remediation>",
 #                 "TANGLE: <remediation>",
@@ -1187,6 +1190,15 @@ detect_local_config() {
     [ -z "$sot_output" ] || printf '%s\n' "$sot_output"
     if [ "$sot_rc" -ne 2 ]; then
       printf 'SOT_GAP: checker failed with status %s\n' "$sot_rc"
+    fi
+  fi
+  if fog_output=$("$SCRIPT_DIR/fm-map-fog-check.sh" 2>&1); then
+    [ -z "$fog_output" ] || printf '%s\n' "$fog_output"
+  else
+    fog_rc=$?
+    [ -z "$fog_output" ] || printf '%s\n' "$fog_output"
+    if [ "$fog_rc" -ne 2 ]; then
+      printf 'MAP_FOG: checker failed with status %s\n' "$fog_rc"
     fi
   fi
   if [ "${FM_BOOTSTRAP_VERBOSE_FACTS:-0}" = 1 ] \

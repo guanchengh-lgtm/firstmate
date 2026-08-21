@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--map-next <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
-#        fm-spawn.sh <task-id> <project-dir> --scout [--map-next <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--map <map-file>] [--map-next <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
+#        fm-spawn.sh <task-id> <project-dir> --scout [--map <map-file>] [--map-next <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--map-next <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
+#   --map names one build map relative to FM_HOME and records map= in task meta.
+#   A ship spawn with --map is refused while that map, or a map.md it names,
+#   has live fog (bin/fm-map-fog-check.sh --strict). Scout --map records the
+#   path and does not refuse. --map is invalid on --secondmate.
 #   --map-next records one already-locked successor as map_next= in task meta.
 #   fm-teardown.sh refuses completion until that id exists in the active backlog
 #   as queued, in flight, or done, so a landed blocker cannot invent a new go gate.
@@ -235,6 +239,7 @@ MODE=
 YOLO=
 TRACEPARENT_ARG=
 MAP_NEXT=
+MAP=
 HARNESS_SET=0
 MODEL_SET=0
 EFFORT_SET=0
@@ -243,6 +248,7 @@ MODE_SET=0
 YOLO_SET=0
 TRACEPARENT_SET=0
 MAP_NEXT_SET=0
+MAP_SET=0
 POS=()
 want_value=
 for a in "$@"; do
@@ -259,6 +265,7 @@ for a in "$@"; do
       yolo) YOLO=$a; YOLO_SET=1 ;;
       traceparent) TRACEPARENT_ARG=$a; TRACEPARENT_SET=1 ;;
       map-next) MAP_NEXT=$a; MAP_NEXT_SET=1 ;;
+      map) MAP=$a; MAP_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -283,6 +290,8 @@ for a in "$@"; do
     --traceparent=*) TRACEPARENT_ARG=${a#--traceparent=}; TRACEPARENT_SET=1 ;;
     --map-next) want_value=map-next ;;
     --map-next=*) MAP_NEXT=${a#--map-next=}; MAP_NEXT_SET=1 ;;
+    --map) want_value=map ;;
+    --map=*) MAP=${a#--map=}; MAP_SET=1 ;;
     *) POS+=("$a") ;;
   esac
 done
@@ -296,6 +305,7 @@ done
 [ "$TRACEPARENT_SET" -eq 0 ] || [ -n "$TRACEPARENT_ARG" ] || { echo "error: --traceparent requires a non-empty value" >&2; exit 1; }
 [ "$MAP_NEXT_SET" -eq 0 ] || [ -n "$MAP_NEXT" ] || { echo "error: --map-next requires a non-empty value" >&2; exit 1; }
 [ "$MAP_NEXT_SET" -eq 0 ] || fm_task_id_creation_valid "$MAP_NEXT" || { echo "error: invalid --map-next task id" >&2; exit 2; }
+[ "$MAP_SET" -eq 0 ] || [ -n "$MAP" ] || { echo "error: --map requires a non-empty value" >&2; exit 1; }
 # A parent-delivered carrier replaces this home's own resolution, so it is
 # refused unless it is a secondmate spawn carrying a strictly valid W3C value.
 # Nothing else may reach the pane's TRACEPARENT export.
@@ -347,6 +357,33 @@ else
     echo "error: --yolo applies only to ship spawns; a scout delivers a report and a secondmate records its own fixed posture" >&2
     exit 1
   }
+fi
+if [ "$MAP_SET" -eq 1 ]; then
+  [ "$KIND" != secondmate ] || {
+    echo "error: --map applies to ship or scout spawns" >&2
+    exit 1
+  }
+  case "$MAP" in
+    /*|../*|*/../*|*/..)
+      echo "error: --map must be a path relative to FM_HOME without .." >&2
+      exit 2
+      ;;
+  esac
+  MAP_ABS="$FM_HOME/$MAP"
+  [ -f "$MAP_ABS" ] && [ ! -L "$MAP_ABS" ] && [ -r "$MAP_ABS" ] || {
+    echo "error: --map is not a readable ordinary file: $MAP" >&2
+    exit 2
+  }
+  if [ "$KIND" = ship ]; then
+    fog_out=
+    fog_rc=0
+    fog_out=$("$SCRIPT_DIR/fm-map-fog-check.sh" --strict "$MAP_ABS" 2>&1) || fog_rc=$?
+    if [ "$fog_rc" -ne 0 ]; then
+      echo "error: --map $MAP still has live unspecified items; the captain parks or closes fog before a build-map ship" >&2
+      [ -z "$fog_out" ] || printf '%s\n' "$fog_out" >&2
+      exit 1
+    fi
+  fi
 fi
 
 spawn_remote_secondmate() {
@@ -570,6 +607,7 @@ spawn_remote_secondmate() {
     echo "mode=secondmate"
     echo "yolo=off"
     [ -z "$MAP_NEXT" ] || echo "map_next=$MAP_NEXT"
+    [ -z "${MAP:-}" ] || echo "map=$MAP"
     echo "tasktmp="
     echo "model=${model#-}"
     echo "effort=${effort#-}"
@@ -697,6 +735,7 @@ spawn_abort_cleanup() {
             [ -z "${MODE:-}" ] || echo "mode=$MODE"
             [ -z "${YOLO:-}" ] || echo "yolo=$YOLO"
             [ -z "${MAP_NEXT:-}" ] || echo "map_next=$MAP_NEXT"
+            [ -z "${MAP:-}" ] || echo "map=$MAP"
             echo "tasktmp=${TASK_TMP:-}"
             echo "model=${MODEL:-default}"
             echo "effort=${EFFORT:-default}"
@@ -771,6 +810,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   [ "$MODE_SET" -eq 0 ] || shared_args+=(--mode "$MODE")
   [ "$YOLO_SET" -eq 0 ] || shared_args+=(--yolo "$YOLO")
   [ "$MAP_NEXT_SET" -eq 0 ] || shared_args+=(--map-next "$MAP_NEXT")
+  [ "$MAP_SET" -eq 0 ] || shared_args+=(--map "$MAP")
   for pair in ${POS[@]+"${POS[@]}"}; do
     case "$pair" in
       *=*) : ;;
@@ -2212,6 +2252,7 @@ META_WINDOW=$T
   [ -z "$MODE" ] || echo "mode=$MODE"
   [ -z "$YOLO" ] || echo "yolo=$YOLO"
   [ -z "$MAP_NEXT" ] || echo "map_next=$MAP_NEXT"
+  [ -z "${MAP:-}" ] || echo "map=$MAP"
   echo "tasktmp=$TASK_TMP"
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"

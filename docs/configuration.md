@@ -288,6 +288,8 @@ The optional fourth registry field names captain-held backlog identities that a 
 Each named hold becomes clean only when `fm-decision-hold.sh supersede` binds it to an exact decision file matching the row pointer and an exact already-Done ship task named among the row sources.
 This surfaces an older tentative pick that remains live or lacks that exact binding after a later durable lock or shipped task became authoritative.
 [`bin/fm-sot-pointer-check.sh`](../bin/fm-sot-pointer-check.sh)'s header owns the row format, Done-source gate, match surface, rule ids, `SOT_GAP` lines, structural exit 2, default exit-zero detect-only mode, `--strict`, `--registry`, and exact-count regression flags.
+[`bin/fm-map-fog-check.sh`](../bin/fm-map-fog-check.sh)'s header owns live-fog tokens, `MAP_FOG` lines, structural missing-section failure, and `--strict`.
+[`bin/fm-sot-speech-check.sh`](../bin/fm-sot-speech-check.sh)'s header owns the private SoT-speech registry and refuse-hook.
 Bootstrap runs that check in detect-only mode so findings surface without blocking session start or auto-editing captain material, while registry structural failures remain loud.
 The check covers only relationships registered from existing task, pointer, and captain-hold identities.
 It does not infer supersession from chat, report prose, or arbitrary project commits, and it does not close a hold automatically.
