@@ -379,7 +379,11 @@ if [ "$MAP_SET" -eq 1 ]; then
     fog_rc=0
     fog_out=$("$SCRIPT_DIR/fm-map-fog-check.sh" --strict "$MAP_ABS" 2>&1) || fog_rc=$?
     if [ "$fog_rc" -ne 0 ]; then
-      echo "error: --map $MAP still has live unspecified items; the captain parks or closes fog before a build-map ship" >&2
+      if [ "$fog_rc" -eq 2 ]; then
+        echo "error: --map $MAP failed map structure checks; fix the map before a build-map ship" >&2
+      else
+        echo "error: --map $MAP still has live unspecified items; the captain parks or closes fog before a build-map ship" >&2
+      fi
       [ -z "$fog_out" ] || printf '%s\n' "$fog_out" >&2
       exit 1
     fi

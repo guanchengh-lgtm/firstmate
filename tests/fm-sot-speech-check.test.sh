@@ -141,11 +141,97 @@ test_pretool_askuser_is_refused() {
   pass "sot-speech: AskUserQuestion PreToolUse denies an unread content claim"
 }
 
+write_projects_registry() {
+  local home=$1
+  mkdir -p "$home/data"
+  printf 'Project Alpha owns the north star.
+' > "$home/data/projects.md"
+  printf '%s\t%s\n' 'data/projects.md' 'Project Alpha|north star' > "$home/data/sot-speech.tsv"
+}
+
+test_session_start_command_alone_does_not_credit() {
+  local home transcript payload out rc
+  home=$(make_primary_home "$TMP_ROOT/ss-cmd-only")
+  write_projects_registry "$home"
+  transcript="$home/transcript.jsonl"
+  write_transcript "$transcript" \
+    '{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"bin/fm-session-start.sh"}}]}}' \
+    '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Project Alpha owns the north star."}]}}'
+  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  set +e
+  out=$(run_check "$home" "$payload")
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "session-start command alone exited $rc with: $out"
+  assert_contains "$out" 'open data/projects.md' "command-only session-start should still refuse"
+  pass "sot-speech: session-start command without digest output does not credit startup files"
+}
+
+test_session_start_digest_credits_printed_files() {
+  local home transcript payload out rc digest
+  home=$(make_primary_home "$TMP_ROOT/ss-digest")
+  write_projects_registry "$home"
+  transcript="$home/transcript.jsonl"
+  digest=$(printf '%s\n' \
+    'SESSION START - fixture' \
+    '================================================================================' \
+    'CONTEXT' \
+    '================================================================================' \
+    '' \
+    'data/projects.md' \
+    '--------------------------------------------------------------------------------' \
+    'Project Alpha owns the north star.' \
+    '' \
+    'data/secondmates.md' \
+    '--------------------------------------------------------------------------------' \
+    'ABSENT')
+  write_transcript "$transcript" \
+    '{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"bin/fm-session-start.sh"}}]}}' \
+    "$(printf '{"type":"message","message":{"role":"user","content":[{"type":"tool_result","content":%s}]}}' "$(printf '%s' "$digest" | jq -Rs .)")" \
+    '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Project Alpha owns the north star."}]}}'
+  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  set +e
+  out=$(run_check "$home" "$payload")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "digest-printed projects.md exited $rc with: $out"
+  [ -z "$out" ] || fail "digest credit should be silent, got: $out"
+  pass "sot-speech: session-start digest credits non-ABSENT printed startup files"
+}
+
+test_session_start_absent_body_does_not_credit() {
+  local home transcript payload out rc digest
+  home=$(make_primary_home "$TMP_ROOT/ss-absent")
+  write_projects_registry "$home"
+  transcript="$home/transcript.jsonl"
+  digest=$(printf '%s\n' \
+    'SESSION START - fixture' \
+    '' \
+    'data/projects.md' \
+    '--------------------------------------------------------------------------------' \
+    'ABSENT')
+  write_transcript "$transcript" \
+    '{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"bin/fm-session-start.sh"}}]}}' \
+    "$(printf '{"type":"message","message":{"role":"user","content":[{"type":"tool_result","content":%s}]}}' "$(printf '%s' "$digest" | jq -Rs .)")" \
+    '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Project Alpha owns the north star."}]}}'
+  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  set +e
+  out=$(run_check "$home" "$payload")
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "ABSENT digest body exited $rc with: $out"
+  assert_contains "$out" 'open data/projects.md' "ABSENT digest body should not credit the file"
+  pass "sot-speech: ABSENT session-start section does not credit the file"
+}
+
 test_absent_registry_is_inert
 test_claim_without_read_is_refused
 test_read_evidence_allows_claim
 test_declared_unread_allows_naming
 test_malformed_registry_is_structural
 test_pretool_askuser_is_refused
+test_session_start_command_alone_does_not_credit
+test_session_start_digest_credits_printed_files
+test_session_start_absent_body_does_not_credit
 
 echo "# all fm-sot-speech-check tests passed"

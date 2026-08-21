@@ -146,7 +146,7 @@ function message(record) {
   if (!record || typeof record !== "object" || record.isMeta === true) return null;
   const value = record.message && typeof record.message === "object" ? record.message : record;
   const role = value.role || record.type;
-  if (role !== "assistant" && role !== "user") return null;
+  if (role !== "assistant" && role !== "user" && role !== "toolResult" && role !== "tool_result") return null;
   return { role, content: value.content };
 }
 
@@ -163,9 +163,11 @@ function toolReads(content) {
   for (const part of content) {
     if (!part || typeof part !== "object") continue;
     const type = String(part.type || "");
-    if (type !== "tool_use" && type !== "toolUse") continue;
+    if (type !== "tool_use" && type !== "toolUse" && type !== "toolCall") continue;
     const name = String(part.name || part.tool_name || "").toLowerCase();
-    const input = part.input && typeof part.input === "object" ? part.input : {};
+    const input = part.input && typeof part.input === "object"
+      ? part.input
+      : (part.arguments && typeof part.arguments === "object" ? part.arguments : {});
     if (name === "read" && typeof input.file_path === "string") reads.push(input.file_path);
     if ((name === "bash" || name.includes("exec_command")) && typeof (input.command || input.cmd) === "string") {
       reads.push(input.command || input.cmd);
@@ -174,24 +176,87 @@ function toolReads(content) {
   return reads;
 }
 
+function toolResultTexts(content) {
+  const texts = [];
+  if (typeof content === "string") {
+    texts.push(content);
+    return texts;
+  }
+  if (!Array.isArray(content)) return texts;
+  for (const part of content) {
+    if (!part || typeof part !== "object") continue;
+    const type = String(part.type || "");
+    if (type === "tool_result" || type === "toolResult") {
+      if (typeof part.content === "string") texts.push(part.content);
+      else if (Array.isArray(part.content)) {
+        for (const inner of part.content) {
+          if (typeof inner === "string") texts.push(inner);
+          else if (inner && typeof inner === "object" && typeof inner.text === "string") texts.push(inner.text);
+        }
+      } else if (typeof part.text === "string") texts.push(part.text);
+      continue;
+    }
+    if (type === "text" && typeof part.text === "string") texts.push(part.text);
+  }
+  return texts;
+}
+
+function creditStartupFromDigest(text, into) {
+  if (typeof text !== "string" || !text) return;
+  for (const relative of STARTUP_FILES) {
+    const escaped = relative.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(
+      "(?:^|\\n)" + escaped + "(?:[ \\t][^\\n]*)?\\n-+\\n([\\s\\S]*?)(?=\\n(?:data\\/|=+)|$)",
+    );
+    const match = text.match(re);
+    if (!match) continue;
+    const body = String(match[1] || "").trim();
+    if (!body || body === "ABSENT") continue;
+    into.add(relative);
+  }
+}
+
 const sessionReads = [];
+const creditedStartup = new Set();
 let latestAssistantText = "";
-let sessionStart = false;
+let expectSessionStartResult = false;
 try {
   for (const line of fs.readFileSync(transcript, "utf8").split("\n")) {
     if (!line.trim()) continue;
     let record;
     try { record = JSON.parse(line); } catch (err) { continue; }
     const value = message(record);
-    if (!value) continue;
-    if (value.role === "assistant") {
+    const rawMessage = record && typeof record === "object"
+      ? (record.message && typeof record.message === "object" ? record.message : record)
+      : null;
+    const role = value
+      ? value.role
+      : (rawMessage && (rawMessage.role || record.type));
+    if (role === "assistant" && value) {
       const reads = toolReads(value.content);
       sessionReads.push(...reads);
       if (reads.some((evidence) => /fm-session-start\.sh\b/.test(String(evidence)))) {
-        sessionStart = true;
+        expectSessionStartResult = true;
       }
       const text = textParts(value.content).join("\n").trim();
       if (text) latestAssistantText = text;
+      continue;
+    }
+    const resultRole = String(role || "");
+    const isToolResult = resultRole === "toolResult"
+      || resultRole === "tool_result"
+      || resultRole === "user";
+    if (!isToolResult) continue;
+    const content = value ? value.content : (rawMessage && rawMessage.content);
+    const chunks = toolResultTexts(content);
+    if (chunks.length === 0 && typeof content === "string") chunks.push(content);
+    for (const chunk of chunks) {
+      const looksLikeDigest = /SESSION START|\nCONTEXT\n|READ-ONCE CONTRACT/.test(chunk)
+        || /\ndata\/(?:projects|secondmates|captain(?:-shared)?|learnings)\.md\b/.test(chunk);
+      if (expectSessionStartResult || looksLikeDigest) {
+        creditStartupFromDigest(chunk, creditedStartup);
+      }
+      if (expectSessionStartResult && looksLikeDigest) expectSessionStartResult = false;
     }
   }
 } catch (err) {
@@ -230,7 +295,7 @@ function hasRead(relative) {
     if (evidence === relative || evidence === absolute) return true;
     return evidence.includes(relative) || evidence.includes(absolute);
   })) return true;
-  return sessionStart && STARTUP_FILES.has(relative) && fileExists(relative);
+  return creditedStartup.has(relative) && fileExists(relative);
 }
 
 function declaredUnread() {

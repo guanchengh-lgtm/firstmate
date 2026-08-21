@@ -634,6 +634,37 @@ EOF
   cat > "$map" <<'EOF'
 # Map
 
+## Destination
+
+Done without a fog section.
+EOF
+  rec=$(make_spawn_case profile-map-fog-struct claude "$id")
+  read_case_record "$rec"
+  mkdir -p "$HOME_DIR/data/prog"
+  cat > "$HOME_DIR/data/prog/map.md" <<'EOF'
+# Map
+
+## Destination
+
+Done without a fog section.
+EOF
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --map data/prog/map.md)
+  status=$?
+  [ "$status" -ne 0 ] || fail "ship spawn accepted a map missing Not yet specified"
+  assert_contains "$out" 'failed map structure checks' \
+    "structural map failure was mislabeled as live fog"
+  case "$out" in
+    *'live unspecified items'*)
+      fail "structural map failure still used the live-fog primary message"
+      ;;
+  esac
+  assert_absent "$HOME_DIR/state/$id.meta" \
+    "structural-fog spawn wrote task metadata"
+
+  cat > "$map" <<'EOF'
+# Map
+
 ## Not yet specified
 
 - [parked 2026-08-21] Overnight loops.
@@ -658,7 +689,7 @@ EOF
   meta="$HOME_DIR/state/$id.meta"
   assert_grep 'map=data/prog/map.md' "$meta" \
     "spawn did not record map= in task metadata"
-  pass "fm-spawn: --map refuses live fog on ships and records a clean map"
+  pass "fm-spawn: --map refuses live and structural fog and records a clean map"
 }
 
 test_spawn_records_map_next_and_rejects_invalid_ids() {
