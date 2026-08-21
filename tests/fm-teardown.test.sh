@@ -1463,6 +1463,34 @@ test_class_repeat_enforcing_bin_allows() {
   pass "second-occurrence ship with a bin/ change allows cleanup"
 }
 
+# After a local FF land, HEAD is contained in the default tip so the usual
+# origin/<default>...HEAD (or <default>...HEAD) range is empty. The gate must
+# still see the branch's enforcing-file change via the pre-land tip.
+test_class_repeat_enforcing_after_local_land_allows() {
+  local case_dir rc wt_head
+  case_dir=$(make_case class-repeat-after-land)
+  write_meta "$case_dir" local-only ship
+  write_defect_class "$case_dir" instance-patch-not-class 'own sitting'
+  write_paired_measure "$case_dir" prior-fix 'patched at their own sitting'
+  write_paired_measure "$case_dir" task-x1 'a later patch at their own sitting'
+  mkdir -p "$case_dir/wt/bin"
+  wt_commit_file "$case_dir" bin/gate.sh 'echo gate'
+  wt_head=$(git -C "$case_dir/wt" rev-parse HEAD)
+  # Sanctioned local-only land: FF main to the task tip (fm-merge-local.sh).
+  git -C "$case_dir/project" update-ref refs/heads/main "$wt_head"
+  # Default tip already contains HEAD (pushed or origin advanced with the land),
+  # which empties origin/main...HEAD — the post-land emptiness this covers.
+  git -C "$case_dir/project" update-ref refs/remotes/origin/main "$wt_head"
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "class-repeat-after-land: post-land enforcing change should allow cleanup: $(cat "$case_dir/stderr")"
+  assert_absent "$case_dir/state/task-x1.meta" \
+    "class-repeat-after-land: teardown did not complete"
+  ! grep -q REFUSED "$case_dir/stderr" || fail "class-repeat-after-land: teardown printed a REFUSED line"
+  pass "second-occurrence ship with enforcing file cleans up after local land"
+}
+
 test_class_repeat_enforcing_tests_workflows_and_hook_allow() {
   local case_dir rc
   case_dir=$(make_case class-repeat-tests)
@@ -3037,6 +3065,7 @@ test_none_measure_allows_scout_force_cleanup
 test_complete_measure_allows_cleanup
 test_class_repeat_second_occurrence_without_enforcing_refuses
 test_class_repeat_enforcing_bin_allows
+test_class_repeat_enforcing_after_local_land_allows
 test_class_repeat_enforcing_tests_workflows_and_hook_allow
 test_class_repeat_docs_only_does_not_count
 test_class_repeat_scout_and_none_are_exempt

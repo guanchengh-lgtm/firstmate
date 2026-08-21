@@ -8,7 +8,7 @@
   ],
   "fixture": "test-constructed",
   "fixture_generator": "",
-  "regression": "tests/fm-teardown.test.sh class-repeat cases exercise refuse, enforcing-file allow, scout and none exemption, absent and invalid registry, and map_next non-escape through fm-teardown.sh",
+  "regression": "tests/fm-teardown.test.sh class-repeat cases exercise refuse, enforcing-file allow including post-land local FF, scout and none exemption, absent and invalid registry, and map_next non-escape through fm-teardown.sh",
   "ci_gate": ".github/workflows/ci.yml runs bin/fm-test-run.sh --check-coverage and all portable lanes; the test inventory includes tests/fm-teardown.test.sh",
   "structural_failure_exit": 1,
   "findings_exit": 1,

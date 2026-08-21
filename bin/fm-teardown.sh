@@ -311,17 +311,39 @@ path_is_enforcing() {
 }
 
 ship_branch_touched_enforcing() {
-  local base path
+  local base path tip range preland
   inspectable_git_worktree "$WT" || return 1
   base=$(default_branch) || return 1
+  if git -C "$WT" rev-parse --verify --quiet "refs/remotes/origin/${base}" >/dev/null; then
+    tip="origin/${base}"
+  elif git -C "$WT" rev-parse --verify --quiet "refs/heads/${base}" >/dev/null; then
+    tip="${base}"
+  else
+    tip=""
+  fi
+  range=""
+  if [ -n "$tip" ]; then
+    if git -C "$WT" merge-base --is-ancestor HEAD "$tip" 2>/dev/null; then
+      preland=$(git -C "$WT" rev-parse --verify --quiet "${tip}@{1}" 2>/dev/null || true)
+      if [ -z "$preland" ] && [ "$tip" = "origin/${base}" ]; then
+        preland=$(git -C "$WT" rev-parse --verify --quiet "${base}@{1}" 2>/dev/null || true)
+      fi
+      if [ -n "$preland" ]; then
+        range="${preland}...HEAD"
+      fi
+    else
+      range="${tip}...HEAD"
+    fi
+  fi
   while IFS= read -r path; do
     [ -n "$path" ] || continue
     if path_is_enforcing "$path"; then
       return 0
     fi
   done < <(
-    git -C "$WT" diff --name-only "origin/${base}...HEAD" 2>/dev/null \
-      || git -C "$WT" diff --name-only "${base}...HEAD"
+    if [ -n "$range" ]; then
+      git -C "$WT" diff --name-only "$range" 2>/dev/null || true
+    fi
     git -C "$WT" diff --name-only
     git -C "$WT" diff --cached --name-only
   )
