@@ -67,6 +67,7 @@ FM_REMOTE_JOB_STDERR=
 FM_REMOTE_JOB_EXIT=
 FM_REMOTE_JOB_ERROR=
 FM_REMOTE_JOB_REPAIRED=0
+FM_REMOTE_JOB_STARTED_PID=
 
 fm_remote_job_die() {
   printf 'error: %s\n' "$1" >&2
@@ -921,6 +922,10 @@ fm_remote_job_reload_launchagent() { # <account-home> <uid>
 
 fm_remote_job_start_linux_worker() { # <remote-root> <account-home>
   local root=$1 account_home=$2 worker pid
+  # FM_REMOTE_JOB_STARTED_PID is the supervisor (or already-running owner) the
+  # caller just ensured. Tests and ensure-path diagnostics read it instead of
+  # rescanning the process table for a brittle interpreter+path match.
+  FM_REMOTE_JOB_STARTED_PID=
   worker="$root/bin/fm-remote-job-worker.sh"
   [ -f "$worker" ] && [ ! -L "$worker" ] && [ -x "$worker" ] || {
     FM_REMOTE_JOB_ERROR="remote job worker is not a genuine executable in the configured code root"
@@ -928,7 +933,10 @@ fm_remote_job_start_linux_worker() { # <remote-root> <account-home>
   }
   fm_remote_job_prepare_state "$account_home" || return 1
   if fm_remote_job_worker_owned_alive "$root" "$account_home"; then
-    if fm_remote_job_worker_identity_matches "$root" "$account_home"; then return 0; fi
+    if fm_remote_job_worker_identity_matches "$root" "$account_home"; then
+      FM_REMOTE_JOB_STARTED_PID=$FM_REMOTE_JOB_OWNER_PID
+      return 0
+    fi
     # The owner pid is the serving child; its restart supervisor sits above it
     # and would immediately replace a lone process kill, so stop the whole
     # worker tree through its isolated group.
@@ -953,6 +961,7 @@ fm_remote_job_start_linux_worker() { # <remote-root> <account-home>
   pid=$!
   set +m
   case "$pid" in ''|*[!0-9]*) FM_REMOTE_JOB_ERROR="could not start the remote job worker"; return 1 ;; esac
+  FM_REMOTE_JOB_STARTED_PID=$pid
   FM_REMOTE_JOB_REPAIRED=1
 }
 

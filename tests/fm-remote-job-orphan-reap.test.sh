@@ -79,19 +79,65 @@ build_remote_root() {
 }
 
 # start_worker <remote-root> <account-home> <state-root>: start the worker
-# through the shared library start path and echo the supervisor pid.
+# through the shared library start path and echo the supervisor pid. The start
+# runs in a short-lived subshell so the worker is reparented to init (ppid 1),
+# matching the abandoned-worker shape this suite exercises. The pid comes from
+# FM_REMOTE_JOB_STARTED_PID (the nohup $! the library records) rather than a
+# brittle interpreter-path pgrep that races the first exec and breaks when the
+# process table shows /usr/bin/bash instead of /bin/bash. The pid is written
+# to a temp file instead of captured via $() so case-pattern ')' cannot close a
+# command substitution early.
 start_worker() {
-  local root=$1 account_home=$2 state_root=$3 pid
-  pid=$(
+  local root=$1 account_home=$2 state_root=$3 pid err out log i
+  err=$(mktemp "$TMP_ROOT/start-worker.err.XXXXXX") || return 1
+  out=$(mktemp "$TMP_ROOT/start-worker.pid.XXXXXX") || { rm -f "$err"; return 1; }
+  # Subshell: start, record pid, exit so the worker is reparented to init.
+  (
     export FM_REMOTE_JOB_STATE_ROOT="$state_root"
     export FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux
     export FM_REMOTE_JOB_ORPHAN_GRACE_SECONDS=1
     # shellcheck source=bin/fm-remote-job-lib.sh
     . "$ROOT/bin/fm-remote-job-lib.sh"
-    fm_remote_job_start_linux_worker "$root" "$account_home" >&2 || exit 1
-    pgrep -f "^/bin/bash $root/bin/fm-remote-job-worker.sh\$" | head -n 1
-  ) || return 1
-  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+    if ! fm_remote_job_start_linux_worker "$root" "$account_home" 2>>"$err"; then
+      printf 'fm_remote_job_start_linux_worker failed: %s\n' "${FM_REMOTE_JOB_ERROR:-unknown}" >>"$err"
+      exit 1
+    fi
+    pid=${FM_REMOTE_JOB_STARTED_PID:-}
+    # Numeric-only pid check without a case-pattern ')' inside this subshell.
+    if [ -z "$pid" ] || ! [ "$pid" -eq "$pid" ] 2>/dev/null; then
+      printf 'start path returned no supervisor pid\n' >>"$err"
+      exit 1
+    fi
+    # Confirm the supervisor is still alive after the post-exec handoff. A
+    # single immediate miss is retried briefly so a slow first instruction does
+    # not look like a failed start.
+    i=0
+    while [ "$i" -lt 50 ]; do
+      if kill -0 "$pid" 2>/dev/null; then
+        printf '%s\n' "$pid" >"$out"
+        exit 0
+      fi
+      i=$((i + 1))
+      sleep 0.05
+    done
+    printf 'supervisor pid %s exited before the fixture could claim it\n' "$pid" >>"$err"
+    log="$FM_REMOTE_JOB_STATE/logs/$FM_REMOTE_JOB_LABEL.log"
+    if [ -f "$log" ]; then
+      printf 'worker log:\n' >>"$err"
+      cat "$log" >>"$err" 2>/dev/null || true
+    fi
+    exit 1
+  )
+  if [ "$?" -ne 0 ]; then
+    [ -s "$err" ] && cat "$err" >&2
+    rm -f "$err" "$out"
+    return 1
+  fi
+  pid=$(cat "$out" 2>/dev/null || true)
+  rm -f "$err" "$out"
+  if [ -z "$pid" ] || ! [ "$pid" -eq "$pid" ] 2>/dev/null; then
+    return 1
+  fi
   printf '%s\n' "$pid"
 }
 
