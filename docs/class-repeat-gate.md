@@ -1,7 +1,8 @@
 # Class-repeat cleanup gate
 
 This note records what the class-repeat refuse-hook at cleanup can see, and what it cannot.
-`bin/fm-teardown.sh`'s header owns the predicate, the registry row shape, the scout exemption, and the refusal text.
+`bin/fm-teardown.sh`'s header owns the predicate, the scout exemption, the enforcing-file set, and the refusal text.
+[`configuration.md`](configuration.md#defect-class-name-list-datadefect-classestsv) owns the home-local registry path and row shape.
 Do not copy that contract here.
 
 ## What it catches

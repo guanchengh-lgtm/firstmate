@@ -85,8 +85,8 @@
 #        fm-teardown.sh --help
 #   --force skips ordinary-task dirty and landed-work checks, skips scout report
 #   checks, and discards secondmate child work for kind=secondmate. It never
-#   skips the measure gate. Only use it when the captain has explicitly said to
-#   discard the work.
+#   skips the measure gate or the class-repeat gate. Only use it when the
+#   captain has explicitly said to discard the work.
 #
 # Transient / stale worktree git lock recovery (teardown-lock-race): a crew process
 # killed mid-git-operation can leave a .git/worktrees/<wt>/index.lock (or, for a
