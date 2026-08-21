@@ -216,34 +216,6 @@ validate_backlog_file() {
   fi
 }
 
-# Classify a single key by the section it lives under (## In flight /
-# ## Queued / ## Done), or return non-zero if no `- [ ] <key>` / `- [x] <key>`
-# header exists in the file. This reads only section headings and item header
-# lines - never item bodies - so it drives the fleet-level classification (in-
-# flight refusal, already-present idempotency, missing-key abort) without
-# re-implementing the block/body move semantics that tasks-axi mv owns.
-backlog_key_section() {
-  local file=$1 key=$2
-  [ -f "$file" ] || return 1
-  awk -v key="$key" '
-    BEGIN { section = "## Queued" }
-    /^##[[:space:]]+/ {
-      section = $0
-      sub(/^##[[:space:]]+/, "## ", section)
-      sub(/[[:space:]]+$/, "", section)
-      next
-    }
-    /^- \[[ x]\] / {
-      rest = $0
-      sub(/^- \[[ x]\] +/, "", rest)
-      id = rest
-      sub(/[ \t].*/, "", id)
-      if (id == key) { print section; found = 1; exit }
-    }
-    END { exit found ? 0 : 1 }
-  ' "$file"
-}
-
 backlog_key_noncanonical_body_lines() {
   local file=$1 key=$2
   awk -v key="$key" '
@@ -328,8 +300,8 @@ remove_interrupted_source_duplicates() { # <outbox> <keys...>
     remaining=0
     progress=0
     for key in "$@"; do
-      backlog_key_section "$outbox" "$key" >/dev/null 2>&1 || continue
-      if backlog_key_section "$MAIN_BACKLOG" "$key" >/dev/null 2>&1; then
+      fm_backlog_key_section "$outbox" "$key" >/dev/null 2>&1 || continue
+      if fm_backlog_key_section "$MAIN_BACKLOG" "$key" >/dev/null 2>&1; then
         remaining=$((remaining + 1))
         if tasks-axi rm "$key" --file "$MAIN_BACKLOG" >/dev/null 2>&1; then
           progress=$((progress + 1))
@@ -365,8 +337,8 @@ remote_handoff() { # <secondmate-id> <keys...>
   done_items=()
   not_queued=()
   for key in ${requested[@]+"${requested[@]}"}; do
-    out_section=$(backlog_key_section "$outbox" "$key" 2>/dev/null || true)
-    main_section=$(backlog_key_section "$MAIN_BACKLOG" "$key" 2>/dev/null || true)
+    out_section=$(fm_backlog_key_section "$outbox" "$key" 2>/dev/null || true)
+    main_section=$(fm_backlog_key_section "$MAIN_BACKLOG" "$key" 2>/dev/null || true)
     if [ -n "$out_section" ]; then
       [ "$out_section" = '## Queued' ] || not_queued+=("$key")
       already+=("$key")
@@ -485,9 +457,9 @@ IN_FLIGHT=()
 DONE=()
 NOT_QUEUED=()
 for key in "$@"; do
-  if backlog_key_section "$SUB_BACKLOG" "$key" >/dev/null; then
+  if fm_backlog_key_section "$SUB_BACKLOG" "$key" >/dev/null; then
     ALREADY+=("$key")
-  elif section=$(backlog_key_section "$MAIN_BACKLOG" "$key"); then
+  elif section=$(fm_backlog_key_section "$MAIN_BACKLOG" "$key"); then
     case "$section" in
       "## Queued") TO_MOVE+=("$key") ;;
       "## In flight") IN_FLIGHT+=("$key") ;;

@@ -7,10 +7,20 @@
 # when the task genuinely deviates (e.g. working an existing external PR instead
 # of shipping a new one).
 # Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab]
-#        fm-brief.sh <task-id> <repo-name> --scout [--herdr-lab]
+#        fm-brief.sh <task-id> <repo-name> --scout [--source <literal>]... [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
+#        fm-brief.sh --check-worker <ship|scout> <brief-path>
 #   --scout writes the scout contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
+#   Pass every URL, lock path, or report path named for full reading through one
+#   --source flag. The generated # Named sources manifest is the exact report
+#   gate: non-forced scout teardown refuses until report.md contains every
+#   literal. This proves naming, not reading fullness; fullness remains in the
+#   scout task contract and captain corrections remain its residual measure.
+#   --check-worker is the spawn-time brief lint. It refuses slash invocation of
+#   firstmate-only skills, /grill-with-docs, /last30days, /wiki, and
+#   /design-sync while allowing the same words as plain names. For scout tasks
+#   it also refuses an obvious named-source research ask with no manifest.
 #   --secondmate writes a persistent secondmate charter. The project list
 #   is cloned into the secondmate home, while the natural-language scope
 #   tells the main firstmate when to route work there; routine churn stays in its own home;
@@ -67,8 +77,83 @@ usage() {
   ' "$0"
 }
 
+task_section() {  # <brief>
+  awk '
+    /^# Task[[:space:]]*$/ { in_task = 1; next }
+    in_task && /^# / { exit }
+    in_task { print }
+  ' "$1"
+}
+
+frontmatter_is_firstmate_only() {  # <skill-file>
+  awk '
+    NR == 1 && $0 == "---" { frontmatter = 1; next }
+    frontmatter && $0 == "---" { exit }
+    frontmatter && $0 ~ /^user-invocable:[[:space:]]*false[[:space:]]*$/ { found = 1 }
+    END { exit found ? 0 : 1 }
+  ' "$1"
+}
+
+task_invokes_slash() {  # <task-file> <skill-name>
+  local task_file=$1 skill=$2
+  grep -E "(^|[[:space:]\`'\"(])/${skill}([^A-Za-z0-9._-]|$)" "$task_file" >/dev/null 2>&1
+}
+
+check_worker_brief() {  # <ship|scout> <brief>
+  local kind=$1 brief=$2 root task_tmp skill_file skill manifest_count
+  case "$kind" in ship|scout) ;; *) echo "error: --check-worker kind must be ship or scout" >&2; return 2 ;; esac
+  [ -f "$brief" ] && [ ! -L "$brief" ] || {
+    echo "error: worker brief is not a regular non-symlink file: $brief" >&2
+    return 2
+  }
+  root="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+  task_tmp=$(mktemp "${TMPDIR:-/tmp}/fm-brief-task.XXXXXX") || return 2
+  task_section "$brief" > "$task_tmp"
+
+  for skill_file in "$root/.agents/skills"/*/SKILL.md; do
+    [ -f "$skill_file" ] || continue
+    frontmatter_is_firstmate_only "$skill_file" || continue
+    skill=$(basename "$(dirname "$skill_file")")
+    if task_invokes_slash "$task_tmp" "$skill"; then
+      echo "REFUSED: worker brief invokes forbidden /$skill; a firstmate-only skill may not be a worker slash." >&2
+      rm -f "$task_tmp"
+      return 1
+    fi
+  done
+  for skill in grill-with-docs last30days wiki design-sync; do
+    if task_invokes_slash "$task_tmp" "$skill"; then
+      echo "REFUSED: worker brief invokes forbidden /$skill; name is not invocation." >&2
+      rm -f "$task_tmp"
+      return 1
+    fi
+  done
+
+  if [ "$kind" = scout ]; then
+    manifest_count=$(awk '
+      /^# Named sources[[:space:]]*$/ { in_sources = 1; next }
+      in_sources && /^# / { exit }
+      in_sources && /^- / { count++ }
+      END { print count + 0 }
+    ' "$brief")
+    # shellcheck disable=SC2016 # Backticks are literal Markdown delimiters in the ERE.
+    if [ "$manifest_count" -eq 0 ] \
+      && grep -Eiq '(^|[^A-Za-z])(read|research|synthesi[sz]e|keep/drop|keep or drop)([^A-Za-z]|$)' "$task_tmp" \
+      && grep -Eq 'https?://|(^|[[:space:]\`(])data/[^[:space:]\`)]+\.md([^A-Za-z0-9._/-]|$)' "$task_tmp"; then
+      echo "REFUSED: scout brief names research sources but has no # Named sources manifest; scaffold it with one --source per literal." >&2
+      rm -f "$task_tmp"
+      return 1
+    fi
+  fi
+  rm -f "$task_tmp"
+}
+
 case "${1:-}" in
   -h|--help) usage; exit 0 ;;
+  --check-worker)
+    [ "$#" -eq 3 ] || { echo "error: usage: fm-brief.sh --check-worker <ship|scout> <brief-path>" >&2; exit 2; }
+    check_worker_brief "$2" "$3"
+    exit $?
+    ;;
 esac
 
 # shellcheck source=bin/fm-marker-lib.sh
@@ -106,6 +191,8 @@ HERDR_LAB=0
 NO_PROJECTS=0
 MODE=
 MODE_SET=0
+SOURCE_SET=0
+SOURCES=()
 POS=()
 want_value=
 for a in "$@"; do
@@ -115,6 +202,7 @@ for a in "$@"; do
     esac
     case "$want_value" in
       mode) MODE=$a; MODE_SET=1 ;;
+      source) SOURCES+=("$a"); SOURCE_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -127,6 +215,8 @@ for a in "$@"; do
     --no-projects) NO_PROJECTS=1 ;;
     --mode) want_value=mode ;;
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
+    --source) want_value=source ;;
+    --source=*) SOURCES+=("${a#--source=}"); SOURCE_SET=1 ;;
     # yolo never reaches the worker: it is firstmate's approval authority, not a
     # brief input. Refuse it loudly so it is never silently dropped here and then
     # believed to have been recorded.
@@ -153,6 +243,25 @@ if [ "$KIND" = ship ]; then
 elif [ "$MODE_SET" -eq 1 ]; then
   echo "error: --mode applies only to ship briefs; a scout delivers a report and a secondmate charter is not a delivery contract" >&2
   exit 1
+fi
+if [ "$SOURCE_SET" -eq 1 ] && [ "$KIND" != scout ]; then
+  echo "error: --source applies only to --scout briefs" >&2
+  exit 1
+fi
+if [ "$SOURCE_SET" -eq 1 ]; then
+  seen_sources=$'\n'
+  for source in "${SOURCES[@]}"; do
+    case "$source" in
+      ''|*$'\n'*|*$'\r'*|*$'\t'*|-*)
+        echo "error: --source requires a non-empty single-line literal that does not begin with '-'" >&2
+        exit 1
+        ;;
+    esac
+    case "$seen_sources" in
+      *$'\n'"$source"$'\n'*) echo "error: duplicate --source literal: $source" >&2; exit 1 ;;
+    esac
+    seen_sources="${seen_sources}${source}"$'\n'
+  done
 fi
 ID=${POS[0]}
 
@@ -299,11 +408,21 @@ HERDR_SECTION=${HERDR_SECTION%$'\n'}
 fi
 
 if [ "$KIND" = scout ]; then
+SCOUT_SOURCE_SECTION=
+if [ "$SOURCE_SET" -eq 1 ]; then
+  SCOUT_SOURCE_SECTION='# Named sources'
+  for source in "${SOURCES[@]}"; do
+    SCOUT_SOURCE_SECTION="${SCOUT_SOURCE_SECTION}
+- $source"
+  done
+fi
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
 
 # Task
 {TASK}
+
+$SCOUT_SOURCE_SECTION
 
 $HERDR_SECTION
 
@@ -386,20 +505,21 @@ EOF
 Delivery contract: mode=no-mistakes
 The task is complete only when committed on your branch.
 When you believe it is complete, append \`done: {summary}\` to the status file and stop.
-Firstmate will then instruct you to run /no-mistakes to validate and ship a PR.
+Firstmate starts a fresh verifier context to run /no-mistakes and validate and ship a PR.
+The builder never invokes or drives that gate; builder and verifier must not share a context.
 
-You drive no-mistakes by responding to its gates, not by implementing fixes.
-Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
-When starting no-mistakes, make \`--intent\` preserve all relevant content from this brief's \`# Task\` section plus every later accepted Firstmate requirement, clarification, constraint, exclusion, and supersession, carrying only each requirement's current accepted form; retain direct requirements instead of substituting a diff summary, and exclude generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific.
-Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
+The fresh verifier drives no-mistakes by responding to its gates, not by implementing fixes.
+It follows the guidance no-mistakes itself provides for the mechanics: \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
+When starting no-mistakes, it makes \`--intent\` preserve all relevant content from this brief's \`# Task\` section plus every later accepted Firstmate requirement, clarification, constraint, exclusion, and supersession, carrying only each requirement's current accepted form; it retains direct requirements instead of substituting a diff summary, and excludes generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific.
+The verifier does not hand-edit, commit, or fix findings while a run is active - the pipeline applies every fix.
 
 Two firstmate-specific rules layer on top of that guidance:
-- ask-user findings are never yours to answer: escalate to firstmate (rule 6) and stop.
+- ask-user findings are never the verifier's to answer: escalate to firstmate and stop.
   Firstmate applies the authority contract in its \`AGENTS.md\` and obtains any required captain decision.
   When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
 - Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
 
-After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), append \`done: PR {url} checks green\` and stop. You are finished.
+After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), the verifier appends \`done: PR {url} checks green\` and stops.
 EOF
     ;;
 esac

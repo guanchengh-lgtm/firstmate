@@ -260,8 +260,8 @@ test_ship_mode_is_explicit_not_registry() {
   brief="$home/data/brief-explicit-a5/brief.md"
   grep -qx "Delivery contract: mode=no-mistakes" "$brief" \
     || fail "registered direct-PR posture overrode the explicit --mode"
-  assert_grep "Firstmate will then instruct you to run /no-mistakes" "$brief" \
-    "explicit no-mistakes brief did not render the pipeline definition of done"
+  assert_grep "Firstmate starts a fresh verifier context to run /no-mistakes" "$brief" \
+    "explicit no-mistakes brief did not render the separate verifier handoff"
 
   # An unregistered project is not a blocker either, because nothing is looked up.
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-explicit-a6 never-registered --mode local-only >/dev/null 2>&1 \
@@ -341,13 +341,13 @@ test_no_mistakes_dod_wording() {
   # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
   assert_grep '`help`' "$brief" \
     "no-mistakes DOD must render literal backticks around help"
-  assert_grep "make \`--intent\` preserve all relevant content from this brief" "$brief" \
+  assert_grep "makes \`--intent\` preserve all relevant content from this brief" "$brief" \
     "no-mistakes DOD must require --intent to retain the accepted task contract"
   assert_grep "carrying only each requirement's current accepted form" "$brief" \
     "no-mistakes DOD must replace superseded requirements with their current accepted form"
-  assert_grep "retain direct requirements instead of substituting a diff summary" "$brief" \
+  assert_grep "retains direct requirements instead of substituting a diff summary" "$brief" \
     "no-mistakes DOD must keep direct requirements and exclude generic scaffold boilerplate from --intent"
-  assert_grep "exclude generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific" "$brief" \
+  assert_grep "excludes generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific" "$brief" \
     "no-mistakes DOD must exclude non-task-specific scaffold boilerplate from --intent"
   # The apostrophe in "firstmate's authority check" is now structurally safe
   # (no `$(...)` wrapper around the heredoc), so it renders verbatim instead of
@@ -355,7 +355,52 @@ test_no_mistakes_dod_wording() {
   # guards the structure that makes it safe.
   assert_grep "firstmate's authority check" "$brief" \
     "no-mistakes DOD lost the apostrophe prose that the structural fix makes parse-safe"
+  assert_grep "Firstmate starts a fresh verifier context to run /no-mistakes" "$brief" \
+    "no-mistakes DOD did not hand the gate to a fresh context"
+  assert_grep "The builder never invokes or drives that gate" "$brief" \
+    "no-mistakes DOD did not refuse builder-driven validation"
+  assert_no_grep "You drive no-mistakes" "$brief" \
+    "no-mistakes DOD still makes the builder drive its own gate"
   pass "fm-brief.sh: no-mistakes DOD keeps its apostrophe prose, now parse-safe"
+}
+
+test_scout_named_sources_are_manifested() {
+  local home id brief
+  home="$TMP_ROOT/named-source-home"
+  mkdir -p "$home/data"
+  id='brief-named-source-c02'
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" firstmate --scout \
+    --source 'https://example.test/thread/42' \
+    --source 'data/prior-scout/report.md' >/dev/null 2>&1
+  brief="$home/data/$id/brief.md"
+
+  assert_grep '# Named sources' "$brief" \
+    "scout brief did not render its named-source manifest"
+  assert_grep '- https://example.test/thread/42' "$brief" \
+    "scout brief omitted the URL source"
+  assert_grep '- data/prior-scout/report.md' "$brief" \
+    "scout brief omitted the report source"
+  pass "fm-brief.sh: scout sources become a durable report-gate manifest"
+}
+
+test_worker_brief_check_refuses_fake_skill_slashes() {
+  local brief out status token
+  brief="$TMP_ROOT/fake-worker-slash.md"
+
+  for token in /harness-adapters /firstmate-coding-guidelines /grill-with-docs /last30days /wiki /design-sync; do
+    printf '# Task\nInvoke %s before coding.\n\n# Setup\nfixture\n' "$token" > "$brief"
+    out=$(FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-brief.sh" --check-worker ship "$brief" 2>&1)
+    status=$?
+    [ "$status" -ne 0 ] || fail "worker brief check accepted forbidden invocation $token"
+    assert_contains "$out" "$token" \
+      "worker brief refusal did not name forbidden invocation $token"
+  done
+
+  printf '# Task\nName last30days and wiki as optional feeders; do not invoke them.\n\n# Setup\nfixture\n' > "$brief"
+  FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-brief.sh" --check-worker ship "$brief" >/dev/null 2>&1 \
+    || fail "worker brief check confused a plain name with a slash invocation"
+  pass "fm-brief.sh: worker check refuses fake slashes but permits names"
 }
 
 test_ship_project_memory_wording() {
@@ -727,6 +772,8 @@ test_ship_mode_is_explicit_not_registry
 test_delivery_flags_are_refused_where_they_do_not_apply
 test_faster_paths_use_configured_authority_without_stacked_review
 test_no_mistakes_dod_wording
+test_scout_named_sources_are_manifested
+test_worker_brief_check_refuses_fake_skill_slashes
 test_ship_project_memory_wording
 test_herdr_lab_contract_is_explicit_and_complete
 test_herdr_lab_contract_quotes_foreign_firstmate_path

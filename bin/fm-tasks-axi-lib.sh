@@ -18,6 +18,10 @@
 #
 # This file is the single owner of FM_TASKS_AXI_MIN. bin/fm-bootstrap.sh turns a
 # failing check into the operator-facing MISSING diagnostic.
+# It also owns read-only single-key classification for the Markdown backlog.
+# fm_backlog_key_state prints queued, in_flight, done, or the normalized section
+# name; fm_backlog_key_section preserves the historical heading form used by
+# handoff callers. Both inspect only headings and item headers, never bodies.
 #
 # COMPATIBILITY VERDICT REUSE. fm_tasks_axi_compatible costs three tasks-axi
 # subprocesses, and one session start needs the same verdict twice: once in
@@ -120,4 +124,39 @@ fm_tasks_axi_backend_available() {
   local config_dir=$1
   fm_backlog_backend_manual "$config_dir" && return 1
   fm_tasks_axi_compatible
+}
+
+fm_backlog_key_state() {  # <backlog-file> <task-id>
+  local file=$1 key=$2
+  [ -f "$file" ] && [ ! -L "$file" ] || return 1
+  awk -v key="$key" '
+    BEGIN { state = "queued" }
+    /^##[[:space:]]+/ {
+      heading = $0
+      sub(/^##[[:space:]]+/, "", heading)
+      sub(/[[:space:]]+$/, "", heading)
+      state = tolower(heading)
+      gsub(/[[:space:]]+/, "_", state)
+      next
+    }
+    /^- \[[ xX]\] / {
+      rest = $0
+      sub(/^- \[[ xX]\] +/, "", rest)
+      id = rest
+      sub(/[ \t].*/, "", id)
+      if (id == key) { print state; found = 1; exit }
+    }
+    END { exit found ? 0 : 1 }
+  ' "$file"
+}
+
+fm_backlog_key_section() {  # <backlog-file> <task-id>
+  local state
+  state=$(fm_backlog_key_state "$1" "$2") || return 1
+  case "$state" in
+    queued) printf '%s\n' '## Queued' ;;
+    in_flight) printf '%s\n' '## In flight' ;;
+    done) printf '%s\n' '## Done' ;;
+    *) printf '## %s\n' "$state" | tr '_' ' ' ;;
+  esac
 }
