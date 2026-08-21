@@ -1,0 +1,7 @@
+# Optional home-local registry example for the class-repeat cleanup gate.
+# Copy this shape to data/defect-classes.tsv; do not make this example live.
+# Captain owns later rows. class_id <TAB> miss_regex
+speech-without-sot	(speech without SoT|owning SoT file|SoT-speech)
+fog-treated-as-locked	(fog treated as locked|fog bullets? were dispositioned|live fog)
+pane-treated-as-truth	(pane treated as truth|strength of a live pane)
+instance-patch-not-class	(instance patch|patched at their own sitting|neighbour case still passed)

@@ -207,6 +207,24 @@ SH
   chmod +x "$case_dir/fakebin/tasks-axi"
 }
 
+# Write a valid paired five-line measure. Args: case_dir task-id miss
+write_paired_measure() {
+  local case_dir=$1 id=$2 miss=$3
+  mkdir -p "$case_dir/data/$id"
+  printf '%s\n' \
+    "miss: $miss" \
+    'number: 1 observed' \
+    'pair: 0 false refusals' \
+    'pick: ship an enforcing file' \
+    'none:' > "$case_dir/data/$id/measure.md"
+}
+
+# Write a defect-classes registry row. Args: case_dir class_id regex
+write_defect_class() {
+  local case_dir=$1 class_id=$2 regex=$3
+  printf '%s\t%s\n' "$class_id" "$regex" >> "$case_dir/data/defect-classes.tsv"
+}
+
 # Write a meta file for the task. Args: case_dir mode kind
 write_meta() {
   local case_dir=$1 mode=$2 kind=$3
@@ -1324,6 +1342,10 @@ test_help_documents_measure_contract() {
     "--help omitted the five-line format"
   assert_contains "$out" 'The measure gate remains' \
     "--help did not say that --force preserves the measure gate"
+  assert_contains "$out" 'The class-repeat gate remains' \
+    "--help did not say that --force preserves the class-repeat gate"
+  assert_contains "$out" 'class-repeat gated' \
+    "--help omitted the class-repeat gate"
   pass "teardown help owns the five-line measure contract"
 }
 
@@ -1400,6 +1422,238 @@ test_complete_measure_allows_cleanup() {
   assert_absent "$case_dir/state/task-x1.meta" \
     "complete-measure: teardown did not complete"
   pass "complete paired measure allows cleanup"
+}
+
+test_class_repeat_second_occurrence_without_enforcing_refuses() {
+  local case_dir rc
+  case_dir=$(make_case class-repeat-refuse)
+  write_meta "$case_dir" local-only ship
+  write_defect_class "$case_dir" instance-patch-not-class 'own sitting'
+  write_paired_measure "$case_dir" prior-fix 'patched at their own sitting, neighbour still passed'
+  write_paired_measure "$case_dir" task-x1 'a later patch at their own sitting'
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 1 "$rc" "class-repeat-refuse: second occurrence without an enforcing file should refuse"
+  assert_grep 'second occurrence of class instance-patch-not-class' "$case_dir/stderr" \
+    "class-repeat-refuse: refusal did not name the repeated class"
+  assert_grep 'working: completion gate reopened - second occurrence of class instance-patch-not-class without an enforcing-file change' \
+    "$case_dir/state/task-x1.status" \
+    "class-repeat-refuse: refusal did not take done back"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "class-repeat-refuse: teardown mutated task state before refusing"
+  pass "second-occurrence ship without an enforcing file refuses cleanup"
+}
+
+test_class_repeat_enforcing_bin_allows() {
+  local case_dir rc
+  case_dir=$(make_case class-repeat-bin)
+  write_meta "$case_dir" local-only ship
+  write_defect_class "$case_dir" instance-patch-not-class 'own sitting'
+  write_paired_measure "$case_dir" prior-fix 'patched at their own sitting'
+  write_paired_measure "$case_dir" task-x1 'a later patch at their own sitting'
+  mkdir -p "$case_dir/wt/bin"
+  wt_commit_file "$case_dir" bin/gate.sh 'echo gate'
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "class-repeat-bin: enforcing bin/ change should allow cleanup: $(cat "$case_dir/stderr")"
+  assert_absent "$case_dir/state/task-x1.meta" \
+    "class-repeat-bin: teardown did not complete"
+  pass "second-occurrence ship with a bin/ change allows cleanup"
+}
+
+test_class_repeat_enforcing_tests_workflows_and_hook_allow() {
+  local case_dir rc
+  case_dir=$(make_case class-repeat-tests)
+  write_meta "$case_dir" local-only ship
+  write_defect_class "$case_dir" instance-patch-not-class 'own sitting'
+  write_paired_measure "$case_dir" prior-fix 'patched at their own sitting'
+  write_paired_measure "$case_dir" task-x1 'a later patch at their own sitting'
+  mkdir -p "$case_dir/wt/tests"
+  wt_commit_file "$case_dir" tests/gate.test.sh 'echo test'
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "class-repeat-tests: tests/ change should allow cleanup"
+
+  case_dir=$(make_case class-repeat-workflows)
+  write_meta "$case_dir" local-only ship
+  write_defect_class "$case_dir" instance-patch-not-class 'own sitting'
+  write_paired_measure "$case_dir" prior-fix 'patched at their own sitting'
+  write_paired_measure "$case_dir" task-x1 'a later patch at their own sitting'
+  mkdir -p "$case_dir/wt/.github/workflows"
+  wt_commit_file "$case_dir" .github/workflows/gate.yml 'name: gate'
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "class-repeat-workflows: workflow change should allow cleanup"
+
+  case_dir=$(make_case class-repeat-hook)
+  write_meta "$case_dir" local-only ship
+  write_defect_class "$case_dir" instance-patch-not-class 'own sitting'
+  write_paired_measure "$case_dir" prior-fix 'patched at their own sitting'
+  write_paired_measure "$case_dir" task-x1 'a later patch at their own sitting'
+  mkdir -p "$case_dir/wt/.claude"
+  wt_commit_file "$case_dir" .claude/settings.json '{}'
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "class-repeat-hook: registered hook change should allow cleanup"
+  pass "tests/, workflows, and registered hook files satisfy the enforcing-file check"
+}
+
+test_class_repeat_docs_only_does_not_count() {
+  local case_dir rc
+  case_dir=$(make_case class-repeat-docs)
+  write_meta "$case_dir" local-only ship
+  write_defect_class "$case_dir" instance-patch-not-class 'own sitting'
+  write_paired_measure "$case_dir" prior-fix 'patched at their own sitting'
+  write_paired_measure "$case_dir" task-x1 'a later patch at their own sitting'
+  mkdir -p "$case_dir/wt/docs"
+  wt_commit_file "$case_dir" docs/note.md 'not a gate'
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 1 "$rc" "class-repeat-docs: a docs-only change should not satisfy the gate"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "class-repeat-docs: teardown mutated task state before refusing"
+  pass "docs-only branch changes do not count as enforcing files"
+}
+
+test_class_repeat_scout_and_none_are_exempt() {
+  local case_dir rc
+  case_dir=$(make_case class-repeat-scout)
+  write_meta "$case_dir" no-mistakes scout
+  write_defect_class "$case_dir" instance-patch-not-class 'own sitting'
+  write_paired_measure "$case_dir" prior-fix 'patched at their own sitting'
+  write_paired_measure "$case_dir" task-x1 'a later patch at their own sitting'
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "class-repeat-scout: scouts should be exempt: $(cat "$case_dir/stderr")"
+
+  case_dir=$(make_case class-repeat-none)
+  write_meta "$case_dir" local-only ship
+  write_defect_class "$case_dir" instance-patch-not-class 'own sitting'
+  write_paired_measure "$case_dir" prior-fix 'patched at their own sitting'
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "class-repeat-none: none: measures have no miss: and should pass"
+  pass "scouts and none: measures are outside the class-repeat gate"
+}
+
+test_class_repeat_unregistered_and_first_occurrence_allow() {
+  local case_dir rc
+  case_dir=$(make_case class-repeat-unregistered)
+  write_meta "$case_dir" local-only ship
+  write_defect_class "$case_dir" instance-patch-not-class 'own sitting'
+  write_paired_measure "$case_dir" prior-fix 'patched at their own sitting'
+  write_paired_measure "$case_dir" task-x1 'an unrelated phrasing that matches no class'
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "class-repeat-unregistered: unmatched miss should allow cleanup"
+
+  case_dir=$(make_case class-repeat-first)
+  write_meta "$case_dir" local-only ship
+  write_defect_class "$case_dir" instance-patch-not-class 'own sitting'
+  write_paired_measure "$case_dir" task-x1 'patched at their own sitting'
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "class-repeat-first: first occurrence should allow cleanup"
+  pass "unregistered phrasing and first occurrences allow cleanup"
+}
+
+test_class_repeat_absent_registry_allows() {
+  local case_dir rc
+  case_dir=$(make_case class-repeat-absent)
+  write_meta "$case_dir" local-only ship
+  write_paired_measure "$case_dir" prior-fix 'patched at their own sitting'
+  write_paired_measure "$case_dir" task-x1 'patched at their own sitting'
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "class-repeat-absent: no registry means no class match"
+  pass "an absent defect-classes registry does not refuse cleanup"
+}
+
+test_class_repeat_invalid_registry_refuses() {
+  local case_dir rc
+  case_dir=$(make_case class-repeat-bad-fields)
+  write_meta "$case_dir" local-only ship
+  write_paired_measure "$case_dir" task-x1 'patched at their own sitting'
+  printf '%s\n' 'only-one-field' > "$case_dir/data/defect-classes.tsv"
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 1 "$rc" "class-repeat-bad-fields: malformed registry should refuse"
+  assert_grep 'not class_id<TAB>miss_regex' "$case_dir/stderr" \
+    "class-repeat-bad-fields: refusal did not name the row shape"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "class-repeat-bad-fields: teardown mutated task state before refusing"
+
+  case_dir=$(make_case class-repeat-bad-regex)
+  write_meta "$case_dir" local-only ship
+  write_paired_measure "$case_dir" task-x1 'patched at their own sitting'
+  printf '%s\t%s\n' 'instance-patch-not-class' '[unterminated' \
+    > "$case_dir/data/defect-classes.tsv"
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 1 "$rc" "class-repeat-bad-regex: invalid ERE should refuse"
+  assert_grep 'invalid miss_regex' "$case_dir/stderr" \
+    "class-repeat-bad-regex: refusal did not name the invalid regex"
+
+  case_dir=$(make_case class-repeat-symlink)
+  write_meta "$case_dir" local-only ship
+  write_paired_measure "$case_dir" task-x1 'patched at their own sitting'
+  printf '%s\t%s\n' 'instance-patch-not-class' 'sitting' > "$case_dir/data/real-classes.tsv"
+  ln -s real-classes.tsv "$case_dir/data/defect-classes.tsv"
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 1 "$rc" "class-repeat-symlink: symlink registry should refuse"
+  assert_grep 'not a regular non-symlink file' "$case_dir/stderr" \
+    "class-repeat-symlink: refusal did not name the symlink"
+  pass "malformed, invalid-regex, and symlink registries refuse structurally"
+}
+
+test_class_repeat_map_next_does_not_discharge() {
+  local case_dir rc
+  case_dir=$(make_case class-repeat-map-next)
+  write_meta "$case_dir" local-only ship
+  printf '%s\n' 'map_next=slice-three' >> "$case_dir/state/task-x1.meta"
+  printf '%s\n' '## In flight' '' '## Queued' '' '- [ ] slice-three - locked next slice (kind: ship)' '' '## Done' \
+    > "$case_dir/data/backlog.md"
+  write_defect_class "$case_dir" instance-patch-not-class 'own sitting'
+  write_paired_measure "$case_dir" prior-fix 'patched at their own sitting'
+  write_paired_measure "$case_dir" task-x1 'a later patch at their own sitting'
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 1 "$rc" "class-repeat-map-next: a queued next slice should not discharge the gate"
+  assert_grep 'queued next slice does not discharge' "$case_dir/stderr" \
+    "class-repeat-map-next: refusal did not name the locked no-escape"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "class-repeat-map-next: teardown mutated task state before refusing"
+  pass "a queued map_next successor does not discharge a second-occurrence refuse"
+}
+
+test_class_repeat_prior_none_does_not_count() {
+  local case_dir rc
+  case_dir=$(make_case class-repeat-prior-none)
+  write_meta "$case_dir" local-only ship
+  write_defect_class "$case_dir" instance-patch-not-class 'own sitting'
+  fm_write_none_measure_at "$case_dir/data" prior-none 'earlier work had no miss'
+  write_paired_measure "$case_dir" task-x1 'patched at their own sitting'
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "class-repeat-prior-none: a prior none: measure should not count as the same class"
+  pass "a prior none: measure is not a class occurrence"
 }
 
 test_scout_named_sources_must_all_appear_in_report() {
@@ -2781,6 +3035,16 @@ test_missing_measure_refuses_even_for_force
 test_empty_and_unpaired_measure_refuse
 test_none_measure_allows_scout_force_cleanup
 test_complete_measure_allows_cleanup
+test_class_repeat_second_occurrence_without_enforcing_refuses
+test_class_repeat_enforcing_bin_allows
+test_class_repeat_enforcing_tests_workflows_and_hook_allow
+test_class_repeat_docs_only_does_not_count
+test_class_repeat_scout_and_none_are_exempt
+test_class_repeat_unregistered_and_first_occurrence_allow
+test_class_repeat_absent_registry_allows
+test_class_repeat_invalid_registry_refuses
+test_class_repeat_map_next_does_not_discharge
+test_class_repeat_prior_none_does_not_count
 test_scout_named_sources_must_all_appear_in_report
 test_superseded_product_lock_refuses_completion
 test_map_next_requires_next_slice_in_backlog

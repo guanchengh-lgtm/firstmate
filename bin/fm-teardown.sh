@@ -33,6 +33,14 @@
 # the first four values are empty and none: gives a non-empty reason. This
 # keeps every number with its counter-metric and gives measureless work an
 # explicit reason instead of an empty artifact.
+# After that measure grammar check, a ship task whose measure has a miss: is
+# also class-repeat gated. If a prior data/*/measure.md in this home matches the
+# same class via $FM_HOME/data/defect-classes.tsv, cleanup refuses unless this
+# branch touched an enforcing file under bin/, tests/, .github/workflows/, or a
+# registered hook file. Scouts are exempt. A none: measure has no miss: and is
+# out of scope. --force does not bypass this gate. A queued map_next successor
+# does not discharge it. The five-line grammar is not extended. The header of
+# this script owns the predicate; docs/class-repeat-gate.md names the residuals.
 # Scout tasks (kind=scout in meta) carve out of the landed-work check: their worktree is
 # declared scratch and the report at data/<task-id>/report.md is the work
 # product. A # Named sources manifest in the task brief is an exact-literal
@@ -175,9 +183,17 @@ Cleanup gate:
   four values empty and write none: <why>. Empty files fail. A number never
   passes without its paired counter-metric.
 
+  A ship task whose measure has a miss: is also class-repeat gated. If a prior
+  measure in this home matches the same class via
+  $FM_HOME/data/defect-classes.tsv, cleanup refuses unless this branch touched
+  an enforcing file (bin/, tests/, .github/workflows/, or a registered hook).
+  Scouts are exempt. A none: measure is out of scope. --force does not bypass
+  this gate. A queued next slice does not discharge it.
+
 Options:
   --force  Skip ordinary-task dirty and landed-work checks, skip scout report
            checks, and discard secondmate child work. The measure gate remains.
+           The class-repeat gate remains.
   -h, --help
            Show this help.
 EOF
@@ -273,6 +289,185 @@ validate_measure_at() {  # <data-dir> <task-id>
     echo "Use all five ordered fields; fill miss/number/pair/pick together, or only none: with a reason." >&2
     return 1
   fi
+}
+
+measure_miss_value() {  # <measure-file>
+  awk 'NR == 1 {
+    if ($0 !~ /^miss:[[:space:]]*/) exit 1
+    value = $0
+    sub(/^miss:[[:space:]]*/, "", value)
+    print value
+    exit
+  }' "$1"
+}
+
+path_is_enforcing() {
+  case "$1" in
+    bin/*|tests/*|.github/workflows/*) return 0 ;;
+    .claude/settings.json|.codex/hooks.json) return 0 ;;
+    .grok/hooks/*|.pi/extensions/*) return 0 ;;
+  esac
+  return 1
+}
+
+ship_branch_touched_enforcing() {
+  local base path
+  inspectable_git_worktree "$WT" || return 1
+  base=$(default_branch) || return 1
+  while IFS= read -r path; do
+    [ -n "$path" ] || continue
+    if path_is_enforcing "$path"; then
+      return 0
+    fi
+  done < <(
+    git -C "$WT" diff --name-only "origin/${base}...HEAD" 2>/dev/null \
+      || git -C "$WT" diff --name-only "${base}...HEAD"
+    git -C "$WT" diff --name-only
+    git -C "$WT" diff --cached --name-only
+  )
+  return 1
+}
+
+load_defect_class_rows() {  # <registry> <out>
+  local registry=$1 out=$2 line_no=0 line trimmed class_id regex grep_rc
+  : > "$out"
+  [ -e "$registry" ] || [ -L "$registry" ] || return 0
+  if [ ! -f "$registry" ] || [ -L "$registry" ]; then
+    echo "REFUSED: defect-classes registry is not a regular non-symlink file: $registry." >&2
+    return 1
+  fi
+  [ -r "$registry" ] || {
+    echo "REFUSED: defect-classes registry is not readable: $registry." >&2
+    return 1
+  }
+  [ -s "$registry" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line_no=$((line_no + 1))
+    trimmed=$line
+    trimmed=${trimmed#"${trimmed%%[![:space:]]*}"}
+    [ -n "$trimmed" ] || continue
+    case "$trimmed" in
+      \#*) continue ;;
+    esac
+    case "$line" in
+      *$'\t'*$'\t'*)
+        echo "REFUSED: defect-classes registry line $line_no is not class_id<TAB>miss_regex." >&2
+        return 1
+        ;;
+      *$'\t'*) ;;
+      *)
+        echo "REFUSED: defect-classes registry line $line_no is not class_id<TAB>miss_regex." >&2
+        return 1
+        ;;
+    esac
+    class_id=${line%%$'\t'*}
+    regex=${line#*$'\t'}
+    class_id=${class_id#"${class_id%%[![:space:]]*}"}
+    class_id=${class_id%"${class_id##*[![:space:]]}"}
+    regex=${regex#"${regex%%[![:space:]]*}"}
+    regex=${regex%"${regex##*[![:space:]]}"}
+    case "$class_id" in
+      ''|*[!A-Za-z0-9._-]*)
+        echo "REFUSED: defect-classes registry line $line_no has invalid class_id: ${class_id:-<empty>}." >&2
+        return 1
+        ;;
+    esac
+    [ -n "$regex" ] || {
+      echo "REFUSED: defect-classes registry line $line_no has an empty miss_regex." >&2
+      return 1
+    }
+    if awk -v id="$class_id" -F '\t' '$1 == id { found = 1 } END { exit !found }' "$out"; then
+      echo "REFUSED: defect-classes registry line $line_no repeats class_id $class_id." >&2
+      return 1
+    fi
+    grep_rc=0
+    printf 'x\n' | grep -E -- "$regex" >/dev/null 2>/dev/null || grep_rc=$?
+    if [ "$grep_rc" -ge 2 ]; then
+      echo "REFUSED: defect-classes registry line $line_no has an invalid miss_regex." >&2
+      return 1
+    fi
+    printf '%s\t%s\n' "$class_id" "$regex" >> "$out"
+  done < "$registry"
+}
+
+class_ids_matching_miss() {  # <rows-file> <miss> <out>
+  local rows=$1 miss=$2 out=$3 class_id regex grep_rc
+  : > "$out"
+  [ -s "$rows" ] || return 0
+  while IFS="$(printf '\t')" read -r class_id regex || [ -n "$class_id" ]; do
+    [ -n "$class_id" ] || continue
+    grep_rc=0
+    printf '%s\n' "$miss" | grep -E -- "$regex" >/dev/null 2>/dev/null || grep_rc=$?
+    if [ "$grep_rc" -eq 0 ]; then
+      printf '%s\n' "$class_id" >> "$out"
+    fi
+  done < "$rows"
+}
+
+prior_measure_shares_class() {  # <data-dir> <task-id> <rows-file> <class-ids-file> <matched-out>
+  local data_dir=$1 task_id=$2 rows=$3 class_ids=$4 matched_out=$5 measure prior_id prior_miss class_id regex grep_rc
+  : > "$matched_out"
+  [ -s "$class_ids" ] || return 1
+  for measure in "$data_dir"/*/measure.md; do
+    [ -f "$measure" ] && [ ! -L "$measure" ] || continue
+    prior_id=$(basename "$(dirname "$measure")")
+    [ "$prior_id" != "$task_id" ] || continue
+    prior_miss=$(measure_miss_value "$measure" 2>/dev/null) || continue
+    [ -n "$prior_miss" ] || continue
+    while IFS= read -r class_id; do
+      [ -n "$class_id" ] || continue
+      regex=$(awk -F '\t' -v id="$class_id" '$1 == id { print $2; exit }' "$rows")
+      [ -n "$regex" ] || continue
+      grep_rc=0
+      printf '%s\n' "$prior_miss" | grep -E -- "$regex" >/dev/null 2>/dev/null || grep_rc=$?
+      if [ "$grep_rc" -eq 0 ]; then
+        printf '%s\n' "$class_id" >> "$matched_out"
+      fi
+    done < "$class_ids"
+  done
+  [ -s "$matched_out" ]
+}
+
+validate_class_repeat_at() {  # <data-dir> <task-id>
+  local data_dir=$1 task_id=$2 measure miss registry tmpdir rows current_ids matched classes
+  case "$KIND" in
+    scout|secondmate) return 0 ;;
+  esac
+  measure="$data_dir/$task_id/measure.md"
+  miss=$(measure_miss_value "$measure" 2>/dev/null || true)
+  [ -n "$miss" ] || return 0
+  registry="$data_dir/defect-classes.tsv"
+  tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/fm-class-repeat.XXXXXX") || {
+    echo "REFUSED: task $task_id cannot complete because the class-repeat check could not create a temporary directory." >&2
+    take_task_done_back "class-repeat check could not start"
+    return 1
+  }
+  rows="$tmpdir/rows"
+  current_ids="$tmpdir/current"
+  matched="$tmpdir/matched"
+  if ! load_defect_class_rows "$registry" "$rows"; then
+    rm -rf "$tmpdir"
+    take_task_done_back "defect-classes registry is invalid"
+    return 1
+  fi
+  [ -s "$rows" ] || { rm -rf "$tmpdir"; return 0; }
+  class_ids_matching_miss "$rows" "$miss" "$current_ids"
+  [ -s "$current_ids" ] || { rm -rf "$tmpdir"; return 0; }
+  if ! prior_measure_shares_class "$data_dir" "$task_id" "$rows" "$current_ids" "$matched"; then
+    rm -rf "$tmpdir"
+    return 0
+  fi
+  if ship_branch_touched_enforcing; then
+    rm -rf "$tmpdir"
+    return 0
+  fi
+  classes=$(sort -u "$matched" | tr '\n' ' ')
+  classes=${classes%" "}
+  rm -rf "$tmpdir"
+  echo "REFUSED: task $task_id is a second occurrence of class ${classes}; cleanup requires an enforcing-file change on this branch (bin/, tests/, .github/workflows/, or a registered hook)." >&2
+  echo "A queued next slice does not discharge this gate. --force does not bypass it." >&2
+  take_task_done_back "second occurrence of class ${classes} without an enforcing-file change"
+  return 1
 }
 
 validate_map_next_backlog() {  # <meta> <backlog>
@@ -2385,6 +2580,7 @@ fi
 if [ "$MEASURE_VALIDATED" -ne 1 ]; then
   validate_measure_at "$DATA" "$ID" || exit 1
 fi
+validate_class_repeat_at "$DATA" "$ID" || exit 1
 
 # Every landed/discard-work refusal above has now passed (or --force skipped
 # them). Fix 1 and Fix 2 (see script header) run here, unconditionally on
