@@ -2,7 +2,7 @@
 name: bootstrap-diagnostics
 description: >-
   Agent-only handling playbook for session-start bootstrap diagnostics.
-  Use whenever the session-start digest's bootstrap or network-checks section prints an actionable diagnostic line - MISSING, MISSING_MANUAL, BACKEND_INVALID, NEEDS_GH_AUTH, TANGLE, STARTUP_MEMORY_BUDGET, CREW_DISPATCH invalid, SOT_GAP, FLEET_SYNC, NETWORK_CHECKS, PR_CHECK_MIGRATION, SECONDMATE_SYNC, SECONDMATE_LIVENESS, SECONDMATE_HANDOFF, NUDGE_SECONDMATES, or FMX - or when a standalone bin/fm-bootstrap.sh or bin/fm-startup-network.sh run prints one of those lines.
+  Use whenever the session-start digest's bootstrap or network-checks section prints an actionable diagnostic line - MISSING, MISSING_MANUAL, BACKEND_INVALID, NEEDS_GH_AUTH, TANGLE, STARTUP_MEMORY_BUDGET, CREW_DISPATCH invalid, SOT_GAP, MAP_FOG, FLEET_SYNC, NETWORK_CHECKS, PR_CHECK_MIGRATION, SECONDMATE_SYNC, SECONDMATE_LIVENESS, SECONDMATE_HANDOFF, NUDGE_SECONDMATES, or FMX - or when a standalone bin/fm-bootstrap.sh or bin/fm-startup-network.sh run prints one of those lines.
   A silent bootstrap section, or a BOOTSTRAP_INFO fact, means no skill load.
 user-invocable: false
 metadata:
@@ -38,6 +38,9 @@ When any diagnostic needs captain attention, report the plain consequence and re
 - `SOT_GAP: <program_id> - <missing pointer or superseded hold detail>` - surface the named durable-ground-truth gap to the captain, but do not auto-edit `data/captain.md`, create a decision file, or close a hold.
 - `SOT_GAP: registry invalid - <structural failure>` - surface the malformed or unreadable registry input as the blocker that prevented the check from evaluating ground truth, and do not treat the affected program as clean.
 - `SOT_GAP: checker failed with status <n>` - the SoT check aborted without a registry-invalid structural line; treat the program set as not clean and inspect or rerun the checker rather than assuming no gaps.
+- `MAP_FOG: <map> - <live unspecified item or closed pointer>` - surface the named live build-map fog to the captain; do not write `[parked]` or `[closed]` tokens, tokenize map bullets, or spawn a build-map ship against that map until the captain clears the fog.
+- `MAP_FOG: registry invalid - <structural failure>` - surface the malformed map or missing `## Not yet specified` section as the blocker that prevented a clean fog read, and do not treat the map as clear.
+- `MAP_FOG: checker failed with status <n>` - the map-fog check aborted without a structural line; treat affected maps as not clean and inspect or rerun the checker rather than assuming no fog.
 - `FLEET_SYNC: <repo>: skipped: <reason>` - a benign one-off skip (offline, no origin, local-only); bootstrap continued, investigate only if it blocks work.
   A skip can also report the bounded fleet-refresh timeout (`FM_FLEET_SYNC_BOOTSTRAP_TIMEOUT`, or a fleet-size-aware default with a 20 second floor); a timeout never blocks startup.
 - `FLEET_SYNC: <repo>: recovered: <detail>` - the clone had drifted onto a clean detached HEAD holding no unique commits and the sync self-healed it (re-attached the default branch and fast-forwarded); no action needed, it is reported only so the self-heal is visible.

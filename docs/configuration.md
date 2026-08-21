@@ -288,13 +288,26 @@ The optional fourth registry field names captain-held backlog identities that a 
 Each named hold becomes clean only when `fm-decision-hold.sh supersede` binds it to an exact decision file matching the row pointer and an exact already-Done ship task named among the row sources.
 This surfaces an older tentative pick that remains live or lacks that exact binding after a later durable lock or shipped task became authoritative.
 [`bin/fm-sot-pointer-check.sh`](../bin/fm-sot-pointer-check.sh)'s header owns the row format, Done-source gate, match surface, rule ids, `SOT_GAP` lines, structural exit 2, default exit-zero detect-only mode, `--strict`, `--registry`, and exact-count regression flags.
-[`bin/fm-map-fog-check.sh`](../bin/fm-map-fog-check.sh)'s header owns live-fog tokens, `MAP_FOG` lines, structural missing-section failure, and `--strict`.
-[`bin/fm-sot-speech-check.sh`](../bin/fm-sot-speech-check.sh)'s header owns the private SoT-speech registry and refuse-hook.
 Bootstrap runs that check in detect-only mode so findings surface without blocking session start or auto-editing captain material, while registry structural failures remain loud.
 The check covers only relationships registered from existing task, pointer, and captain-hold identities.
 It does not infer supersession from chat, report prose, or arbitrary project commits, and it does not close a hold automatically.
 The current full recurring-defect claims and adversary outcome are recorded in [`verification/durable-sot-recurring-defect-claims.json`](verification/durable-sot-recurring-defect-claims.json).
 See [`sot-programs.example.tsv`](sot-programs.example.tsv) for a non-live copyable shape.
+
+## SoT speech refuse-hook (data/sot-speech.tsv)
+
+An optional home-local registry can refuse captain-facing content claims about named file-backed sources unless the same session opened those files.
+Lookup uses `$FM_HOME/data/sot-speech.tsv` by default (`FM_SOT_SPEECH_REGISTRY` overrides for tests).
+The registry is private to the home and is never tracked in firstmate git.
+[`bin/fm-sot-speech-check.sh`](../bin/fm-sot-speech-check.sh)'s header owns the row format, turn-end and AskUserQuestion PreToolUse refuse paths, declared-unread escape, fail-open cases, and residual coverage.
+`AGENTS.md` section 9 carries the always-loaded declared-unread sentence.
+
+## Build-map fog check
+
+Session-start bootstrap runs [`bin/fm-map-fog-check.sh`](../bin/fm-map-fog-check.sh) in detect-only mode over ordinary `map.md` files under `data/`, printing `MAP_FOG` lines without blocking start, while structural failures remain loud.
+A ship spawn with `--map` runs the same checker in `--strict` and refuses while fog is live or the map structure fails; scout `--map` records the path without that refuse.
+The checker never writes `[parked]` or `[closed]` tokens; those remain captain-only.
+The script header owns live-fog tokens, `MAP_FOG` lines, structural missing-section failure, `--strict`, and residual coverage.
 
 ## Defect-class name list (data/defect-classes.tsv)
 
