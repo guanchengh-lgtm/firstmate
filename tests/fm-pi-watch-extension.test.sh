@@ -914,25 +914,37 @@ EOF
 }
 
 test_pi_session_transition_generation_owner() {
-  local repo home plugin child_pid_file arm_log out status
+  local repo home plugin child_pid_file arm_log arm_live_dir out status
   repo="$TMP_ROOT/pi-session-transition-root"
   home="$TMP_ROOT/pi-session-transition-home"
   child_pid_file="$TMP_ROOT/pi-session-transition-child.pid"
   arm_log="$TMP_ROOT/pi-session-transition-arm.log"
-  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  arm_live_dir="$TMP_ROOT/pi-session-transition-live"
+  mkdir -p "$repo/bin" "$home/state" "$home/config" "$arm_live_dir"
   install_pi_watch_extension_fixture "$repo"
   plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  # Incarnation markers (not bare kill-0 on historical PIDs) own liveness: CI
+  # process churn reuses PIDs and makes pidAlive(old) false-positive.
   cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+set -u
+live_dir="${FM_ARM_LIVE_DIR:?}"
+mkdir -p "$live_dir"
+incarnation="$$.$(date +%s)-$RANDOM"
+marker="$live_dir/$incarnation"
+printf '%s\n' "$$" > "$marker"
 printf 'watcher: started pid=%s\n' "$$"
 printf '%s\n' "$$" > "${FM_CHILD_PID_FILE:?}"
-printf 'arm pid=%s\n' "$$" >> "${FM_ARM_LOG:?}"
+printf 'arm pid=%s incarnation=%s\n' "$$" "$incarnation" >> "${FM_ARM_LOG:?}"
+printf '%s\n' "$incarnation" > "${FM_CHILD_INCARNATION_FILE:?}"
+cleanup() { rm -f "$marker"; }
+trap cleanup EXIT
 trap 'exit 0' TERM INT
 while :; do sleep 0.2; done
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_CHILD_PID_FILE="$child_pid_file" FM_ARM_LOG="$arm_log" FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_CHILD_PID_FILE="$child_pid_file" FM_CHILD_INCARNATION_FILE="$TMP_ROOT/pi-session-transition-child.inc" FM_ARM_LOG="$arm_log" FM_ARM_LIVE_DIR="$arm_live_dir" FM_WATCH_REARM_RETRY_BASE_MS=5 FM_WATCH_REARM_RETRY_MAX_MS=10 FM_WATCH_REARM_RETRY_LIMIT=2 node --input-type=module 2>&1 <<'EOF'
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 function makePi() {
@@ -952,15 +964,6 @@ function makePi() {
   return { pi, handlers, getTool: () => tool };
 }
 
-function pidAlive(pid) {
-  try {
-    process.kill(Number(pid), 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function waitFor(pred, label, attempts = 250) {
   for (let i = 0; i < attempts; i += 1) {
     if (pred()) return;
@@ -969,18 +972,20 @@ async function waitFor(pred, label, attempts = 250) {
   throw new Error(`timeout waiting for ${label}`);
 }
 
-function liveArmPids() {
-  if (!existsSync(process.env.FM_ARM_LOG)) return [];
-  return readFileSync(process.env.FM_ARM_LOG, "utf8")
-    .trim()
-    .split(/\n/)
-    .filter(Boolean)
-    .map((line) => {
-      const match = /pid=(\d+)/.exec(line);
-      return match ? match[1] : "";
-    })
-    .filter(Boolean)
-    .filter(pidAlive);
+function liveIncarnations() {
+  const dir = process.env.FM_ARM_LIVE_DIR;
+  if (!dir || !existsSync(dir)) return [];
+  return readdirSync(dir).filter((name) => name && !name.startsWith("."));
+}
+
+function currentIncarnation() {
+  const file = process.env.FM_CHILD_INCARNATION_FILE;
+  if (!file || !existsSync(file)) return "";
+  return readFileSync(file, "utf8").trim();
+}
+
+function incarnationLive(id) {
+  return Boolean(id) && existsSync(`${process.env.FM_ARM_LIVE_DIR}/${id}`);
 }
 
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
@@ -993,18 +998,16 @@ const first = await startup.getTool().execute("startup", {}, undefined, undefine
 if (!first.details?.ok || !String(first.details.message).includes("started Pi extension arm child")) {
   throw new Error(`startup arm failed: ${JSON.stringify(first.details)}`);
 }
-await waitFor(() => existsSync(process.env.FM_CHILD_PID_FILE), "startup child");
-const startupChild = readFileSync(process.env.FM_CHILD_PID_FILE, "utf8").trim();
-if (!pidAlive(startupChild)) throw new Error("startup child was not alive");
+await waitFor(() => incarnationLive(currentIncarnation()), "startup child");
+const startupIncarnation = currentIncarnation();
+if (!incarnationLive(startupIncarnation)) throw new Error("startup child was not alive");
 const staleTool = startup.getTool();
 
 async function replaceSession(previous, reason) {
-  const previousChild = existsSync(process.env.FM_CHILD_PID_FILE)
-    ? readFileSync(process.env.FM_CHILD_PID_FILE, "utf8").trim()
-    : "";
+  const previousIncarnation = currentIncarnation();
   await previous.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason }, {});
-  if (previousChild) {
-    await waitFor(() => !pidAlive(previousChild), `${reason} previous child exit`);
+  if (previousIncarnation) {
+    await waitFor(() => !incarnationLive(previousIncarnation), `${reason} previous child exit`);
   }
   const next = makePi();
   mod.default(next.pi);
@@ -1021,11 +1024,10 @@ async function replaceSession(previous, reason) {
     throw new Error(`${reason} replacement still refused with shutting-down latch`);
   }
   await waitFor(() => {
-    if (!existsSync(process.env.FM_CHILD_PID_FILE)) return false;
-    const child = readFileSync(process.env.FM_CHILD_PID_FILE, "utf8").trim();
-    return child && child !== previousChild && pidAlive(child);
+    const current = currentIncarnation();
+    return current && current !== previousIncarnation && incarnationLive(current);
   }, `${reason} replacement child`);
-  const live = liveArmPids();
+  const live = liveIncarnations();
   if (live.length !== 1) {
     throw new Error(`${reason} expected exactly one live arm child, got ${live.join(",") || "(none)"}`);
   }
@@ -1037,7 +1039,7 @@ current = await replaceSession(current, "resume");
 current = await replaceSession(current, "fork");
 
 // Same bound instance: ordinary shutdown then session_start without a fresh factory.
-const sameInstanceChild = readFileSync(process.env.FM_CHILD_PID_FILE, "utf8").trim();
+const sameInstanceIncarnation = currentIncarnation();
 await current.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "new" }, {});
 await current.handlers.get("session_start")?.({ type: "session_start", reason: "new" }, {});
 const sameInstanceArm = await current.getTool().execute("same-instance", {}, undefined, undefined, {});
@@ -1045,25 +1047,24 @@ if (!sameInstanceArm.details?.ok || String(sameInstanceArm.details.message).incl
   throw new Error(`same-instance replacement arm failed: ${JSON.stringify(sameInstanceArm.details)}`);
 }
 await waitFor(() => {
-  if (!existsSync(process.env.FM_CHILD_PID_FILE)) return false;
-  const child = readFileSync(process.env.FM_CHILD_PID_FILE, "utf8").trim();
-  return child !== sameInstanceChild && pidAlive(child);
+  const next = currentIncarnation();
+  return next && next !== sameInstanceIncarnation && incarnationLive(next);
 }, "same-instance replacement child");
-await waitFor(() => !pidAlive(sameInstanceChild), "same-instance previous child exit");
-if (liveArmPids().length !== 1) {
-  throw new Error(`same-instance expected one live arm child, got ${liveArmPids().join(",")}`);
+await waitFor(() => !incarnationLive(sameInstanceIncarnation), "same-instance previous child exit");
+if (liveIncarnations().length !== 1) {
+  throw new Error(`same-instance expected one live arm child, got ${liveIncarnations().join(",")}`);
 }
 
 // Stale prior-generation callback must not stop, rearm, or clear the active generation.
-const activeChild = readFileSync(process.env.FM_CHILD_PID_FILE, "utf8").trim();
+const activeIncarnation = currentIncarnation();
 const stale = await staleTool.execute("stale-prior-generation", {}, undefined, undefined, {});
 if (stale.details?.ok !== false || !String(stale.details.message).includes("shutting down")) {
   throw new Error(`stale prior generation did not refuse: ${JSON.stringify(stale.details)}`);
 }
-if (!pidAlive(activeChild)) throw new Error("active generation child died after stale callback");
-if (pidAlive(startupChild)) throw new Error("startup generation child was resurrected");
-if (liveArmPids().length !== 1 || liveArmPids()[0] !== activeChild) {
-  throw new Error(`stale callback mutated live arm set: ${liveArmPids().join(",")}`);
+if (!incarnationLive(activeIncarnation)) throw new Error("active generation child died after stale callback");
+if (incarnationLive(startupIncarnation)) throw new Error("startup generation child was resurrected");
+if (liveIncarnations().length !== 1 || liveIncarnations()[0] !== activeIncarnation) {
+  throw new Error(`stale callback mutated live arm set: ${liveIncarnations().join(",")}`);
 }
 const redundant = await current.getTool().execute("redundant", {}, undefined, undefined, {});
 if (!redundant.details?.ok || !String(redundant.details.message).includes("unchanged")) {
@@ -1076,20 +1077,22 @@ for (const reason of ["resume", "fork", "new", "resume"]) {
 }
 
 // Real terminal shutdown still blocks late rearming.
-const finalChild = readFileSync(process.env.FM_CHILD_PID_FILE, "utf8").trim();
+const finalIncarnation = currentIncarnation();
 await current.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, {});
-await waitFor(() => !pidAlive(finalChild), "terminal shutdown child exit");
+await waitFor(() => !incarnationLive(finalIncarnation), "terminal shutdown child exit");
 const quitArm = await current.getTool().execute("after-quit", {}, undefined, undefined, {});
 if (quitArm.details?.ok !== false || quitArm.details.message !== "watcher: not armed - Pi session is shutting down") {
   throw new Error(`terminal quit must keep the shutting-down refusal: ${JSON.stringify(quitArm.details)}`);
 }
-if (liveArmPids().length !== 0) {
-  throw new Error(`terminal quit left live arm children: ${liveArmPids().join(",")}`);
+if (liveIncarnations().length !== 0) {
+  throw new Error(`terminal quit left live arm children: ${liveIncarnations().join(",")}`);
 }
 EOF
 )
   status=$?
-  expect_code 0 "$status" "Pi session transitions must rearm through an explicit generation owner"
+  if [ "$status" -ne 0 ]; then
+    fail "Pi session transitions must rearm through an explicit generation owner: expected exit 0, got $status${out:+; $out}"
+  fi
   [ -z "$out" ] || fail "Pi session-transition generation owner test printed output: $out"
   pass "Pi session transitions use a generation owner across /new /resume /fork, stale callbacks, and quit"
 }
