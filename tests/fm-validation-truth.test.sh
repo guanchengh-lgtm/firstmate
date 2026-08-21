@@ -9,7 +9,6 @@ set -u
 unset FM_VALIDATION_TRUTH_BYPASS
 
 PR_CHECK="$ROOT/bin/fm-pr-check.sh"
-PR_MERGE="$ROOT/bin/fm-pr-merge.sh"
 TEARDOWN="$ROOT/bin/fm-teardown.sh"
 TMP_ROOT=$(fm_test_tmproot fm-validation-truth)
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
@@ -19,7 +18,7 @@ BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
 
 test_parse_run_step_done() {
   fm_validation_truth_parse 'state: done · source: run-step · passed'
-  [ "$FM_VT_STATE" = done ] || fail "parse state=$FM_VT_STATE"
+  [ "$FM_VT_STATE" = "done" ] || fail "parse state=$FM_VT_STATE"
   [ "$FM_VT_SOURCE" = run-step ] || fail "parse source=$FM_VT_SOURCE"
   pass "validation-truth: parses run-step done"
 }
@@ -58,7 +57,6 @@ test_direct_pr_is_exempt() {
   local dir rc
   dir=$(make_task_home exempt-direct direct-PR)
   write_stub_crew_state "$dir/fakebin/fm-crew-state.sh" 'state: working · source: pane · busy'
-  SCRIPT_DIR="$dir/fakebin"
   set +e
   FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" \
     fm_require_validation_truth "$dir/home/state/task-a.meta" task-a

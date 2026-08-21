@@ -132,6 +132,7 @@ display_map() {
 }
 
 TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/fm-map-fog.XXXXXX") || exit 2
+# shellcheck disable=SC2329 # Invoked by trap handlers below.
 cleanup() { rm -rf -- "$TMP_DIR"; }
 trap cleanup EXIT HUP INT TERM
 SEEN="$TMP_DIR/seen"

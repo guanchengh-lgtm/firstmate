@@ -68,6 +68,7 @@ TRANSCRIPT=$(printf '%s' "$PAYLOAD" | jq -r '(.transcript_path // .transcriptPat
 [ -f "$TRANSCRIPT" ] && [ ! -L "$TRANSCRIPT" ] && [ -r "$TRANSCRIPT" ] || exit 0
 
 TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/fm-sot-speech.XXXXXX") || exit 0
+# shellcheck disable=SC2329 # Invoked by trap handlers below.
 cleanup() { rm -rf -- "$TMP_DIR"; }
 trap cleanup EXIT HUP INT TERM
 NORMALIZED="$TMP_DIR/registry.tsv"

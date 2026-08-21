@@ -58,7 +58,7 @@ fm_require_validation_truth() {  # <meta-file> <task-id>
   fi
   line=$("$crew_state" "$id" 2>/dev/null || true)
   fm_validation_truth_parse "$line"
-  if [ "$FM_VT_SOURCE" = run-step ] && [ "$FM_VT_STATE" = done ]; then
+  if [ "$FM_VT_SOURCE" = run-step ] && [ "$FM_VT_STATE" = "done" ]; then
     return 0
   fi
   if [ "$FM_VT_SOURCE" = run-step ]; then
