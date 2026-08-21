@@ -266,6 +266,10 @@
       "audience": "maintainer-architecture"
     },
     {
+      "path": "docs/class-repeat-gate.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/cmux-backend.md",
       "audience": "operator-current"
     },
