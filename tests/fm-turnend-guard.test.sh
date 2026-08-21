@@ -115,6 +115,7 @@ install_guard_scripts() {
   cp "$ROOT/bin/fm-primary-scope-lib.sh" "$dir/bin/fm-primary-scope-lib.sh"
   cp "$ROOT/bin/fm-supervision-lib.sh" "$dir/bin/fm-supervision-lib.sh"
   cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/fm-wake-lib.sh"
+  cp "$ROOT/bin/fm-classify-lib.sh" "$dir/bin/fm-classify-lib.sh"
   mkdir -p "$dir/docs"
   cp -R "$ROOT/docs/supervision-protocols" "$dir/docs/supervision-protocols"
   chmod +x "$dir/bin/fm-turnend-guard.sh" "$dir/bin/fm-turnend-guard-grok.sh" "$dir/bin/fm-operational-input.sh" "$dir/bin/fm-supervision-instructions.sh" "$dir/bin/fm-harness.sh"
@@ -312,6 +313,189 @@ test_hook_claude_ready_action_ignores_stop_hook_active() {
   assert_contains "$out" 'map-s4 is unblocked and queued' \
     "claude ready-action refusal did not name the ownerless ticket under stop_hook_active"
   pass "fm-turnend-guard --claude: stop_hook_active cannot skip unowned ready-action"
+}
+
+install_session_diagnosis_checker() {
+  local dir=$1 checker_dir="$1/data/recurring-defect/yen126-session-false-negative"
+  mkdir -p "$checker_dir"
+  cat > "$checker_dir/check.py" <<'PY'
+#!/usr/bin/env python3
+import argparse
+import json
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--input", required=True, type=Path)
+args = parser.parse_args()
+data = json.loads(args.input.read_text(encoding="utf-8"))
+Path(__file__).with_name("invocations").write_text(str(args.input), encoding="utf-8")
+finding = data.get("finding")
+if finding:
+    print(finding)
+    raise SystemExit(1)
+print("PASS: session-diagnosis claim shape OK")
+PY
+  chmod +x "$checker_dir/check.py"
+}
+
+write_session_block_fixture() {  # <dir> <summary>
+  local dir=$1 summary=$2
+  printf 'project=/fixture/projects/tradingview-tools\n' > "$dir/state/tv-task.meta"
+  printf 'blocked [key=session]: %s\n' "$summary" > "$dir/state/tv-task.status"
+}
+
+run_hook_with_healthy_watcher() {  # <dir>
+  local dir=$1 pid identity out status
+  sleep 60 &
+  pid=$!
+  identity=$(watcher_identity "$dir" "$pid") || {
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    return 99
+  }
+  record_watcher_lock "$dir" "$pid" "$identity"
+  touch "$dir/state/.last-watcher-beat"
+  out=$(run_hook "$dir" false); status=$?
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  HEALTHY_HOOK_STATUS=$status
+  HEALTHY_HOOK_OUTPUT=$out
+}
+
+test_hook_refuses_tradingview_login_block_without_evidence() {
+  local slug summary dir status out
+  while IFS="$(printf '\t')" read -r slug summary; do
+    dir=$(make_primary_dir "$TMP_ROOT/hook-session-block-missing-evidence-$slug")
+    install_session_diagnosis_checker "$dir"
+    write_session_block_fixture "$dir" "$summary"
+    run_hook_with_healthy_watcher "$dir"
+    status=$HEALTHY_HOOK_STATUS
+    out=$HEALTHY_HOOK_OUTPUT
+    expect_code 2 "$status" "$summary without session diagnosis evidence must refuse before watcher-health allow"
+    assert_contains "$out" 'missing required evidence:' "refusal did not name missing evidence"
+    assert_contains "$out" 'Steer the worker back now' "refusal did not direct immediate worker steer"
+    assert_contains "$out" 'Never ask the captain to log in or unlock Keychain.' "refusal lost captain credential safety rule"
+  done <<'EOF'
+login	login required
+dead	session dead
+dead-rev	dead session
+death-rev	TradingView dead session
+dies	session dies
+dies-rev	blocked session dies
+expired-rev	expired session
+lost	session lost
+missing	session missing
+sign-in	sign in required
+signed-out	signed out
+not-signed-in	not signed in
+not-logged-in	not logged in
+user-not-logged-in	user not logged in
+EOF
+  pass "fm-turnend-guard: missing TradingView session evidence is not supervisor-actionable"
+}
+
+test_hook_claude_session_block_ignores_stop_hook_active() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-claude-session-stop-active")
+  install_session_diagnosis_checker "$dir"
+  write_session_block_fixture "$dir" 'login required'
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
+  expect_code 2 "$status" "--claude mode must still refuse unchecked TV login block when stop_hook_active=true"
+  assert_contains "$out" 'missing required evidence:' \
+    "claude session-block refusal did not require diagnosis evidence under stop_hook_active"
+  assert_contains "$out" 'Steer the worker back now' \
+    "claude session-block refusal lost worker-steer directive under stop_hook_active"
+  assert_contains "$out" 'Never ask the captain to log in or unlock Keychain.' \
+    "claude session-block refusal lost captain credential safety rule under stop_hook_active"
+  pass "fm-turnend-guard --claude: stop_hook_active cannot skip unchecked TV login block"
+}
+
+test_hook_refuses_latest_same_key_tradingview_json_block() {
+  local dir status out current
+  dir=$(make_primary_dir "$TMP_ROOT/hook-session-block-same-key-tradingview-json")
+  install_session_diagnosis_checker "$dir"
+  printf 'project=/fixture/projects/tradingview-tools\n' > "$dir/state/tv-task.meta"
+  printf '%s\n' \
+    'blocked [key=session]: Guest after browser state load' \
+    'blocked [key=session]: install awaits /Users/AI/kun-agent-workspace/.gstack/browse/state/tradingview.json' \
+    > "$dir/state/tv-task.status"
+  run_hook_with_healthy_watcher "$dir"
+  status=$HEALTHY_HOOK_STATUS
+  out=$HEALTHY_HOOK_OUTPUT
+  current='install awaits /Users/AI/kun-agent-workspace/.gstack/browse/state/tradingview.json'
+  expect_code 2 "$status" "latest same-key tradingview.json blocker must require diagnosis evidence"
+  assert_contains "$out" "$current" "refusal did not use latest same-key blocked summary"
+  assert_not_contains "$out" 'Guest after browser state load' "replaced same-key Guest summary remained open"
+  pass "fm-turnend-guard: latest same-key tradingview.json block remains refused"
+}
+
+test_hook_surfaces_session_checker_r5_and_r3_findings() {
+  local rule dir status out
+  for rule in \
+    'R5-guest-or-missing-state-not-logout: Guest is not proof of logout' \
+    'R3-fm-home-cwd-load-proven: worktree cwd Guest is a known false alarm'; do
+    dir=$(make_primary_dir "$TMP_ROOT/hook-session-block-$(printf '%s' "$rule" | cut -d- -f1 | tr '[:upper:]' '[:lower:]')")
+    install_session_diagnosis_checker "$dir"
+    write_session_block_fixture "$dir" 'Guest after missing browse state; TradingView session dead'
+    mkdir -p "$dir/data/tv-task/evidence"
+    printf '{"finding":"%s"}\n' "$rule" > "$dir/data/tv-task/evidence/session-diagnosis.json"
+    run_hook_with_healthy_watcher "$dir"
+    status=$HEALTHY_HOOK_STATUS
+    out=$HEALTHY_HOOK_OUTPUT
+    expect_code 2 "$status" "$rule must keep false-alarm block non-actionable"
+    assert_contains "$out" "$rule" "checker finding was not surfaced in refusal banner"
+  done
+  pass "fm-turnend-guard: R5 and R3 checker findings are surfaced"
+}
+
+test_hook_accepts_passing_session_checker_invocation() {
+  local dir status out invocation expected
+  dir=$(make_primary_dir "$TMP_ROOT/hook-session-block-pass")
+  install_session_diagnosis_checker "$dir"
+  write_session_block_fixture "$dir" 'TradingView session death after yen126 login failed'
+  mkdir -p "$dir/data/tv-task/evidence"
+  printf '{}\n' > "$dir/data/tv-task/evidence/session-diagnosis.json"
+  run_hook_with_healthy_watcher "$dir"
+  status=$HEALTHY_HOOK_STATUS
+  out=$HEALTHY_HOOK_OUTPUT
+  expect_code 0 "$status" "checker exit 0 must accept session blocker and allow healthy watcher path"
+  [ -z "$out" ] || fail "passing session checker produced guard output: $out"
+  invocation=$(cat "$dir/data/recurring-defect/yen126-session-false-negative/invocations")
+  expected="$(cd "$dir" && pwd)/data/tv-task/evidence/session-diagnosis.json"
+  [ "$invocation" = "$expected" ] || fail "checker --input was $invocation, expected $expected"
+  pass "fm-turnend-guard: passing checker invocation accepts TradingView session block"
+}
+
+test_hook_ignores_unrelated_blocked_status() {
+  local dir status out checker_dir
+  dir=$(make_primary_dir "$TMP_ROOT/hook-session-block-unrelated")
+  install_session_diagnosis_checker "$dir"
+  printf 'project=/fixture/projects/another-project\n' > "$dir/state/other-task.meta"
+  printf 'blocked: Guest after missing browse state; login required\n' > "$dir/state/other-task.status"
+  run_hook_with_healthy_watcher "$dir"
+  status=$HEALTHY_HOOK_STATUS
+  out=$HEALTHY_HOOK_OUTPUT
+  expect_code 0 "$status" "non-tradingview-tools blocker must not enter session diagnosis gate"
+  [ -z "$out" ] || fail "unrelated blocked status produced guard output: $out"
+  checker_dir="$dir/data/recurring-defect/yen126-session-false-negative"
+  [ ! -e "$checker_dir/invocations" ] || fail "unrelated blocked status invoked session checker"
+  pass "fm-turnend-guard: unrelated blocked status remains unaffected"
+}
+
+test_hook_ignores_unrelated_github_auth_in_tradingview_project() {
+  local dir status out checker_dir
+  dir=$(make_primary_dir "$TMP_ROOT/hook-session-block-github-auth")
+  install_session_diagnosis_checker "$dir"
+  printf 'project=/fixture/projects/tradingview-tools\n' > "$dir/state/tv-task.meta"
+  printf 'blocked: GitHub authentication expired while opening PR\n' > "$dir/state/tv-task.status"
+  run_hook_with_healthy_watcher "$dir"
+  status=$HEALTHY_HOOK_STATUS
+  out=$HEALTHY_HOOK_OUTPUT
+  expect_code 0 "$status" "unrelated GitHub authentication must not enter TradingView session diagnosis gate"
+  [ -z "$out" ] || fail "unrelated GitHub authentication produced guard output: $out"
+  checker_dir="$dir/data/recurring-defect/yen126-session-false-negative"
+  [ ! -e "$checker_dir/invocations" ] || fail "unrelated GitHub authentication invoked session checker"
+  pass "fm-turnend-guard: unrelated GitHub authentication remains unaffected"
 }
 
 test_hook_blocks_when_fresh_beacon_has_no_live_lock() {
@@ -1701,6 +1885,12 @@ test_hook_silent_when_no_work_in_flight
 test_hook_refuses_prose_only_ready_action
 test_hook_ready_action_checks_every_ready_ticket
 test_hook_ready_action_accepts_matching_worker_owner
+test_hook_refuses_tradingview_login_block_without_evidence
+test_hook_refuses_latest_same_key_tradingview_json_block
+test_hook_surfaces_session_checker_r5_and_r3_findings
+test_hook_accepts_passing_session_checker_invocation
+test_hook_ignores_unrelated_blocked_status
+test_hook_ignores_unrelated_github_auth_in_tradingview_project
 test_hook_blocks_when_fresh_beacon_has_no_live_lock
 test_hook_blocks_source_only_home
 test_hook_blocks_when_dead_lock_has_fresh_beacon
@@ -1741,6 +1931,7 @@ test_pi_extension_injects_once_per_logical_agent_run
 test_pi_extension_retries_after_followup_delivery_failure
 test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy
 test_hook_claude_ready_action_ignores_stop_hook_active
+test_hook_claude_session_block_ignores_stop_hook_active
 test_hook_claude_mode_reblocks_x_mode_without_tasks
 test_hook_claude_mode_allows_when_autoarm_owner_alive
 test_hook_claude_mode_repeated_failed_to_arming_interleavings_reach_fail_open
