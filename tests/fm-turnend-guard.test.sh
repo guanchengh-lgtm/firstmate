@@ -227,15 +227,23 @@ test_hook_silent_when_no_work_in_flight() {
   pass "fm-turnend-guard: silent no-op with nothing in flight"
 }
 
-write_fake_ready_tasks_axi() {  # <dir> <ready-id-or-empty>
-  local dir=$1 ready_id=${2:-}
+write_fake_ready_tasks_axi() {  # <dir> <ready-id-or-empty>...
+  local dir=$1
+  shift
   mkdir -p "$dir/fakebin" "$dir/data"
   printf '%s\n' '# backlog fixture' > "$dir/data/backlog.md"
   cat > "$dir/fakebin/tasks-axi" <<'SH'
 #!/usr/bin/env bash
 if [ "${1:-}" = ready ]; then
-  if [ -n "${FM_FAKE_READY_ID:-}" ]; then
-    printf 'count: 1\nready[1]{id,state,kind,repo,title}:\n  %s,queued,ship,firstmate,Locked map slice\n' "$FM_FAKE_READY_ID"
+  if [ -n "${FM_FAKE_READY_IDS:-}" ]; then
+    count=0
+    for id in $FM_FAKE_READY_IDS; do
+      count=$((count + 1))
+    done
+    printf 'count: %s\nready[%s]{id,state,kind,repo,title}:\n' "$count" "$count"
+    for id in $FM_FAKE_READY_IDS; do
+      printf '  %s,queued,ship,firstmate,Locked map slice\n' "$id"
+    done
   else
     printf 'count: 0\nready: 0 unblocked queued tasks\n'
   fi
@@ -244,8 +252,8 @@ fi
 exit 1
 SH
   chmod +x "$dir/fakebin/tasks-axi"
-  FM_FAKE_READY_ID=$ready_id
-  export FM_FAKE_READY_ID
+  FM_FAKE_READY_IDS=$*
+  export FM_FAKE_READY_IDS
 }
 
 test_hook_refuses_prose_only_ready_action() {
@@ -253,13 +261,26 @@ test_hook_refuses_prose_only_ready_action() {
   dir=$(make_primary_dir "$TMP_ROOT/hook-ready-no-owner")
   write_fake_ready_tasks_axi "$dir" map-s3
   out=$(PATH="$dir/fakebin:$PATH" run_hook "$dir" false); status=$?
-  unset FM_FAKE_READY_ID
+  unset FM_FAKE_READY_IDS
   expect_code 2 "$status" "turn end must refuse an unblocked ready ticket with no worker"
   assert_contains "$out" 'map-s3 is unblocked and queued' \
     "ready-action refusal did not name the ownerless ticket"
   assert_contains "$out" 'A plan, another go question, or “when you want” is not done.' \
     "ready-action refusal did not reject prose-only completion"
   pass "fm-turnend-guard: a ready map ticket cannot end as prose-only waiting"
+}
+
+test_hook_ready_action_checks_every_ready_ticket() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-ready-later-unowned")
+  write_fake_ready_tasks_axi "$dir" map-s3 map-s4
+  printf '%s\n' 'kind=ship' > "$dir/state/map-s3.meta"
+  out=$(PATH="$dir/fakebin:$PATH" run_hook "$dir" false); status=$?
+  unset FM_FAKE_READY_IDS
+  expect_code 2 "$status" "turn end must refuse when any later ready ticket lacks a worker"
+  assert_contains "$out" 'map-s4 is unblocked and queued' \
+    "ready-action refusal did not name the first ownerless ready ticket"
+  pass "fm-turnend-guard: every ready ticket must have a worker owner"
 }
 
 test_hook_ready_action_accepts_matching_worker_owner() {
@@ -275,7 +296,7 @@ test_hook_ready_action_accepts_matching_worker_owner() {
   out=$(PATH="$dir/fakebin:$PATH" run_hook "$dir" false); status=$?
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
-  unset FM_FAKE_READY_ID
+  unset FM_FAKE_READY_IDS
   expect_code 0 "$status" "matching spawned or steerable worker must satisfy the ready-action gate"
   [ -z "$out" ] || fail "owned ready action produced guard output: $out"
   pass "fm-turnend-guard: matching worker metadata proves action instead of prose"
@@ -1666,6 +1687,7 @@ test_predicate_x_mode_needs_supervision
 test_predicate_source_needs_supervision
 test_hook_silent_when_no_work_in_flight
 test_hook_refuses_prose_only_ready_action
+test_hook_ready_action_checks_every_ready_ticket
 test_hook_ready_action_accepts_matching_worker_owner
 test_hook_blocks_when_fresh_beacon_has_no_live_lock
 test_hook_blocks_source_only_home

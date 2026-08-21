@@ -294,6 +294,7 @@ validate_map_next_backlog() {  # <meta> <backlog>
   esac
   echo "REFUSED: task $ID cannot complete because locked next slice $next is not queued, in flight, or done in $backlog." >&2
   echo "Queue $next now; do not ask the captain for another go." >&2
+  take_task_done_back "locked next slice $next is not queued, in flight, or done"
   return 1
 }
 

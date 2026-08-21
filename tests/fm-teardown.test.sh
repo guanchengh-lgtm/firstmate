@@ -1486,6 +1486,9 @@ test_map_next_requires_next_slice_in_backlog() {
   expect_code 1 "$rc" "map-next teardown should refuse when next slice is absent"
   assert_grep 'slice-three' "$case_dir/refused.err" \
     "map-next refusal did not name the missing next slice"
+  assert_grep 'working: completion gate reopened - locked next slice slice-three is not queued, in flight, or done' \
+    "$case_dir/state/task-x1.status" \
+    "map-next refusal did not mechanically take done back"
   assert_present "$case_dir/state/task-x1.meta" \
     "map-next refusal mutated task metadata"
 

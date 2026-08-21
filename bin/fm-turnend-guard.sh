@@ -158,20 +158,23 @@ ready_action_without_owner() {
   fi
   command -v tasks-axi >/dev/null 2>&1 || return 1
   output=$(tasks-axi ready --file "$backlog" 2>/dev/null) || return 1
-  ready_id=$(printf '%s\n' "$output" | awk '
+  while IFS= read -r ready_id; do
+    [ -n "$ready_id" ] || continue
+    if [ ! -f "$STATE/$ready_id.meta" ]; then
+      READY_ACTION_ID=$ready_id
+      return 0
+    fi
+  done < <(printf '%s\n' "$output" | awk '
     /^ready\[[0-9]+\]/ { in_ready = 1; next }
     in_ready && /^[[:space:]]/ {
       row = $0
       sub(/^[[:space:]]*/, "", row)
       split(row, fields, ",")
-      if (fields[1] != "") { print fields[1]; exit }
+      if (fields[1] != "") print fields[1]
     }
-    in_ready { exit }
+    in_ready && /^[^[:space:]]/ { exit }
   ')
-  [ -n "$ready_id" ] || return 1
-  [ ! -f "$STATE/$ready_id.meta" ] || return 1
-  READY_ACTION_ID=$ready_id
-  return 0
+  return 1
 }
 
 block_ready_action() {
