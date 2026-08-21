@@ -214,10 +214,10 @@ session_block_summary_requires_diagnosis() {  # <summary>
       ;;
   esac
   case "$summary" in
-    *login*|*log\ in*|*log-in*|*logout*|*logged\ out*|\
+    *login*|*log\ in*|*log-in*|*logout*|*logged\ out*|*not\ logged\ in*|\
     *sign\ in*|*sign-in*|*signin*|*signed\ out*|*signed-out*|*signout*|*not\ signed\ in*|\
-    *session*dead*|*session*death*|*session*died*|*session*expired*|\
-    *dead*session*|*death*session*|*died*session*|*expired*session*|\
+    *session*dead*|*session*death*|*session*died*|*session*dies*|*session*expired*|\
+    *dead*session*|*death*session*|*died*session*|*dies*session*|*expired*session*|\
     *session*lost*|*lost*session*|*session*missing*|*missing*session*)
       return 0
       ;;

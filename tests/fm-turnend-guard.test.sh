@@ -380,12 +380,16 @@ login	login required
 dead	session dead
 dead-rev	dead session
 death-rev	TradingView dead session
+dies	session dies
+dies-rev	blocked session dies
 expired-rev	expired session
 lost	session lost
 missing	session missing
 sign-in	sign in required
 signed-out	signed out
 not-signed-in	not signed in
+not-logged-in	not logged in
+user-not-logged-in	user not logged in
 EOF
   pass "fm-turnend-guard: missing TradingView session evidence is not supervisor-actionable"
 }
