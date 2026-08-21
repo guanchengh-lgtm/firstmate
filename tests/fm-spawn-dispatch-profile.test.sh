@@ -606,6 +606,53 @@ test_batch_forwards_shared_profile_flags() {
   pass "batch dispatch forwards shared --harness, --model, and --effort to every pair"
 }
 
+test_spawn_records_map_next_and_rejects_invalid_ids() {
+  local rec id out status meta bad_id
+  id=profile-map-next-z11
+  rec=$(make_spawn_case profile-map-next claude "$id")
+  read_case_record "$rec"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --map-next slice-three)
+  status=$?
+  expect_code 0 "$status" "spawn with --map-next should succeed"
+  meta="$HOME_DIR/state/$id.meta"
+  assert_grep 'map_next=slice-three' "$meta" \
+    "spawn did not record the locked next slice in task metadata"
+
+  bad_id=profile-map-next-bad-z12
+  rec=$(make_spawn_case profile-map-next-bad claude "$bad_id")
+  read_case_record "$rec"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$bad_id" "$PROJ_DIR" --map-next 'bad/id')
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn accepted an invalid --map-next task id"
+  assert_contains "$out" 'invalid --map-next task id' \
+    "invalid --map-next refusal did not explain the bad id"
+  assert_absent "$HOME_DIR/state/$bad_id.meta" \
+    "invalid --map-next spawn wrote task metadata"
+  pass "fm-spawn: --map-next records a valid id and refuses unsafe ids"
+}
+
+test_spawn_refuses_fake_worker_slash_before_endpoint() {
+  local rec id out status brief
+  id=profile-fake-slash-z13
+  rec=$(make_spawn_case profile-fake-slash claude "$id")
+  read_case_record "$rec"
+  brief="$HOME_DIR/data/$id/brief.md"
+  printf '# Task\nInvoke /harness-adapters before coding.\n\n# Setup\nfixture\n' > "$brief"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn accepted a worker brief with a lane-3 slash"
+  assert_contains "$out" '/harness-adapters' \
+    "spawn refusal did not name the forbidden worker slash"
+  assert_absent "$HOME_DIR/state/$id.meta" \
+    "fake-slash refusal wrote task metadata"
+  [ ! -s "$LAUNCH_LOG" ] || fail "fake-slash refusal still typed an endpoint launch"
+  pass "fm-spawn: fake worker slash refuses before endpoint creation"
+}
+
 test_claude_forwards_firstmate_config_dir_when_set() {
   local rec id out status launch
   id=profile-claude-cfgdir-z17
@@ -695,6 +742,8 @@ test_pi_signed_threads_shared_pi_profile_and_preserves_identity
 test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata
 test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity
 test_batch_forwards_shared_profile_flags
+test_spawn_records_map_next_and_rejects_invalid_ids
+test_spawn_refuses_fake_worker_slash_before_endpoint
 test_claude_forwards_firstmate_config_dir_when_set
 test_claude_omits_config_dir_prefix_when_unset
 test_non_claude_harness_ignores_config_dir

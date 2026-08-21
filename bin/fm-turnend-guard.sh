@@ -10,6 +10,11 @@
 # fleet-touching command itself, can sit blind for hours.
 # This script is push-based: verified harness turn-end hooks invoke it every time
 # the primary is about to end a turn.
+# It also refuses a prose-only idle turn when tasks-axi reports a ready queued
+# ticket but that exact ticket has no state/<id>.meta worker owner. A spawn or
+# steer has matching metadata; a concrete backlog blocker removes the ticket
+# from `tasks-axi ready`. The check fails open when the tasks-axi backend cannot
+# be read, honors the existing manual-backlog backend, and has no skip flag.
 # Claude and codex can block directly by preserving exit status 2 and stderr.
 # OpenCode and pi adapters use the same predicate and force one bounded
 # follow-up because their turn-end events are passive. Grok delegates native
@@ -65,6 +70,7 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
+DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 GRACE=${FM_GUARD_GRACE:-300}
 WATCH="$SCRIPT_DIR/fm-watch.sh"
 CLAUDE_MODE=0
@@ -142,6 +148,51 @@ budget_reset() {
 }
 
 fm_supervision_status "$STATE" "$GRACE"
+
+ready_action_without_owner() {
+  local backlog="$DATA/backlog.md" output ready_id backend
+  [ -f "$backlog" ] && [ ! -L "$backlog" ] || return 1
+  if [ -f "$CONFIG/backlog-backend" ]; then
+    backend=$(sed -n '1{s/[[:space:]]//g;p;}' "$CONFIG/backlog-backend" 2>/dev/null || true)
+    [ "$backend" != manual ] || return 1
+  fi
+  command -v tasks-axi >/dev/null 2>&1 || return 1
+  output=$(tasks-axi ready --file "$backlog" 2>/dev/null) || return 1
+  ready_id=$(printf '%s\n' "$output" | awk '
+    /^ready\[[0-9]+\]/ { in_ready = 1; next }
+    in_ready && /^[[:space:]]/ {
+      row = $0
+      sub(/^[[:space:]]*/, "", row)
+      split(row, fields, ",")
+      if (fields[1] != "") { print fields[1]; exit }
+    }
+    in_ready { exit }
+  ')
+  [ -n "$ready_id" ] || return 1
+  [ ! -f "$STATE/$ready_id.meta" ] || return 1
+  READY_ACTION_ID=$ready_id
+  return 0
+}
+
+block_ready_action() {
+  local rule='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+  {
+    printf '●%s\n' "$rule"
+    printf '●  READY ACTION HAS NO WORKER\n'
+    printf '●  %s is unblocked and queued, but this turn spawned or steered no matching worker.\n' "$READY_ACTION_ID"
+    printf '●  Dispatch it now, or record its concrete blocker so tasks-axi no longer reports it ready. A plan, another go question, or “when you want” is not done.\n'
+    printf '●%s\n' "$rule"
+  } >&2
+  exit 2
+}
+
+if ready_action_without_owner; then
+  # Keep the same one-continuation bound as the ordinary non-Claude guard. This
+  # predicate may force one repair turn, but never wedges a session at Stop.
+  [ "$STOP_HOOK_ACTIVE" = true ] && exit 0
+  block_ready_action
+fi
+
 if [ "$FM_SUP_NEEDED" = false ]; then
   [ -e "$FAILURE_NOTICE" ] || budget_reset
   exit 0

@@ -35,8 +35,21 @@
 # explicit reason instead of an empty artifact.
 # Scout tasks (kind=scout in meta) carve out of the landed-work check: their worktree is
 # declared scratch and the report at data/<task-id>/report.md is the work
-# product. Teardown proceeds only once the report exists and the shared
+# product. A # Named sources manifest in the task brief is an exact-literal
+# report gate: every source must appear in report.md. The gate proves naming,
+# not full reading; fullness remains the scout brief contract. A failed report
+# gate appends one working: event so an earlier done: is mechanically taken back.
+# Teardown proceeds only once the report exists, its named sources pass, and the shared
 # decision-hold completion gate verifies its captain-held and product-idea inventory.
+# A task spawned with map_next=<id> has one additional unconditional completion
+# gate: that id must already exist in data/backlog.md under Queued, In flight,
+# or Done. The refusal runs before remote or local cleanup, is not bypassed by
+# --force, and names the absent successor so a landed blocker cannot invent a
+# new captain go gate.
+# Every teardown also runs bin/fm-sot-pointer-check.sh in strict mode before
+# cleanup. A completed program with a missing standing pointer or an older
+# captain hold not bound to its later decision authority is not done; teardown
+# preserves the task and appends one working: event to take an earlier done back.
 # Before destructive cleanup, teardown validates task check artifacts and any
 # matching quarantine entries as ordinary single-link files on the state
 # device. It refuses and preserves task state when that proof fails; otherwise
@@ -261,6 +274,61 @@ validate_measure_at() {  # <data-dir> <task-id>
     return 1
   fi
 }
+
+validate_map_next_backlog() {  # <meta> <backlog>
+  local meta=$1 backlog=$2 count next state
+  count=$(grep -c '^map_next=' "$meta" 2>/dev/null || true)
+  [ "$count" -le 1 ] || {
+    echo "REFUSED: task $ID has ambiguous map_next metadata; preserving task state." >&2
+    return 1
+  }
+  [ "$count" -eq 1 ] || return 0
+  next=$(fm_meta_get "$meta" map_next)
+  fm_task_id_path_safe "$next" || {
+    echo "REFUSED: task $ID has invalid map_next id '${next:-<empty>}'; preserving task state." >&2
+    return 1
+  }
+  state=$(fm_backlog_key_state "$backlog" "$next" 2>/dev/null || true)
+  case "$state" in
+    queued|in_flight|done) return 0 ;;
+  esac
+  echo "REFUSED: task $ID cannot complete because locked next slice $next is not queued, in flight, or done in $backlog." >&2
+  echo "Queue $next now; do not ask the captain for another go." >&2
+  return 1
+}
+
+take_task_done_back() {  # <reason>
+  local reason=$1 status="$STATE/$ID.status" line
+  line="working: completion gate reopened - $reason"
+  [ "$(tail -n 1 "$status" 2>/dev/null || true)" = "$line" ] || printf '%s\n' "$line" >> "$status"
+}
+
+validate_scout_named_sources() {  # <brief> <report>
+  local brief=$1 report=$2 source missing=0
+  [ -f "$brief" ] || return 0
+  while IFS= read -r source; do
+    [ -n "$source" ] || continue
+    if ! grep -F -- "$source" "$report" >/dev/null 2>&1; then
+      echo "REFUSED: scout task $ID report does not name source: $source" >&2
+      take_task_done_back "scout report missing named source $source"
+      missing=1
+    fi
+  done < <(awk '
+  /^# Named sources[[:space:]]*$/ { in_sources = 1; next }
+  in_sources && /^# / { exit }
+  in_sources && /^- / { source = $0; sub(/^- /, "", source); print source }
+' "$brief")
+  [ "$missing" -eq 0 ]
+}
+
+validate_map_next_backlog "$META" "$DATA/backlog.md" || exit 1
+if ! SOT_COMPLETION_OUT=$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" \
+    FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-sot-pointer-check.sh" --strict 2>&1); then
+  echo "REFUSED: task $ID cannot complete while durable source-of-truth checks report a superseded or missing product lock." >&2
+  [ -z "$SOT_COMPLETION_OUT" ] || printf '%s\n' "$SOT_COMPLETION_OUT" >&2
+  take_task_done_back "durable product lock is missing or superseded"
+  exit 1
+fi
 
 REMOTE_HANDOFF_DIR_PRESENT=0
 REMOTE_HANDOFF_DIR_REAL=
@@ -2251,10 +2319,12 @@ fi
 if [ "$KIND" = scout ] && [ "$FORCE" != "--force" ]; then
   REPORT="$DATA/$ID/report.md"
   if [ ! -f "$REPORT" ]; then
+    take_task_done_back "scout report missing"
     echo "REFUSED: scout task $ID has no report at $REPORT." >&2
     echo "The report is the work product. Have the crewmate write it, or use --force after explicit discard approval." >&2
     exit 1
   fi
+  validate_scout_named_sources "$DATA/$ID/brief.md" "$REPORT" || exit 1
   if ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" \
       FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-decision-hold.sh" verify "$ID" >/dev/null; then
     echo "REFUSED: scout task $ID has not passed the unresolved-decision completion gate." >&2

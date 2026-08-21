@@ -194,6 +194,14 @@ if [ "${1:-}" = mv ] && [ "${2:-}" = --help ]; then
   printf '%s\n' 'usage: tasks-axi mv <id> [<id>...] --to <path-or-dir>'
   exit 0
 fi
+if [ "${1:-}" = hold ] && [ "${2:-}" = --help ]; then
+  printf '%s\n' 'usage: tasks-axi hold <id> --reason <reason> --kind captain'
+  exit 0
+fi
+if [ "${1:-}" = show ] && [ -n "${FM_FAKE_TASK_SHOW:-}" ]; then
+  printf '%s\n' "$FM_FAKE_TASK_SHOW"
+  exit 0
+fi
 exit 0
 SH
   chmod +x "$case_dir/fakebin/tasks-axi"
@@ -1392,6 +1400,120 @@ test_complete_measure_allows_cleanup() {
   assert_absent "$case_dir/state/task-x1.meta" \
     "complete-measure: teardown did not complete"
   pass "complete paired measure allows cleanup"
+}
+
+test_scout_named_sources_must_all_appear_in_report() {
+  local case_dir rc brief report
+  case_dir=$(make_case scout-source-report-gate)
+  write_meta "$case_dir" no-mistakes scout
+  printf '%s\n' 'decisions_reviewed=1' >> "$case_dir/state/task-x1.meta"
+  mkdir -p "$case_dir/data/task-x1"
+  brief="$case_dir/data/task-x1/brief.md"
+  report="$case_dir/data/task-x1/report.md"
+  cat > "$brief" <<'EOF'
+# Task
+Read and compare the named sources.
+
+# Named sources
+- https://example.test/thread/42
+- data/prior-scout/report.md
+
+# Setup
+fixture
+EOF
+  printf '%s\n' '# Findings' 'Opened https://example.test/thread/42.' > "$report"
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/refused.out" 2> "$case_dir/refused.err" || rc=$?
+  expect_code 1 "$rc" "scout source gate should refuse a report that omits one named source"
+  assert_grep 'data/prior-scout/report.md' "$case_dir/refused.err" \
+    "scout source refusal did not name the missing source"
+  assert_grep 'working: completion gate reopened' "$case_dir/state/task-x1.status" \
+    "scout source refusal did not mechanically take done back"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "scout source refusal removed task metadata"
+
+  printf '%s\n' 'Opened data/prior-scout/report.md.' >> "$report"
+  add_compatible_tasks_axi "$case_dir"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/allowed.out" 2> "$case_dir/allowed.err" || rc=$?
+  expect_code 0 "$rc" "scout report naming every source should pass teardown: $(cat "$case_dir/allowed.err")"
+  assert_absent "$case_dir/state/task-x1.meta" \
+    "complete named-source scout did not tear down"
+  pass "scout teardown takes done back until report names every source"
+}
+
+test_superseded_product_lock_refuses_completion() {
+  local case_dir rc
+  case_dir=$(make_case superseded-product-lock)
+  write_meta "$case_dir" no-mistakes ship
+  add_compatible_tasks_axi "$case_dir"
+  mkdir -p "$case_dir/data/decisions"
+  printf '%s\n' 'Later ranked lock AMENDED / supersedes the old wall.' \
+    > "$case_dir/data/decisions/ranked-lock.md"
+  printf '%s\t%s\t%s\t%s\n' \
+    gamma-program 'Later ranked lock' slice-two old-wall-hold \
+    > "$case_dir/data/sot-programs.tsv"
+  printf '%s\n' \
+    '- [x] slice-two - Later ranked lock shipped' \
+    '- [ ] old-wall-hold - Old wall (kind: captain; held: captain)' \
+    > "$case_dir/data/backlog.md"
+  export FM_FAKE_TASK_SHOW=$'id: old-wall-hold\n  state: queued\n  held: yes\n  kind: captain\n  hold_kind: captain\n  body: old wall'
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/refused.out" 2> "$case_dir/refused.err" || rc=$?
+  unset FM_FAKE_TASK_SHOW
+  expect_code 1 "$rc" "superseded product lock should refuse teardown"
+  assert_grep 'old-wall-hold is open, not bound to the later authority' "$case_dir/refused.err" \
+    "superseded-lock refusal did not name the stale hold and later authority"
+  assert_grep 'working: completion gate reopened - durable product lock is missing or superseded' \
+    "$case_dir/state/task-x1.status" \
+    "superseded-lock refusal did not mechanically take done back"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "superseded-lock refusal removed task metadata"
+  pass "teardown takes done back when a later decision supersedes the cited product lock"
+}
+
+test_map_next_requires_next_slice_in_backlog() {
+  local case_dir rc section checkbox
+  case_dir=$(make_case map-next-missing)
+  write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' 'map_next=slice-three' >> "$case_dir/state/task-x1.meta"
+  printf '%s\n' '## In flight' '' '## Queued' '' '## Done' > "$case_dir/data/backlog.md"
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/refused.out" 2> "$case_dir/refused.err" || rc=$?
+  expect_code 1 "$rc" "map-next teardown should refuse when next slice is absent"
+  assert_grep 'slice-three' "$case_dir/refused.err" \
+    "map-next refusal did not name the missing next slice"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "map-next refusal mutated task metadata"
+
+  for section in 'In flight' 'Queued' 'Done'; do
+    case_dir=$(make_case "map-next-${section// /-}")
+    write_meta "$case_dir" no-mistakes ship
+    printf '%s\n' 'map_next=slice-three' >> "$case_dir/state/task-x1.meta"
+    checkbox=' '
+    [ "$section" != Done ] || checkbox=x
+    printf '## In flight\n\n## Queued\n\n## Done\n' > "$case_dir/data/backlog.md"
+    printf -- '- [%s] slice-three - locked next slice (kind: ship)\n' "$checkbox" \
+      >> "$case_dir/data/backlog.md"
+    if [ "$section" != Done ]; then
+      awk -v target="$section" -v row="- [$checkbox] slice-three - locked next slice (kind: ship)" '
+        BEGIN { inserted = 0 }
+        $0 == "- [" checkbox "] slice-three - locked next slice (kind: ship)" { next }
+        $0 == "## " target { print; print ""; print row; inserted = 1; next }
+        { print }
+        END { if (!inserted) exit 1 }
+      ' checkbox="$checkbox" "$case_dir/data/backlog.md" > "$case_dir/data/backlog.tmp"
+      mv "$case_dir/data/backlog.tmp" "$case_dir/data/backlog.md"
+    fi
+
+    rc=0
+    run_teardown "$case_dir" --force > "$case_dir/allowed.out" 2> "$case_dir/allowed.err" || rc=$?
+    expect_code 0 "$rc" "map-next teardown should allow state $section"
+  done
+  pass "map-next teardown accepts only queued, in-flight, or done next slices"
 }
 
 test_teardown_missing_busy_sidecar_completes() {
@@ -2620,6 +2742,9 @@ test_missing_measure_refuses_even_for_force
 test_empty_and_unpaired_measure_refuse
 test_none_measure_allows_scout_force_cleanup
 test_complete_measure_allows_cleanup
+test_scout_named_sources_must_all_appear_in_report
+test_superseded_product_lock_refuses_completion
+test_map_next_requires_next_slice_in_backlog
 test_teardown_prompts_tasks_axi_done_when_compatible
 test_teardown_manual_backend_prompts_hand_edit_even_when_tasks_axi_present
 test_local_only_truly_unpushed_refuses
