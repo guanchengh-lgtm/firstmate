@@ -925,6 +925,7 @@ fm_remote_job_start_linux_worker() { # <remote-root> <account-home>
   # FM_REMOTE_JOB_STARTED_PID is the supervisor (or already-running owner) the
   # caller just ensured. Tests and ensure-path diagnostics read it instead of
   # rescanning the process table for a brittle interpreter+path match.
+  # shellcheck disable=SC2034 # Sourceable API consumed by callers after this function returns.
   FM_REMOTE_JOB_STARTED_PID=
   worker="$root/bin/fm-remote-job-worker.sh"
   [ -f "$worker" ] && [ ! -L "$worker" ] && [ -x "$worker" ] || {
@@ -934,6 +935,7 @@ fm_remote_job_start_linux_worker() { # <remote-root> <account-home>
   fm_remote_job_prepare_state "$account_home" || return 1
   if fm_remote_job_worker_owned_alive "$root" "$account_home"; then
     if fm_remote_job_worker_identity_matches "$root" "$account_home"; then
+      # shellcheck disable=SC2034 # Sourceable API consumed by callers after this function returns.
       FM_REMOTE_JOB_STARTED_PID=$FM_REMOTE_JOB_OWNER_PID
       return 0
     fi
@@ -961,6 +963,7 @@ fm_remote_job_start_linux_worker() { # <remote-root> <account-home>
   pid=$!
   set +m
   case "$pid" in ''|*[!0-9]*) FM_REMOTE_JOB_ERROR="could not start the remote job worker"; return 1 ;; esac
+  # shellcheck disable=SC2034 # Sourceable API consumed by callers after this function returns.
   FM_REMOTE_JOB_STARTED_PID=$pid
   FM_REMOTE_JOB_REPAIRED=1
 }

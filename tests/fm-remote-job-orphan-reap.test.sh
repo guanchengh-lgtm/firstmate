@@ -88,11 +88,17 @@ build_remote_root() {
 # to a temp file instead of captured via $() so case-pattern ')' cannot close a
 # command substitution early.
 start_worker() {
-  local root=$1 account_home=$2 state_root=$3 pid err out log i
+  # started_pid_path must not share a name with locals in fm-remote-job-lib.sh
+  # (path/out/pid_file): sourcing that lib inside the start subshell makes
+  # ShellCheck SC2031 treat same-named outer locals as modified in-subshell.
+  local root=$1 account_home=$2 state_root=$3 pid err started_pid_path log i
   err=$(mktemp "$TMP_ROOT/start-worker.err.XXXXXX") || return 1
-  out=$(mktemp "$TMP_ROOT/start-worker.pid.XXXXXX") || { rm -f "$err"; return 1; }
+  started_pid_path=$(mktemp "$TMP_ROOT/start-worker.pid.XXXXXX") || {
+    rm -f "$err"
+    return 1
+  }
   # Subshell: start, record pid, exit so the worker is reparented to init.
-  (
+  if ! (
     export FM_REMOTE_JOB_STATE_ROOT="$state_root"
     export FM_REMOTE_JOB_PLATFORM_OVERRIDE=Linux
     export FM_REMOTE_JOB_ORPHAN_GRACE_SECONDS=1
@@ -114,7 +120,7 @@ start_worker() {
     i=0
     while [ "$i" -lt 50 ]; do
       if kill -0 "$pid" 2>/dev/null; then
-        printf '%s\n' "$pid" >"$out"
+        printf '%s\n' "$pid" >"$started_pid_path"
         exit 0
       fi
       i=$((i + 1))
@@ -127,14 +133,13 @@ start_worker() {
       cat "$log" >>"$err" 2>/dev/null || true
     fi
     exit 1
-  )
-  if [ "$?" -ne 0 ]; then
+  ); then
     [ -s "$err" ] && cat "$err" >&2
-    rm -f "$err" "$out"
+    rm -f "$err" "$started_pid_path"
     return 1
   fi
-  pid=$(cat "$out" 2>/dev/null || true)
-  rm -f "$err" "$out"
+  pid=$(cat "$started_pid_path" 2>/dev/null || true)
+  rm -f "$err" "$started_pid_path"
   if [ -z "$pid" ] || ! [ "$pid" -eq "$pid" ] 2>/dev/null; then
     return 1
   fi
