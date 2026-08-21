@@ -378,6 +378,9 @@ test_hook_refuses_tradingview_login_block_without_evidence() {
   done <<'EOF'
 login	login required
 dead	session dead
+dead-rev	dead session
+death-rev	TradingView dead session
+expired-rev	expired session
 lost	session lost
 missing	session missing
 sign-in	sign in required
@@ -385,6 +388,22 @@ signed-out	signed out
 not-signed-in	not signed in
 EOF
   pass "fm-turnend-guard: missing TradingView session evidence is not supervisor-actionable"
+}
+
+test_hook_claude_session_block_ignores_stop_hook_active() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-claude-session-stop-active")
+  install_session_diagnosis_checker "$dir"
+  write_session_block_fixture "$dir" 'login required'
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
+  expect_code 2 "$status" "--claude mode must still refuse unchecked TV login block when stop_hook_active=true"
+  assert_contains "$out" 'missing required evidence:' \
+    "claude session-block refusal did not require diagnosis evidence under stop_hook_active"
+  assert_contains "$out" 'Steer the worker back now' \
+    "claude session-block refusal lost worker-steer directive under stop_hook_active"
+  assert_contains "$out" 'Never ask the captain to log in or unlock Keychain.' \
+    "claude session-block refusal lost captain credential safety rule under stop_hook_active"
+  pass "fm-turnend-guard --claude: stop_hook_active cannot skip unchecked TV login block"
 }
 
 test_hook_refuses_latest_same_key_tradingview_json_block() {
@@ -1908,6 +1927,7 @@ test_pi_extension_injects_once_per_logical_agent_run
 test_pi_extension_retries_after_followup_delivery_failure
 test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy
 test_hook_claude_ready_action_ignores_stop_hook_active
+test_hook_claude_session_block_ignores_stop_hook_active
 test_hook_claude_mode_reblocks_x_mode_without_tasks
 test_hook_claude_mode_allows_when_autoarm_owner_alive
 test_hook_claude_mode_repeated_failed_to_arming_interleavings_reach_fail_open

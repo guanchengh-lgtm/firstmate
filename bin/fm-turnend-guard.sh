@@ -217,6 +217,7 @@ session_block_summary_requires_diagnosis() {  # <summary>
     *login*|*log\ in*|*log-in*|*logout*|*logged\ out*|\
     *sign\ in*|*sign-in*|*signin*|*signed\ out*|*signed-out*|*signout*|*not\ signed\ in*|\
     *session*dead*|*session*death*|*session*died*|*session*expired*|\
+    *dead*session*|*death*session*|*died*session*|*expired*session*|\
     *session*lost*|*lost*session*|*session*missing*|*missing*session*)
       return 0
       ;;
@@ -288,9 +289,9 @@ block_invalid_tradingview_session() {
 }
 
 if invalid_tradingview_session_block; then
-  # Like the ready-action refusal, force at most one repair continuation per
-  # logical turn, including Claude's separate auto-arm cooperation path.
-  [ "$STOP_HOOK_ACTIVE" = true ] && exit 0
+  # Like the ready-action refusal, ignore stop_hook_active here so an unchecked
+  # TradingView login/session block cannot become supervisor-actionable after
+  # one Claude continuation. Non-Claude already bounds one shot at payload parse.
   block_invalid_tradingview_session
 fi
 
