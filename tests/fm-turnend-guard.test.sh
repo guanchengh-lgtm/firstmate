@@ -302,6 +302,18 @@ test_hook_ready_action_accepts_matching_worker_owner() {
   pass "fm-turnend-guard: matching worker metadata proves action instead of prose"
 }
 
+test_hook_claude_ready_action_ignores_stop_hook_active() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-claude-ready-stop-active")
+  write_fake_ready_tasks_axi "$dir" map-s4
+  out=$(PATH="$dir/fakebin:$PATH" FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
+  unset FM_FAKE_READY_IDS
+  expect_code 2 "$status" "--claude mode must still refuse unowned ready action when stop_hook_active=true"
+  assert_contains "$out" 'map-s4 is unblocked and queued' \
+    "claude ready-action refusal did not name the ownerless ticket under stop_hook_active"
+  pass "fm-turnend-guard --claude: stop_hook_active cannot skip unowned ready-action"
+}
+
 test_hook_blocks_when_fresh_beacon_has_no_live_lock() {
   local dir out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-fresh-no-lock")
@@ -1728,6 +1740,7 @@ test_opencode_plugin_anchors_guard_to_worktree
 test_pi_extension_injects_once_per_logical_agent_run
 test_pi_extension_retries_after_followup_delivery_failure
 test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy
+test_hook_claude_ready_action_ignores_stop_hook_active
 test_hook_claude_mode_reblocks_x_mode_without_tasks
 test_hook_claude_mode_allows_when_autoarm_owner_alive
 test_hook_claude_mode_repeated_failed_to_arming_interleavings_reach_fail_open

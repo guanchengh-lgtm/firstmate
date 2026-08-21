@@ -280,12 +280,14 @@ validate_map_next_backlog() {  # <meta> <backlog>
   count=$(grep -c '^map_next=' "$meta" 2>/dev/null || true)
   [ "$count" -le 1 ] || {
     echo "REFUSED: task $ID has ambiguous map_next metadata; preserving task state." >&2
+    take_task_done_back "ambiguous map_next metadata"
     return 1
   }
   [ "$count" -eq 1 ] || return 0
   next=$(fm_meta_get "$meta" map_next)
   fm_task_id_path_safe "$next" || {
     echo "REFUSED: task $ID has invalid map_next id '${next:-<empty>}'; preserving task state." >&2
+    take_task_done_back "invalid map_next id ${next:-<empty>}"
     return 1
   }
   state=$(fm_backlog_key_state "$backlog" "$next" 2>/dev/null || true)

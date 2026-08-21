@@ -190,9 +190,6 @@ block_ready_action() {
 }
 
 if ready_action_without_owner; then
-  # Keep the same one-continuation bound as the ordinary non-Claude guard. This
-  # predicate may force one repair turn, but never wedges a session at Stop.
-  [ "$STOP_HOOK_ACTIVE" = true ] && exit 0
   block_ready_action
 fi
 

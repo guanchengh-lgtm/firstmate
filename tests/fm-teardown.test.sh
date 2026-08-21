@@ -1519,6 +1519,42 @@ test_map_next_requires_next_slice_in_backlog() {
   pass "map-next teardown accepts only queued, in-flight, or done next slices"
 }
 
+test_map_next_corrupt_metadata_takes_done_back() {
+  local case_dir rc
+
+  case_dir=$(make_case map-next-ambiguous)
+  write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' 'map_next=slice-a' 'map_next=slice-b' >> "$case_dir/state/task-x1.meta"
+  printf '%s\n' '## In flight' '' '## Queued' '' '## Done' > "$case_dir/data/backlog.md"
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/refused.out" 2> "$case_dir/refused.err" || rc=$?
+  expect_code 1 "$rc" "ambiguous map_next teardown should refuse"
+  assert_grep 'ambiguous map_next metadata' "$case_dir/refused.err" \
+    "ambiguous map_next refusal did not name the defect"
+  assert_grep 'working: completion gate reopened - ambiguous map_next metadata' \
+    "$case_dir/state/task-x1.status" \
+    "ambiguous map_next refusal did not mechanically take done back"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "ambiguous map_next refusal removed task metadata"
+
+  case_dir=$(make_case map-next-invalid)
+  write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' 'map_next=bad/id' >> "$case_dir/state/task-x1.meta"
+  printf '%s\n' '## In flight' '' '## Queued' '' '## Done' > "$case_dir/data/backlog.md"
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/refused.out" 2> "$case_dir/refused.err" || rc=$?
+  expect_code 1 "$rc" "invalid map_next teardown should refuse"
+  assert_grep "invalid map_next id 'bad/id'" "$case_dir/refused.err" \
+    "invalid map_next refusal did not name the bad id"
+  assert_grep 'working: completion gate reopened - invalid map_next id bad/id' \
+    "$case_dir/state/task-x1.status" \
+    "invalid map_next refusal did not mechanically take done back"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "invalid map_next refusal removed task metadata"
+
+  pass "map-next corrupt metadata refusals take done back"
+}
+
 test_teardown_missing_busy_sidecar_completes() {
   local case_dir gen rc
   case_dir=$(make_case missing-busy-sidecar)
@@ -2748,6 +2784,7 @@ test_complete_measure_allows_cleanup
 test_scout_named_sources_must_all_appear_in_report
 test_superseded_product_lock_refuses_completion
 test_map_next_requires_next_slice_in_backlog
+test_map_next_corrupt_metadata_takes_done_back
 test_teardown_prompts_tasks_axi_done_when_compatible
 test_teardown_manual_backend_prompts_hand_edit_even_when_tasks_axi_present
 test_local_only_truly_unpushed_refuses
