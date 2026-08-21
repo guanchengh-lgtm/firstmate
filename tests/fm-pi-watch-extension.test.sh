@@ -1344,38 +1344,51 @@ printf 'arm\n' >> "${FM_ARM_LOG:?}"
 printf 'watcher: healthy pid=1 (beacon 0s)\n'
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh"
-  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" node 2>&1 <<'EOF'
+  # Await the shared ensureArmed path instead of fire-and-forget session.idle
+  # plus a fixed 120ms gap. Under loaded CI the first beginArm (git primary
+  # probes) can still be in flight when the second idle arrives; single-flight
+  # then returns the stale read-only result and the arm never runs. HOME keeps
+  # bash -lc off the runner profile; ready budget clears login-shell startup.
+  out=$(PLUGIN="$plugin" HOME="$home" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_OPENCODE_ARM_READY_TIMEOUT_MS=2000 node 2>&1 <<'EOF'
 import { existsSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const mod = await import(pathToFileURL(process.env.PLUGIN).href);
 const client = { session: { promptAsync: async () => {} } };
-const hooks = await mod.FmPrimaryWatchArm({
+await mod.FmPrimaryWatchArm({
   client,
   directory: process.env.WORKTREE,
   worktree: process.env.WORKTREE,
 });
-const event = { event: { type: "session.idle", properties: { sessionID: "session-test" } } };
+const ensureArmed = globalThis.__firstmateOpenCodeWatchArm.ensureArmed;
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, "999999\n");
-await hooks.event(event);
-await new Promise((resolve) => setTimeout(resolve, 120));
+const denied = await ensureArmed("session-test", client);
+if (denied !== "read-only") {
+  console.error(`expected read-only without lock ownership, got ${denied}`);
+  process.exit(1);
+}
 if (existsSync(process.env.FM_ARM_LOG)) {
   console.error("watch arm ran without owning the session lock");
   process.exit(1);
 }
 writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
-await hooks.event(event);
-for (let i = 0; i < 250 && !existsSync(process.env.FM_ARM_LOG); i += 1) {
-  await new Promise((resolve) => setTimeout(resolve, 20));
-}
+const allowed = await ensureArmed("session-test", client);
 if (!existsSync(process.env.FM_ARM_LOG)) {
-  console.error("watch arm did not run after the session lock matched");
+  console.error(`watch arm did not run after the session lock matched (status=${allowed})`);
   process.exit(1);
 }
+// Fixture prints watcher: healthy, so readiness settles external once owned.
+if (allowed !== "external") {
+  console.error(`expected external after owned arm, got ${allowed}`);
+  process.exit(1);
+}
+process.exit(0);
 EOF
 )
   status=$?
-  expect_code 0 "$status" "OpenCode watch plugin must arm only when this session owns the fleet lock"
+  if [ "$status" -ne 0 ]; then
+    fail "OpenCode watch plugin must arm only when this session owns the fleet lock: expected exit 0, got $status${out:+; $out}"
+  fi
   [ -z "$out" ] || fail "OpenCode session-lock test printed output: $out"
   pass "OpenCode watcher plugin requires session lock ownership"
 }
