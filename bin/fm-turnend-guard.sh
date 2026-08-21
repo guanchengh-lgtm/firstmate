@@ -15,6 +15,20 @@
 # steer has matching metadata; a concrete backlog blocker removes the ticket
 # from `tasks-axi ready`. The check fails open when the tasks-axi backend cannot
 # be read, honors the existing manual-backlog backend, and has no skip flag.
+# Before accepting an open `blocked:` event from a task whose metadata project
+# basename is `tradingview-tools`, this guard also validates any summary that
+# claims a yen126/TradingView login or dead session, says the user is Guest, or
+# reports missing TradingView/browse state (including `tradingview.json`). The worker must first write
+# data/<id>/evidence/session-diagnosis.json, and the home's
+# data/recurring-defect/yen126-session-false-negative/check.py must accept it
+# when invoked as `python3 check.py --input evidence`. Missing files, missing
+# Python, or any nonzero checker result mean the event is not supervisor-
+# actionable: force one bounded continuation that tells Firstmate to steer the
+# worker back immediately and never ask the captain to log in or unlock
+# Keychain. A checker exit 0 accepts the blocker and leaves ordinary watcher
+# supervision unchanged. This validation runs before a healthy watcher can
+# allow turn end and uses the same one-continuation bound as the ready-action
+# refusal, including in --claude mode.
 # Claude and codex can block directly by preserving exit status 2 and stderr.
 # OpenCode and pi adapters use the same predicate and force one bounded
 # follow-up because their turn-end events are passive. Grok delegates native
@@ -133,6 +147,8 @@ fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
 # --- the actual predicate ----------------------------------------------------
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-classify-lib.sh
+. "$SCRIPT_DIR/fm-classify-lib.sh"
 
 BUDGET_FILE="$STATE/.turnend-claude-blocks"
 BUDGET_LOCK="$STATE/.turnend-claude-blocks.lock"
@@ -188,6 +204,95 @@ block_ready_action() {
   } >&2
   exit 2
 }
+
+session_block_summary_requires_diagnosis() {  # <summary>
+  local summary
+  summary=$(printf '%s' "$1" | LC_ALL=C tr '[:upper:]' '[:lower:]')
+  case "$summary" in
+    *guest*|*tradingview.json*|*missing*tradingview*|*tradingview*missing*|*missing*browse*state*|*browse*state*missing*)
+      return 0
+      ;;
+  esac
+  case "$summary" in
+    *login*|*log\ in*|*log-in*|*logout*|*logged\ out*|\
+    *sign\ in*|*sign-in*|*signin*|*signed\ out*|*signed-out*|*signout*|*not\ signed\ in*|\
+    *session*dead*|*session*death*|*session*died*|*session*expired*|\
+    *session*lost*|*lost*session*|*session*missing*|*missing*session*)
+      return 0
+      ;;
+  esac
+  case "$summary" in
+    *yen126*|*tradingview*|*browser*session*|*session*browser*)
+      case "$summary" in
+        *auth*|*credential*) return 0 ;;
+      esac
+      ;;
+  esac
+  return 1
+}
+
+invalid_tradingview_session_block() {
+  local meta id project status key verb summary evidence checker output
+  for meta in "$STATE"/*.meta; do
+    [ -f "$meta" ] && [ ! -L "$meta" ] || continue
+    project=$(sed -n 's/^project=//p' "$meta" 2>/dev/null | tail -1)
+    [ -n "$project" ] || continue
+    project=${project%/}
+    [ "${project##*/}" = tradingview-tools ] || continue
+    id=$(basename "$meta")
+    id=${id%.meta}
+    status="$STATE/$id.status"
+    while IFS="$(printf '\t')" read -r key verb summary; do
+      [ "$verb" = blocked ] || continue
+      session_block_summary_requires_diagnosis "$summary" || continue
+      evidence="$DATA/$id/evidence/session-diagnosis.json"
+      checker="$DATA/recurring-defect/yen126-session-false-negative/check.py"
+      SESSION_BLOCK_ID=$id
+      SESSION_BLOCK_KEY=$key
+      SESSION_BLOCK_SUMMARY=$summary
+      if [ ! -f "$evidence" ] || [ -L "$evidence" ]; then
+        SESSION_BLOCK_FINDING="missing required evidence: $evidence"
+        return 0
+      fi
+      if [ ! -f "$checker" ] || [ -L "$checker" ]; then
+        SESSION_BLOCK_FINDING="missing required checker: $checker"
+        return 0
+      fi
+      if ! command -v python3 >/dev/null 2>&1; then
+        SESSION_BLOCK_FINDING='python3 unavailable; required checker did not run'
+        return 0
+      fi
+      if ! output=$(python3 "$checker" --input "$evidence" 2>&1); then
+        SESSION_BLOCK_FINDING=$output
+        [ -n "$SESSION_BLOCK_FINDING" ] || SESSION_BLOCK_FINDING='session diagnosis checker returned nonzero with no output'
+        return 0
+      fi
+    done <<EOF
+$(status_open_decisions "$status")
+EOF
+  done
+  return 1
+}
+
+block_invalid_tradingview_session() {
+  local rule='━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━'
+  {
+    printf '●%s\n' "$rule"
+    printf '●  TRADINGVIEW LOGIN BLOCK IS NOT SUPERVISOR-ACTIONABLE\n'
+    printf '●  %s [key=%s] reported: %s\n' "$SESSION_BLOCK_ID" "$SESSION_BLOCK_KEY" "$SESSION_BLOCK_SUMMARY"
+    printf '●  Session diagnosis refusal: %s\n' "$SESSION_BLOCK_FINDING"
+    printf '●  Steer the worker back now to produce valid evidence and pass the checker. Never ask the captain to log in or unlock Keychain.\n'
+    printf '●%s\n' "$rule"
+  } >&2
+  exit 2
+}
+
+if invalid_tradingview_session_block; then
+  # Like the ready-action refusal, force at most one repair continuation per
+  # logical turn, including Claude's separate auto-arm cooperation path.
+  [ "$STOP_HOOK_ACTIVE" = true ] && exit 0
+  block_invalid_tradingview_session
+fi
 
 if ready_action_without_owner; then
   block_ready_action
