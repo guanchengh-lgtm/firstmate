@@ -552,11 +552,15 @@ test_valid_recording_and_merge_derivation() {
   count=$(grep -c '^pr_head=' "$dir/home/state/task-a.meta")
   [ "$count" -eq 1 ] || fail "duplicate pr_head metadata was appended"
 
+  : > "$dir/gh.log"
   : > "$dir/gh-axi.log"
   run_merge_entry "$dir" task-a https://github.com/my-org/repo_name.with-dots/pull/37 -- --merge \
     >/dev/null 2>/dev/null || fail "valid merge wrapper failed"
-  grep -qxF 'pr merge 37 --repo my-org/repo_name.with-dots --merge --match-head-commit 0123456789abcdef0123456789abcdef01234567' "$dir/gh-axi.log" \
-    || fail "merge wrapper did not preserve repository derivation, method, and --match-head-commit"
+  grep -qxF 'pr merge 37 --repo my-org/repo_name.with-dots --merge --match-head-commit 0123456789abcdef0123456789abcdef01234567' "$dir/gh.log" \
+    || fail "merge wrapper did not preserve repository derivation, method, and --match-head-commit via gh"
+  if grep -q 'pr merge' "$dir/gh-axi.log" 2>/dev/null; then
+    fail "merge wrapper used gh-axi (pin dropped): $(cat "$dir/gh-axi.log")"
+  fi
   set +e
   FM_TEST_GH_STATE=MERGED run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/merged-watch.out" 2> "$dir/merged-watch.err"
   rc=$?
@@ -2884,12 +2888,17 @@ EOF
   # The merge path still addresses GitHub only, so it refuses rather than
   # sending a merge request to the wrong forge.
   write_task_meta "$dir" task-c
+  : > "$dir/gh.log"
+  : > "$dir/gh-axi.log"
   set +e
   run_merge_entry "$dir" task-c "$url" >/dev/null 2>&1
   rc=$?
   set -e
   [ "$rc" -eq 2 ] || fail "merge wrapper did not refuse a GitLab merge request URL"
-  [ ! -s "$dir/gh-axi.log" ] || fail "merge wrapper reached the GitHub CLI for a GitLab URL"
+  assert_no_grep 'pr merge' "$dir/gh.log" \
+    "merge wrapper reached gh pr merge for a GitLab URL"
+  assert_no_grep 'pr merge' "$dir/gh-axi.log" \
+    "merge wrapper reached gh-axi pr merge for a GitLab URL"
 
   pass "GitLab merge requests are followed on any instance and never wake falsely"
 }

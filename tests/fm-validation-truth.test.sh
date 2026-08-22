@@ -341,6 +341,7 @@ write_pr_url_proof_bin() {  # <dir> [forge-head]
     'state: done · source: status-log · leftover builder'
   cat > "$dir/fakebin/gh" <<SH
 #!/usr/bin/env bash
+printf '%s\n' "\$*" >> "\${FM_TEST_GH_LOG:-/dev/null}"
 case "\${1:-} \${2:-}" in
   "pr view")
     case " \$* " in
@@ -353,6 +354,9 @@ case "\${1:-} \${2:-}" in
         exit 0
         ;;
     esac
+    ;;
+  "pr merge")
+    exit 0
     ;;
 esac
 exit 0
@@ -585,6 +589,7 @@ test_pr_url_proof_builder_check_merge_cleanup_pass() {
   write_pr_url_proof_bin "$dir"
   FM_FAKE_RUNS_LIST=$(proof_runs_row completed)
   export FM_FAKE_RUNS_LIST
+  : > "$dir/gh.log"
   : > "$dir/gh-axi.log"
 
   set +e
@@ -601,14 +606,17 @@ test_pr_url_proof_builder_check_merge_cleanup_pass() {
 
   set +e
   out=$(FM_HOME="$dir/home" FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" \
-    FM_TEST_GH_AXI_LOG="$dir/gh-axi.log" \
+    FM_TEST_GH_LOG="$dir/gh.log" FM_TEST_GH_AXI_LOG="$dir/gh-axi.log" \
     PATH="$dir/fakebin:$BASE_PATH" \
     "$PR_MERGE" task-a "$PROOF_URL" 2>&1)
   rc=$?
   set -e
   [ "$rc" -eq 0 ] || fail "builder pr-merge refused: $out"
-  grep -qxF "pr merge 99 --repo o/r --squash --match-head-commit $PROOF_HEAD" "$dir/gh-axi.log" \
-    || fail "builder pr-merge did not pin --match-head-commit $PROOF_HEAD: $(cat "$dir/gh-axi.log")"
+  grep -qxF "pr merge 99 --repo o/r --squash --match-head-commit $PROOF_HEAD" "$dir/gh.log" \
+    || fail "builder pr-merge did not pin via gh --match-head-commit $PROOF_HEAD: $(cat "$dir/gh.log")"
+  if grep -q 'pr merge' "$dir/gh-axi.log" 2>/dev/null; then
+    fail "builder pr-merge used gh-axi (pin dropped): $(cat "$dir/gh-axi.log")"
+  fi
 
   rm -rf "$dir/wt"
   set +e
@@ -624,6 +632,55 @@ test_pr_url_proof_builder_check_merge_cleanup_pass() {
   assert_absent "$dir/home/state/task-a.meta" \
     "builder leftover cleanup left task meta in place"
   pass "validation-truth: builder id with -nm PR-URL run passes check, merge, and cleanup"
+}
+
+
+# Target PR row older than a global top-N window of other pr_url rows must still
+# be found: sqlite is cross-repo and must match by URL, not preload any-PR top-N.
+test_pr_url_proof_sqlite_selects_target_beyond_global_topn() {
+  local dir rc out nm_home db i
+  command -v sqlite3 >/dev/null 2>&1 || { pass "validation-truth: sqlite topn skipped (no sqlite3)"; return 0; }
+  dir=$(make_task_home pr-url-sqlite-topn no-mistakes)
+  prepare_unsuffixed_builder "$dir"
+  write_pr_url_proof_bin "$dir"
+  cat > "$dir/fakebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+printf 'error: not in a git repository\n' >&2
+exit 1
+SH
+  chmod +x "$dir/fakebin/no-mistakes"
+  nm_home="$dir/nm-home"
+  mkdir -p "$nm_home"
+  db="$nm_home/state.sqlite"
+  sqlite3 "$db" <<SQL
+CREATE TABLE runs (
+  status TEXT,
+  head_sha TEXT,
+  last_pushed_sha TEXT,
+  pr_url TEXT,
+  updated_at INTEGER,
+  ci_ready_at INTEGER
+);
+INSERT INTO runs(status, head_sha, last_pushed_sha, pr_url, updated_at, ci_ready_at)
+VALUES('completed', '$PROOF_HEAD', '$PROOF_HEAD', '$PROOF_URL', 1, 1);
+SQL
+  # 250 newer unrelated PR-URL rows would hide the target under a global top-200.
+  i=0
+  while [ "$i" -lt 250 ]; do
+    i=$((i + 1))
+    sqlite3 "$db" "INSERT INTO runs(status, head_sha, last_pushed_sha, pr_url, updated_at, ci_ready_at)
+      VALUES('completed', 'dddddddddddddddddddddddddddddddddddddddd', 'dddddddddddddddddddddddddddddddddddddddd',
+             'https://github.com/other/repo/pull/$i', $((1000 + i)), $((1000 + i)));"
+  done
+  rm -rf "$dir/wt" "$dir/project"
+  set +e
+  out=$(NO_MISTAKES_HOME="$nm_home" PATH="$dir/fakebin:$BASE_PATH" FM_HOME="$dir/home" \
+    FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" \
+    fm_require_validation_truth "$dir/home/state/task-a.meta" task-a "$PROOF_URL" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "sqlite URL select missed target under newer global noise: $out"
+  pass "validation-truth: sqlite selects target PR URL beyond global top-N noise"
 }
 
 test_parse_run_step_done
@@ -642,6 +699,7 @@ test_pr_url_proof_cancelled_run_refuses
 test_pr_url_proof_runs_from_meta_worktree_not_cwd
 test_pr_url_proof_sqlite_fallback_when_worktree_gone
 test_pr_url_proof_sqlite_newest_first_not_ci_ready
+test_pr_url_proof_sqlite_selects_target_beyond_global_topn
 test_pr_url_proof_forge_head_mismatch_refuses
 test_pr_url_proof_red_rollup_refuses
 test_pr_url_proof_builder_check_merge_cleanup_pass

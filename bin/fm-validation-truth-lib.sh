@@ -132,26 +132,22 @@ EOF
 }
 
 fm_vt_sqlite_runs_for_pr() {  # <pr-url>
-  local want db out st sha url
+  local want db out esc
   want=$(fm_vt_canon_url "$1")
   [ -n "$want" ] || return 1
   command -v sqlite3 >/dev/null 2>&1 || return 1
   db=${NO_MISTAKES_HOME:-$HOME/.no-mistakes}/state.sqlite
   [ -f "$db" ] && [ ! -L "$db" ] || return 1
+  # Match the canonical PR URL in SQL (with/without trailing slash). Do not
+  # preload a global any-PR top-N window: sqlite is cross-repo and the target
+  # row can sit below hundreds of newer unrelated pr_url rows.
+  esc=${want//\'/\'\'}
   out=$(sqlite3 -readonly -separator $'\t' "$db" \
-    "select status, coalesce(nullif(last_pushed_sha,''), head_sha), pr_url from runs where pr_url is not null and pr_url != '' order by updated_at desc, rowid desc limit $(fm_vt_runs_limit);" \
+    "select status, coalesce(nullif(last_pushed_sha,''), head_sha) from runs where pr_url is not null and pr_url != '' and rtrim(pr_url, '/') = '$esc' order by updated_at desc, rowid desc limit 1;" \
     2>/dev/null) || return 1
   [ -n "$out" ] || return 1
-  while IFS=$'\t' read -r st sha url; do
-    [ -n "$st" ] || continue
-    if [ "$(fm_vt_canon_url "$url")" = "$want" ]; then
-      printf '%s\t%s\n' "$st" "$sha"
-      return 0
-    fi
-  done <<EOF
-$out
-EOF
-  return 1
+  printf '%s\n' "$out"
+  return 0
 }
 
 # Resolve the directory `no-mistakes runs` must run in: meta worktree= if it
