@@ -181,6 +181,92 @@ test_summary_substring_remaining_pick_is_not_clean() {
   pass "stow open-lock: summary substring remaining picks are not clean"
 }
 
+test_snapshot_key_collision_is_not_clean() {
+  local out rc receipt decisions snap
+  receipt="$TMP_ROOT/not-safe-key-collision.json"
+  decisions="$TMP_ROOT/two-q2-decisions"
+  snap="$TMP_ROOT/snap-key-collision.json"
+  mkdir -p "$decisions"
+  printf '%s\n' '{"reset_safe":false,"remaining_session_picks":[]}' > "$receipt"
+  cat > "$decisions/secondmate-2026-08-22.md" <<'EOF'
+# secondmate 2026-08-22
+- **Q2 Scope.** Still open.
+EOF
+  cat > "$decisions/secondmate-2026-08-23.md" <<'EOF'
+# secondmate 2026-08-23
+- **Q2 Scope.** Still open.
+EOF
+  # Snapshot lists only one lock-open full id; bare key Q2 must not cover the other.
+  cat > "$snap" <<'EOF'
+{
+  "decisions_open": [
+    {
+      "id": "secondmate-2026-08-22/Q2",
+      "key": "Q2",
+      "verb": "lock-open",
+      "summary": "Q2 Scope still open"
+    },
+    {
+      "id": "Q2",
+      "key": "Q2",
+      "verb": "captain-hold",
+      "summary": "unrelated hold with colliding key"
+    }
+  ]
+}
+EOF
+  set +e
+  out=$(run_check \
+    --input "$receipt" \
+    --decisions-dir "$decisions" \
+    --snapshot "$snap" \
+    --expect-rule R-bearings-lists-open-locks --expect-count 1 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "key-collision exact-count exited $rc: $out"
+  set +e
+  out=$(run_check \
+    --input "$receipt" \
+    --decisions-dir "$decisions" \
+    --snapshot "$snap")
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "key-collision gate exited $rc: $out"
+  assert_contains "$out" "R-bearings-lists-open-locks-omitted" \
+    "key-collision did not report omitted lock pick"
+  assert_contains "$out" "secondmate-2026-08-23/Q2" \
+    "key-collision did not name the omitted full pick id"
+  # Mate-prefixed full id still covers the pick (bearings secondmate projection).
+  cat > "$snap" <<'EOF'
+{
+  "decisions_open": [
+    {
+      "id": "mate/mate-picks/secondmate-2026-08-22/Q2",
+      "key": "Q2",
+      "verb": "lock-open",
+      "summary": "Q2 Scope still open"
+    },
+    {
+      "id": "mate/mate-picks/secondmate-2026-08-23/Q2",
+      "key": "Q2",
+      "verb": "lock-open",
+      "summary": "Q2 Scope still open"
+    }
+  ]
+}
+EOF
+  set +e
+  out=$(run_check \
+    --input "$receipt" \
+    --decisions-dir "$decisions" \
+    --snapshot "$snap")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "mate-prefixed lock-open ids still exited $rc: $out"
+  [ -z "$out" ] || fail "mate-prefixed lock-open ids printed findings: $out"
+  pass "stow open-lock: snapshot key collision is not clean; mate-prefixed ids cover"
+}
+
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
 test_missing_and_empty_input_are_structural
@@ -190,5 +276,6 @@ test_bearings_omit_fires_exact_count
 test_list_open_and_expect_count_zero_are_structural_or_public
 test_quoted_still_open_mention_is_not_a_marker
 test_summary_substring_remaining_pick_is_not_clean
+test_snapshot_key_collision_is_not_clean
 
 echo "# all fm-stow-open-lock-check tests passed"

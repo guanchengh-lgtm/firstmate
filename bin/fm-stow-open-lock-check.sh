@@ -311,11 +311,13 @@ findings=$(jq -n \
         (norm) as $item
         | ($item != "") and (($tokens | index($item)) != null));
   def snap_lists($pick):
-    ([ $pick.id, $pick.key ] | map(norm)) as $want
+    ($pick.id | norm) as $pid
     | any($snapshot_rows[];
-        ((.id // "") | tostring | norm) as $id
-        | ((.key // "") | tostring | norm) as $key
-        | ((($want | index($id)) != null) or (($want | index($key)) != null)));
+        ((.verb // "") | tostring) == "lock-open"
+        and (
+          ((.id // "") | tostring | norm) as $id
+          | ($id == $pid) or ($id | endswith("/" + $pid))
+        ));
   [ if $run_stow == 1 and $reset_safe then
       $picks[]
       | select(listed(.) | not)
