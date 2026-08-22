@@ -174,7 +174,7 @@ test_lock_still_open_uses_list_open_reader() {
   mkdir -p "$home/data/wf-map2-v2/tickets" "$home/data/decisions"
   write_ticket "$home/data/wf-map2-v2/tickets/closed-open-lock.md" \
     "$(printf '%s\n' 'status: CLOSED 2026-08-22' '' '## Answer' \
-      '**A.** Lock data/decisions/still-open-2026-08-22.md.')"
+      '**A.** Lock `data/decisions/still-open-2026-08-22.md`.')"
   write_lock "$home/data/decisions/still-open-2026-08-22.md" \
     "$(printf '%s\n' '# still open' '**Pick:** A. locked.' '- **Q1 Left.** Still open.')"
   set +e
@@ -200,7 +200,7 @@ test_lock_without_pick_fires() {
   mkdir -p "$home/data/wf-map2-v2/tickets" "$home/data/decisions"
   write_ticket "$home/data/wf-map2-v2/tickets/closed-no-pick.md" \
     "$(printf '%s\n' 'status: CLOSED 2026-08-22' '' '## Answer' \
-      '**A.** Lock data/decisions/no-pick-2026-08-22.md.')"
+      '**A.** Lock `data/decisions/no-pick-2026-08-22.md`.')"
   write_lock "$home/data/decisions/no-pick-2026-08-22.md" \
     "$(printf '%s\n' '# no pick line' 'Some prose only.')"
   set +e
@@ -222,7 +222,7 @@ test_gather_skips_loops_and_other_data() {
     "$home/data/decisions"
   write_ticket "$home/data/wf-map2-v2/tickets/clean.md" \
     "$(printf '%s\n' 'status: CLOSED 2026-08-22' '' '## Answer' \
-      '**A.** Lock data/decisions/clean-2026-08-22.md.')"
+      '**A.** Lock `data/decisions/clean-2026-08-22.md`.')"
   write_lock "$home/data/decisions/clean-2026-08-22.md" \
     "$(printf '%s\n' '**Pick:** A. clean.')"
   write_ticket "$home/data/wf-map2-loops/tickets/D1-item.md" \
@@ -244,7 +244,7 @@ test_clean_closed_dated_lock_is_silent() {
   mkdir -p "$home/data/wf-map2-v2/tickets" "$home/data/decisions"
   write_ticket "$home/data/wf-map2-v2/tickets/clean.md" \
     "$(printf '%s\n' 'status: CLOSED 2026-08-22' '' '## Answer' \
-      '**A.** Lock data/decisions/clean-2026-08-22.md.')"
+      '**A.** Lock `data/decisions/clean-2026-08-22.md`.')"
   write_lock "$home/data/decisions/clean-2026-08-22.md" \
     "$(printf '%s\n' '**Pick:** A. clean.')"
   set +e
@@ -254,6 +254,73 @@ test_clean_closed_dated_lock_is_silent() {
   [ "$rc" -eq 0 ] || fail "clean ticket exited $rc: $out"
   [ -z "$out" ] || fail "clean ticket printed findings: $out"
   pass "answer-lock: dated CLOSED with ## Answer and **Pick:** lock is clean"
+}
+
+test_lock_token_only_inside_answer_ignores_prose_paths() {
+  local home out rc
+  home="$TMP_ROOT/lock-token-answer-only"
+  mkdir -p "$home/data/wf-map2-v2/tickets" "$home/data/decisions"
+  write_lock "$home/data/decisions/real-lock-2026-08-22.md" \
+    "$(printf '%s\n' '**Pick:** A. real.')"
+  write_lock "$home/data/decisions/prose-only-2026-08-22.md" \
+    "$(printf '%s\n' '# prose only' 'No pick line.')"
+  write_ticket "$home/data/wf-map2-v2/tickets/prose-before-lock.md" \
+    "$(printf '%s\n' 'status: CLOSED 2026-08-22' '' \
+      '## Question' \
+      'See data/decisions/prose-only-2026-08-22.md in the trail.' '' \
+      '## Answer' \
+      '**A.** Lock `data/decisions/real-lock-2026-08-22.md`.' \
+      'Also mentions data/decisions/prose-only-2026-08-22.md.')"
+  set +e
+  out=$(FM_HOME="$home" run_check)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "valid Answer Lock with prose path exited $rc: $out"
+  [ -z "$out" ] || fail "valid Answer Lock with prose path printed: $out"
+  write_ticket "$home/data/wf-map2-v2/tickets/closed-prose-only.md" \
+    "$(printf '%s\n' 'status: CLOSED 2026-08-22' '' \
+      '## Question' \
+      'Mentions data/decisions/real-lock-2026-08-22.md only in prose.' '' \
+      '## Answer' \
+      '**A.** No Lock token here, only prose data/decisions/real-lock-2026-08-22.md.')"
+  set +e
+  out=$(FM_HOME="$home" run_check --rules R-close-no-lock)
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "prose path without Answer Lock exited $rc: $out"
+  assert_contains "$out" "R-close-no-lock-missing" \
+    "prose path without Answer Lock did not report R-close-no-lock"
+  assert_contains "$out" "closed-prose-only.md" \
+    "prose path without Answer Lock did not name the ticket"
+  pass "answer-lock: only Answer Lock token counts; bare/prose paths ignored"
+}
+
+test_s1_style_pick_phrase_still_open_fires() {
+  local home out rc
+  home="$TMP_ROOT/s1-style-pick"
+  mkdir -p "$home/data/wf-map2-v2/tickets" "$home/data/decisions"
+  write_ticket "$home/data/wf-map2-v2/tickets/s1-style-open.md" \
+    "$(printf '%s\n' 'status: OPEN' '' '## Answer' \
+      '**A. No ship.** Cursor is not a worker. Lock `data/decisions/s1-style-2026-08-22.md`.')"
+  write_lock "$home/data/decisions/s1-style-2026-08-22.md" \
+    "$(printf '%s\n' '**Pick:** A. No ship.')"
+  set +e
+  out=$(FM_HOME="$home" run_check \
+    --rules R-pick-still-open \
+    --expect-rule R-pick-still-open --expect-count 1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "S1-style pick exact-count exited $rc: $out"
+  set +e
+  out=$(FM_HOME="$home" run_check --rules R-pick-still-open)
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "S1-style pick gate exited $rc: $out"
+  assert_contains "$out" "R-pick-still-open-status" \
+    "S1-style **A. No ship.** did not report the rule"
+  assert_contains "$out" "s1-style-open.md" \
+    "S1-style pick did not name the ticket"
+  pass "answer-lock: S1-style **A. No ship.** pick fires R-pick-still-open"
 }
 
 test_claude_stop_banner_has_only_two_escapes() {
@@ -305,6 +372,8 @@ test_lock_still_open_uses_list_open_reader
 test_lock_without_pick_fires
 test_gather_skips_loops_and_other_data
 test_clean_closed_dated_lock_is_silent
+test_lock_token_only_inside_answer_ignores_prose_paths
+test_s1_style_pick_phrase_still_open_fires
 test_claude_stop_banner_has_only_two_escapes
 test_help_names_gather_and_escapes
 

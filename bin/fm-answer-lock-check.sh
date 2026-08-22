@@ -19,14 +19,18 @@
 #
 # Default rules:
 #   R-close-no-lock     status: starts with CLOSED, the file has ## Answer,
-#                       and there is no data/decisions/<name>.md pointer or
-#                       the pointer is not an ordinary file under FM_HOME.
+#                       and there is no Lock `data/decisions/<name>.md`
+#                       token inside ## Answer, or that pointer is not an
+#                       ordinary file under FM_HOME. Bare data/decisions/
+#                       mentions and tokens outside ## Answer are ignored.
 #                       Ship tickets with no ## Answer are exempt.
 #   R-close-undated     status: CLOSED with no YYYY-MM-DD token on that
 #                       line. Dated means that token on the status line and
 #                       in the lock filename; the two dates are not matched.
-#   R-pick-still-open   ## Answer whose first bold span is a pick
-#                       (**A.**, **D.**, **A**) and status: is OPEN.
+#   R-pick-still-open   ## Answer whose first bold span is a pick (starts
+#                       with A-Z, optional ".", then end or whitespace:
+#                       **A.**, **D.**, **A**, **A. No ship.**) and
+#                       status: is OPEN.
 #   R-lock-still-open   the pointed-to lock has no **Pick:** line, or
 #                       fm-stow-open-lock-check.sh --list-open reports it.
 #                       That reader is the only still-open check; this
@@ -61,7 +65,7 @@ expect_count=
 rules="R-close-no-lock,R-close-undated,R-pick-still-open,R-lock-still-open"
 
 usage() {
-  sed -n '2,46p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 structural() {
@@ -188,22 +192,30 @@ has_answer() {
   grep -qE '^##[ \t]+Answer([ \t]|$)' "$1"
 }
 
-first_bold_is_pick() {
-  local body bold
-  body=$(awk '
+answer_body() {
+  awk '
     /^##[ \t]+Answer([ \t]|$)/ { on=1; next }
     /^##[ \t]/ { if (on) exit }
     on { print }
-  ' "$1")
+  ' "$1"
+}
+
+first_bold_is_pick() {
+  local body bold
+  body=$(answer_body "$1")
   [[ $body =~ \*\*([^*]+)\*\* ]] || return 1
   bold=${BASH_REMATCH[1]}
   bold=${bold#"${bold%%[![:space:]]*}"}
   bold=${bold%"${bold##*[![:space:]]}"}
-  [[ $bold =~ ^[A-Z]\.?$ ]]
+  [[ $bold =~ ^[A-Z](\.([[:space:]].*)?)?$ ]]
 }
 
 ticket_pointer() {
-  grep -oE 'data/decisions/[A-Za-z0-9._-]+\.md' "$1" | head -n1 || true
+  local body
+  body=$(answer_body "$1")
+  if [[ $body =~ Lock\ \`(data/decisions/[A-Za-z0-9._-]+\.md)\` ]]; then
+    printf '%s\n' "${BASH_REMATCH[1]}"
+  fi
 }
 
 ticket_rel() {
