@@ -3,7 +3,7 @@
   "size_reason": "Wait detector on durable records plus a tight yes-ask marker. Widen the landed go-gate / ready-action owner. Full adversary rounds are a later ship if the light refuse is trusted.",
   "shape": "A node owns a skill or a next act. This seat proceeds without invoking that skill or starting that act.",
   "form": "refuse-hook",
-  "structure": "bin/fm-owner-invoke-wait-check.sh on map_next and date-cleared holds, OWNER_INVOKE_WAIT plus an exact skill token, live fog gather, and production ships[] gather for kind=ship metas whose session= matches state/.lock, with Stop ladder on data/<ov>/report.md then live endpoint then refuse, and report-gated data/<ov>/skills for plan-eng-review. Split transcript windows and live fog gather stay as gather holes. Does not parse brief-body Role or Delivery contract lines.",
+  "structure": "bin/fm-owner-invoke-wait-check.sh on map_next and date-cleared holds, OWNER_INVOKE_WAIT plus an exact skill token, live fog gather, and production ships[] gather for kind=ship metas whose session= matches state/.lock, with Stop ladder on data/<ov>/report.md then live endpoint then refuse, and report-gated data/<ov>/skills for plan-eng-review only when durable ov_harness is claude/claude*. Split transcript windows and live fog gather stay as gather holes. Does not parse brief-body Role or Delivery contract lines.",
   "rules": [
     "R-held-locked-next",
     "R-owner-invoke-wait",
@@ -41,7 +41,7 @@
     "Empty or placeholder task fields skip ship rules.",
     "Builder self-review is not OV.",
     "ov= without report.md is not a review while the worker is gone.",
-    "Non-Claude review workers write no skills record (disclosed gap)."
+    "Non-Claude or missing ov_harness skips R-skill-unloaded (disclosed gap; those harnesses write no skills record)."
   ],
   "skipped": [
     "Adversarial rounds because size is light: one fresh reader via the test suite is enough.",

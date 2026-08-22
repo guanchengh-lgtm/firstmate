@@ -15,8 +15,10 @@
 #   ship meta. A filled ship Task requires it; builder self-review is not OV.
 #   bin/fm-owner-invoke-wait-check.sh owns the rule. --ov is ship-only. Spawn
 #   writes session=<state/.lock contents> into meta so turn-end can gather
-#   ships this session started. Exports FM_TASK_ID and FM_HOME into the worker
-#   pane so bin/fm-skill-load-record.sh can append real Skill loads into
+#   ships this session started, and ov_harness=<harness= from state/<ov>.meta>
+#   so the skill-load rule can honor the non-Claude gap after OV teardown.
+#   Exports FM_TASK_ID and FM_HOME into the worker pane so
+#   bin/fm-skill-load-record.sh can append real Skill loads into
 #   data/<id>/skills. Does not pre-create an empty skills file.
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
 #   spawn and refused on --scout and --secondmate spawns. Firstmate resolves both
@@ -2397,6 +2399,10 @@ SPAWN_SESSION=
 if [ -f "$STATE/.lock" ] && [ ! -L "$STATE/.lock" ]; then
   SPAWN_SESSION=$(tr -d '[:space:]' < "$STATE/.lock" 2>/dev/null || true)
 fi
+OV_HARNESS=
+if [ -n "${OV:-}" ] && [ -f "$STATE/$OV.meta" ] && [ ! -L "$STATE/$OV.meta" ]; then
+  OV_HARNESS=$(sed -n 's/^harness=//p' "$STATE/$OV.meta" 2>/dev/null | tail -1)
+fi
 {
   echo "window=$META_WINDOW"
   echo "endpoint_task_id=$ID"
@@ -2410,6 +2416,7 @@ fi
   [ -z "$MAP_NEXT" ] || echo "map_next=$MAP_NEXT"
   [ -z "${MAP:-}" ] || echo "map=$MAP"
   [ -z "${OV:-}" ] || echo "ov=$OV"
+  [ -z "${OV_HARNESS:-}" ] || echo "ov_harness=$OV_HARNESS"
   [ -z "$SPAWN_SESSION" ] || echo "session=$SPAWN_SESSION"
   echo "tasktmp=$TASK_TMP"
   echo "model=${MODEL:-default}"

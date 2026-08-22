@@ -788,7 +788,7 @@ test_spawn_refuses_filled_ship_without_ov() {
   read_case_record "$rec"
   brief="$HOME_DIR/data/$id/brief.md"
   printf '# Task\nStart Spec compile-check. The next act is obvious.\n\n# Setup\nfixture\nDelivery contract: mode=no-mistakes\n' > "$brief"
-  printf '%s\n' 'kind=scout' > "$HOME_DIR/state/spec-compile-check-ov.meta"
+  printf '%s\n' 'kind=scout' 'harness=claude' > "$HOME_DIR/state/spec-compile-check-ov.meta"
   printf '7777\n' > "$HOME_DIR/state/.lock"
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
     "$id" "$PROJ_DIR" --ov spec-compile-check-ov)
@@ -797,6 +797,8 @@ test_spawn_refuses_filled_ship_without_ov() {
   meta="$HOME_DIR/state/$id.meta"
   assert_grep 'ov=spec-compile-check-ov' "$meta" \
     "spawn did not record ov= for the distinct OV worker"
+  assert_grep 'ov_harness=claude' "$meta" \
+    "spawn did not record ov_harness= from the OV worker harness"
   assert_grep 'session=7777' "$meta" \
     "spawn did not record session= from state/.lock"
   [ ! -e "$HOME_DIR/data/$id/skills" ] \
@@ -805,6 +807,21 @@ test_spawn_refuses_filled_ship_without_ov() {
     "spawn did not export FM_TASK_ID into the worker pane"
   assert_grep 'export FM_HOME=' "$LAUNCH_LOG.exports" \
     "spawn did not export FM_HOME into the worker pane"
+
+  id=profile-ship-ov-codex-z24
+  rec=$(make_spawn_case profile-ship-ov-codex claude "$id")
+  read_case_record "$rec"
+  brief="$HOME_DIR/data/$id/brief.md"
+  printf '# Task\nStart Spec compile-check. The next act is obvious.\n\n# Setup\nfixture\nDelivery contract: mode=no-mistakes\n' > "$brief"
+  printf '%s\n' 'kind=scout' 'harness=codex' > "$HOME_DIR/state/spec-compile-check-ov.meta"
+  printf '8888\n' > "$HOME_DIR/state/.lock"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --ov spec-compile-check-ov)
+  status=$?
+  expect_code 0 "$status" "spawn with a codex OV worker should succeed"
+  meta="$HOME_DIR/state/$id.meta"
+  assert_grep 'ov_harness=codex' "$meta" \
+    "spawn did not record non-Claude ov_harness= from the OV worker"
 
   id=profile-ship-self-ov-z23
   rec=$(make_spawn_case profile-ship-self-ov claude "$id")
