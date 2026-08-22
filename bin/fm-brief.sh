@@ -9,6 +9,7 @@
 # Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab]
 #        fm-brief.sh <task-id> <repo-name> --scout [--source <literal>]... [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
+#        fm-brief.sh <task-id> --verifier
 #        fm-brief.sh --check-worker <ship|scout> <brief-path>
 #   --scout writes the scout contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
@@ -46,10 +47,21 @@
 #                the configured merge authority approves, firstmate merges to local main
 # no-mistakes-prod-only is a registry policy, not a task mode; resolve it to one of
 # the three concrete modes at intake before calling this script.
-# The generated ship brief records the chosen mode as a fixed machine-readable
-# "Delivery contract: mode=<mode>" line. bin/fm-spawn.sh reads that line and refuses
-# to launch a ship task whose explicit --mode disagrees, so an adjusted brief and the
-# recorded task metadata cannot drift apart.
+# The generated ship brief keeps human-readable "Delivery contract: mode=<mode>"
+# and "Role: builder" lines in its Definition of done, and also writes unforgeable
+# machine markers beside the brief: data/<task-id>/mode (exact mode token) and
+# data/<task-id>/role (exactly builder). bin/fm-spawn.sh reads those sibling files
+# (not brief prose), requires --role builder|verifier, encodes the matching file,
+# and refuses a missing or mismatched role marker so task text and recovery appends
+# cannot forge or poison the gate.
+# --verifier is the second-context renderer, not a first-scaffold flag. It requires
+# an existing no-mistakes ship brief.md (mode marker must be no-mistakes) and writes
+# data/<task-id>/verifier-brief.md plus data/<task-id>/verifier-role (exactly
+# verifier); overwrite of those verifier siblings is allowed. The verifier brief
+# opens with Role: verifier and the verifier definition of done first, keeps the
+# original # Task as the --intent source, and omits builder Setup. Do not pass
+# --role on this scaffold; spawn owns the role gate. The builder brief.md and its
+# role/mode markers are left unchanged.
 # Ship briefs begin with a worktree-isolation assertion before the branch step.
 # --mode is refused on scout and secondmate scaffolds: a scout's deliverable is a
 # report rather than a merge, and a charter is not a delivery contract.
@@ -189,6 +201,7 @@ fi
 KIND=ship
 HERDR_LAB=0
 NO_PROJECTS=0
+VERIFIER=0
 MODE=
 MODE_SET=0
 SOURCE_SET=0
@@ -213,6 +226,7 @@ for a in "$@"; do
     --secondmate) KIND=secondmate ;;
     --herdr-lab) HERDR_LAB=1 ;;
     --no-projects) NO_PROJECTS=1 ;;
+    --verifier) VERIFIER=1 ;;
     --mode) want_value=mode ;;
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
     --source) want_value=source ;;
@@ -226,9 +240,26 @@ for a in "$@"; do
 done
 [ -z "$want_value" ] || { echo "error: --$want_value requires a value" >&2; exit 1; }
 
-# Ship delivery mode is an explicit per-task decision (AGENTS.md section 7). A
-# missing or invalid value stops the scaffold rather than silently defaulting.
-if [ "$KIND" = ship ]; then
+# --verifier is a second-context renderer, not a first-scaffold flag, so it does
+# not take --mode. A missing or invalid ship mode still stops a first scaffold.
+if [ "$VERIFIER" -eq 1 ]; then
+  [ "$KIND" = ship ] || {
+    echo "error: --verifier applies only to an existing ship brief; it is not a scout or secondmate flag" >&2
+    exit 1
+  }
+  [ "$MODE_SET" -eq 0 ] || {
+    echo "error: --verifier reads mode from the task mode marker; do not pass --mode" >&2
+    exit 1
+  }
+  [ "$HERDR_LAB" -eq 0 ] || {
+    echo "error: --verifier does not take --herdr-lab" >&2
+    exit 1
+  }
+  [ "$NO_PROJECTS" -eq 0 ] || {
+    echo "error: --no-projects applies only to --secondmate charters" >&2
+    exit 1
+  }
+elif [ "$KIND" = ship ]; then
   [ "$MODE_SET" -eq 1 ] || {
     echo "error: ship briefs require --mode <no-mistakes|direct-PR|local-only>; resolve it at intake from the captain's instruction and the project's registered posture in data/projects.md" >&2
     exit 1
@@ -263,7 +294,7 @@ if [ "$SOURCE_SET" -eq 1 ]; then
     seen_sources="${seen_sources}${source}"$'\n'
   done
 fi
-ID=${POS[0]}
+ID=${POS[0]:-}
 
 if [ "$KIND" = secondmate ] && [ "$HERDR_LAB" -eq 1 ]; then
   echo "error: --herdr-lab applies only to crewmate ship or scout briefs" >&2
@@ -276,8 +307,6 @@ if [ "$NO_PROJECTS" -eq 1 ] && [ "$KIND" != secondmate ]; then
 fi
 
 BRIEF="$DATA/$ID/brief.md"
-[ -e "$BRIEF" ] && { echo "error: $BRIEF already exists" >&2; exit 1; }
-mkdir -p "$DATA/$ID"
 
 shell_quote() {
   printf "'"
@@ -286,6 +315,87 @@ shell_quote() {
 }
 
 STATUS_FILE=$(shell_quote "$STATE/$ID.status")
+
+if [ "$VERIFIER" -eq 1 ]; then
+  [ -n "$ID" ] && [ "${#POS[@]}" -eq 1 ] || {
+    echo "error: usage: fm-brief.sh <task-id> --verifier" >&2
+    exit 1
+  }
+  [ -f "$BRIEF" ] || {
+    echo "error: --verifier requires an existing ship brief at $BRIEF" >&2
+    exit 1
+  }
+  # Mode comes from the machine-owned sibling written at ship scaffold time, not
+  # from brief prose (task text and recovery appends can mimic Delivery contract:).
+  MODE_MARKER="$DATA/$ID/mode"
+  SRC_MODE=
+  if [ -f "$MODE_MARKER" ]; then
+    SRC_MODE=$(tr -d '\r\n' < "$MODE_MARKER")
+  fi
+  [ "$SRC_MODE" = no-mistakes ] || {
+    echo "error: --verifier requires an existing no-mistakes ship brief at $BRIEF" >&2
+    exit 1
+  }
+  TASK_BODY=$(task_section "$BRIEF")
+  VERIFIER_BRIEF="$DATA/$ID/verifier-brief.md"
+  VERIFIER_ROLE_MARKER="$DATA/$ID/verifier-role"
+  IFS= read -r -d '' VERIFIER_DOD <<EOF || true
+# Definition of done
+Delivery contract: mode=no-mistakes
+The fresh verifier drives no-mistakes by responding to its gates, not by implementing fixes.
+It follows the guidance no-mistakes itself provides for the mechanics: \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
+When starting no-mistakes, it makes \`--intent\` preserve all relevant content from this brief's \`# Task\` section plus every later accepted Firstmate requirement, clarification, constraint, exclusion, and supersession, carrying only each requirement's current accepted form; it retains direct requirements instead of substituting a diff summary, and excludes generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific.
+The verifier does not hand-edit, commit, or fix findings while a run is active - the pipeline applies every fix.
+
+Two firstmate-specific rules layer on top of that guidance:
+- ask-user findings are never the verifier's to answer: escalate to firstmate and stop.
+  Firstmate applies the authority contract in its \`AGENTS.md\` and obtains any required captain decision.
+  When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
+- Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
+
+After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), the verifier appends \`done: PR {url} checks green\` and stops.
+EOF
+  VERIFIER_DOD=${VERIFIER_DOD%$'\n'}
+  {
+    printf '%s\n' 'Role: verifier'
+    printf '%s\n' "$VERIFIER_DOD"
+    printf '\n# Task\n'
+    printf '%s\n' "$TASK_BODY"
+    cat <<EOF
+
+# Rules
+1. Never push to the default branch. Never merge a PR.
+2. Stay inside this worktree; modify nothing outside it.
+3. Use gh-axi for GitHub operations and chrome-devtools-axi for browser operations.
+4. Report status by appending one line:
+   \`echo "{state}: {one short line}" >> $STATUS_FILE\`
+   States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
+   Each append wakes firstmate, so report sparingly: only phase changes a supervisor
+   would act on and the needs-decision/blocked/$PAUSED_VERB/done/failed states. No step-by-step
+   FYI progress lines; firstmate reads your pane for that.
+   A mid-task \`working:\` line (including setup complete) is nonterminal: do not end the
+   turn after it; continue the same stage until a defined \`done:\` gate under Definition of done.
+   Use \`$PAUSED_VERB: {why}\` - distinct from \`blocked:\` - ONLY when you are deliberately idling on a
+   known external wait you expect to clear on its own (an upstream release, a rate-limit reset,
+   a scheduled window): firstmate then leaves your idle pane alone and rechecks it on a long
+   cadence instead of treating it as a possible wedge. Use \`blocked:\` when you are stuck and need help.
+5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
+6. If a decision belongs above the implementation worker (product choices, destructive actions, ask-user findings),
+   append \`needs-decision [key=<decision-slug>]: {summary of options}\` and stop. Firstmate will apply the configured authority and reply with the decision.
+   A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
+   Firstmate's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a firstmate reply, append \`resolved [key=<decision-slug>]: {how it cleared}\` yourself as you resume.
+7. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
+   every lane/home, so restarting it kills other lanes' in-flight pipeline runs. On ANY no-mistakes
+   daemon error, append \`blocked: {the daemon error}\` and stop; only firstmate manages the daemon.
+EOF
+  } > "$VERIFIER_BRIEF"
+  printf '%s\n' verifier > "$VERIFIER_ROLE_MARKER"
+  echo "scaffolded: $VERIFIER_BRIEF (verifier)"
+  exit 0
+fi
+
+[ -e "$BRIEF" ] && { echo "error: $BRIEF already exists" >&2; exit 1; }
+mkdir -p "$DATA/$ID"
 
 if [ "$KIND" = secondmate ]; then
 SECONDMATE_PROJECTS=""
@@ -467,9 +577,9 @@ exit 0
 fi
 
 # Ship task: shape Setup / Rule 1 / Definition of done by this task's explicit
-# delivery mode, validated above. The generated DOD opens with the fixed
-# "Delivery contract: mode=<mode>" line that bin/fm-spawn.sh checks against its own
-# explicit --mode before launching.
+# delivery mode, validated above. The generated DOD still carries human-readable
+# "Delivery contract: mode=<mode>" and "Role: builder" lines; the launch gate in
+# bin/fm-spawn.sh reads the sibling mode/role marker files written after this brief.
 case "$MODE" in
   direct-PR)
     SETUP2=""
@@ -477,6 +587,7 @@ case "$MODE" in
     IFS= read -r -d '' DOD <<EOF || true
 # Definition of done
 Delivery contract: mode=direct-PR
+Role: builder
 This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
 When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
@@ -489,6 +600,7 @@ EOF
     IFS= read -r -d '' DOD <<EOF || true
 # Definition of done
 Delivery contract: mode=local-only
+Role: builder
 This task ships **local-only**: no remote, no PR, no pipeline.
 The task is complete only when committed on your branch \`fm/$ID\`. Do NOT push, do NOT open a PR, do NOT merge.
 Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
@@ -503,6 +615,7 @@ EOF
     IFS= read -r -d '' DOD <<EOF || true
 # Definition of done
 Delivery contract: mode=no-mistakes
+Role: builder
 The task is complete only when committed on your branch.
 When you believe it is complete, append \`done: {summary}\` to the status file and stop.
 Firstmate starts a fresh verifier context to run /no-mistakes and validate and ship a PR.
@@ -581,4 +694,6 @@ Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced 
 
 $DOD
 EOF
+printf '%s\n' "$MODE" > "$DATA/$ID/mode"
+printf '%s\n' builder > "$DATA/$ID/role"
 echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK})"

@@ -140,7 +140,9 @@ make_spawn_case() {
   fakebin=$(make_spawn_fakebin "$case_dir/fake")
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config" "$home/.kimi-code"
   printf '# Kimi test config\ndefault_model = "test"\n' > "$home/.kimi-code/config.toml"
-  printf 'brief for kimi\n' > "$home/data/$id/brief.md"
+  printf '%s\n' 'Role: builder' 'brief for kimi' > "$home/data/$id/brief.md"
+  printf '%s\n' builder > "$home/data/$id/role"
+  printf '%s\n' no-mistakes > "$home/data/$id/mode"
   fm_write_none_measure "$home" "$id"
   printf 'kimi\n' > "$home/config/crew-harness"
   fm_git_worktree "$proj" "$wt" "wt-$name"
@@ -168,7 +170,7 @@ run_spawn() {
     FM_FAKE_BRIEF_REAL="$(cd "$home/data/$id" && pwd -P)/brief.md" \
     FM_KIMI_READY_POLLS=2 FM_KIMI_DELIVERY_POLLS=2 FM_KIMI_POLL_INTERVAL=0 \
     PATH="$fakebin:$BASE_PATH" \
-    "$SPAWN" "$id" "$proj" --harness kimi --mode no-mistakes --yolo off "$@" 2>&1
+    "$SPAWN" "$id" "$proj" --harness kimi --mode no-mistakes --yolo off --role builder "$@" 2>&1
 }
 
 read_spawn_record() {

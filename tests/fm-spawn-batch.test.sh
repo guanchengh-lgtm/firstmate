@@ -31,7 +31,7 @@ run_spawn() {
 # Ship spawns carry an explicit delivery contract (AGENTS.md section 7); the
 # batch path takes one shared pair of flags for every pair.
 run_ship_spawn() {
-  run_spawn "$@" --mode no-mistakes --yolo off
+  run_spawn "$@" --mode no-mistakes --yolo off --role builder
 }
 
 # Every pair in a batch is dispatched even though the first one fails; the loop
@@ -87,12 +87,12 @@ test_projects_path_scoping() {
     if [ "$use_override" = yes ]; then
       out=$(FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
         FM_HOME="$home" FM_PROJECTS_OVERRIDE="$projects" FM_SPAWN_NO_GUARD=1 \
-        "$SPAWN" "$id" projects/alpha codex --mode no-mistakes --yolo off 2>&1)
+        "$SPAWN" "$id" projects/alpha codex --mode no-mistakes --yolo off --role builder 2>&1)
     else
       mkdir -p "$home/projects/alpha"
       out=$(FM_ROOT_OVERRIDE='' FM_STATE_OVERRIDE='' FM_DATA_OVERRIDE='' FM_PROJECTS_OVERRIDE='' FM_CONFIG_OVERRIDE='' \
         FM_HOME="$home" FM_SPAWN_NO_GUARD=1 \
-        "$SPAWN" "$id" projects/alpha codex --mode no-mistakes --yolo off 2>&1)
+        "$SPAWN" "$id" projects/alpha codex --mode no-mistakes --yolo off --role builder 2>&1)
     fi
     status=$?
     [ "$status" -ne 0 ] || fail "$label: spawn with missing brief should fail"
@@ -126,6 +126,14 @@ test_batch_requires_the_shared_delivery_contract() {
   [ "$status" -ne 0 ] || fail "a ship batch without --yolo should exit non-zero"
   printf '%s\n' "$out" | grep -F 'ship spawns require --yolo' >/dev/null \
     || fail "batch refusal did not name the missing approval posture"
+
+  out=$(run_spawn nope-batch-norole-z13=projects/none-a --mode no-mistakes --yolo off)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a ship batch without --role should exit non-zero"
+  printf '%s\n' "$out" | grep -F 'ship spawns require --role' >/dev/null \
+    || fail "batch refusal did not name the missing role"
+  printf '%s\n' "$out" | grep -F 'batch:' >/dev/null \
+    && fail "batch dispatched pairs despite an undecided role"
   pass "batch dispatch requires the shared ship delivery contract before any pair runs"
 }
 

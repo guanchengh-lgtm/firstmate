@@ -40,7 +40,9 @@ make_spawn_case() {
   grok_home="$case_dir/grok"
   id="grok-$name-x1"
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config" "$grok_home"
-  printf 'brief\n' > "$home/data/$id/brief.md"
+  printf '%s\n' 'Role: builder' 'brief' > "$home/data/$id/brief.md"
+  printf '%s\n' builder > "$home/data/$id/role"
+  printf '%s\n' no-mistakes > "$home/data/$id/mode"
   fm_write_none_measure "$home" "$id"
   fm_git_worktree "$proj" "$wt" "fm/$id"
   touch "$home/state/.last-watcher-beat"
@@ -54,7 +56,7 @@ run_grok_spawn() {
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
     GROK_HOME="$grok_home" PATH="$fakebin:$PATH" \
-    "$SPAWN" "$id" "$proj" grok --mode no-mistakes --yolo off 2>&1
+    "$SPAWN" "$id" "$proj" grok --mode no-mistakes --yolo off --role builder 2>&1
 }
 
 test_grok_hook_requires_registered_token() {

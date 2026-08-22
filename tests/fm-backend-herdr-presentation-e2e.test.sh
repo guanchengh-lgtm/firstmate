@@ -383,7 +383,7 @@ make_project() {  # <dir>
 spawn_task() {  # <id> <home> <project>
   local id=$1 home=$2 project=$3
   FM_GATE_REFUSE_BYPASS=1 FM_SPAWN_NO_GUARD=1 FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
-    "$ROOT/bin/fm-spawn.sh" "$id" "$project" "sh -c 'sleep 120'" --mode no-mistakes --yolo off --backend herdr
+    "$ROOT/bin/fm-spawn.sh" "$id" "$project" "sh -c 'sleep 120'" --mode no-mistakes --yolo off --role builder --backend herdr
 }
 
 spawn_secondmate_task() {
@@ -462,18 +462,42 @@ touch "$HOME_DIR/state/.last-watcher-beat"
 # Presentation spaces are on by default, so the flat baseline below opts out
 # explicitly; the projected cases each restate the setting they exercise.
 printf 'off\n' > "$HOME_DIR/config/herdr-presentation-spaces"
-printf 'Projection anchor fixture.\n' > "$HOME_DIR/data/anchor/brief.md"
-printf 'Projection E2E fixture.\n' > "$HOME_DIR/data/shape/brief.md"
-printf 'Projection ordering fixture A.\n' > "$HOME_DIR/data/order-a/brief.md"
-printf 'Projection ordering fixture B.\n' > "$HOME_DIR/data/order-b/brief.md"
-printf 'Projection ordering failure fixture.\n' > "$HOME_DIR/data/order-fail/brief.md"
-printf 'Hi Bit-style projection restart fixture.\n' > "$HOME_DIR/data/fm-hibit-resume-r1/brief.md"
-printf 'Wheelhouse-style projection restart fixture.\n' > "$HOME_DIR/data/wheelhouse-healing-r1/brief.md"
-printf 'Projection active seeded fixture.\n' > "$HOME_DIR/data/active-seeded/brief.md"
-printf 'Projection abort fixture A.\n' > "$HOME_DIR/data/abort-a/brief.md"
-printf 'Projection abort fixture B.\n' > "$HOME_DIR/data/abort-b/brief.md"
-printf 'Projection lock contention fixture.\n' > "$HOME_DIR/data/lock-contended/brief.md"
-printf 'Projection default-on fixture.\n' > "$HOME_DIR/data/default-on/brief.md"
+printf '%s\n' 'Role: builder' 'Projection anchor fixture.' > "$HOME_DIR/data/anchor/brief.md"
+printf '%s\n' builder > "$HOME_DIR/data/anchor/role"
+printf '%s\n' no-mistakes > "$HOME_DIR/data/anchor/mode"
+printf '%s\n' 'Role: builder' 'Projection E2E fixture.' > "$HOME_DIR/data/shape/brief.md"
+printf '%s\n' builder > "$HOME_DIR/data/shape/role"
+printf '%s\n' no-mistakes > "$HOME_DIR/data/shape/mode"
+printf '%s\n' 'Role: builder' 'Projection ordering fixture A.' > "$HOME_DIR/data/order-a/brief.md"
+printf '%s\n' builder > "$HOME_DIR/data/order-a/role"
+printf '%s\n' no-mistakes > "$HOME_DIR/data/order-a/mode"
+printf '%s\n' 'Role: builder' 'Projection ordering fixture B.' > "$HOME_DIR/data/order-b/brief.md"
+printf '%s\n' builder > "$HOME_DIR/data/order-b/role"
+printf '%s\n' no-mistakes > "$HOME_DIR/data/order-b/mode"
+printf '%s\n' 'Role: builder' 'Projection ordering failure fixture.' > "$HOME_DIR/data/order-fail/brief.md"
+printf '%s\n' builder > "$HOME_DIR/data/order-fail/role"
+printf '%s\n' no-mistakes > "$HOME_DIR/data/order-fail/mode"
+printf '%s\n' 'Role: builder' 'Hi Bit-style projection restart fixture.' > "$HOME_DIR/data/fm-hibit-resume-r1/brief.md"
+printf '%s\n' builder > "$HOME_DIR/data/fm-hibit-resume-r1/role"
+printf '%s\n' no-mistakes > "$HOME_DIR/data/fm-hibit-resume-r1/mode"
+printf '%s\n' 'Role: builder' 'Wheelhouse-style projection restart fixture.' > "$HOME_DIR/data/wheelhouse-healing-r1/brief.md"
+printf '%s\n' builder > "$HOME_DIR/data/wheelhouse-healing-r1/role"
+printf '%s\n' no-mistakes > "$HOME_DIR/data/wheelhouse-healing-r1/mode"
+printf '%s\n' 'Role: builder' 'Projection active seeded fixture.' > "$HOME_DIR/data/active-seeded/brief.md"
+printf '%s\n' builder > "$HOME_DIR/data/active-seeded/role"
+printf '%s\n' no-mistakes > "$HOME_DIR/data/active-seeded/mode"
+printf '%s\n' 'Role: builder' 'Projection abort fixture A.' > "$HOME_DIR/data/abort-a/brief.md"
+printf '%s\n' builder > "$HOME_DIR/data/abort-a/role"
+printf '%s\n' no-mistakes > "$HOME_DIR/data/abort-a/mode"
+printf '%s\n' 'Role: builder' 'Projection abort fixture B.' > "$HOME_DIR/data/abort-b/brief.md"
+printf '%s\n' builder > "$HOME_DIR/data/abort-b/role"
+printf '%s\n' no-mistakes > "$HOME_DIR/data/abort-b/mode"
+printf '%s\n' 'Role: builder' 'Projection lock contention fixture.' > "$HOME_DIR/data/lock-contended/brief.md"
+printf '%s\n' builder > "$HOME_DIR/data/lock-contended/role"
+printf '%s\n' no-mistakes > "$HOME_DIR/data/lock-contended/mode"
+printf '%s\n' 'Role: builder' 'Projection default-on fixture.' > "$HOME_DIR/data/default-on/brief.md"
+printf '%s\n' builder > "$HOME_DIR/data/default-on/role"
+printf '%s\n' no-mistakes > "$HOME_DIR/data/default-on/mode"
 make_project "$PROJECT_DIR"
 
 # Keep one ordinary primary task live so the durable firstmate workspace is
@@ -872,8 +896,12 @@ pass "real Herdr lab: concurrent projected cleanup is serialized and leaves acti
 # proves the shared presentation lock keeps concurrent operations composable.
 for ROUND in 1 2 3; do
   mkdir -p "$HOME_DIR/data/focus-$ROUND-a" "$HOME_DIR/data/focus-$ROUND-b"
-  printf 'Projection focus wave %s fixture A.\n' "$ROUND" > "$HOME_DIR/data/focus-$ROUND-a/brief.md"
-  printf 'Projection focus wave %s fixture B.\n' "$ROUND" > "$HOME_DIR/data/focus-$ROUND-b/brief.md"
+  printf '%s\n' 'Role: builder' "Projection focus wave $ROUND fixture A." > "$HOME_DIR/data/focus-$ROUND-a/brief.md"
+  printf '%s\n' builder > "$HOME_DIR/data/focus-$ROUND-a/role"
+  printf '%s\n' no-mistakes > "$HOME_DIR/data/focus-$ROUND-a/mode"
+  printf '%s\n' 'Role: builder' "Projection focus wave $ROUND fixture B." > "$HOME_DIR/data/focus-$ROUND-b/brief.md"
+  printf '%s\n' builder > "$HOME_DIR/data/focus-$ROUND-b/role"
+  printf '%s\n' no-mistakes > "$HOME_DIR/data/focus-$ROUND-b/mode"
   WAVE_LOG_START=$(log_line_count)
   WAVE_FOCUS_START=$(focus_audit_line_count)
   spawn_task "focus-$ROUND-a" "$HOME_DIR" "$PROJECT_DIR" > "$TMP_ROOT/focus-$ROUND-a.out" 2> "$TMP_ROOT/focus-$ROUND-a.err" &
@@ -979,12 +1007,24 @@ assert_focus_is "$CAPTAIN_FOCUS" "multi-home captain focus"
 mkdir -p "$SECOND_HOME_A/data/a1" "$SECOND_HOME_A/data/a2" \
   "$SECOND_HOME_B/data/b1" "$SECOND_HOME_B/data/b2" \
   "$HOME_DIR/data/p1" "$HOME_DIR/data/p2"
-printf 'Primary multi-home fixture 1.\n' > "$HOME_DIR/data/p1/brief.md"
-printf 'Primary multi-home fixture 2.\n' > "$HOME_DIR/data/p2/brief.md"
-printf 'Secondmate A fixture 1.\n' > "$SECOND_HOME_A/data/a1/brief.md"
-printf 'Secondmate A fixture 2.\n' > "$SECOND_HOME_A/data/a2/brief.md"
-printf 'Secondmate B fixture 1.\n' > "$SECOND_HOME_B/data/b1/brief.md"
-printf 'Secondmate B fixture 2.\n' > "$SECOND_HOME_B/data/b2/brief.md"
+printf '%s\n' 'Role: builder' 'Primary multi-home fixture 1.' > "$HOME_DIR/data/p1/brief.md"
+printf '%s\n' builder > "$HOME_DIR/data/p1/role"
+printf '%s\n' no-mistakes > "$HOME_DIR/data/p1/mode"
+printf '%s\n' 'Role: builder' 'Primary multi-home fixture 2.' > "$HOME_DIR/data/p2/brief.md"
+printf '%s\n' builder > "$HOME_DIR/data/p2/role"
+printf '%s\n' no-mistakes > "$HOME_DIR/data/p2/mode"
+printf '%s\n' 'Role: builder' 'Secondmate A fixture 1.' > "$SECOND_HOME_A/data/a1/brief.md"
+printf '%s\n' builder > "$SECOND_HOME_A/data/a1/role"
+printf '%s\n' no-mistakes > "$SECOND_HOME_A/data/a1/mode"
+printf '%s\n' 'Role: builder' 'Secondmate A fixture 2.' > "$SECOND_HOME_A/data/a2/brief.md"
+printf '%s\n' builder > "$SECOND_HOME_A/data/a2/role"
+printf '%s\n' no-mistakes > "$SECOND_HOME_A/data/a2/mode"
+printf '%s\n' 'Role: builder' 'Secondmate B fixture 1.' > "$SECOND_HOME_B/data/b1/brief.md"
+printf '%s\n' builder > "$SECOND_HOME_B/data/b1/role"
+printf '%s\n' no-mistakes > "$SECOND_HOME_B/data/b1/mode"
+printf '%s\n' 'Role: builder' 'Secondmate B fixture 2.' > "$SECOND_HOME_B/data/b2/brief.md"
+printf '%s\n' builder > "$SECOND_HOME_B/data/b2/role"
+printf '%s\n' no-mistakes > "$SECOND_HOME_B/data/b2/mode"
 
 MULTI_FOCUS_START=$(focus_audit_line_count)
 spawn_task p1 "$HOME_DIR" "$PROJECT_DIR" > "$TMP_ROOT/p1.out" 2> "$TMP_ROOT/p1.err" \
@@ -1043,9 +1083,15 @@ pass "real Herdr lab: primary and two secondmate homes each own a top-level cont
 
 # Concurrent cross-home wave under the one session lock.
 mkdir -p "$HOME_DIR/data/pcw" "$SECOND_HOME_A/data/acw" "$SECOND_HOME_B/data/bcw"
-printf 'Cross-home concurrent primary.\n' > "$HOME_DIR/data/pcw/brief.md"
-printf 'Cross-home concurrent A.\n' > "$SECOND_HOME_A/data/acw/brief.md"
-printf 'Cross-home concurrent B.\n' > "$SECOND_HOME_B/data/bcw/brief.md"
+printf '%s\n' 'Role: builder' 'Cross-home concurrent primary.' > "$HOME_DIR/data/pcw/brief.md"
+printf '%s\n' builder > "$HOME_DIR/data/pcw/role"
+printf '%s\n' no-mistakes > "$HOME_DIR/data/pcw/mode"
+printf '%s\n' 'Role: builder' 'Cross-home concurrent A.' > "$SECOND_HOME_A/data/acw/brief.md"
+printf '%s\n' builder > "$SECOND_HOME_A/data/acw/role"
+printf '%s\n' no-mistakes > "$SECOND_HOME_A/data/acw/mode"
+printf '%s\n' 'Role: builder' 'Cross-home concurrent B.' > "$SECOND_HOME_B/data/bcw/brief.md"
+printf '%s\n' builder > "$SECOND_HOME_B/data/bcw/role"
+printf '%s\n' no-mistakes > "$SECOND_HOME_B/data/bcw/mode"
 WAVE_CROSS_FOCUS=$(focus_audit_line_count)
 spawn_task pcw "$HOME_DIR" "$PROJECT_DIR" > "$TMP_ROOT/pcw.out" 2> "$TMP_ROOT/pcw.err" &
 PCW_PID=$!
@@ -1093,7 +1139,9 @@ CROSS_LOCK_PID=$!
 while [ ! -e "$CROSS_LOCK_READY" ] && kill -0 "$CROSS_LOCK_PID" 2>/dev/null; do sleep 0.01; done
 [ -e "$CROSS_LOCK_READY" ] || fail "could not hold the cross-home session presentation lock"
 mkdir -p "$SECOND_HOME_A/data/aflat"
-printf 'Flat fallback under session lock contention.\n' > "$SECOND_HOME_A/data/aflat/brief.md"
+printf '%s\n' 'Role: builder' 'Flat fallback under session lock contention.' > "$SECOND_HOME_A/data/aflat/brief.md"
+printf '%s\n' builder > "$SECOND_HOME_A/data/aflat/role"
+printf '%s\n' no-mistakes > "$SECOND_HOME_A/data/aflat/mode"
 if spawn_task aflat "$SECOND_HOME_A" "$PROJECT_DIR" > "$TMP_ROOT/aflat.out" 2> "$TMP_ROOT/aflat.err"; then
   AFLAT_STATUS=0
 else
@@ -1197,7 +1245,9 @@ pass "real Herdr lab: Hi Bit and Wheelhouse-style same-identity restarts reclaim
 # A secondmate child binds and reclaims only inside its own home and parent.
 CROSS_RESTART_ID=wheel-child-resume
 mkdir -p "$SECOND_HOME_A/data/$CROSS_RESTART_ID"
-printf 'Cross-home restart fixture.\n' > "$SECOND_HOME_A/data/$CROSS_RESTART_ID/brief.md"
+printf '%s\n' 'Role: builder' 'Cross-home restart fixture.' > "$SECOND_HOME_A/data/$CROSS_RESTART_ID/brief.md"
+printf '%s\n' builder > "$SECOND_HOME_A/data/$CROSS_RESTART_ID/role"
+printf '%s\n' no-mistakes > "$SECOND_HOME_A/data/$CROSS_RESTART_ID/mode"
 spawn_task "$CROSS_RESTART_ID" "$SECOND_HOME_A" "$PROJECT_DIR" > "$TMP_ROOT/cross-restart-first.out" 2> "$TMP_ROOT/cross-restart-first.err" \
   || fail "cross-home restart fixture failed: $(cat "$TMP_ROOT/cross-restart-first.err")"
 CROSS_RESTART_META="$SECOND_HOME_A/state/$CROSS_RESTART_ID.meta"
@@ -1234,8 +1284,12 @@ pass "real Herdr lab: secondmate restart binding and reclaim stay isolated to th
 PRIMARY_WAVE_ID=resume-wave-primary
 BRAVO_WAVE_ID=resume-wave-bravo
 mkdir -p "$HOME_DIR/data/$PRIMARY_WAVE_ID" "$SECOND_HOME_B/data/$BRAVO_WAVE_ID"
-printf 'Concurrent primary recovery fixture.\n' > "$HOME_DIR/data/$PRIMARY_WAVE_ID/brief.md"
-printf 'Concurrent secondmate recovery fixture.\n' > "$SECOND_HOME_B/data/$BRAVO_WAVE_ID/brief.md"
+printf '%s\n' 'Role: builder' 'Concurrent primary recovery fixture.' > "$HOME_DIR/data/$PRIMARY_WAVE_ID/brief.md"
+printf '%s\n' builder > "$HOME_DIR/data/$PRIMARY_WAVE_ID/role"
+printf '%s\n' no-mistakes > "$HOME_DIR/data/$PRIMARY_WAVE_ID/mode"
+printf '%s\n' 'Role: builder' 'Concurrent secondmate recovery fixture.' > "$SECOND_HOME_B/data/$BRAVO_WAVE_ID/brief.md"
+printf '%s\n' builder > "$SECOND_HOME_B/data/$BRAVO_WAVE_ID/role"
+printf '%s\n' no-mistakes > "$SECOND_HOME_B/data/$BRAVO_WAVE_ID/mode"
 spawn_task "$PRIMARY_WAVE_ID" "$HOME_DIR" "$PROJECT_DIR" > "$TMP_ROOT/primary-wave-first.out" 2> "$TMP_ROOT/primary-wave-first.err" \
   || fail "primary recovery-wave fixture failed: $(cat "$TMP_ROOT/primary-wave-first.err")"
 spawn_task "$BRAVO_WAVE_ID" "$SECOND_HOME_B" "$PROJECT_DIR" > "$TMP_ROOT/bravo-wave-first.out" 2> "$TMP_ROOT/bravo-wave-first.err" \
@@ -1293,7 +1347,9 @@ FLAT_TAB_OUT=$(lab tab create --workspace "$(lab workspace list | jq -r '.result
   || fail "could not seed a flat secondmate child tab"
 FLAT_TAB_ID=$(printf '%s' "$FLAT_TAB_OUT" | jq -r '.result.tab.tab_id // empty')
 mkdir -p "$HOME_DIR/data/post-legacy"
-printf 'Post-legacy primary child.\n' > "$HOME_DIR/data/post-legacy/brief.md"
+printf '%s\n' 'Role: builder' 'Post-legacy primary child.' > "$HOME_DIR/data/post-legacy/brief.md"
+printf '%s\n' builder > "$HOME_DIR/data/post-legacy/role"
+printf '%s\n' no-mistakes > "$HOME_DIR/data/post-legacy/mode"
 spawn_task post-legacy "$HOME_DIR" "$PROJECT_DIR" > "$TMP_ROOT/post-legacy.out" 2> "$TMP_ROOT/post-legacy.err" \
   || fail "post-legacy projected spawn failed: $(cat "$TMP_ROOT/post-legacy.err")"
 remember_meta_worktree "$HOME_DIR/state/post-legacy.meta" >/dev/null

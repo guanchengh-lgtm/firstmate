@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--map <map-file>] [--map-next <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> --role <builder|verifier> [--map <map-file>] [--map-next <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
 #        fm-spawn.sh <task-id> <project-dir> --scout [--map <map-file>] [--map-next <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--map-next <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --map names one build map relative to FM_HOME and records map= in task meta.
@@ -15,10 +15,19 @@
 #   spawn and refused on --scout and --secondmate spawns. Firstmate resolves both
 #   per task at intake (AGENTS.md section 7); data/projects.md holds the captain's
 #   standing posture as context, not as this task's answer, so a spawn never looks
-#   the mode up. A ship spawn additionally reads the brief's recorded
-#   "Delivery contract: mode=<mode>" line and REFUSES a mismatch, so the worker's
-#   instructions and the recorded task delivery cannot drift apart; a brief
-#   scaffolded before that line existed warns once and launches on the flag. When
+#   the mode up. --role builder|verifier is the launch-role gate, REQUIRED for
+#   every ship spawn and refused on --scout and --secondmate. --role verifier is
+#   legal only with --mode no-mistakes. A ship spawn reads the machine-owned
+#   sibling markers written by fm-brief.sh - data/<id>/mode and either
+#   data/<id>/role (builder) or data/<id>/verifier-role (verifier) - and REFUSES
+#   a missing or mismatched marker (no warn-and-launch for role; a missing mode
+#   marker from a pre-marker brief warns once and launches on the flag). Brief
+#   prose is never scanned for Role: or Delivery contract: lines, so task text
+#   and recovery appends cannot forge or poison the gate. --role builder encodes
+#   data/<id>/brief.md. --role verifier encodes data/<id>/verifier-brief.md and
+#   refuses if that file is missing. Recovery reads recorded role= from meta; it
+#   does not infer role from git and does not default an omitted --role to
+#   builder. When
 #   the explicit mode carries less rigor than the project's standing posture, a
 #   loud one-line deviation notice is printed and the spawn continues.
 #   no-mistakes-prod-only is a registry policy rather than a task mode and is
@@ -125,7 +134,7 @@
 # Batch dispatch: pass one or more `id=repo` pairs instead of a single <id> <project>, e.g.
 #     fm-spawn.sh fix-a-k3=projects/foo add-b-q7=projects/bar [--scout]
 #   Each pair re-execs this script in single-task mode, so the single path stays the only
-#   source of truth; shared --scout/--harness/--model/--effort/--backend/--mode/--yolo
+#   source of truth; shared --scout/--harness/--model/--effort/--backend/--mode/--yolo/--role
 #   applies to every pair. A ship batch therefore carries one delivery contract, and each
 #   pair still checks it against its own brief; a batch spanning modes is two invocations.
 #   If config/crew-dispatch.json exists, shared --harness, --model, and --effort
@@ -150,8 +159,8 @@
 # muse installs no hook at all - its plugin engine is off in the default build - so
 # it writes state/<id>.muse-session to bind the pane to muse's own session event
 # log; muse is crewmate/scout only and is refused for --secondmate.
-# On success prints: spawned <id> harness=<name> kind=<ship|scout|secondmate> [mode=<mode> yolo=<on|off>] window=<backend-target> worktree=<path>
-# A ship task records the explicit mode/yolo it was passed; a secondmate spawn records
+# On success prints: spawned <id> harness=<name> kind=<ship|scout|secondmate> [mode=<mode> yolo=<on|off> role=<builder|verifier>] window=<backend-target> worktree=<path>
+# A ship task records the explicit mode/yolo/role it was passed; a secondmate spawn records
 # mode=secondmate, yolo=off, home=, and projects=; a scout records neither, and both the
 # success line and state/<id>.meta omit them.
 # When the home session's frozen trace-context decision is enabled (see
@@ -241,6 +250,7 @@ EFFORT=
 BACKEND_ARG=
 MODE=
 YOLO=
+ROLE=
 TRACEPARENT_ARG=
 MAP_NEXT=
 MAP=
@@ -250,6 +260,7 @@ EFFORT_SET=0
 BACKEND_SET=0
 MODE_SET=0
 YOLO_SET=0
+ROLE_SET=0
 TRACEPARENT_SET=0
 MAP_NEXT_SET=0
 MAP_SET=0
@@ -267,6 +278,7 @@ for a in "$@"; do
       backend) BACKEND_ARG=$a; BACKEND_SET=1 ;;
       mode) MODE=$a; MODE_SET=1 ;;
       yolo) YOLO=$a; YOLO_SET=1 ;;
+      role) ROLE=$a; ROLE_SET=1 ;;
       traceparent) TRACEPARENT_ARG=$a; TRACEPARENT_SET=1 ;;
       map-next) MAP_NEXT=$a; MAP_NEXT_SET=1 ;;
       map) MAP=$a; MAP_SET=1 ;;
@@ -290,6 +302,8 @@ for a in "$@"; do
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
     --yolo) want_value=yolo ;;
     --yolo=*) YOLO=${a#--yolo=}; YOLO_SET=1 ;;
+    --role) want_value=role ;;
+    --role=*) ROLE=${a#--role=}; ROLE_SET=1 ;;
     --traceparent) want_value=traceparent ;;
     --traceparent=*) TRACEPARENT_ARG=${a#--traceparent=}; TRACEPARENT_SET=1 ;;
     --map-next) want_value=map-next ;;
@@ -306,6 +320,7 @@ done
 [ "$BACKEND_SET" -eq 0 ] || [ -n "$BACKEND_ARG" ] || { echo "error: --backend requires a non-empty value" >&2; exit 1; }
 [ "$MODE_SET" -eq 0 ] || [ -n "$MODE" ] || { echo "error: --mode requires a non-empty value" >&2; exit 1; }
 [ "$YOLO_SET" -eq 0 ] || [ -n "$YOLO" ] || { echo "error: --yolo requires a non-empty value" >&2; exit 1; }
+[ "$ROLE_SET" -eq 0 ] || [ -n "$ROLE" ] || { echo "error: --role requires a non-empty value" >&2; exit 1; }
 [ "$TRACEPARENT_SET" -eq 0 ] || [ -n "$TRACEPARENT_ARG" ] || { echo "error: --traceparent requires a non-empty value" >&2; exit 1; }
 [ "$MAP_NEXT_SET" -eq 0 ] || [ -n "$MAP_NEXT" ] || { echo "error: --map-next requires a non-empty value" >&2; exit 1; }
 [ "$MAP_NEXT_SET" -eq 0 ] || fm_task_id_creation_valid "$MAP_NEXT" || { echo "error: invalid --map-next task id" >&2; exit 2; }
@@ -352,6 +367,18 @@ if [ "$KIND" = ship ]; then
     on|off) ;;
     *) echo "error: --yolo must be on or off (got '$YOLO')" >&2; exit 1 ;;
   esac
+  [ "$ROLE_SET" -eq 1 ] || {
+    echo "error: ship spawns require --role <builder|verifier>; do not default an omitted role to builder" >&2
+    exit 1
+  }
+  case "$ROLE" in
+    builder|verifier) ;;
+    *) echo "error: --role must be builder or verifier (got '$ROLE')" >&2; exit 1 ;;
+  esac
+  if [ "$ROLE" = verifier ] && [ "$MODE" != no-mistakes ]; then
+    echo "error: --role verifier is legal only with --mode no-mistakes; $MODE has no second context" >&2
+    exit 1
+  fi
 else
   [ "$MODE_SET" -eq 0 ] || {
     echo "error: --mode applies only to ship spawns; a scout delivers a report and a secondmate records its own fixed posture" >&2
@@ -359,6 +386,10 @@ else
   }
   [ "$YOLO_SET" -eq 0 ] || {
     echo "error: --yolo applies only to ship spawns; a scout delivers a report and a secondmate records its own fixed posture" >&2
+    exit 1
+  }
+  [ "$ROLE_SET" -eq 0 ] || {
+    echo "error: --role applies only to ship spawns; a scout delivers a report and a secondmate records its own fixed posture" >&2
     exit 1
   }
 fi
@@ -817,6 +848,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   # spanning several modes is two invocations rather than a silent mixed dispatch.
   [ "$MODE_SET" -eq 0 ] || shared_args+=(--mode "$MODE")
   [ "$YOLO_SET" -eq 0 ] || shared_args+=(--yolo "$YOLO")
+  [ "$ROLE_SET" -eq 0 ] || shared_args+=(--role "$ROLE")
   [ "$MAP_NEXT_SET" -eq 0 ] || shared_args+=(--map-next "$MAP_NEXT")
   [ "$MAP_SET" -eq 0 ] || shared_args+=(--map "$MAP")
   for pair in ${POS[@]+"${POS[@]}"}; do
@@ -1401,7 +1433,15 @@ if [ "$KIND" = secondmate ]; then
 else
   PROJ_ABS="$(cd "$(resolve_project_dir_arg "$PROJ")" && pwd)"
   WT=""
-  BRIEF="$DATA/$ID/brief.md"
+  if [ "$KIND" = ship ] && [ "$ROLE" = verifier ]; then
+    BRIEF="$DATA/$ID/verifier-brief.md"
+    [ -f "$BRIEF" ] || {
+      echo "error: no verifier brief at $BRIEF; render it with bin/fm-brief.sh $ID --verifier before a --role verifier spawn" >&2
+      exit 1
+    }
+  else
+    BRIEF="$DATA/$ID/brief.md"
+  fi
 fi
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
 if [ "$KIND" != secondmate ]; then
@@ -1418,16 +1458,44 @@ delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task
 }
 
 # Brief/spawn delivery agreement, checked before any endpoint exists.
-# fm-brief.sh records a ship brief's mode as a fixed "Delivery contract: mode=<mode>"
-# line. A spawn that disagrees would launch a worker whose instructions and whose
-# recorded task delivery differ, which is the exact drift this contract prevents.
+# fm-brief.sh records mode and role in machine-owned sibling files under
+# data/<id>/ (not in brief prose). A spawn that disagrees would launch a worker
+# whose launch role/mode and whose recorded task delivery differ.
 if [ "$KIND" = ship ]; then
   PROJ_NAME=$(basename "$PROJ_ABS")
-  BRIEF_MODE=$(sed -n 's/^Delivery contract: mode=\([^ ]*\).*$/\1/p' "$BRIEF" | head -n 1)
+  MODE_MARKER="$DATA/$ID/mode"
+  if [ "$ROLE" = verifier ]; then
+    ROLE_MARKER="$DATA/$ID/verifier-role"
+  else
+    ROLE_MARKER="$DATA/$ID/role"
+  fi
+  BRIEF_MODE=
+  if [ -f "$MODE_MARKER" ]; then
+    BRIEF_MODE=$(tr -d '\r\n' < "$MODE_MARKER")
+    case "$BRIEF_MODE" in
+      no-mistakes|direct-PR|local-only) ;;
+      *) BRIEF_MODE= ;;
+    esac
+  fi
   if [ -z "$BRIEF_MODE" ]; then
-    echo "warning: $BRIEF records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode $MODE - confirm its definition of done matches" >&2
+    echo "warning: $MODE_MARKER records no delivery mode (scaffolded before ship tasks recorded one); launching on the explicit --mode $MODE - confirm its definition of done matches" >&2
   elif [ "$BRIEF_MODE" != "$MODE" ]; then
-    echo "error: delivery mismatch for $ID: the brief says mode=$BRIEF_MODE but this spawn passed --mode $MODE; correct the flag or re-scaffold the brief so the worker's instructions and the task record agree" >&2
+    echo "error: delivery mismatch for $ID: the task mode marker says mode=$BRIEF_MODE but this spawn passed --mode $MODE; correct the flag or re-scaffold the brief so the worker's instructions and the task record agree" >&2
+    exit 1
+  fi
+  BRIEF_ROLE=
+  if [ -f "$ROLE_MARKER" ]; then
+    BRIEF_ROLE=$(tr -d '\r\n' < "$ROLE_MARKER")
+    case "$BRIEF_ROLE" in
+      builder|verifier) ;;
+      *) BRIEF_ROLE= ;;
+    esac
+  fi
+  if [ -z "$BRIEF_ROLE" ]; then
+    echo "error: $ROLE_MARKER records no role; a ship spawn requires a machine-owned role marker of builder or verifier so the launch input names the worker's role" >&2
+    exit 1
+  elif [ "$BRIEF_ROLE" != "$ROLE" ]; then
+    echo "error: role mismatch for $ID: the task role marker says $BRIEF_ROLE but this spawn passed --role $ROLE; correct the flag or render the matching brief so the worker's instructions and the launch role agree" >&2
     exit 1
   fi
   # The registry holds the captain's standing posture, so dropping below it is
@@ -2273,6 +2341,7 @@ META_WINDOW=$T
   echo "kind=$KIND"
   [ -z "$MODE" ] || echo "mode=$MODE"
   [ -z "$YOLO" ] || echo "yolo=$YOLO"
+  [ -z "${ROLE:-}" ] || echo "role=$ROLE"
   [ -z "$MAP_NEXT" ] || echo "map_next=$MAP_NEXT"
   [ -z "${MAP:-}" ] || echo "map=$MAP"
   echo "tasktmp=$TASK_TMP"
@@ -2415,5 +2484,8 @@ if [ "$KIND" = secondmate ] && [ "${FM_SKIP_SECONDMATE_INHERIT:-0}" != 1 ]; then
 fi
 
 SPAWN_DELIVERY=
-[ -z "$MODE" ] || SPAWN_DELIVERY=" mode=$MODE yolo=$YOLO"
+if [ -n "$MODE" ]; then
+  SPAWN_DELIVERY=" mode=$MODE yolo=$YOLO"
+  [ -z "${ROLE:-}" ] || SPAWN_DELIVERY="$SPAWN_DELIVERY role=$ROLE"
+fi
 echo "spawned $ID harness=$HARNESS kind=$KIND$SPAWN_DELIVERY window=$META_WINDOW worktree=$WT"

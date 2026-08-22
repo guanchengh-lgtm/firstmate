@@ -74,6 +74,7 @@ data/                personal fleet records; LOCAL, gitignored as a whole
   projects.md        thin fleet navigation registry of standing delivery posture (section 6)
   secondmates.md     local and remote secondmate routing table (section 6)
   <id>/brief.md      per-task crewmate brief, or per-secondmate charter brief when kind=secondmate
+  <id>/verifier-brief.md  no-mistakes verifier second-context brief; sibling of brief.md
   <id>/report.md     scout task deliverable, written by the crewmate; survives teardown
 projects/            cloned repos; gitignored; read-only except under hard rule 1's concrete captain-approved project operation exception
 state/               volatile runtime signals; gitignored
@@ -237,6 +238,7 @@ A diagnostic request, report, recommendation, or implementation-ready finding is
 Load `diagnostic-reasoning` before scoping a reported bug and before acting on a diagnostic report.
 
 Resolve every ship task's concrete delivery mode and yolo posture at intake, and pass both explicitly to the brief, the spawn, and any scout promotion, which all refuse to guess.
+A ship spawn also requires explicit `--role` (`builder` at first dispatch; `verifier` only for the no-mistakes second context) and refuses an omitted role rather than defaulting it; script headers own the role/mode marker gate.
 A current explicit captain instruction wins; otherwise the project's registry entry is the captain's standing posture, and dropping below its rigor needs a reason you can state.
 On a `no-mistakes-prod-only` project, classify the task's surface: internal-only tooling, automation, contributor or operator process, and release or submission work ships `direct-PR`, while product-facing, mixed, and uncertain work ships `no-mistakes`; never infer internal-only from file location or project name.
 An unregistered project or absent registry resolves to `no-mistakes` with yolo off, and the registration gap goes to the captain.
@@ -285,7 +287,7 @@ After an autonomous merge, give the captain a one-line full-URL or local-main ou
 
 ### Validate
 
-For a no-mistakes ship, after the builder's implementation commit and stop, start validation in a fresh verifier context on that same task, using the harness invocation owned by `harness-adapters`.
+For a no-mistakes ship, after the builder's implementation commit and stop, render `data/<id>/verifier-brief.md` with `bin/fm-brief.sh <id> --verifier` when that file is missing, then start validation in a fresh verifier context on that same task by spawning with `--role verifier` (script headers own the gate), using the harness invocation owned by `harness-adapters`.
 The builder never invokes or drives `/no-mistakes`; builder and verifier must not share a context, and this isolation extends the existing gate boundary rather than creating a second pipeline.
 The verifier drives the pipeline and owns every `no-mistakes axi run` and `no-mistakes axi respond` call through the next gate or outcome.
 Firstmate never invokes `no-mistakes axi respond` for a crew-owned run.
@@ -296,7 +298,7 @@ The active verifier cancels the active run through no-mistakes axi's supported a
 Follow `branch_sync.next_action` from structured axi status: use axi sync's supported guarded recovery only when its code is `recover_custody`, and otherwise proceed only when structured status confirms that branch ownership is already returned and no recovery is required.
 Custody recovery settles branch ownership, not content: replace the obsolete work from the correct pre-invalidation base rather than building on top of the recovered-but-obsolete head, keeping the obsolete run's own pipeline-fix commits out of what gets validated and shipped.
 Apart from that single supported abort, do not hand-edit, commit, restart, or start a second validation run while the obsolete run still owns the branch.
-Once ownership is settled and the final head is ready, start a fresh verifier context and validate exactly once against that head so no obsolete or intermediate head is ever treated as authoritative.
+Once ownership is settled and the final head is ready, start a fresh verifier context with `--role verifier` and validate exactly once against that head so no obsolete or intermediate head is ever treated as authoritative.
 
 An ask-user finding returns as `needs-decision`; firstmate decides only when the configured authority permits, otherwise escalates to the captain.
 Send the active verifier one exact decision naming the decision key, step, action, affected finding IDs, instructions where needed, and exact response command, passing `--resolve-key` so the verifier's open decision record closes at answer time.
@@ -453,7 +455,7 @@ Preserve durable structured identifiers, dependencies, and completion artifact l
 
 ## 11. Crewmate briefs
 
-`bin/fm-brief.sh` and its help own scaffold syntax, generated variants, status protocol, delivery-mode definitions of done, and exact safety mechanics.
+`bin/fm-brief.sh` and its help own scaffold syntax, generated variants (including the no-mistakes `--verifier` second-context renderer), status protocol, delivery-mode definitions of done, and exact safety mechanics.
 Use its scaffold as the contract, then replace every `{TASK}` placeholder with a clear task description, acceptance criteria, constraints, and necessary context before dispatch or seeding.
 Keep additions task-specific rather than repeating lifecycle instructions, and alter generated sections only when the task genuinely differs from the standard shape.
 
