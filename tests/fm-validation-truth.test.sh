@@ -10,11 +10,15 @@ unset FM_VALIDATION_TRUTH_BYPASS
 
 PR_CHECK="$ROOT/bin/fm-pr-check.sh"
 TEARDOWN="$ROOT/bin/fm-teardown.sh"
+CREW_STATE="$ROOT/bin/fm-crew-state.sh"
 TMP_ROOT=$(fm_test_tmproot fm-validation-truth)
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
+fm_git_identity fmtest fmtest@example.invalid
 
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-validation-truth-lib.sh"
+# shellcheck source=/dev/null
+. "$ROOT/bin/fm-nm-run-lib.sh"
 
 test_parse_run_step_done() {
   fm_validation_truth_parse 'state: done · source: run-step · passed'
@@ -219,6 +223,128 @@ test_teardown_force_still_requires_measure() {
   pass "validation-truth: --force teardown still requires a measure"
 }
 
+write_real_nm_fakebin() {  # <fakebin-dir>
+  local fb=$1
+  mkdir -p "$fb"
+  cat > "$fb/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  axi)
+    shift
+    case "${1:-}" in
+      status) printf '%s\n' "${FM_FAKE_AXI_STATUS:-}" ;;
+      logs) printf '%s\n' "${FM_FAKE_CI_LOGS:-}" ;;
+    esac
+    ;;
+  runs)
+    printf '%s\n' "${FM_FAKE_RUNS_LIST:-}" ;;
+esac
+exit 0
+SH
+  cat > "$fb/tmux" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$fb/no-mistakes" "$fb/tmux"
+}
+
+passed_run_toon() {  # <branch> <head>
+  cat <<EOF
+run:
+  id: "01RUN"
+  branch: $1
+  status: completed
+  head: "$2"
+  pr: "https://github.com/o/r/pull/1"
+  findings: none
+outcome: passed
+EOF
+}
+
+prepare_lagging_git_wt() {  # <dir> <branch>  — echoes remote SHA; objects absent
+  local dir=$1 branch=$2 sibling remote_abs sha
+  rm -rf "$dir/wt"
+  mkdir -p "$dir/wt"
+  git -C "$dir/wt" init -q
+  git -C "$dir/wt" commit -q --allow-empty -m parent-a
+  git -C "$dir/wt" checkout -q -b "$branch"
+  fm_git_add_origin "$dir/wt" "$dir/remote.git"
+  git -C "$dir/wt" push -q origin HEAD
+  remote_abs=$(cd "$dir/remote.git" && pwd)
+  sibling="$dir/sibling"
+  git clone -q --branch "$branch" "file://$remote_abs" "$sibling"
+  git -C "$sibling" commit -q --allow-empty -m pipeline-b
+  sha=$(git -C "$sibling" rev-parse HEAD)
+  git -C "$sibling" push -q origin "$branch"
+  if git -C "$dir/wt" cat-file -e "${sha}^{commit}" 2>/dev/null; then
+    fail "missing-object fixture leaked remote commit $sha"
+  fi
+  printf '%s' "$sha"
+}
+
+prepare_diverged_git_wt() {  # <dir> <branch>  — echoes remote SHA; objects present
+  local dir=$1 branch=$2 sibling remote_abs sha
+  rm -rf "$dir/wt"
+  mkdir -p "$dir/wt"
+  git -C "$dir/wt" init -q
+  git -C "$dir/wt" commit -q --allow-empty -m parent-a
+  git -C "$dir/wt" checkout -q -b "$branch"
+  fm_git_add_origin "$dir/wt" "$dir/remote.git"
+  git -C "$dir/wt" push -q origin HEAD
+  remote_abs=$(cd "$dir/remote.git" && pwd)
+  sibling="$dir/sibling"
+  git clone -q --branch "$branch" "file://$remote_abs" "$sibling"
+  git -C "$sibling" checkout -q --orphan tmp-div
+  git -C "$sibling" commit -q --allow-empty -m pipeline-rebase
+  sha=$(git -C "$sibling" rev-parse HEAD)
+  git -C "$sibling" push -q --force origin HEAD:"$branch"
+  git -C "$dir/wt" fetch -q origin "$branch:refs/fm-test/diverged"
+  git -C "$dir/wt" cat-file -e "${sha}^{commit}" 2>/dev/null \
+    || fail "diverged fixture missing remote object $sha"
+  printf '%s' "$sha"
+}
+
+# Real crew-state + real helper: missing-object lag must not refuse.
+test_missing_object_lag_allows_validation_truth() {
+  local dir rc out remote_sha
+  dir=$(make_task_home miss-obj-allow no-mistakes)
+  remote_sha=$(prepare_lagging_git_wt "$dir" fm/task-a)
+  write_real_nm_fakebin "$dir/fakebin"
+  fm_nm_head_matches_worktree "$dir/wt" "$remote_sha" \
+    || fail "identity missed missing-object live remote $remote_sha"
+  FM_FAKE_AXI_STATUS=$(passed_run_toon fm/task-a "$remote_sha")
+  export FM_FAKE_AXI_STATUS
+  set +e
+  out=$(PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" \
+    FM_CREW_STATE_BIN="$CREW_STATE" \
+    fm_require_validation_truth "$dir/home/state/task-a.meta" task-a 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "missing-object lag refused validation truth: $out"
+  pass "validation-truth: missing-object lag with live remote allows"
+}
+
+# Real crew-state + real helper: diverged rebase lag must not refuse.
+test_diverged_rebase_allows_validation_truth() {
+  local dir rc out remote_sha
+  dir=$(make_task_home div-allow no-mistakes)
+  remote_sha=$(prepare_diverged_git_wt "$dir" fm/task-a)
+  write_real_nm_fakebin "$dir/fakebin"
+  fm_nm_head_matches_worktree "$dir/wt" "$remote_sha" \
+    || fail "identity missed diverged live remote $remote_sha"
+  FM_FAKE_AXI_STATUS=$(passed_run_toon fm/task-a "$remote_sha")
+  export FM_FAKE_AXI_STATUS
+  set +e
+  out=$(PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" \
+    FM_CREW_STATE_BIN="$CREW_STATE" \
+    fm_require_validation_truth "$dir/home/state/task-a.meta" task-a 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "diverged rebase lag refused validation truth: $out"
+  pass "validation-truth: diverged rebase lag with live remote allows"
+}
+
 test_parse_run_step_done
 test_parse_pane_is_not_run_step
 test_direct_pr_is_exempt
@@ -229,5 +355,7 @@ test_pr_check_refuses_pane_truth
 test_teardown_non_force_refuses_pane_truth
 test_teardown_force_skips_validation_truth
 test_teardown_force_still_requires_measure
+test_missing_object_lag_allows_validation_truth
+test_diverged_rebase_allows_validation_truth
 
 echo "# all fm-validation-truth tests passed"

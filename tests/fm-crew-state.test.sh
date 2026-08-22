@@ -31,6 +31,8 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 # shellcheck source=/dev/null
 . "$ROOT/bin/fm-classify-lib.sh"
+# shellcheck source=/dev/null
+. "$ROOT/bin/fm-nm-run-lib.sh"
 
 CREW_STATE="$ROOT/bin/fm-crew-state.sh"
 TMP_ROOT=$(fm_test_tmproot fm-crew-state)
@@ -1309,6 +1311,90 @@ test_missing_run_head_falls_back_to_current_state() {
   pass "missing run head falls back instead of matching by branch"
 }
 
+# Push a new empty commit from a sibling clone so origin/<branch> is ahead and
+# the new object is absent from the worktree. Echoes the remote SHA.
+push_ahead_absent() {  # <worktree> <branch>
+  local wt=$1 branch=$2 parent sibling remote_abs sha
+  parent=$(dirname "$wt")
+  remote_abs=$(cd "$parent/remote.git" && pwd)
+  sibling="$parent/sibling"
+  git clone -q --branch "$branch" "file://$remote_abs" "$sibling"
+  git -C "$sibling" commit -q --allow-empty -m 'pipeline rewrite'
+  sha=$(git -C "$sibling" rev-parse HEAD)
+  git -C "$sibling" push -q origin "$branch"
+  if git -C "$wt" cat-file -e "${sha}^{commit}" 2>/dev/null; then
+    fail "lag fixture leaked remote commit $sha into $wt"
+  fi
+  printf '%s' "$sha"
+}
+
+# Force-push a diverged orphan tip, then fetch that object into a private ref
+# so both histories are present while HEAD stays at the pre-rewrite commit.
+# Echoes the remote SHA.
+push_diverged_keep_objects() {  # <worktree> <branch>
+  local wt=$1 branch=$2 parent sibling remote_abs sha
+  parent=$(dirname "$wt")
+  remote_abs=$(cd "$parent/remote.git" && pwd)
+  sibling="$parent/sibling"
+  git clone -q --branch "$branch" "file://$remote_abs" "$sibling"
+  git -C "$sibling" checkout -q --orphan tmp-div
+  git -C "$sibling" commit -q --allow-empty -m 'pipeline rebase'
+  sha=$(git -C "$sibling" rev-parse HEAD)
+  git -C "$sibling" push -q --force origin HEAD:"$branch"
+  git -C "$wt" fetch -q origin "$branch:refs/fm-test/diverged"
+  git -C "$wt" cat-file -e "${sha}^{commit}" 2>/dev/null \
+    || fail "diverged fixture missing remote object $sha"
+  [ "$(git -C "$wt" rev-parse HEAD)" != "$sha" ] \
+    || fail "diverged fixture moved worktree HEAD to the remote tip"
+  printf '%s' "$sha"
+}
+
+# Head-binding: pipeline committed in another clone and pushed; local objects
+# do not contain the run head. Live remote agrees, so identity still binds.
+test_missing_object_lag_matches_live_remote() {
+  reset_fakes
+  local d remote_sha out
+  d=$(new_case missing-object-lag)
+  make_repo_on_branch "$d/wt" fm/feat-miss
+  fm_git_add_origin "$d/wt" "$d/remote.git"
+  git -C "$d/wt" push -q origin HEAD
+  remote_sha=$(push_ahead_absent "$d/wt" fm/feat-miss)
+  fm_nm_head_matches_worktree "$d/wt" "$remote_sha" \
+    || fail "identity missed a missing-object run head that equals the live remote"
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/miss.meta" "window=fm:fm-miss" "worktree=$d/wt" "kind=ship" \
+    "mode=no-mistakes"
+  FM_FAKE_RUN_HEAD="$remote_sha"
+  FM_FAKE_AXI_STATUS="$(run_passed fm/feat-miss)"
+  out=$(run_crew_state "$d" miss)
+  assert_contains "$out" "source: run-step" "missing-object lag must still use run-step"
+  assert_contains "$out" "state: done" "missing-object lag with a passed run is done"
+  pass "missing-object lag matches live remote and stays run-step"
+}
+
+# Head-binding: pipeline rebase diverged local from run head; both objects may
+# be present. Live remote agrees, so identity still binds.
+test_diverged_rebase_matches_live_remote() {
+  reset_fakes
+  local d remote_sha out
+  d=$(new_case diverged-rebase)
+  make_repo_on_branch "$d/wt" fm/feat-div
+  fm_git_add_origin "$d/wt" "$d/remote.git"
+  git -C "$d/wt" push -q origin HEAD
+  remote_sha=$(push_diverged_keep_objects "$d/wt" fm/feat-div)
+  fm_nm_head_matches_worktree "$d/wt" "$remote_sha" \
+    || fail "identity missed a diverged run head that equals the live remote"
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/div.meta" "window=fm:fm-div" "worktree=$d/wt" "kind=ship" \
+    "mode=no-mistakes"
+  FM_FAKE_RUN_HEAD="$remote_sha"
+  FM_FAKE_AXI_STATUS="$(run_passed fm/feat-div)"
+  out=$(run_crew_state "$d" div)
+  assert_contains "$out" "source: run-step" "diverged rebase lag must still use run-step"
+  assert_contains "$out" "state: done" "diverged rebase lag with a passed run is done"
+  pass "diverged rebase matches live remote and stays run-step"
+}
+
 test_active_run_is_authoritative
 test_stale_needs_decision_superseded
 test_stale_blocked_superseded
@@ -1358,5 +1444,7 @@ test_historical_same_branch_rewritten_head_not_current
 test_active_run_descendant_fix_head_remains_current
 test_local_advanced_past_run_head_invalidates
 test_missing_run_head_falls_back_to_current_state
+test_missing_object_lag_matches_live_remote
+test_diverged_rebase_matches_live_remote
 
 echo "all fm-crew-state tests passed"
