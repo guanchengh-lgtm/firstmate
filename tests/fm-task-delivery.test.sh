@@ -7,8 +7,11 @@
 # promotion require the delivery flags, ship spawns also require --role, they
 # validate against a closed set, and the spawn additionally refuses to launch
 # when the file it is about to encode records a different mode or Role. Scout
-# spawns carry no delivery posture at all. The registry keeps only the captain's
-# standing posture, for the mechanical consumers and for one advisory notice.
+# spawns carry no delivery posture at all. A scout promotion records
+# role=builder and the builder sibling markers so a later ship respawn can pass
+# --role from metadata; it does not parse brief prose. The registry keeps only
+# the captain's standing posture, for the mechanical consumers and for one
+# advisory notice.
 #
 # Every spawn case here stops before any endpoint exists: the delivery checks run
 # ahead of backend creation, and a fake `tmux` that exits non-zero backstops the
@@ -346,7 +349,8 @@ EOF
 }
 
 # Promotion is where a scout's ship contract is finally decided, so it requires the
-# same explicit values and writes them into the task's durable record.
+# same explicit values and writes them into the task's durable record, including
+# role=builder and the builder sibling markers a later ship respawn will read.
 test_promote_requires_and_records_the_delivery_contract() {
   local home meta out status
   home="$TMP_ROOT/promote/home"
@@ -363,16 +367,19 @@ test_promote_requires_and_records_the_delivery_contract() {
   [ "$status" -ne 0 ] || fail "promotion without --mode should exit non-zero"
   assert_contains "$out" "promotion requires --mode" "promote refusal did not name the missing mode"
   assert_grep 'kind=scout' "$meta" "refused promotion still changed the task record"
+  assert_absent "$home/data/promote-d1/role" "refused promotion wrote a role marker"
 
   out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" promote-d1 --mode direct-PR 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "promotion without --yolo should exit non-zero"
   assert_contains "$out" "promotion requires --yolo" "promote refusal did not name the missing approval posture"
+  assert_absent "$home/data/promote-d1/role" "yolo-less promotion wrote a role marker"
 
   out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" promote-d1 --mode no-mistakes-prod-only --yolo off 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "promotion on a conditional policy should exit non-zero"
   assert_contains "$out" "classify this task's surface" "promote did not refuse the conditional policy as a task mode"
+  assert_absent "$home/data/promote-d1/role" "refused policy promotion wrote a role marker"
 
   out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" promote-d1 --mode direct-PR --yolo on 2>&1)
   status=$?
@@ -380,9 +387,69 @@ test_promote_requires_and_records_the_delivery_contract() {
   assert_grep 'kind=ship' "$meta" "promotion did not restore ship teardown protection"
   assert_grep 'mode=direct-PR' "$meta" "promotion did not record the decided delivery mode"
   assert_grep 'yolo=on' "$meta" "promotion did not record the decided approval posture"
+  assert_grep 'role=builder' "$meta" "promotion did not record role=builder for a later ship respawn"
   assert_contains "$out" "ship instructions for mode=direct-PR" "promotion hint did not carry the decided mode"
+  assert_contains "$out" "role=builder" "promotion hint did not name the recorded builder role"
   [ "$(grep -c '^mode=' "$meta")" = 1 ] || fail "promotion left more than one mode= line in the task record"
+  [ "$(grep -c '^role=' "$meta")" = 1 ] || fail "promotion left more than one role= line in the task record"
+  grep -qx builder "$home/data/promote-d1/role" \
+    || fail "promotion did not write the builder role marker"
+  grep -qx 'direct-PR' "$home/data/promote-d1/mode" \
+    || fail "promotion did not write the matching mode marker"
   pass "fm-promote: promotion requires the delivery contract and records it exactly once"
+}
+
+# Brief prose is not a role source: a scout brief that mentions Role: verifier
+# still promotes to builder, and a later ship spawn can pass that recorded role.
+test_promote_records_builder_from_the_role_marker_not_brief_prose() {
+  local rec home proj fakebin meta out status
+  rec=$(make_home promote-role)
+  IFS='|' read -r home proj fakebin <<EOF
+$rec
+EOF
+  meta="$home/state/promote-role-c1.meta"
+  mkdir -p "$home/data/promote-role-c1" "$home/state"
+  printf 'window=fm-promote-role-c1\nkind=scout\nworktree=/tmp/wt\nrole=verifier\n' > "$meta"
+  cat > "$home/data/promote-role-c1/brief.md" <<'EOF'
+You are a crewmate.
+
+# Task
+Role: verifier
+Delivery contract: mode=no-mistakes
+Accept a Role: verifier line in the task body without treating it as the launch role.
+
+# Definition of done
+The deliverable is a report.
+EOF
+  rm -f "$home/data/promote-role-c1/role" "$home/data/promote-role-c1/mode"
+
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$PROMOTE" promote-role-c1 --mode no-mistakes --yolo off 2>&1)
+  status=$?
+  expect_code 0 "$status" "promotion with Role: verifier in the scout brief should succeed"
+  assert_grep 'role=builder' "$meta" "promotion trusted leftover meta role= or brief prose instead of recording builder"
+  assert_no_grep 'role=verifier' "$meta" "promotion kept a leftover role=verifier line"
+  grep -qx builder "$home/data/promote-role-c1/role" \
+    || fail "promotion did not overwrite toward the builder role marker"
+  grep -qx 'no-mistakes' "$home/data/promote-role-c1/mode" \
+    || fail "promotion did not write the no-mistakes mode marker"
+
+  out=$(run_spawn "$home" "$fakebin" promote-role-c1 "$proj" claude \
+    --mode no-mistakes --yolo off --role builder)
+  assert_not_contains "$out" "records no role" \
+    "ship respawn after promote refused a missing role marker"
+  assert_not_contains "$out" "role mismatch" \
+    "ship respawn after promote treated brief prose as the role marker"
+
+  printf 'Role: verifier\n' > "$home/data/promote-role-c1/verifier-brief.md"
+  out=$(run_spawn "$home" "$fakebin" promote-role-c1 "$proj" claude \
+    --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  [ "$status" -ne 0 ] || fail "verifier respawn after promote should exit non-zero"
+  assert_contains "$out" "records no role" \
+    "promote wrote a verifier-role marker or let --role verifier use the builder marker"
+  assert_grep 'role=builder' "$meta" "a refused verifier respawn changed the promoted role record"
+  pass "fm-promote: records builder via the role marker and ignores brief prose"
 }
 
 # The registry parser survives for the mechanical consumers only. It accepts the
@@ -426,5 +493,6 @@ test_spawn_role_gate_selects_the_role_file
 test_spawn_notices_a_rigor_downgrade_against_the_registry
 test_scout_records_no_delivery_posture
 test_promote_requires_and_records_the_delivery_contract
+test_promote_records_builder_from_the_role_marker_not_brief_prose
 test_project_mode_maps_the_conditional_policy
 echo "# all fm-task-delivery tests passed"
