@@ -5,8 +5,9 @@
 # live only in a private sidecar and are never interpolated into shell source.
 # A GitHub pull request URL and a GitLab merge request URL are both accepted,
 # including a merge request on a self-hosted GitLab instance.
-# A no-mistakes ship is refused unless current-state source is the validation
-# run (bin/fm-validation-truth-lib.sh).
+# A no-mistakes ship is refused unless validation truth is readable
+# (bin/fm-validation-truth-lib.sh). The PR URL is passed so a builder id
+# can prove a -nm run keyed by that URL before pr= is recorded.
 # Usage: fm-pr-check.sh <task-id> <pr-url>
 set -eu
 
@@ -42,7 +43,7 @@ if [ ! -f "$META" ] || [ -L "$META" ] || [ "$(fm_pr_file_link_count "$META")" !=
   echo "error: task metadata is unavailable" >&2
   exit 1
 fi
-fm_require_validation_truth "$META" "$ID" || exit 1
+fm_require_validation_truth "$META" "$ID" "$URL" || exit 1
 
 # A prior exact merged result may have queued its durable wake immediately
 # before interruption.

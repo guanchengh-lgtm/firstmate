@@ -9,6 +9,7 @@ set -u
 unset FM_VALIDATION_TRUTH_BYPASS
 
 PR_CHECK="$ROOT/bin/fm-pr-check.sh"
+PR_MERGE="$ROOT/bin/fm-pr-merge.sh"
 TEARDOWN="$ROOT/bin/fm-teardown.sh"
 CREW_STATE="$ROOT/bin/fm-crew-state.sh"
 TMP_ROOT=$(fm_test_tmproot fm-validation-truth)
@@ -325,6 +326,73 @@ test_missing_object_lag_allows_validation_truth() {
   pass "validation-truth: missing-object lag with live remote allows"
 }
 
+PROOF_URL=https://github.com/o/r/pull/99
+PROOF_HEAD=89e4863d0123456789abcdef0123456789abcdef
+
+proof_runs_row() {  # <status> [sha]
+  local st=$1 sha=${2:-$PROOF_HEAD}
+  printf '  %s    fm/task-a-nm %s  2026-08-23 01:23  %s\n' "$st" "$sha" "$PROOF_URL"
+}
+
+write_pr_url_proof_bin() {  # <dir> [forge-head]
+  local dir=$1 head=${2:-$PROOF_HEAD}
+  write_real_nm_fakebin "$dir/fakebin"
+  write_stub_crew_state "$dir/fakebin/fm-crew-state.sh" \
+    'state: done · source: status-log · leftover builder'
+  cat > "$dir/fakebin/gh" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "\${FM_TEST_GH_LOG:-/dev/null}"
+case "\${1:-} \${2:-}" in
+  "pr view")
+    case " \$* " in
+      *statusCheckRollup*)
+        printf '%s %s\n' "\${FM_TEST_GH_HEAD:-$head}" "\${FM_TEST_GH_ROLLUP_VERDICT:-GREEN}"
+        exit 0
+        ;;
+      *headRefOid*)
+        printf '%s\n' "\${FM_TEST_GH_HEAD:-$head}"
+        exit 0
+        ;;
+    esac
+    ;;
+  "pr merge")
+    exit 0
+    ;;
+esac
+exit 0
+SH
+  cat > "$dir/fakebin/gh-axi" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_TEST_GH_AXI_LOG:-/dev/null}"
+exit 0
+SH
+  cat > "$dir/fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  cat > "$dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$dir/fakebin/gh" "$dir/fakebin/gh-axi" "$dir/fakebin/tmux" "$dir/fakebin/treehouse"
+}
+
+run_pr_url_proof() {  # <dir> <url>
+  local dir=$1 url=$2
+  PATH="$dir/fakebin:$BASE_PATH" FM_HOME="$dir/home" \
+    FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" \
+    fm_require_validation_truth "$dir/home/state/task-a.meta" task-a "$url"
+}
+
+prepare_unsuffixed_builder() {  # <dir>
+  fm_git_init_commit "$1/wt"
+  git -C "$1/wt" checkout -q -b fm/task-a
+  # project= remains after worktree teardown so leftover cleanup can still
+  # invoke `no-mistakes runs` when the task worktree is already gone.
+  mkdir -p "$1/project"
+  fm_git_init_commit "$1/project"
+}
+
 # Real crew-state + real helper: diverged rebase lag must not refuse.
 test_diverged_rebase_allows_validation_truth() {
   local dir rc out remote_sha
@@ -345,6 +413,276 @@ test_diverged_rebase_allows_validation_truth() {
   pass "validation-truth: diverged rebase lag with live remote allows"
 }
 
+test_pr_url_proof_cancelled_run_refuses() {
+  local dir rc out
+  dir=$(make_task_home pr-url-cancelled no-mistakes)
+  prepare_unsuffixed_builder "$dir"
+  write_pr_url_proof_bin "$dir"
+  FM_FAKE_RUNS_LIST=$(proof_runs_row cancelled)
+  export FM_FAKE_RUNS_LIST
+  set +e
+  out=$(run_pr_url_proof "$dir" "$PROOF_URL" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "cancelled run exited $rc: $out"
+  assert_contains "$out" 'validation run is cancelled' "cancelled run used the wrong message"
+  pass "validation-truth: cancelled PR-URL run refuses"
+}
+
+test_pr_url_proof_runs_from_meta_worktree_not_cwd() {
+  local dir rc out outside
+  dir=$(make_task_home pr-url-cwd no-mistakes)
+  prepare_unsuffixed_builder "$dir"
+  write_pr_url_proof_bin "$dir"
+  # Marker is only in the task worktree. A cwd-bound listing from the caller
+  # outside-cwd directory cannot see it and must not emit the PR-URL row.
+  : > "$dir/wt/.fm-vt-runs-here"
+  cat > "$dir/fakebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  runs)
+    if [ -f .fm-vt-runs-here ]; then
+      printf '%s\n' "${FM_FAKE_RUNS_LIST:-}"
+      exit 0
+    fi
+    printf 'error: not in a git repository\n' >&2
+    exit 1
+    ;;
+esac
+exit 0
+SH
+  chmod +x "$dir/fakebin/no-mistakes"
+  FM_FAKE_RUNS_LIST=$(proof_runs_row completed)
+  export FM_FAKE_RUNS_LIST
+  outside="$dir/outside-cwd"
+  mkdir -p "$outside"
+  set +e
+  out=$(cd "$outside" && PATH="$dir/fakebin:$BASE_PATH" FM_HOME="$dir/home" \
+    FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" \
+    fm_require_validation_truth "$dir/home/state/task-a.meta" task-a "$PROOF_URL" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "PR-URL proof from non-git cwd refused: $out"
+  pass "validation-truth: PR-URL runs uses meta worktree, not caller cwd"
+}
+
+# When worktree and project are gone, text listing cannot run; sqlite PR-URL
+# index must still arm leftover cleanup on a green completed row.
+test_pr_url_proof_sqlite_fallback_when_worktree_gone() {
+  local dir rc out nm_home db
+  command -v sqlite3 >/dev/null 2>&1 || { pass "validation-truth: sqlite fallback skipped (no sqlite3)"; return 0; }
+  dir=$(make_task_home pr-url-sqlite-gone no-mistakes)
+  prepare_unsuffixed_builder "$dir"
+  write_pr_url_proof_bin "$dir"
+  cat > "$dir/fakebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+printf 'error: not in a git repository\n' >&2
+exit 1
+SH
+  chmod +x "$dir/fakebin/no-mistakes"
+  nm_home="$dir/nm-home"
+  mkdir -p "$nm_home"
+  db="$nm_home/state.sqlite"
+  sqlite3 "$db" <<SQL
+CREATE TABLE runs (
+  status TEXT,
+  head_sha TEXT,
+  last_pushed_sha TEXT,
+  pr_url TEXT,
+  updated_at INTEGER,
+  ci_ready_at INTEGER
+);
+INSERT INTO runs(status, head_sha, last_pushed_sha, pr_url, updated_at, ci_ready_at)
+VALUES('completed', '$PROOF_HEAD', '$PROOF_HEAD', '$PROOF_URL', 200, 200);
+SQL
+  rm -rf "$dir/wt" "$dir/project"
+  set +e
+  out=$(NO_MISTAKES_HOME="$nm_home" PATH="$dir/fakebin:$BASE_PATH" FM_HOME="$dir/home" \
+    FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" \
+    fm_require_validation_truth "$dir/home/state/task-a.meta" task-a "$PROOF_URL" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "sqlite fallback with gone worktree refused: $out"
+  pass "validation-truth: sqlite PR-URL index arms when worktree is gone"
+}
+
+# Newer failed row with null ci_ready_at must beat older completed ci-ready row.
+test_pr_url_proof_sqlite_newest_first_not_ci_ready() {
+  local dir rc out nm_home db
+  command -v sqlite3 >/dev/null 2>&1 || { pass "validation-truth: sqlite order skipped (no sqlite3)"; return 0; }
+  dir=$(make_task_home pr-url-sqlite-order no-mistakes)
+  prepare_unsuffixed_builder "$dir"
+  write_pr_url_proof_bin "$dir"
+  cat > "$dir/fakebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+# Force the sqlite path: listing has rows but no PR URLs.
+printf 'completed fm/other aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 2026-01-01\n'
+exit 0
+SH
+  chmod +x "$dir/fakebin/no-mistakes"
+  nm_home="$dir/nm-home"
+  mkdir -p "$nm_home"
+  db="$nm_home/state.sqlite"
+  sqlite3 "$db" <<SQL
+CREATE TABLE runs (
+  status TEXT,
+  head_sha TEXT,
+  last_pushed_sha TEXT,
+  pr_url TEXT,
+  updated_at INTEGER,
+  ci_ready_at INTEGER
+);
+INSERT INTO runs(status, head_sha, last_pushed_sha, pr_url, updated_at, ci_ready_at)
+VALUES('completed', '$PROOF_HEAD', '$PROOF_HEAD', '$PROOF_URL', 100, 999);
+INSERT INTO runs(status, head_sha, last_pushed_sha, pr_url, updated_at, ci_ready_at)
+VALUES('failed', 'cccccccccccccccccccccccccccccccccccccccc', 'cccccccccccccccccccccccccccccccccccccccc', '$PROOF_URL', 200, NULL);
+SQL
+  set +e
+  out=$(NO_MISTAKES_HOME="$nm_home" PATH="$dir/fakebin:$BASE_PATH" FM_HOME="$dir/home" \
+    FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" \
+    fm_require_validation_truth "$dir/home/state/task-a.meta" task-a "$PROOF_URL" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "sqlite order accepted stale completed over newer failed: $out"
+  assert_contains "$out" 'validation run is failed' "sqlite order used the wrong message: $out"
+  pass "validation-truth: sqlite PR-URL index is newest-first by updated_at"
+}
+
+test_pr_url_proof_forge_head_mismatch_refuses() {
+  local dir rc out
+  dir=$(make_task_home pr-url-mismatch no-mistakes)
+  prepare_unsuffixed_builder "$dir"
+  write_pr_url_proof_bin "$dir"
+  FM_FAKE_RUNS_LIST=$(proof_runs_row completed)
+  export FM_FAKE_RUNS_LIST
+  set +e
+  out=$(FM_TEST_GH_HEAD=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
+    run_pr_url_proof "$dir" "$PROOF_URL" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "mismatch exited $rc: $out"
+  assert_contains "$out" 'does not match forge head' "mismatch used the wrong message"
+  pass "validation-truth: forge head mismatch refuses"
+}
+
+test_pr_url_proof_red_rollup_refuses() {
+  local dir rc out
+  dir=$(make_task_home pr-url-red no-mistakes)
+  prepare_unsuffixed_builder "$dir"
+  write_pr_url_proof_bin "$dir"
+  FM_FAKE_RUNS_LIST=$(proof_runs_row completed)
+  export FM_FAKE_RUNS_LIST
+  set +e
+  out=$(FM_TEST_GH_ROLLUP_VERDICT=RED run_pr_url_proof "$dir" "$PROOF_URL" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "red rollup exited $rc: $out"
+  assert_contains "$out" 'forge check rollup is RED' "red rollup used the wrong message"
+  pass "validation-truth: red forge rollup refuses"
+}
+
+test_pr_url_proof_builder_check_merge_cleanup_pass() {
+  local dir rc out
+  dir=$(make_task_home pr-url-builder-pass no-mistakes)
+  prepare_unsuffixed_builder "$dir"
+  write_pr_url_proof_bin "$dir"
+  FM_FAKE_RUNS_LIST=$(proof_runs_row completed)
+  export FM_FAKE_RUNS_LIST
+  : > "$dir/gh.log"
+  : > "$dir/gh-axi.log"
+
+  set +e
+  out=$(FM_HOME="$dir/home" FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" \
+    PATH="$dir/fakebin:$BASE_PATH" \
+    "$PR_CHECK" task-a "$PROOF_URL" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "builder pr-check refused: $out"
+  assert_grep "pr=$PROOF_URL" "$dir/home/state/task-a.meta" \
+    "builder pr-check did not record pr="
+  assert_grep "pr_head=$PROOF_HEAD" "$dir/home/state/task-a.meta" \
+    "builder pr-check did not record pr_head="
+
+  set +e
+  out=$(FM_HOME="$dir/home" FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" \
+    FM_TEST_GH_LOG="$dir/gh.log" FM_TEST_GH_AXI_LOG="$dir/gh-axi.log" \
+    PATH="$dir/fakebin:$BASE_PATH" \
+    "$PR_MERGE" task-a "$PROOF_URL" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "builder pr-merge refused: $out"
+  grep -qxF "pr merge 99 --repo o/r --squash --match-head-commit $PROOF_HEAD" "$dir/gh.log" \
+    || fail "builder pr-merge did not pin via gh --match-head-commit $PROOF_HEAD: $(cat "$dir/gh.log")"
+  if grep -q 'pr merge' "$dir/gh-axi.log" 2>/dev/null; then
+    fail "builder pr-merge used gh-axi (pin dropped): $(cat "$dir/gh-axi.log")"
+  fi
+
+  rm -rf "$dir/wt"
+  set +e
+  out=$(FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_STATE_OVERRIDE="$dir/home/state" FM_DATA_OVERRIDE="$dir/home/data" \
+    FM_CONFIG_OVERRIDE="$dir/home/config" \
+    FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" \
+    PATH="$dir/fakebin:$BASE_PATH" \
+    "$TEARDOWN" task-a 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "builder leftover cleanup refused: $out"
+  assert_absent "$dir/home/state/task-a.meta" \
+    "builder leftover cleanup left task meta in place"
+  pass "validation-truth: builder id with -nm PR-URL run passes check, merge, and cleanup"
+}
+
+
+# Target PR row older than a global top-N window of other pr_url rows must still
+# be found: sqlite is cross-repo and must match by URL, not preload any-PR top-N.
+test_pr_url_proof_sqlite_selects_target_beyond_global_topn() {
+  local dir rc out nm_home db i
+  command -v sqlite3 >/dev/null 2>&1 || { pass "validation-truth: sqlite topn skipped (no sqlite3)"; return 0; }
+  dir=$(make_task_home pr-url-sqlite-topn no-mistakes)
+  prepare_unsuffixed_builder "$dir"
+  write_pr_url_proof_bin "$dir"
+  cat > "$dir/fakebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+printf 'error: not in a git repository\n' >&2
+exit 1
+SH
+  chmod +x "$dir/fakebin/no-mistakes"
+  nm_home="$dir/nm-home"
+  mkdir -p "$nm_home"
+  db="$nm_home/state.sqlite"
+  sqlite3 "$db" <<SQL
+CREATE TABLE runs (
+  status TEXT,
+  head_sha TEXT,
+  last_pushed_sha TEXT,
+  pr_url TEXT,
+  updated_at INTEGER,
+  ci_ready_at INTEGER
+);
+INSERT INTO runs(status, head_sha, last_pushed_sha, pr_url, updated_at, ci_ready_at)
+VALUES('completed', '$PROOF_HEAD', '$PROOF_HEAD', '$PROOF_URL', 1, 1);
+SQL
+  # 250 newer unrelated PR-URL rows would hide the target under a global top-200.
+  i=0
+  while [ "$i" -lt 250 ]; do
+    i=$((i + 1))
+    sqlite3 "$db" "INSERT INTO runs(status, head_sha, last_pushed_sha, pr_url, updated_at, ci_ready_at)
+      VALUES('completed', 'dddddddddddddddddddddddddddddddddddddddd', 'dddddddddddddddddddddddddddddddddddddddd',
+             'https://github.com/other/repo/pull/$i', $((1000 + i)), $((1000 + i)));"
+  done
+  rm -rf "$dir/wt" "$dir/project"
+  set +e
+  out=$(NO_MISTAKES_HOME="$nm_home" PATH="$dir/fakebin:$BASE_PATH" FM_HOME="$dir/home" \
+    FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" \
+    fm_require_validation_truth "$dir/home/state/task-a.meta" task-a "$PROOF_URL" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "sqlite URL select missed target under newer global noise: $out"
+  pass "validation-truth: sqlite selects target PR URL beyond global top-N noise"
+}
+
 test_parse_run_step_done
 test_parse_pane_is_not_run_step
 test_direct_pr_is_exempt
@@ -357,5 +695,13 @@ test_teardown_force_skips_validation_truth
 test_teardown_force_still_requires_measure
 test_missing_object_lag_allows_validation_truth
 test_diverged_rebase_allows_validation_truth
+test_pr_url_proof_cancelled_run_refuses
+test_pr_url_proof_runs_from_meta_worktree_not_cwd
+test_pr_url_proof_sqlite_fallback_when_worktree_gone
+test_pr_url_proof_sqlite_newest_first_not_ci_ready
+test_pr_url_proof_sqlite_selects_target_beyond_global_topn
+test_pr_url_proof_forge_head_mismatch_refuses
+test_pr_url_proof_red_rollup_refuses
+test_pr_url_proof_builder_check_merge_cleanup_pass
 
 echo "# all fm-validation-truth tests passed"
