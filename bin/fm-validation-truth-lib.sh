@@ -8,10 +8,13 @@
 # run row keyed by PR URL (argument, else pr= from meta) whose status is not
 # failed or cancelled, whose head matches the forge headRefOid, and whose
 # forge check rollup is all green with none pending. The second proof keys on
-# `no-mistakes runs --limit N` (sqlite read-only only when those text rows
-# lack a PR URL). It never keys on bare `axi status` and never consults or
-# resets a worktree. direct-PR, local-only, scout, and secondmate tasks are
-# exempt because they have no validation run by design.
+# `no-mistakes runs --limit N` invoked in the task worktree= (else project=)
+# from meta via fm_nm_run, never the caller cwd. When that path is missing,
+# the listing is empty, text rows lack a PR URL, or the PR is absent from the
+# listing, it falls through to the global sqlite PR-URL index (read-only).
+# It never keys on bare `axi status` and never resets a worktree. direct-PR,
+# local-only, scout, and secondmate tasks are exempt because they have no
+# validation run by design.
 #
 # fm-pr-merge.sh additionally re-reads the forge rollup independently of
 # which proof passed, refuses a red or pending rollup, and passes
@@ -136,7 +139,7 @@ fm_vt_sqlite_runs_for_pr() {  # <pr-url>
   db=${NO_MISTAKES_HOME:-$HOME/.no-mistakes}/state.sqlite
   [ -f "$db" ] && [ ! -L "$db" ] || return 1
   out=$(sqlite3 -readonly -separator $'\t' "$db" \
-    "select status, coalesce(nullif(last_pushed_sha,''), head_sha), pr_url from runs where pr_url is not null and pr_url != '' order by coalesce(ci_ready_at, 0) desc, rowid desc limit $(fm_vt_runs_limit);" \
+    "select status, coalesce(nullif(last_pushed_sha,''), head_sha), pr_url from runs where pr_url is not null and pr_url != '' order by updated_at desc, rowid desc limit $(fm_vt_runs_limit);" \
     2>/dev/null) || return 1
   [ -n "$out" ] || return 1
   while IFS=$'\t' read -r st sha url; do
@@ -151,32 +154,54 @@ EOF
   return 1
 }
 
+# Resolve the directory `no-mistakes runs` must run in: meta worktree= if it
+# still exists, else project=. Empty when neither path is a directory.
+fm_vt_meta_runs_dir() {  # <meta-file>
+  local wt proj
+  [ -f "$1" ] && [ ! -L "$1" ] || return 1
+  wt=$(grep '^worktree=' "$1" 2>/dev/null | tail -1 | cut -d= -f2- || true)
+  wt=$(fm_nm_trim "$wt")
+  if [ -n "$wt" ] && [ -d "$wt" ]; then
+    printf '%s' "$wt"
+    return 0
+  fi
+  proj=$(grep '^project=' "$1" 2>/dev/null | tail -1 | cut -d= -f2- || true)
+  proj=$(fm_nm_trim "$proj")
+  if [ -n "$proj" ] && [ -d "$proj" ]; then
+    printf '%s' "$proj"
+    return 0
+  fi
+  return 1
+}
+
 # Find the newest no-mistakes run for PR URL $1. Prints "status<TAB>sha".
-# Keys on `no-mistakes runs`, never on bare `axi status`.
-fm_vt_run_for_pr() {  # <pr-url>
-  local url listing row rc=0 timeout
+# Keys on `no-mistakes runs` in the task worktree/project from meta $2, never
+# on bare `axi status` or the caller cwd. Falls through to the global sqlite
+# PR-URL index when the path is gone, the listing is empty/unusable, text
+# rows lack PR URLs, or the PR is absent from the listing.
+fm_vt_run_for_pr() {  # <pr-url> [meta-file]
+  local url listing row rc=0 timeout dir
   url=$(fm_vt_canon_url "$1")
   [ -n "$url" ] || return 1
   command -v no-mistakes >/dev/null 2>&1 || return 1
-  timeout=$(fm_nm_remote_timeout)
-  listing=$(fm_run_timed "$timeout" no-mistakes runs --limit "$(fm_vt_runs_limit)" 2>/dev/null) || rc=$?
-  if [ "$rc" -eq 124 ]; then
-    return 1
+  dir=
+  if [ -n "${2:-}" ]; then
+    dir=$(fm_vt_meta_runs_dir "$2") || dir=
   fi
-  if [ "$rc" -eq 0 ] && [ -n "$listing" ]; then
-    rc=0
-    row=$(fm_vt_parse_runs_for_pr "$url" "$listing") || rc=$?
-    if [ "$rc" -eq 0 ]; then
-      printf '%s\n' "$row"
-      return 0
+  if [ -n "$dir" ]; then
+    timeout=$(fm_nm_remote_timeout)
+    listing=$(fm_nm_run "$dir" "$timeout" runs --limit "$(fm_vt_runs_limit)")
+    if [ -n "$listing" ]; then
+      rc=0
+      row=$(fm_vt_parse_runs_for_pr "$url" "$listing") || rc=$?
+      if [ "$rc" -eq 0 ]; then
+        printf '%s\n' "$row"
+        return 0
+      fi
     fi
-    if [ "$rc" -eq 2 ]; then
-      fm_vt_sqlite_runs_for_pr "$url"
-      return $?
-    fi
-    return 1
   fi
-  return 1
+  fm_vt_sqlite_runs_for_pr "$url"
+  return $?
 }
 
 # gh --jq program: one line "<head> <EMPTY|RED|PENDING|GREEN>".
@@ -250,7 +275,7 @@ fm_vt_pr_url_proof() {  # <meta-file> <task-id> [pr-url]
     url=$(fm_vt_meta_pr_url "$meta")
   fi
   [ -n "$url" ] || return 1
-  row=$(fm_vt_run_for_pr "$url") || return 1
+  row=$(fm_vt_run_for_pr "$url" "$meta") || return 1
   st=${row%%$'\t'*}
   sha=${row#*$'\t'}
   case "$st" in

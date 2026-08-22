@@ -383,6 +383,10 @@ run_pr_url_proof() {  # <dir> <url>
 prepare_unsuffixed_builder() {  # <dir>
   fm_git_init_commit "$1/wt"
   git -C "$1/wt" checkout -q -b fm/task-a
+  # project= remains after worktree teardown so leftover cleanup can still
+  # invoke `no-mistakes runs` when the task worktree is already gone.
+  mkdir -p "$1/project"
+  fm_git_init_commit "$1/project"
 }
 
 # Real crew-state + real helper: diverged rebase lag must not refuse.
@@ -419,6 +423,126 @@ test_pr_url_proof_cancelled_run_refuses() {
   [ "$rc" -eq 1 ] || fail "cancelled run exited $rc: $out"
   assert_contains "$out" 'validation run is cancelled' "cancelled run used the wrong message"
   pass "validation-truth: cancelled PR-URL run refuses"
+}
+
+test_pr_url_proof_runs_from_meta_worktree_not_cwd() {
+  local dir rc out outside
+  dir=$(make_task_home pr-url-cwd no-mistakes)
+  prepare_unsuffixed_builder "$dir"
+  write_pr_url_proof_bin "$dir"
+  # Marker is only in the task worktree. A cwd-bound listing from the caller
+  # outside-cwd directory cannot see it and must not emit the PR-URL row.
+  : > "$dir/wt/.fm-vt-runs-here"
+  cat > "$dir/fakebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  runs)
+    if [ -f .fm-vt-runs-here ]; then
+      printf '%s\n' "${FM_FAKE_RUNS_LIST:-}"
+      exit 0
+    fi
+    printf 'error: not in a git repository\n' >&2
+    exit 1
+    ;;
+esac
+exit 0
+SH
+  chmod +x "$dir/fakebin/no-mistakes"
+  FM_FAKE_RUNS_LIST=$(proof_runs_row completed)
+  export FM_FAKE_RUNS_LIST
+  outside="$dir/outside-cwd"
+  mkdir -p "$outside"
+  set +e
+  out=$(cd "$outside" && PATH="$dir/fakebin:$BASE_PATH" FM_HOME="$dir/home" \
+    FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" \
+    fm_require_validation_truth "$dir/home/state/task-a.meta" task-a "$PROOF_URL" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "PR-URL proof from non-git cwd refused: $out"
+  pass "validation-truth: PR-URL runs uses meta worktree, not caller cwd"
+}
+
+# When worktree and project are gone, text listing cannot run; sqlite PR-URL
+# index must still arm leftover cleanup on a green completed row.
+test_pr_url_proof_sqlite_fallback_when_worktree_gone() {
+  local dir rc out nm_home db
+  command -v sqlite3 >/dev/null 2>&1 || { pass "validation-truth: sqlite fallback skipped (no sqlite3)"; return 0; }
+  dir=$(make_task_home pr-url-sqlite-gone no-mistakes)
+  prepare_unsuffixed_builder "$dir"
+  write_pr_url_proof_bin "$dir"
+  cat > "$dir/fakebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+printf 'error: not in a git repository\n' >&2
+exit 1
+SH
+  chmod +x "$dir/fakebin/no-mistakes"
+  nm_home="$dir/nm-home"
+  mkdir -p "$nm_home"
+  db="$nm_home/state.sqlite"
+  sqlite3 "$db" <<SQL
+CREATE TABLE runs (
+  status TEXT,
+  head_sha TEXT,
+  last_pushed_sha TEXT,
+  pr_url TEXT,
+  updated_at INTEGER,
+  ci_ready_at INTEGER
+);
+INSERT INTO runs(status, head_sha, last_pushed_sha, pr_url, updated_at, ci_ready_at)
+VALUES('completed', '$PROOF_HEAD', '$PROOF_HEAD', '$PROOF_URL', 200, 200);
+SQL
+  rm -rf "$dir/wt" "$dir/project"
+  set +e
+  out=$(NO_MISTAKES_HOME="$nm_home" PATH="$dir/fakebin:$BASE_PATH" FM_HOME="$dir/home" \
+    FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" \
+    fm_require_validation_truth "$dir/home/state/task-a.meta" task-a "$PROOF_URL" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "sqlite fallback with gone worktree refused: $out"
+  pass "validation-truth: sqlite PR-URL index arms when worktree is gone"
+}
+
+# Newer failed row with null ci_ready_at must beat older completed ci-ready row.
+test_pr_url_proof_sqlite_newest_first_not_ci_ready() {
+  local dir rc out nm_home db
+  command -v sqlite3 >/dev/null 2>&1 || { pass "validation-truth: sqlite order skipped (no sqlite3)"; return 0; }
+  dir=$(make_task_home pr-url-sqlite-order no-mistakes)
+  prepare_unsuffixed_builder "$dir"
+  write_pr_url_proof_bin "$dir"
+  cat > "$dir/fakebin/no-mistakes" <<'SH'
+#!/usr/bin/env bash
+# Force the sqlite path: listing has rows but no PR URLs.
+printf 'completed fm/other aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 2026-01-01\n'
+exit 0
+SH
+  chmod +x "$dir/fakebin/no-mistakes"
+  nm_home="$dir/nm-home"
+  mkdir -p "$nm_home"
+  db="$nm_home/state.sqlite"
+  sqlite3 "$db" <<SQL
+CREATE TABLE runs (
+  status TEXT,
+  head_sha TEXT,
+  last_pushed_sha TEXT,
+  pr_url TEXT,
+  updated_at INTEGER,
+  ci_ready_at INTEGER
+);
+INSERT INTO runs(status, head_sha, last_pushed_sha, pr_url, updated_at, ci_ready_at)
+VALUES('completed', '$PROOF_HEAD', '$PROOF_HEAD', '$PROOF_URL', 100, 999);
+INSERT INTO runs(status, head_sha, last_pushed_sha, pr_url, updated_at, ci_ready_at)
+VALUES('failed', 'cccccccccccccccccccccccccccccccccccccccc', 'cccccccccccccccccccccccccccccccccccccccc', '$PROOF_URL', 200, NULL);
+SQL
+  set +e
+  out=$(NO_MISTAKES_HOME="$nm_home" PATH="$dir/fakebin:$BASE_PATH" FM_HOME="$dir/home" \
+    FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" \
+    fm_require_validation_truth "$dir/home/state/task-a.meta" task-a "$PROOF_URL" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "sqlite order accepted stale completed over newer failed: $out"
+  assert_contains "$out" 'validation run is failed' "sqlite order used the wrong message: $out"
+  pass "validation-truth: sqlite PR-URL index is newest-first by updated_at"
 }
 
 test_pr_url_proof_forge_head_mismatch_refuses() {
@@ -515,6 +639,9 @@ test_teardown_force_still_requires_measure
 test_missing_object_lag_allows_validation_truth
 test_diverged_rebase_allows_validation_truth
 test_pr_url_proof_cancelled_run_refuses
+test_pr_url_proof_runs_from_meta_worktree_not_cwd
+test_pr_url_proof_sqlite_fallback_when_worktree_gone
+test_pr_url_proof_sqlite_newest_first_not_ci_ready
 test_pr_url_proof_forge_head_mismatch_refuses
 test_pr_url_proof_red_rollup_refuses
 test_pr_url_proof_builder_check_merge_cleanup_pass
