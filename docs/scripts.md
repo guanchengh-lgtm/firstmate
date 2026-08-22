@@ -15,6 +15,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-bootstrap.sh`        | Detect toolchain and fleet problems, run the locked session-start sweeps, and install approved tools |
 | `fm-sot-pointer-check.sh` | Detect completed multi-task programs that lack a standing durable SoT pointer or leave a named hold unbound after later authority |
 | `fm-sot-speech-check.sh` | Refuse captain-facing registered SoT content claims that lack same-session file-open evidence |
+| `fm-answer-lock-check.sh` | Refuse a Map 2 ticket close with no dated lock, or a ticket left OPEN after an Answer pick |
 | `fm-map-fog-check.sh`    | Detect live `## Not yet specified` fog on map files; `--strict` refuses, missing section is structural |
 | `fm-stow-open-lock-check.sh` | Refuse a reset-safe stow receipt that omits a still-open lock-file pick; `--list-open` feeds the fleet snapshot |
 | `fm-class-too-narrow-check.sh` | Refuse a class claims file named as one command or situation while its instances are a broader mechanism |
@@ -54,7 +55,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-primary-scope-lib.sh` | Shared marker-or-plain-checkout primary-home predicate for tracked hooks             |
 | `fm-session-lock-lib.sh` | Shared session-lock harness identity (ancestry walk and holder liveness) for fm-lock.sh and the Claude Stop auto-arm |
 | `fm-claude-stop-autoarm.sh` | Claude Stop `asyncRewake` hook owning tokenless watcher continuity with single-flight exit-2 rewake (docs/watcher-continuity.md) |
-| `fm-turnend-guard.sh`    | Shared primary turn-end guard: no blind end, no prose-only ready-action idle, no owner-invoke wait, registered SoT speech without open evidence, and no unchecked TradingView session login block (docs/turnend-guard.md; script header owns the session-diagnosis contract) |
+| `fm-turnend-guard.sh`    | Shared primary turn-end guard: no blind end, no prose-only ready-action idle, no owner-invoke wait, registered SoT speech without open evidence, Map 2 answer-time lock mismatch, and no unchecked TradingView session login block (docs/turnend-guard.md; script header owns the session-diagnosis contract) |
 | `fm-turnend-guard-grok.sh` | Grok Stop-hook adapter for the primary turn-end guard                              |
 | `fm-kimi-turnend-hook.sh` | Surgically install or remove Kimi's guarded global crew turn-end hook                |
 | `fm-arm-pretool-check.sh` | Stable PreToolUse transport for the watcher-arm command policy (docs/arm-pretool-check.md) |
