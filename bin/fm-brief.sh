@@ -290,7 +290,7 @@ if [ "$SOURCE_SET" -eq 1 ]; then
     seen_sources="${seen_sources}${source}"$'\n'
   done
 fi
-ID=${POS[0]}
+ID=${POS[0]:-}
 
 if [ "$KIND" = secondmate ] && [ "$HERDR_LAB" -eq 1 ]; then
   echo "error: --herdr-lab applies only to crewmate ship or scout briefs" >&2

@@ -1420,10 +1420,6 @@ else
       echo "error: no verifier brief at $BRIEF; render it with bin/fm-brief.sh $ID --verifier before a --role verifier spawn" >&2
       exit 1
     }
-    [ "$(basename "$BRIEF")" = verifier-brief.md ] || {
-      echo "error: --role verifier would encode the builder brief $BRIEF" >&2
-      exit 1
-    }
   else
     BRIEF="$DATA/$ID/brief.md"
   fi
