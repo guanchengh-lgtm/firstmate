@@ -396,7 +396,7 @@ test_worker_brief_check_refuses_fake_skill_slashes() {
   local brief out status token
   brief="$TMP_ROOT/fake-worker-slash.md"
 
-  for token in /harness-adapters /firstmate-coding-guidelines /grill-with-docs /last30days /wiki /design-sync; do
+  for token in /harness-adapters /firstmate-coding-guidelines /wayfinder /last30days /wiki /design-sync; do
     printf '# Task\nInvoke %s before coding.\n\n# Setup\nfixture\n' "$token" > "$brief"
     out=$(FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-brief.sh" --check-worker ship "$brief" 2>&1)
     status=$?
@@ -404,6 +404,10 @@ test_worker_brief_check_refuses_fake_skill_slashes() {
     assert_contains "$out" "$token" \
       "worker brief refusal did not name forbidden invocation $token"
   done
+
+  printf '# Task\nInvoke /grill-with-docs before coding.\n\n# Setup\nfixture\n' > "$brief"
+  FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-brief.sh" --check-worker ship "$brief" >/dev/null 2>&1 \
+    || fail "worker brief check refused allowed /grill-with-docs invocation"
 
   printf '# Task\nName last30days and wiki as optional feeders; do not invoke them.\n\n# Setup\nfixture\n' > "$brief"
   FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-brief.sh" --check-worker ship "$brief" >/dev/null 2>&1 \

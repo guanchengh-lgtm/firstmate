@@ -1,7 +1,10 @@
 ---
 name: grill-with-docs
-description: A relentless interview to sharpen a plan or design, which also creates docs (ADR's and glossary) as we go.
-disable-model-invocation: true
+description: >-
+  Use when a live map has open unspecified items, or the captain resumes a map:
+  run grilling plus domain-modeling and write glossary and ADRs as you go.
+  Do not start on every unclear sentence. Do not chart a map (that is wayfinder).
+  Workers may slash this skill.
 ---
 
 Run a `/grilling` session, using the `/domain-modeling` skill.
