@@ -26,7 +26,7 @@ The guard remains a backstop; [`watcher-continuity.md`](watcher-continuity.md) o
 ## Guard predicates
 
 Before primary scope and before the Codex/Grok `stop_hook_active` allow, the guard runs `bin/fm-spec-compile-stop-check.sh` so a child firstmate worktree that wrote Map 2 spec, tickets, or keep-list files cannot end while the matcher is red.
-That adapter's header owns the write window and home derivation from the written path; it never uses `FM_HOME` as an implicit compile home.
+That adapter's header owns the write window and home derivation from the written path; it never uses `FM_HOME` as an implicit compile or reduce home.
 
 The guard then calls the shared primary scope.
 A secondmate home runs its own primary Firstmate session, so a genuine `.fm-secondmate-home` marker includes it whether the home is a linked worktree or plain clone.
@@ -129,15 +129,22 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 ## Known residual gap
 
 The spec compile-check Stop adapter is inert on Pi, OpenCode, and pi-signed primaries because those adapters feed the guard `{"stop_hook_active":false}` with no transcript path.
-It also cannot see writes that are not a Stop (an editor save or `git checkout`) or Bash writes through variables or `cd` that leave no literal `data/wf-map2-loops/` or cited `data/<id>/report.md` suffix in the command string.
+It also cannot see writes that are not a Stop (an editor save or `git checkout`) or Bash writes through variables or `cd` that leave no literal `data/wf-map2-loops/`, `data/decisions/`, or cited `data/<id>/report.md` suffix in the command string.
 On Codex and Grok default mode it also runs before the `stop_hook_active` / `stopHookActive` allow, so a still-red this-turn write can exit 2 again on the bounded continuation and break that harness's never-block-twice loop contract until the matcher is green or the write leaves the this-turn window.
 `bin/fm-spec-compile-stop-check.sh`'s header owns the write-window residual; `bin/fm-turnend-guard.sh`'s header owns the pre-loop-guard seat.
+
+The same adapter refuses a declared wide-work count miss when a this-turn write to the spec, a Map 2 ticket, or `data/decisions/<name>.md` carries an `expected-reports:` line and `bin/fm-reduce-check.sh` is red.
+N is the id list firstmate wrote at dispatch; the matcher never waits for reports and never reads `FM_HOME`.
+It cannot catch a wrong or absent declaration, a cited-but-unread report, harness-internal fan-outs that drop a failed child with no file, non-Map-2 synthesis that never writes those paths, or Pi / OpenCode / pi-signed primaries with no transcript.
+A scout declared `id(failed: reason)` is an explicit escape, not a finding.
+`bin/fm-spec-compile-stop-check.sh`'s header owns that write window and the child-path home derivation.
 
 ## Regression coverage
 
 `tests/fm-turnend-guard.test.sh` covers the predicate, main and secondmate primary scope, child-worktree exclusion, `FM_HOME` and `FM_STATE_OVERRIDE` precedence, the ready-action refusal for ownerless queued tickets, every-ready-id checking, matching-worker acceptance, Claude `stop_hook_active` non-bypass of ready-action, held locked-next and owner-invoke yes-ask refusals, the TradingView session-diagnosis refusal for missing evidence and failing checker findings, passing-checker acceptance, unrelated-blocker negative controls, Claude `stop_hook_active` non-bypass of that session gate, the live-lock and fresh-beacon guard predicate, the cooperative `--claude` claim wait, monotonic failed-epoch progression, bounded attended fail-open, post-alarm continuation suppression, positive recovery reset, Pi logical-run latching, missing-`jq` behavior, all five primary registrations, Grok native and legacy selection, typed field precedence, malformed input, and exactly-one-path safety.
-`tests/fm-spec-compile-stop-check.test.sh` covers the spec compile Stop adapter's this-turn write window, path-derived `--home`, child-worktree seat before primary-scope, no-write and no-transcript inertness, and red-matcher refuse.
+`tests/fm-spec-compile-stop-check.test.sh` covers the Stop adapter's this-turn write window, path-derived home, child-worktree seat before primary-scope, no-write and no-transcript inertness, red compile refuse, and reduce `expected-reports` refuse.
 `tests/fm-owner-invoke-wait-check.test.sh` covers the helper's fail-closed input, exact-count fixtures, held locked-next, owner-invoke yes-ask, fog-pin wait, session-scoped ship gather, live-agent-no-report pass, husk-pane-without-report refuse, torn-down worker with report, report-gated Claude skills refusal, finished non-Claude review without skills pass, skill-load recorder normalization, crewmate Skill PostToolUse wiring, current-turn skill-load scoping, and invoked-skill acceptance.
+`tests/fm-reduce-check.test.sh` covers the reduce matcher directly.
 `tests/fm-guard-stale-banner.test.sh` covers the pull-guard predicate, including the persistent-model fresh-leftover-beacon negative control, the auto-arm model's healthy fresh-beacon-without-a-watcher case and its stale-beacon alarm, the true-reason banner wording, and the reason-keyed episode dedup surviving a beacon mtime change.
 `tests/fm-kimi-harness.test.sh` covers the separate Kimi crew hook's format preservation, idempotence, refusal cases, token guard, spawn registration, and teardown cleanup.
 `tests/fm-supervision-instructions.test.sh` covers recovery-line ownership and pi-signed's identity-preserving reuse of Pi's protocol.
