@@ -807,6 +807,17 @@ test_verifier_brief_leads_with_verifier_contract() {
   assert_grep "# Definition of done" "$verifier" "verifier-brief.md missing Definition of done"
   assert_grep "The fresh verifier drives no-mistakes by responding to its gates" "$verifier" \
     "verifier-brief.md did not lead with the verifier contract"
+  # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
+  assert_grep 'Carry verbatim into `--intent`:' "$verifier" \
+    "verifier DoD must say to carry manufactured breakage verbatim into --intent"
+  assert_grep "Manufactured breakage (required):" "$verifier" \
+    "verifier DoD lost the manufactured-breakage sentence"
+  assert_grep "A changed test with no red observation is a blocking finding, not an ask-user finding." "$verifier" \
+    "verifier DoD lost the blocking-not-ask-user manufactured-breakage clause"
+  assert_grep "Mutation runs inside the test-step pipeline worktree, never in the verifier tree." "$verifier" \
+    "verifier DoD lost the test-step worktree mutation location"
+  assert_no_grep "Manufactured breakage (required):" "$brief" \
+    "builder brief must not carry the verifier manufactured-breakage DoD sentence"
   assert_grep "done: PR {url} checks green" "$verifier" \
     "verifier-brief.md lost the verifier completion line"
   assert_grep "# Task" "$verifier" "verifier-brief.md dropped the original # Task"

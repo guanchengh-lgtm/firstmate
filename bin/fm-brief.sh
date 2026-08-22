@@ -59,9 +59,11 @@
 # data/<task-id>/verifier-brief.md plus data/<task-id>/verifier-role (exactly
 # verifier); overwrite of those verifier siblings is allowed. The verifier brief
 # opens with Role: verifier and the verifier definition of done first, keeps the
-# original # Task as the --intent source, and omits builder Setup. Do not pass
-# --role on this scaffold; spawn owns the role gate. The builder brief.md and its
-# role/mode markers are left unchanged.
+# original # Task as the --intent source, and omits builder Setup. The verifier
+# DoD requires carrying one manufactured-breakage sentence verbatim into
+# --intent; mutation runs in the test-step pipeline worktree, never the verifier
+# tree. Do not pass --role on this scaffold; spawn owns the role gate. The
+# builder brief.md and its role/mode markers are left unchanged.
 # Ship briefs begin with a worktree-isolation assertion before the branch step.
 # --mode is refused on scout and secondmate scaffolds: a scout's deliverable is a
 # report rather than a merge, and a charter is not a delivery contract.
@@ -345,6 +347,8 @@ Delivery contract: mode=no-mistakes
 The fresh verifier drives no-mistakes by responding to its gates, not by implementing fixes.
 It follows the guidance no-mistakes itself provides for the mechanics: \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
 When starting no-mistakes, it makes \`--intent\` preserve all relevant content from this brief's \`# Task\` section plus every later accepted Firstmate requirement, clarification, constraint, exclusion, and supersession, carrying only each requirement's current accepted form; it retains direct requirements instead of substituting a diff summary, and excludes generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific.
+Carry verbatim into \`--intent\`: Manufactured breakage (required): for every test file this branch adds or changes, break the code under test on one line (flip a value, delete a branch), run that test, observe it fail, restore the line, run it again green. Record each as a \`tested\` entry that starts with \`breakage:\` naming subject \`file:line\`, the test selector, and the red output artifact path. A changed test with no red observation is a blocking finding, not an ask-user finding.
+Mutation runs inside the test-step pipeline worktree, never in the verifier tree.
 The verifier does not hand-edit, commit, or fix findings while a run is active - the pipeline applies every fix.
 
 Two firstmate-specific rules layer on top of that guidance:
