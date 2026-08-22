@@ -39,6 +39,13 @@
 #     current backlog rows). Does not invent live tasks; meta remains truth for
 #     workers. Bearings maps failures into omitted[] disclosure (and a Charted
 #     Next gate line) rather than silent empty Underway.
+#   decision_locks_open[]: still-open lock-file picks from this home's
+#     data/decisions/*.md via bin/fm-stow-open-lock-check.sh --list-open (single
+#     reader; no parallel parse). Each row is
+#     {id,key,verb:"lock-open",summary,source,file}. A pick never written to any
+#     decision file cannot be seen. Registered secondmate homes surface their own
+#     open locks in that home's decisions_open through the same reader; Bearings
+#     merges both into its decisions_open projection.
 #   secondmate_current: {records[],total,shown,truncated} - bounded current summaries
 #     for registered secondmates, selected from validated structured state inside
 #     each home with explicit provenance, freshness, endpoint evidence, and unknown
@@ -47,10 +54,7 @@
 #     Each structured-home record carries active_children, decisions_open, holds,
 #     queued, landed, endpoints, counts, and omitted. Actionable captain holds
 #     appear in decisions_open; blocked captain holds remain queued with metadata.
-#     Open lock-file picks from data/decisions/*.md (same --list-open reader as
-#     bin/fm-stow-open-lock-check.sh) also appear in decisions_open and in the
-#     top-level decision_locks_open array. A pick never written to any decision
-#     file cannot be seen.
+#     Open lock-file picks also appear in decisions_open (see decision_locks_open).
 #   secondmate_landed: {records[],truncated[],unreadable[],partial[]} - the
 #     compatibility landed-work roll-up derived from secondmate_current. Readable
 #     structured homes with an unknown current classification are partial, not

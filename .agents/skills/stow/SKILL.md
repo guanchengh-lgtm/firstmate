@@ -41,7 +41,7 @@ Every `/stow` invocation performs this complete pass, even when the session cont
 
 A net increase is allowed only for a genuinely new current fact with no stronger owner.
 Before allowing it, consolidate enough lower-priority material to remain within budget.
-Never describe the session as reset-safe while the memory total is over budget or an exception is unresolved.
+Never describe the session as reset-safe while the memory total is over budget, an exception is unresolved, or the open lock-file pick check below would fail.
 
 ## Knowledge sweep and routing
 
@@ -75,7 +75,7 @@ Report the outcome in plain captain-facing language with all of these facts:
 - one or more actions for each of `data/captain.md`, `data/captain-shared.md`, and `data/learnings.md`: `unchanged`, `added`, `rewritten`, `pruned`, or `routed`;
 - each durable finding filed outside memory and its authoritative owner;
 - every unresolved exception, including a primary-owned shared-file constraint in a secondmate home;
-- whether the session is safe to reset, only when all durable findings are captured and the post-pass result is within budget with no exception.
+- whether the session is safe to reset, only when all durable findings are captured, the post-pass result is within budget with no exception, and the open lock-file pick check below exits 0.
 
 Do not hide an over-budget result behind a reset-safe claim.
 In a primary home the receipt is written after the cascade below, not instead of it.
@@ -115,7 +115,7 @@ A newly discovered shared captain preference still routes to the primary's `data
 
 Extend the completion receipt with one entry per secondmate alongside the primary's own, carrying that home's budget before and after, its per-file actions, its exceptions, and whether that home swept itself or was curated from here.
 Keep those entries in the same plain captain-facing language the rest of the receipt uses.
-The session is reset-safe only when every home is within its own budget with no unresolved exception.
+The session is reset-safe only when every home is within its own budget with no unresolved exception, and the open lock-file pick check above exits 0.
 
 ## Scope exclusion: no skill storage
 
