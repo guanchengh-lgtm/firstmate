@@ -1,0 +1,37 @@
+{
+  "size": "light",
+  "size_reason": "Refuse-hook on new class claims files. Historical instance is the PR 29 stow-reset-safe naming still on disk. Light method: name, surface, rule, fail closed, derived fixture.",
+  "shape": "A class is named as one situation or one command, while its instances are a broader mechanism.",
+  "form": "refuse-hook",
+  "structure": "docs/verification/*claims.json shape and instances fields; slash-command and ISO-date binders in shape, named_as, class_id, and class",
+  "rules": ["R-property", "R-two-clothes", "R-broader-than-shape"],
+  "instances": [
+    "2026-08-22: progress-lost-on-session-end named as stow-reset-safe; shipped as firstmate PR 29.",
+    "2026-08-18: same broader class already locked; stow-only named and later rejected as the wrong layer."
+  ],
+  "fixture": "derived",
+  "fixture_generator": "tests/fixtures/fm-class-too-narrow-check/generate-historical-narrow-naming.sh",
+  "fixture_source": {
+    "date": "2026-08-22",
+    "derivation": "extract shape and instances from docs/verification/stow-open-lock-recurring-defect-claims.json, the PR 29 naming that bound the class to /stow while the 2026-08-18 instance is session-resume clothes"
+  },
+  "regression": {
+    "test": "tests/fm-class-too-narrow-check.test.sh",
+    "exact_counts": [1]
+  },
+  "ci_gate": ".github/workflows/ci.yml runs bin/fm-test-run.sh --check-coverage and all portable lanes; the test inventory includes tests/fm-class-too-narrow-check.test.sh",
+  "structural_failure_exit": 2,
+  "findings_exit": 1,
+  "adversary_rounds": 0,
+  "adversary_verdict": "skipped-light-size",
+  "limits": [
+    "English broader than cannot be 100%.",
+    "The check sees a slash-command or ISO date binder in shape (or named_as / class_id / class) that an instance does not share.",
+    "It cannot see a class whose instance strings stay inside the named clothes while the true mechanism is still broader.",
+    "PR 29 live stow-open-lock claims are the derived historical fixture and are not rewritten."
+  ],
+  "skipped": [
+    "Adversarial rounds because size is light: one fresh reader via the test suite is enough.",
+    "Rewriting or gating the live PR 29 stow-open-lock checker."
+  ]
+}

@@ -17,6 +17,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-sot-speech-check.sh` | Refuse captain-facing registered SoT content claims that lack same-session file-open evidence |
 | `fm-map-fog-check.sh`    | Detect live `## Not yet specified` fog on map files; `--strict` refuses, missing section is structural |
 | `fm-stow-open-lock-check.sh` | Refuse a reset-safe stow receipt that omits a still-open lock-file pick; `--list-open` feeds the fleet snapshot |
+| `fm-class-too-narrow-check.sh` | Refuse a class claims file named as one command or situation while its instances are a broader mechanism |
 | `fm-startup-network.sh`  | Run session start's network checks off its blocking path in a bounded detached worker, and publish the result inline or as a wake |
 | `fm-fleet-sync.sh`       | Refresh project clones with safe fast-forwards, self-heals, `STUCK:` reports, branch pruning, and bounded recovery from an orphaned `.git/packed-refs.lock` |
 | `fm-fleet-snapshot.sh`   | Print the read-only structured fleet snapshot JSON (schema `fm-fleet-snapshot.v1`)   |

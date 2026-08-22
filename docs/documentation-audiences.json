@@ -270,6 +270,10 @@
       "audience": "operator-current"
     },
     {
+      "path": "docs/class-too-narrow-check.md",
+      "audience": "operator-current"
+    },
+    {
       "path": "docs/cmux-backend.md",
       "audience": "operator-current"
     },
