@@ -133,6 +133,12 @@ It also cannot see writes that are not a Stop (an editor save or `git checkout`)
 On Codex and Grok default mode it also runs before the `stop_hook_active` / `stopHookActive` allow, so a still-red this-turn write can exit 2 again on the bounded continuation and break that harness's never-block-twice loop contract until the matcher is green or the write leaves the this-turn window.
 `bin/fm-spec-compile-stop-check.sh`'s header owns the write-window residual; `bin/fm-turnend-guard.sh`'s header owns the pre-loop-guard seat.
 
+The same adapter refuses a declared wide-work count miss when a this-turn write to the spec, a Map 2 ticket, or `data/decisions/<name>.md` carries an `expected-reports:` line and `bin/fm-reduce-check.sh` is red.
+N is the id list firstmate wrote at dispatch; the matcher never waits for reports and never reads `FM_HOME`.
+It cannot catch a wrong or absent declaration, a cited-but-unread report, harness-internal fan-outs that drop a failed child with no file, non-Map-2 synthesis that never writes those paths, or Pi / OpenCode / pi-signed primaries with no transcript.
+A scout declared `id(failed: reason)` is an explicit escape, not a finding.
+`bin/fm-spec-compile-stop-check.sh`'s header owns that write window and the child-path home derivation.
+
 ## Regression coverage
 
 `tests/fm-turnend-guard.test.sh` covers the predicate, main and secondmate primary scope, child-worktree exclusion, `FM_HOME` and `FM_STATE_OVERRIDE` precedence, the ready-action refusal for ownerless queued tickets, every-ready-id checking, matching-worker acceptance, Claude `stop_hook_active` non-bypass of ready-action, held locked-next and owner-invoke yes-ask refusals, the TradingView session-diagnosis refusal for missing evidence and failing checker findings, passing-checker acceptance, unrelated-blocker negative controls, Claude `stop_hook_active` non-bypass of that session gate, the live-lock and fresh-beacon guard predicate, the cooperative `--claude` claim wait, monotonic failed-epoch progression, bounded attended fail-open, post-alarm continuation suppression, positive recovery reset, Pi logical-run latching, missing-`jq` behavior, all five primary registrations, Grok native and legacy selection, typed field precedence, malformed input, and exactly-one-path safety.

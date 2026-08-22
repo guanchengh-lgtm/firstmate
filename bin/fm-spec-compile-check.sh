@@ -59,6 +59,9 @@
 # never a file.
 set -euo pipefail
 
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P) || exit 2
+KEEP_ROWS_PY="$SCRIPT_DIR/fm-keep-rows.py"
+
 home=
 spec=
 tickets=
@@ -189,13 +192,14 @@ for k in "${keep_sources[@]+"${keep_sources[@]}"}"; do
 done
 
 RULES_CSV=$(IFS=','; printf '%s' "${selected[*]}")
+[ -f "$KEEP_ROWS_PY" ] || structural "missing keep-row parser $KEEP_ROWS_PY"
 
-python3 - "$spec" "$tickets" "${home:-}" "$KEEP_LIST" "$RULES_CSV" "${expect_rule:-}" "${expect_count:-}" <<'PY'
+python3 - "$KEEP_ROWS_PY" "$spec" "$tickets" "${home:-}" "$KEEP_LIST" "$RULES_CSV" "${expect_rule:-}" "${expect_count:-}" <<'PY'
 import os
 import re
 import sys
 
-spec_path, tickets_dir, home, keep_list_path, rules_csv, expect_rule, expect_count = sys.argv[1:8]
+keep_rows_path, spec_path, tickets_dir, home, keep_list_path, rules_csv, expect_rule, expect_count = sys.argv[1:9]
 selected = [r for r in rules_csv.split(",") if r]
 
 
@@ -252,43 +256,19 @@ def title_key(idea):
     return stripped
 
 
-def keep_rows(text):
-    rows = []
-    in_keep = False
-    header_seen = False
-    past_sep = False
-    for line in text.splitlines():
-        if re.match(r"^### Keep\s*$", line):
-            in_keep = True
-            header_seen = False
-            past_sep = False
-            continue
-        if in_keep and re.match(r"^#{1,3} ", line):
-            in_keep = False
-            header_seen = False
-            past_sep = False
-            continue
-        if not in_keep:
-            continue
-        stripped = line.strip()
-        if stripped.startswith("|"):
-            cells = [c.strip() for c in stripped.strip("|").split("|")]
-            if not cells:
-                continue
-            if all(re.match(r"^[-: ]+$", c or "-") for c in cells):
-                past_sep = True
-                continue
-            if not header_seen:
-                header_seen = True
-                continue
-            if past_sep and cells[0]:
-                rows.append(cells[0])
-            continue
-        if header_seen and stripped == "":
-            in_keep = False
-            header_seen = False
-            past_sep = False
-    return rows
+def load_keep_rows(path):
+    if not os.path.isfile(path) or os.path.islink(path):
+        structural("missing keep-row parser %s" % path)
+    ns = {}
+    with open(path, encoding="utf-8") as fh:
+        exec(compile(fh.read(), path, "exec"), ns)
+    fn = ns.get("keep_rows")
+    if not callable(fn):
+        structural("keep-row parser missing keep_rows")
+    return fn
+
+
+keep_rows = load_keep_rows(keep_rows_path)
 
 
 def split_body_and_refusals(spec):

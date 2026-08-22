@@ -101,8 +101,10 @@ install_guard_fixture() {
   cp "$ROOT/bin/fm-supervision-lib.sh" "$dir/bin/fm-supervision-lib.sh"
   cp "$ROOT/bin/fm-spec-compile-stop-check.sh" "$dir/bin/fm-spec-compile-stop-check.sh"
   cp "$ROOT/bin/fm-spec-compile-check.sh" "$dir/bin/fm-spec-compile-check.sh"
+  cp "$ROOT/bin/fm-keep-rows.py" "$dir/bin/fm-keep-rows.py"
+  cp "$ROOT/bin/fm-reduce-check.sh" "$dir/bin/fm-reduce-check.sh"
   chmod +x "$dir/bin/fm-turnend-guard.sh" "$dir/bin/fm-spec-compile-stop-check.sh" \
-    "$dir/bin/fm-spec-compile-check.sh"
+    "$dir/bin/fm-spec-compile-check.sh" "$dir/bin/fm-reduce-check.sh"
 }
 
 run_guard() {
@@ -312,6 +314,100 @@ test_manufactured_breakage_of_d8_tag() {
   pass "spec compile stop: manufactured breakage of the D8 tag"
 }
 
+write_reduce_lock() {
+  local path=$1
+  shift
+  mkdir -p "$(dirname "$path")"
+  printf '%s\n' "$@" > "$path"
+}
+
+test_decision_write_without_expected_reports_is_inert() {
+  local home lock transcript payload out rc
+  home=$(write_green_home "$TMP_ROOT/decision-inert")
+  lock="$home/data/decisions/lock.md"
+  write_reduce_lock "$lock" "# lock" "no declaration here"
+  transcript="$home/transcript.jsonl"
+  write_transcript "$transcript" "$(write_tool_line Write "$lock")"
+  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  set +e
+  out=$(run_adapter "$payload")
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "decision write without expected-reports must stay inert"
+  [ -z "$out" ] || fail "inert decision write produced output: $out"
+  pass "spec compile stop: decision write without expected-reports is inert"
+}
+
+test_decision_write_missing_report_refuses() {
+  local home lock transcript payload out rc
+  home=$(write_green_home "$TMP_ROOT/decision-missing")
+  write_keep "$home/data/ov-a/report.md" "Node contract: bounded job"
+  lock="$home/data/decisions/lock.md"
+  write_reduce_lock "$lock" \
+    "expected-reports: ov-a, ov-b" \
+    "Cite \`data/ov-a/report.md\`." \
+    "Cite \`data/ov-b/report.md\`."
+  transcript="$home/transcript.jsonl"
+  write_transcript "$transcript" "$(write_tool_line Write "$lock")"
+  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  set +e
+  out=$(run_adapter "$payload")
+  rc=$?
+  set -e
+  expect_code 2 "$rc" "decision write with a missing expected report must refuse"
+  assert_contains "$out" "R-reduce-missing:" "missing expected report did not fire"
+  assert_contains "$out" "decision-missing/data/ov-b/report.md" \
+    "missing ov-b was not named from the written home"
+  pass "spec compile stop: decision write with missing expected report exits 2"
+}
+
+test_child_home_not_fm_home_for_reduce() {
+  local operating wt lock transcript payload out rc
+  operating=$(write_green_home "$TMP_ROOT/reduce-operating")
+  write_keep "$operating/data/ov-a/report.md" "Node contract: bounded job"
+  write_keep "$operating/data/ov-b/report.md" "Merge counts expected inputs"
+  wt="$TMP_ROOT/reduce-child"
+  write_green_home "$wt" >/dev/null
+  lock="$wt/data/decisions/lock.md"
+  write_reduce_lock "$lock" \
+    "expected-reports: ov-a, ov-b" \
+    "Cite \`data/ov-a/report.md\`." \
+    "Cite \`data/ov-b/report.md\`."
+  transcript="$wt/transcript.jsonl"
+  write_transcript "$transcript" "$(write_tool_line Write "$lock")"
+  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  set +e
+  out=$(printf '%s' "$payload" | env FM_HOME="$operating" "$ADAPTER" 2>&1)
+  rc=$?
+  set -e
+  expect_code 2 "$rc" "child-tree reduce must check that tree, not FM_HOME"
+  assert_contains "$out" "R-reduce-missing:" "child-tree reduce did not fire missing"
+  assert_contains "$out" "reduce-child/data/ov-a/report.md" \
+    "child-tree reduce resolved ids against FM_HOME"
+  assert_not_contains "$out" "reduce-operating/data/ov-a/report.md" \
+    "child-tree reduce named the operating home path"
+  pass "spec compile stop: reduce ids resolve under the written path home, not FM_HOME"
+}
+
+test_failed_declared_reduce_is_clean() {
+  local home lock transcript payload out rc
+  home=$(write_green_home "$TMP_ROOT/reduce-failed")
+  write_keep "$home/data/ov-a/report.md" "Node contract: bounded job"
+  lock="$home/data/decisions/lock.md"
+  write_reduce_lock "$lock" \
+    "expected-reports: ov-a, ov-b(failed: scout died after dispatch)" \
+    "Cite \`data/ov-a/report.md\`."
+  transcript="$home/transcript.jsonl"
+  write_transcript "$transcript" "$(write_tool_line Write "$lock")"
+  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  set +e
+  out=$(run_adapter "$payload")
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "failed-declared member must not refuse Stop"
+  pass "spec compile stop: declared failed expected report stays clean"
+}
+
 test_child_worktree_guard_seat_before_scope() {
   local base wt spec transcript payload out rc
   base="$TMP_ROOT/child-base"
@@ -348,6 +444,10 @@ test_no_write_this_turn_is_inert_while_spec_red
 test_child_worktree_write_checks_that_tree
 test_pi_payload_without_transcript_is_inert
 test_manufactured_breakage_of_d8_tag
+test_decision_write_without_expected_reports_is_inert
+test_decision_write_missing_report_refuses
+test_child_home_not_fm_home_for_reduce
+test_failed_declared_reduce_is_clean
 test_child_worktree_guard_seat_before_scope
 
 echo "# all fm-spec-compile-stop-check tests passed"

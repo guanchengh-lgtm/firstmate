@@ -145,6 +145,7 @@ family_for_basename() {
     fm-spec-compile-check.test.sh|\
     fm-spec-compile-stop-check.test.sh|\
     fm-owner-invoke-wait-check.test.sh|\
+    fm-reduce-check.test.sh|\
     fm-session-progress-retrieve-check.test.sh|\
     fm-kimi-harness.test.sh|fm-muse-harness.test.sh|fm-herdr-lab.test.sh|fm-lint.test.sh|\
     fm-operational-input.test.sh|fm-pi-primary-types.test.sh|\
@@ -962,7 +963,8 @@ families_for_changed_path() {
       printf '%s\n' pure-contract-unit
       printf '%s\n' snapshot-bearings
       ;;
-    bin/fm-class-too-narrow-check.sh|bin/fm-spec-compile-check.sh|bin/fm-spec-compile-stop-check.sh)
+    bin/fm-class-too-narrow-check.sh|bin/fm-spec-compile-check.sh|bin/fm-spec-compile-stop-check.sh|\
+    bin/fm-reduce-check.sh|bin/fm-keep-rows.py)
       printf '%s\n' pure-contract-unit
       ;;
     bin/fm-owner-invoke-wait-check.sh)

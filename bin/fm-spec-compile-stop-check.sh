@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # Refuse ending a turn that wrote Map 2 spec, tickets, or keep-list files
-# while the spec compile-check is red.
+# while the spec compile-check is red, or that wrote a spec, ticket, or
+# data/decisions file carrying expected-reports: while the reduce-check is red.
 #
 # Usage: fm-spec-compile-stop-check.sh [--claude]
 #          Stop-hook JSON on stdin.
 #
 # This is the Stop adapter, not the matcher. bin/fm-spec-compile-check.sh
-# remains the matcher and must be invoked with an explicit --home (or
-# explicit --spec / --tickets / --keep-source). This adapter never reads
-# FM_HOME, FM_ROOT, or the current working tree as an implicit compile home.
+# remains the compile matcher and must be invoked with an explicit --home (or
+# explicit --spec / --tickets / --keep-source). bin/fm-reduce-check.sh is the
+# reduce matcher and is invoked with explicit --expect paths and --cited-by.
+# This adapter never reads FM_HOME, FM_ROOT, or the current working tree as
+# an implicit compile or reduce home.
 #
 # It runs before primary-scope so child firstmate worktrees are not skipped.
 # This-turn writes are taken from the Stop transcript after the last
@@ -16,29 +19,38 @@
 # operational FIRSTMATE_OP follow-ups, and harness-injected synthetic user
 # rows: task-notification including Stop hook feedback, Request interrupted,
 # local-command-stdout): Write / Edit / MultiEdit / NotebookEdit file_path
-# values, and Bash command strings. A write counts when the string
+# values, and Bash command strings. A compile write counts when the string
 # contains a suffix data/wf-map2-loops/spec.md, data/wf-map2-loops/tickets/<name>.md,
-# or a data/<id>/report.md the spec cites in backticks. Home is the absolute
-# prefix before /data/ in that path. A relative data/... path resolves against
-# the payload cwd. No matching write: inert, even if a live spec is red.
-# Matcher findings (exit 1) and structural failures (exit 2) both become
-# Stop exit 2. --claude is accepted for the same Stop shape as SoT speech
-# and does not change the refuse.
+# or a data/<id>/report.md the spec cites in backticks. A reduce write counts
+# when a spec, ticket, or data/decisions/<name>.md file written this turn
+# contains an expected-reports: line. Home is the absolute prefix before
+# /data/ in that path. Each expected-reports id resolves to
+# <home>/data/<id>/report.md. A relative data/... path resolves against the
+# payload cwd. No matching write: inert, even if a live spec is red. No
+# expected-reports: line in this turn's writes: reduce is inert. Matcher
+# findings (exit 1) and structural failures (exit 2) both become Stop exit 2.
+# --claude is accepted for the same Stop shape as SoT speech and does not
+# change the refuse. This adapter does not wait or poll for reports.
 #
-# LIMITS: matcher LIMITS stay in the matcher header (ticket ids not lock
+# LIMITS: matcher LIMITS stay in the matcher headers (ticket ids not lock
 # clauses, keep rows only under ### Keep, paraphrase, section 10, open
-# tickets). Pi / OpenCode / pi-signed Stop payloads have no transcript and
-# stay inert. Writes that are not a Stop (an editor save, git checkout) are
-# invisible. Bash writes through variables or cd-then-relative names leave
-# no literal suffix and are invisible. Missing payload, missing transcript,
-# unreadable JSONL, or missing python3 stay inert (exit 0).
+# tickets; reduce N is the declared list, citation is backtick presence).
+# Pi / OpenCode / pi-signed Stop payloads have no transcript and stay inert.
+# Writes that are not a Stop (an editor save, git checkout) are invisible.
+# Bash writes through variables or cd-then-relative names leave no literal
+# suffix and are invisible. Writes outside spec, wf-map2-loops tickets, cited
+# reports, and data/decisions/<name>.md are invisible to this adapter.
+# A wrong or absent expected-reports line leaves reduce inert or satisfied.
+# Missing payload, missing transcript, unreadable JSONL, or missing python3
+# stay inert (exit 0).
 set -u
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P) || exit 0
 MATCHER="$SCRIPT_DIR/fm-spec-compile-check.sh"
+REDUCE="$SCRIPT_DIR/fm-reduce-check.sh"
 
 usage() {
-  sed -n '2,32p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,45p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 for arg in "$@"; do
@@ -60,21 +72,28 @@ cleanup() { rm -rf -- "$TMP_DIR"; }
 trap cleanup EXIT HUP INT TERM
 PAYLOAD_FILE="$TMP_DIR/payload.json"
 HOMES_FILE="$TMP_DIR/homes.txt"
+JOBS_DIR="$TMP_DIR/reduce-jobs"
 printf '%s' "$PAYLOAD" > "$PAYLOAD_FILE" || exit 0
+mkdir -p "$JOBS_DIR" || exit 0
 
-python3 - "$PAYLOAD_FILE" "$HOMES_FILE" <<'PY' || exit 0
+python3 - "$PAYLOAD_FILE" "$HOMES_FILE" "$JOBS_DIR" <<'PY' || exit 0
 import json
 import os
 import re
 import sys
 
-payload_path, homes_path = sys.argv[1:3]
+payload_path, homes_path, jobs_dir = sys.argv[1:4]
 FILE_TOOLS = {"write", "edit", "multiedit", "notebookedit"}
 SHELL_TOOLS = {"bash"}
 SPEC_RE = re.compile(r"data/wf-map2-loops/spec\.md")
 TICKET_RE = re.compile(r"data/wf-map2-loops/tickets/[^/\s'\"\\]+\.md")
+DECISION_RE = re.compile(r"data/decisions/[^/\s'\"\\]+\.md")
 REPORT_RE = re.compile(r"data/[^/\s'\"\\]+/report\.md")
 CITED_REPORT = re.compile(r"`(data/[^`]*report\.md)`")
+EXPECTED_REPORTS_RE = re.compile(r"(?m)^[ \t]*expected-reports:[ \t]*(.*)$")
+EXPECTED_MEMBER_RE = re.compile(
+    r"([A-Za-z0-9][A-Za-z0-9._-]*)(?:\(failed:[ \t]*([^)]*)\))?"
+)
 OP_MARK = "\u2063"
 PATH_BREAK = set(" \t\n\"'`")
 
@@ -220,7 +239,7 @@ def collect_tools(content, file_paths, bash_cmds):
 
 def extract_from_text(text):
     found = []
-    for cre in (SPEC_RE, TICKET_RE, REPORT_RE):
+    for cre in (SPEC_RE, TICKET_RE, DECISION_RE, REPORT_RE):
         for match in cre.finditer(text):
             start = match.start()
             i = start
@@ -290,9 +309,26 @@ def kind_of(path):
         return "spec"
     if TICKET_RE.search(n):
         return "ticket"
+    if DECISION_RE.search(n):
+        return "decision"
     if REPORT_RE.search(n):
         return "report"
     return ""
+
+
+def parse_expected_ids(text):
+    match = EXPECTED_REPORTS_RE.search(text)
+    if not match:
+        return None
+    ids = []
+    seen_ids = set()
+    for mm in EXPECTED_MEMBER_RE.finditer(match.group(1)):
+        tid = mm.group(1)
+        if tid in seen_ids:
+            continue
+        seen_ids.add(tid)
+        ids.append(tid)
+    return ids
 
 
 homes = []
@@ -302,7 +338,7 @@ for raw in candidates:
     if not path:
         continue
     kind = kind_of(path)
-    if not kind:
+    if not kind or kind == "decision":
         continue
     home = home_of(path)
     if not home:
@@ -321,10 +357,47 @@ for raw in candidates:
     seen.add(home)
     homes.append(home)
 
+reduce_jobs = []
+reduce_seen = set()
+for raw in candidates:
+    path = resolve_path(raw)
+    if not path:
+        continue
+    kind = kind_of(path)
+    if kind not in ("spec", "ticket", "decision"):
+        continue
+    if not os.path.isfile(path) or os.path.islink(path):
+        continue
+    try:
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+    except OSError:
+        continue
+    ids = parse_expected_ids(text)
+    if ids is None:
+        continue
+    home = home_of(path)
+    if not home:
+        continue
+    if path in reduce_seen:
+        continue
+    reduce_seen.add(path)
+    expects = [
+        os.path.normpath(os.path.join(home, "data", tid, "report.md"))
+        for tid in ids
+    ]
+    reduce_jobs.append((path, expects))
+
 try:
     with open(homes_path, "w", encoding="utf-8") as fh:
         for home in homes:
             fh.write(home + "\n")
+    os.makedirs(jobs_dir, exist_ok=True)
+    for i, (cited, expects) in enumerate(reduce_jobs):
+        with open(os.path.join(jobs_dir, "%04d.txt" % i), "w", encoding="utf-8") as fh:
+            fh.write(cited + "\n")
+            for p in expects:
+                fh.write(p + "\n")
 except OSError:
     sys.exit(0)
 PY
@@ -340,5 +413,36 @@ while IFS= read -r home || [ -n "${home:-}" ]; do
     exit 2
   fi
 done < "$HOMES_FILE"
+
+if [ -d "$JOBS_DIR" ]; then
+  for job in "$JOBS_DIR"/*.txt; do
+    [ -f "$job" ] || continue
+    if [ ! -x "$REDUCE" ]; then
+      printf 'structural: missing reduce matcher %s\n' "$REDUCE" >&2
+      exit 2
+    fi
+    cited=
+    expect_args=()
+    while IFS= read -r line || [ -n "${line:-}" ]; do
+      if [ -z "${cited}" ]; then
+        cited=$line
+        continue
+      fi
+      [ -n "$line" ] || continue
+      expect_args+=(--expect "$line")
+    done < "$job"
+    [ -n "$cited" ] || continue
+    if [ "${#expect_args[@]}" -gt 0 ]; then
+      out=$("$REDUCE" --cited-by "$cited" "${expect_args[@]}" 2>&1)
+    else
+      out=$("$REDUCE" --cited-by "$cited" 2>&1)
+    fi
+    rc=$?
+    if [ "$rc" -eq 1 ] || [ "$rc" -eq 2 ]; then
+      printf '%s\n' "$out" >&2
+      exit 2
+    fi
+  done
+fi
 
 exit 0

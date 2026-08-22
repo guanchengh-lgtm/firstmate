@@ -22,6 +22,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-spec-compile-stop-check.sh` | Refuse a Stop that wrote Map 2 spec, tickets, or keep-list files while that matcher is red; path-derived `--home`, before primary-scope |
 | `fm-owner-invoke-wait-check.sh` | Refuse a locked next act, an OWNER_INVOKE_WAIT marker, or this session's ships whose OV review is gone without a report or (Claude ov_harness only) never loaded plan-eng-review |
 | `fm-skill-load-record.sh` | Claude PostToolUse Skill recorder (crewmate settings.local.json absolute path + tracked settings.json): append normalized skill loads into data/<task>/skills when FM_TASK_ID/FM_HOME are set |
+| `fm-reduce-check.sh` | Assert every expected wide-work report exists, is non-empty, and is cited; code writes the keep-list |
 | `fm-session-progress-retrieve-check.sh` | Refuse a session-start or Bearings retrieve surface that omits live jobs, open picks, or captain lock words the prior-session fold already extracted |
 | `fm-startup-network.sh`  | Run session start's network checks off its blocking path in a bounded detached worker, and publish the result inline or as a wake |
 | `fm-fleet-sync.sh`       | Refresh project clones with safe fast-forwards, self-heals, `STUCK:` reports, branch pruning, and bounded recovery from an orphaned `.git/packed-refs.lock` |
