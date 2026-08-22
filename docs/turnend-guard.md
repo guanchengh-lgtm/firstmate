@@ -107,7 +107,7 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 
 ## Compatibility limits
 
-- Child crewmate and scout worktrees are outside scope.
+- Child crewmate and scout worktrees are outside supervision scope. The spec compile-check adapter is the exception; its header owns that seat.
 - A valid secondmate home is in scope; an idle secondmate endpoint with no Relay poll remains healthy because it has no supervision need.
 - The direct-blocking and bounded passive-follow-up split is limited to the primary integrations listed above.
 - OpenCode headless mode and untrusted Grok project hooks remain fail-open at the host boundary.
@@ -120,7 +120,11 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 - Unreadable hook input remains fail-open.
 - No harness adapter uses a shell ampersand to manufacture supervision.
 
-The spec compile-check Stop adapter is inert on Pi, OpenCode, and pi-signed primaries because those adapters feed the guard `{"stop_hook_active":false}` with no transcript path; it also cannot see writes that are not a Stop (an editor save or `git checkout`) or Bash writes through variables or `cd` that leave no literal `data/wf-map2-loops/` or cited `data/<id>/report.md` suffix in the command string.
+## Known residual gap
+
+The spec compile-check Stop adapter is inert on Pi, OpenCode, and pi-signed primaries because those adapters feed the guard `{"stop_hook_active":false}` with no transcript path.
+It also cannot see writes that are not a Stop (an editor save or `git checkout`) or Bash writes through variables or `cd` that leave no literal `data/wf-map2-loops/` or cited `data/<id>/report.md` suffix in the command string.
+`bin/fm-spec-compile-stop-check.sh`'s header owns that residual.
 
 ## Regression coverage
 
