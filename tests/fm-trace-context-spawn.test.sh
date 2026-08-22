@@ -99,6 +99,8 @@ make_spawn_case() {
   id=$name-z1
   mkdir -p "$home/data/$id"
   printf '%s\n' 'Role: builder' "brief for $id" > "$home/data/$id/brief.md"
+  printf '%s\n' builder > "$home/data/$id/role"
+  printf '%s\n' no-mistakes > "$home/data/$id/mode"
   printf '%s\n' "$home|$proj|$wt|$fakebin|$launchlog|$id"
 }
 
@@ -216,6 +218,8 @@ run_two_level() {
   fm_git_worktree "$wproj" "$wwt" "wt-$name"
   mkdir -p "$sm/state" "$sm/projects" "$sm/data/$worker_id"
   printf '%s\n' 'Role: builder' 'worker brief' > "$sm/data/$worker_id/brief.md"
+  printf '%s\n' builder > "$sm/data/$worker_id/role"
+  printf '%s\n' no-mistakes > "$sm/data/$worker_id/mode"
   touch "$sm/state/.last-watcher-beat"
   start_trace_session "$sm" "$TL_ENV_TC"
   wlog="$base/worker-launch.log"
@@ -499,7 +503,11 @@ test_two_routed_tasks_through_one_secondmate_root_distinct_traces() {
   fm_git_worktree "$proj_b" "$wt_b" wt-routed-b
   mkdir -p "$sm/data/$id_a" "$sm/data/$id_b"
   printf '%s\n' 'Role: builder' 'brief a' > "$sm/data/$id_a/brief.md"
+  printf '%s\n' builder > "$sm/data/$id_a/role"
+  printf '%s\n' no-mistakes > "$sm/data/$id_a/mode"
   printf '%s\n' 'Role: builder' 'brief b' > "$sm/data/$id_b/brief.md"
+  printf '%s\n' builder > "$sm/data/$id_b/role"
+  printf '%s\n' no-mistakes > "$sm/data/$id_b/mode"
   log_a="$base/launch-a.log"
   log_b="$base/launch-b.log"
 

@@ -208,9 +208,13 @@ test_ship_modes_generate_clean_briefs() {
     assert_present "$brief" "$id: brief was not scaffolded"
     assert_grep "# Definition of done" "$brief" "$id: brief missing Definition of done section"
     grep -qx "Delivery contract: mode=$mode" "$brief" \
-      || fail "$id: brief did not record its machine-readable delivery contract line"
+      || fail "$id: brief did not record its human-readable delivery contract line"
     grep -qx "Role: builder" "$brief" \
-      || fail "$id: brief did not record its machine-readable Role: builder line"
+      || fail "$id: brief did not record its human-readable Role: builder line"
+    grep -qx "$mode" "$home/data/$id/mode" \
+      || fail "$id: mode marker file was not written with $mode"
+    grep -qx builder "$home/data/$id/role" \
+      || fail "$id: role marker file was not written as builder"
     assert_grep "{TASK}" "$brief" "$id: brief missing the {TASK} placeholder"
     assert_grep "mid-task \`working:\` line (including setup complete) is nonterminal" "$brief" \
       "$id: brief missing nonterminal working:/setup-complete gate protection"
@@ -293,7 +297,7 @@ yolo=value form on a ship brief|brief-refused-b2 some-proj --mode direct-PR --yo
 mode on a scout brief|brief-refused-b3 some-proj --scout --mode direct-PR|--mode applies only to ship briefs
 mode on a secondmate charter|brief-refused-b4 --secondmate --no-projects --mode no-mistakes|--mode applies only to ship briefs
 verifier on a scout|brief-refused-v1 some-proj --scout --verifier|--verifier applies only to an existing ship brief
-verifier with --mode|brief-refused-v2 some-proj --mode no-mistakes --verifier|--verifier reads mode from the existing brief
+verifier with --mode|brief-refused-v2 some-proj --mode no-mistakes --verifier|--verifier reads mode from the task mode marker
 ROWS
   pass "fm-brief.sh: --yolo and scout/secondmate --mode are refused, never silently dropped"
 }
@@ -777,6 +781,10 @@ test_verifier_brief_leads_with_verifier_contract() {
   brief="$home/data/$id/brief.md"
   grep -qx "Role: builder" "$brief" \
     || fail "builder brief did not record Role: builder"
+  grep -qx builder "$home/data/$id/role" \
+    || fail "builder scaffold did not write role marker builder"
+  grep -qx no-mistakes "$home/data/$id/mode" \
+    || fail "builder scaffold did not write mode marker no-mistakes"
   assert_grep "The task is complete only when committed on your branch" "$brief" \
     "builder brief lost its builder completion line"
   assert_grep "Firstmate starts a fresh verifier context to run /no-mistakes" "$brief" \
@@ -786,6 +794,10 @@ test_verifier_brief_leads_with_verifier_contract() {
   expect_code 0 "$status" "--verifier should write verifier-brief.md (got: $out)"
   verifier="$home/data/$id/verifier-brief.md"
   assert_present "$verifier" "--verifier did not write verifier-brief.md"
+  grep -qx verifier "$home/data/$id/verifier-role" \
+    || fail "--verifier did not write verifier-role marker"
+  grep -qx builder "$home/data/$id/role" \
+    || fail "--verifier overwrote the builder role marker"
   first=$(head -n 1 "$verifier")
   [ "$first" = "Role: verifier" ] || fail "verifier-brief.md must start with Role: verifier (got: $first)"
   assert_grep "# Definition of done" "$verifier" "verifier-brief.md missing Definition of done"
@@ -820,7 +832,7 @@ test_verifier_brief_leads_with_verifier_contract() {
     "direct-PR source brief was not refused"
   assert_absent "$home/data/$id/verifier-brief.md" "--verifier wrote a verifier file for direct-PR"
 
-  # Task-body Delivery contract: prose must not override the scaffold DoD mode.
+  # Task-body Delivery contract: prose must not override the machine mode marker.
   id='brief-verifier-task-mode'
   mkdir -p "$home/data/$id"
   cat > "$home/data/$id/brief.md" <<'EOF'
@@ -833,15 +845,18 @@ Delivery contract: mode=direct-PR is the wrong posture here.
 Delivery contract: mode=no-mistakes
 Role: builder
 EOF
+  printf '%s\n' no-mistakes > "$home/data/$id/mode"
+  printf '%s\n' builder > "$home/data/$id/role"
   out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" --verifier 2>&1); status=$?
   expect_code 0 "$status" \
-    "--verifier should accept DoD mode=no-mistakes despite task-body contract prose (got: $out)"
+    "--verifier should accept mode marker no-mistakes despite task-body contract prose (got: $out)"
   assert_present "$home/data/$id/verifier-brief.md" \
-    "--verifier skipped a valid no-mistakes DoD because task prose cited another mode"
+    "--verifier skipped a valid no-mistakes mode marker because task prose cited another mode"
+  grep -qx verifier "$home/data/$id/verifier-role" \
+    || fail "--verifier did not write verifier-role for task-mode fixture"
 
-  # A task-authored earlier # Definition of done must not beat the trailing
-  # scaffold DoD when --verifier reads the source mode.
-  id='brief-verifier-nested-dod'
+  # Progress-style append after DoD must not change the machine mode marker either.
+  id='brief-verifier-progress-mode'
   mkdir -p "$home/data/$id"
   cat > "$home/data/$id/brief.md" <<'EOF'
 You are a crewmate.
@@ -850,21 +865,21 @@ You are a crewmate.
 Body text about the feature.
 
 # Definition of done
-Role: verifier is the second-context worker.
-Delivery contract: mode=direct-PR is shown only as a counter-example.
-
-# Setup
-Disposable worktree setup text.
-
-# Definition of done
 Delivery contract: mode=no-mistakes
 Role: builder
+Ship it.
+
+## Progress so far
+Delivery contract: mode=direct-PR looked worse after investigation.
+Role: verifier
 EOF
+  printf '%s\n' no-mistakes > "$home/data/$id/mode"
+  printf '%s\n' builder > "$home/data/$id/role"
   out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" --verifier 2>&1); status=$?
   expect_code 0 "$status" \
-    "--verifier should accept trailing scaffold mode=no-mistakes despite an earlier fake DoD (got: $out)"
+    "--verifier should accept mode marker no-mistakes despite progress-append prose (got: $out)"
   assert_present "$home/data/$id/verifier-brief.md" \
-    "--verifier skipped a valid trailing no-mistakes DoD because an earlier DoD cited another mode"
+    "--verifier skipped a valid no-mistakes mode marker because progress prose cited another mode"
 
   pass "fm-brief.sh: --verifier writes a verifier-leading sibling and leaves brief.md alone"
 }

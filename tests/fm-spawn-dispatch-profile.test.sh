@@ -62,6 +62,8 @@ make_spawn_case() {
   for id in "$@"; do
     mkdir -p "$home/data/$id"
     printf '%s\n' 'Role: builder' "brief for $id" > "$home/data/$id/brief.md"
+    printf '%s\n' builder > "$home/data/$id/role"
+    printf '%s\n' no-mistakes > "$home/data/$id/mode"
   done
   printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin|$launchlog"
 }
@@ -812,6 +814,8 @@ test_role_verifier_encodes_verifier_brief() {
   read_case_record "$rec"
   printf '%s\n' 'Role: verifier' 'Delivery contract: mode=no-mistakes' '# Task' 'keep the original task' \
     > "$HOME_DIR/data/$id/verifier-brief.md"
+  printf '%s\n' verifier > "$HOME_DIR/data/$id/verifier-role"
+  printf '%s\n' no-mistakes > "$HOME_DIR/data/$id/mode"
 
   out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
     --mode no-mistakes --yolo off --role verifier)

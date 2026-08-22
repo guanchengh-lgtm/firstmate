@@ -161,6 +161,8 @@ run_spawn() {
   local cwd=$1 home=$2 id=$3 proj=$4 pane=$5 fakebin=$6; shift 6
   mkdir -p "$home/data/$id"
   printf '%s\n' 'Role: builder' 'brief' > "$home/data/$id/brief.md"
+  printf '%s\n' builder > "$home/data/$id/role"
+  printf '%s\n' no-mistakes > "$home/data/$id/mode"
   ( cd "$cwd" && env -u NO_MISTAKES_GATE -u FM_GATE_REFUSE_BYPASS \
       "FM_ROOT_OVERRIDE=" "FM_HOME=$home" \
       "FM_STATE_OVERRIDE=$home/state" "FM_DATA_OVERRIDE=$home/data" \

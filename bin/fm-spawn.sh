@@ -17,19 +17,17 @@
 #   standing posture as context, not as this task's answer, so a spawn never looks
 #   the mode up. --role builder|verifier is the launch-role gate, REQUIRED for
 #   every ship spawn and refused on --scout and --secondmate. --role verifier is
-#   legal only with --mode no-mistakes. A ship spawn reads the selected file's
-#   "Delivery contract: mode=<mode>" line and REFUSES a mismatch, so the worker's
-#   instructions and the recorded task delivery cannot drift apart; a brief
-#   scaffolded before that line existed warns once and launches on the flag. It
-#   also reads the selected file's scaffold "Role: builder|verifier" line from the
-#   pre-heading head or the last # Definition of done block (shared with
-#   fm-brief.sh --verifier via bin/fm-brief-scaffold-lib.sh), so task prose and a
-#   task-authored earlier DoD cannot satisfy or poison the gate, and REFUSES a
-#   missing or mismatched Role: (no warn-and-launch). --role builder encodes
+#   legal only with --mode no-mistakes. A ship spawn reads the machine-owned
+#   sibling markers written by fm-brief.sh - data/<id>/mode and either
+#   data/<id>/role (builder) or data/<id>/verifier-role (verifier) - and REFUSES
+#   a missing or mismatched marker (no warn-and-launch for role; a missing mode
+#   marker from a pre-marker brief warns once and launches on the flag). Brief
+#   prose is never scanned for Role: or Delivery contract: lines, so task text
+#   and recovery appends cannot forge or poison the gate. --role builder encodes
 #   data/<id>/brief.md. --role verifier encodes data/<id>/verifier-brief.md and
-#   refuses if that file is missing or if the spawn would encode the builder
-#   brief. Recovery reads recorded role= from meta; it does not infer role from
-#   git and does not default an omitted --role to builder. When
+#   refuses if that file is missing. Recovery reads recorded role= from meta; it
+#   does not infer role from git and does not default an omitted --role to
+#   builder. When
 #   the explicit mode carries less rigor than the project's standing posture, a
 #   loud one-line deviation notice is printed and the spawn continues.
 #   no-mistakes-prod-only is a registry policy rather than a task mode and is
@@ -190,8 +188,6 @@ esac
 
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
-# shellcheck source=bin/fm-brief-scaffold-lib.sh
-. "$SCRIPT_DIR/fm-brief-scaffold-lib.sh"
 
 resolve_directory_input() {
   local name=$1 path=$2 resolved
@@ -1444,27 +1440,44 @@ delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task
 }
 
 # Brief/spawn delivery agreement, checked before any endpoint exists.
-# fm-brief.sh records a ship brief's mode as a fixed "Delivery contract: mode=<mode>"
-# line. A spawn that disagrees would launch a worker whose instructions and whose
-# recorded task delivery differ, which is the exact drift this contract prevents.
+# fm-brief.sh records mode and role in machine-owned sibling files under
+# data/<id>/ (not in brief prose). A spawn that disagrees would launch a worker
+# whose launch role/mode and whose recorded task delivery differ.
 if [ "$KIND" = ship ]; then
   PROJ_NAME=$(basename "$PROJ_ABS")
-  # Delivery contract and Role: are scaffold markers only: pre-heading head
-  # (verifier briefs put Role there) or the last # Definition of done block
-  # (builder briefs). Shared reader: bin/fm-brief-scaffold-lib.sh.
-  BRIEF_MODE=$(fm_brief_scaffold_mode "$BRIEF")
+  MODE_MARKER="$DATA/$ID/mode"
+  if [ "$ROLE" = verifier ]; then
+    ROLE_MARKER="$DATA/$ID/verifier-role"
+  else
+    ROLE_MARKER="$DATA/$ID/role"
+  fi
+  BRIEF_MODE=
+  if [ -f "$MODE_MARKER" ]; then
+    BRIEF_MODE=$(tr -d '\r\n' < "$MODE_MARKER")
+    case "$BRIEF_MODE" in
+      no-mistakes|direct-PR|local-only) ;;
+      *) BRIEF_MODE= ;;
+    esac
+  fi
   if [ -z "$BRIEF_MODE" ]; then
-    echo "warning: $BRIEF records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode $MODE - confirm its definition of done matches" >&2
+    echo "warning: $MODE_MARKER records no delivery mode (scaffolded before ship tasks recorded one); launching on the explicit --mode $MODE - confirm its definition of done matches" >&2
   elif [ "$BRIEF_MODE" != "$MODE" ]; then
-    echo "error: delivery mismatch for $ID: the brief says mode=$BRIEF_MODE but this spawn passed --mode $MODE; correct the flag or re-scaffold the brief so the worker's instructions and the task record agree" >&2
+    echo "error: delivery mismatch for $ID: the task mode marker says mode=$BRIEF_MODE but this spawn passed --mode $MODE; correct the flag or re-scaffold the brief so the worker's instructions and the task record agree" >&2
     exit 1
   fi
-  BRIEF_ROLE=$(fm_brief_scaffold_role "$BRIEF")
+  BRIEF_ROLE=
+  if [ -f "$ROLE_MARKER" ]; then
+    BRIEF_ROLE=$(tr -d '\r\n' < "$ROLE_MARKER")
+    case "$BRIEF_ROLE" in
+      builder|verifier) ;;
+      *) BRIEF_ROLE= ;;
+    esac
+  fi
   if [ -z "$BRIEF_ROLE" ]; then
-    echo "error: $BRIEF records no Role: line; a ship spawn requires Role: builder or Role: verifier so the launch input names the worker's role" >&2
+    echo "error: $ROLE_MARKER records no role; a ship spawn requires a machine-owned role marker of builder or verifier so the launch input names the worker's role" >&2
     exit 1
   elif [ "$BRIEF_ROLE" != "$ROLE" ]; then
-    echo "error: role mismatch for $ID: the brief says Role: $BRIEF_ROLE but this spawn passed --role $ROLE; correct the flag or render the matching brief so the worker's instructions and the launch role agree" >&2
+    echo "error: role mismatch for $ID: the task role marker says $BRIEF_ROLE but this spawn passed --role $ROLE; correct the flag or render the matching brief so the worker's instructions and the launch role agree" >&2
     exit 1
   fi
   # The registry holds the captain's standing posture, so dropping below it is

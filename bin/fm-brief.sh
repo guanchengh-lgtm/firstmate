@@ -47,17 +47,21 @@
 #                the configured merge authority approves, firstmate merges to local main
 # no-mistakes-prod-only is a registry policy, not a task mode; resolve it to one of
 # the three concrete modes at intake before calling this script.
-# The generated ship brief records the chosen mode as a fixed machine-readable
-# "Delivery contract: mode=<mode>" line and a "Role: builder" line. bin/fm-spawn.sh
-# reads both, requires --role builder|verifier, encodes the matching file, and
-# refuses a missing or mismatched Role: line so the worker's instructions and the
-# launch role cannot drift apart.
+# The generated ship brief keeps human-readable "Delivery contract: mode=<mode>"
+# and "Role: builder" lines in its Definition of done, and also writes unforgeable
+# machine markers beside the brief: data/<task-id>/mode (exact mode token) and
+# data/<task-id>/role (exactly builder). bin/fm-spawn.sh reads those sibling files
+# (not brief prose), requires --role builder|verifier, encodes the matching file,
+# and refuses a missing or mismatched role marker so task text and recovery appends
+# cannot forge or poison the gate.
 # --verifier is the second-context renderer, not a first-scaffold flag. It requires
-# an existing no-mistakes ship brief.md and writes data/<task-id>/verifier-brief.md
-# (overwrite of that sibling is allowed). That file opens with Role: verifier and
-# the verifier definition of done first, keeps the original # Task as the --intent
-# source, and omits builder Setup. Do not pass --role on this scaffold; spawn owns
-# the role gate.
+# an existing no-mistakes ship brief.md (mode marker must be no-mistakes) and writes
+# data/<task-id>/verifier-brief.md plus data/<task-id>/verifier-role (exactly
+# verifier); overwrite of those verifier siblings is allowed. The verifier brief
+# opens with Role: verifier and the verifier definition of done first, keeps the
+# original # Task as the --intent source, and omits builder Setup. Do not pass
+# --role on this scaffold; spawn owns the role gate. The builder brief.md and its
+# role/mode markers are left unchanged.
 # Ship briefs begin with a worktree-isolation assertion before the branch step.
 # --mode is refused on scout and secondmate scaffolds: a scout's deliverable is a
 # report rather than a merge, and a charter is not a delivery contract.
@@ -183,8 +187,6 @@ resolve_directory_input() {
 }
 
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
-# shellcheck source=bin/fm-brief-scaffold-lib.sh
-. "$SCRIPT_DIR/fm-brief-scaffold-lib.sh"
 FM_HOME=$(resolve_directory_input FM_HOME "${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}") || exit 1
 if [ -n "${FM_DATA_OVERRIDE:-}" ]; then
   DATA=$(resolve_directory_input FM_DATA_OVERRIDE "$FM_DATA_OVERRIDE") || exit 1
@@ -246,7 +248,7 @@ if [ "$VERIFIER" -eq 1 ]; then
     exit 1
   }
   [ "$MODE_SET" -eq 0 ] || {
-    echo "error: --verifier reads mode from the existing brief; do not pass --mode" >&2
+    echo "error: --verifier reads mode from the task mode marker; do not pass --mode" >&2
     exit 1
   }
   [ "$HERDR_LAB" -eq 0 ] || {
@@ -323,16 +325,20 @@ if [ "$VERIFIER" -eq 1 ]; then
     echo "error: --verifier requires an existing ship brief at $BRIEF" >&2
     exit 1
   }
-  # Delivery contract lives in the last scaffold # Definition of done block
-  # (or the pre-heading head on minimal fixtures). Shared reader:
-  # bin/fm-brief-scaffold-lib.sh - a task-authored earlier DoD cannot win.
-  SRC_MODE=$(fm_brief_scaffold_mode "$BRIEF")
+  # Mode comes from the machine-owned sibling written at ship scaffold time, not
+  # from brief prose (task text and recovery appends can mimic Delivery contract:).
+  MODE_MARKER="$DATA/$ID/mode"
+  SRC_MODE=
+  if [ -f "$MODE_MARKER" ]; then
+    SRC_MODE=$(tr -d '\r\n' < "$MODE_MARKER")
+  fi
   [ "$SRC_MODE" = no-mistakes ] || {
     echo "error: --verifier requires an existing no-mistakes ship brief at $BRIEF" >&2
     exit 1
   }
   TASK_BODY=$(task_section "$BRIEF")
   VERIFIER_BRIEF="$DATA/$ID/verifier-brief.md"
+  VERIFIER_ROLE_MARKER="$DATA/$ID/verifier-role"
   IFS= read -r -d '' VERIFIER_DOD <<EOF || true
 # Definition of done
 Delivery contract: mode=no-mistakes
@@ -383,6 +389,7 @@ EOF
    daemon error, append \`blocked: {the daemon error}\` and stop; only firstmate manages the daemon.
 EOF
   } > "$VERIFIER_BRIEF"
+  printf '%s\n' verifier > "$VERIFIER_ROLE_MARKER"
   echo "scaffolded: $VERIFIER_BRIEF (verifier)"
   exit 0
 fi
@@ -570,9 +577,9 @@ exit 0
 fi
 
 # Ship task: shape Setup / Rule 1 / Definition of done by this task's explicit
-# delivery mode, validated above. The generated DOD opens with the fixed
-# "Delivery contract: mode=<mode>" line and a "Role: builder" line that
-# bin/fm-spawn.sh checks against its own explicit --mode and --role before launching.
+# delivery mode, validated above. The generated DOD still carries human-readable
+# "Delivery contract: mode=<mode>" and "Role: builder" lines; the launch gate in
+# bin/fm-spawn.sh reads the sibling mode/role marker files written after this brief.
 case "$MODE" in
   direct-PR)
     SETUP2=""
@@ -687,4 +694,6 @@ Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced 
 
 $DOD
 EOF
+printf '%s\n' "$MODE" > "$DATA/$ID/mode"
+printf '%s\n' builder > "$DATA/$ID/role"
 echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK})"

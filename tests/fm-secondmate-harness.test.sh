@@ -903,6 +903,8 @@ test_spawn_fallback_chain_and_crew_scout_unaffected() {
   fm_git_worktree "$proj" "$wt" "wt-crew"
   mkdir -p "$home/data/$id" "$home/projects" "$home/state"
   printf '%s\n' 'Role: builder' 'brief' > "$home/data/$id/brief.md"
+  printf '%s\n' builder > "$home/data/$id/role"
+  printf '%s\n' no-mistakes > "$home/data/$id/mode"
   : > "$launchlog"
   PATH="$fakebin:$BASE_PATH" TMUX="fake,1,0" CLAUDECODE=1 \
     FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \

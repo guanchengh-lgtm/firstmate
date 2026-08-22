@@ -78,6 +78,8 @@ make_settle_case() {
   fm_git_init_commit "$stale"
   mkdir -p "$home/data/$id"
   printf '%s\n' 'Role: builder' "brief for $id" > "$home/data/$id/brief.md"
+  printf '%s\n' builder > "$home/data/$id/role"
+  printf '%s\n' no-mistakes > "$home/data/$id/mode"
   touch "$home/state/.last-watcher-beat"
   printf '%s\n' "$case_dir|$home|$proj|$wt|$stale|$fakebin|$countfile|$stale_reads"
 }

@@ -56,6 +56,17 @@ write_brief() {  # <home> <id> [<recorded-mode>] [<role>]
     [ -z "$mode" ] || printf 'Delivery contract: mode=%s\n' "$mode"
     [ -z "$role" ] || printf 'Role: %s\n' "$role"
   } > "$home/data/$id/brief.md"
+  # Machine-owned markers are the launch gate; brief prose is human-facing only.
+  if [ -n "$mode" ]; then
+    printf '%s\n' "$mode" > "$home/data/$id/mode"
+  else
+    rm -f "$home/data/$id/mode"
+  fi
+  if [ -n "$role" ]; then
+    printf '%s\n' "$role" > "$home/data/$id/role"
+  else
+    rm -f "$home/data/$id/role"
+  fi
 }
 
 run_spawn() {  # <home> <fakebin> <spawn-args...>
@@ -151,7 +162,7 @@ EOF
   status=$?
   [ "$status" -ne 0 ] || fail "a brief/spawn mode mismatch should exit non-zero"
   assert_contains "$out" "delivery mismatch for delivery-mismatch-b1" "mismatch refusal did not name the task"
-  assert_contains "$out" "the brief says mode=no-mistakes but this spawn passed --mode direct-PR" \
+  assert_contains "$out" "the task mode marker says mode=no-mistakes but this spawn passed --mode direct-PR" \
     "mismatch refusal did not show both sides of the disagreement"
   assert_absent "$home/state/delivery-mismatch-b1.meta" "mismatched spawn wrote task metadata"
 
@@ -160,17 +171,17 @@ EOF
   out=$(run_spawn "$home" "$fakebin" delivery-agree-b2 "$proj" claude --mode direct-PR --yolo off --role builder)
   assert_not_contains "$out" "delivery mismatch" "an agreeing mode was reported as a mismatch"
 
-  # A brief scaffolded before the contract line existed warns once and continues.
+  # A brief scaffolded before the mode marker existed warns once and continues.
   write_brief "$home" delivery-legacy-b3 "" builder
   out=$(run_spawn "$home" "$fakebin" delivery-legacy-b3 "$proj" claude --mode local-only --yolo off --role builder)
-  assert_contains "$out" "records no delivery contract line" "a legacy brief did not warn about its missing contract"
+  assert_contains "$out" "records no delivery mode" "a legacy brief did not warn about its missing mode marker"
   assert_not_contains "$out" "delivery mismatch" "a legacy brief was treated as a mismatch"
   pass "fm-spawn: the brief's recorded mode and the spawn's explicit mode must agree"
 }
 
-# --role is the launch gate: missing flag, missing Role: line, missing verifier
-# file, and Role mismatch all refuse before metadata. A verifier spawn must not
-# encode brief.md.
+# --role is the launch gate: missing flag, missing role marker, missing verifier
+# file, and role mismatch all refuse before metadata. A verifier spawn must not
+# encode brief.md. Brief prose never satisfies or poisons the machine markers.
 test_spawn_role_gate_selects_the_role_file() {
   local rec home proj fakebin out status
   rec=$(make_home role-gate)
@@ -181,9 +192,9 @@ EOF
   write_brief "$home" role-missing-line-c1 no-mistakes ""
   out=$(run_spawn "$home" "$fakebin" role-missing-line-c1 "$proj" claude --mode no-mistakes --yolo off --role builder)
   status=$?
-  [ "$status" -ne 0 ] || fail "a ship spawn whose file has no Role: line should exit non-zero"
-  assert_contains "$out" "records no Role: line" "missing Role: line did not refuse"
-  assert_absent "$home/state/role-missing-line-c1.meta" "missing Role: spawn wrote task metadata"
+  [ "$status" -ne 0 ] || fail "a ship spawn with no role marker should exit non-zero"
+  assert_contains "$out" "records no role" "missing role marker did not refuse"
+  assert_absent "$home/state/role-missing-line-c1.meta" "missing role marker spawn wrote task metadata"
 
   write_brief "$home" role-builder-only-c2 no-mistakes
   out=$(run_spawn "$home" "$fakebin" role-builder-only-c2 "$proj" claude --mode no-mistakes --yolo off --role verifier)
@@ -197,11 +208,12 @@ EOF
   write_brief "$home" role-mismatch-c3 no-mistakes
   mkdir -p "$home/data/role-mismatch-c3"
   printf 'Role: builder\nDelivery contract: mode=no-mistakes\n' > "$home/data/role-mismatch-c3/verifier-brief.md"
+  printf '%s\n' builder > "$home/data/role-mismatch-c3/verifier-role"
   out=$(run_spawn "$home" "$fakebin" role-mismatch-c3 "$proj" claude --mode no-mistakes --yolo off --role verifier)
   status=$?
-  [ "$status" -ne 0 ] || fail "Role: mismatch on verifier-brief.md should exit non-zero"
+  [ "$status" -ne 0 ] || fail "role marker mismatch on verifier-role should exit non-zero"
   assert_contains "$out" "role mismatch for role-mismatch-c3" "role mismatch refusal did not name the task"
-  assert_contains "$out" "the brief says Role: builder but this spawn passed --role verifier" \
+  assert_contains "$out" "the task role marker says builder but this spawn passed --role verifier" \
     "role mismatch refusal did not show both sides of the disagreement"
   assert_absent "$home/state/role-mismatch-c3.meta" "mismatched role spawn wrote task metadata"
 
@@ -210,8 +222,7 @@ EOF
   assert_not_contains "$out" "role mismatch" "an agreeing builder role was reported as a mismatch"
   assert_not_contains "$out" "no verifier brief" "a builder spawn looked for verifier-brief.md"
 
-  # Scaffold Role: sits after # Task (builder DoD). Task-body Role: lines must not
-  # false-refuse an agreeing scaffold, nor false-accept when the scaffold is absent.
+  # Task-body Role:/Delivery contract: prose must not poison agreeing machine markers.
   mkdir -p "$home/data/role-task-body-c5"
   cat > "$home/data/role-task-body-c5/brief.md" <<'EOF'
 You are a crewmate.
@@ -219,15 +230,20 @@ You are a crewmate.
 # Task
 Acceptance includes a line Role: admin for the RBAC matrix.
 Also document Role: builder in the ACL table.
+Delivery contract: mode=direct-PR is the wrong posture here.
 
 # Definition of done
 Delivery contract: mode=no-mistakes
 Role: builder
 EOF
+  printf '%s\n' builder > "$home/data/role-task-body-c5/role"
+  printf '%s\n' no-mistakes > "$home/data/role-task-body-c5/mode"
   out=$(run_spawn "$home" "$fakebin" role-task-body-c5 "$proj" claude --mode no-mistakes --yolo off --role builder)
-  assert_not_contains "$out" "role mismatch" "task-body Role: text poisoned an agreeing scaffold Role: builder"
-  assert_not_contains "$out" "records no Role: line" "task-body Role: hid the scaffold Role: builder"
+  assert_not_contains "$out" "role mismatch" "task-body Role: text poisoned an agreeing role marker"
+  assert_not_contains "$out" "delivery mismatch" "task-body Delivery contract: text poisoned an agreeing mode marker"
+  assert_not_contains "$out" "records no role" "task-body Role: hid the role marker"
 
+  # Brief prose alone never satisfies the role gate without the machine marker.
   mkdir -p "$home/data/role-task-only-c6"
   cat > "$home/data/role-task-only-c6/brief.md" <<'EOF'
 You are a crewmate.
@@ -237,110 +253,44 @@ Role: builder
 
 # Definition of done
 Delivery contract: mode=no-mistakes
+Role: builder
 EOF
+  printf '%s\n' no-mistakes > "$home/data/role-task-only-c6/mode"
+  rm -f "$home/data/role-task-only-c6/role"
   out=$(run_spawn "$home" "$fakebin" role-task-only-c6 "$proj" claude --mode no-mistakes --yolo off --role builder)
   status=$?
-  [ "$status" -ne 0 ] || fail "a Role: line only inside # Task must not satisfy the role gate"
-  assert_contains "$out" "records no Role: line" "task-only Role: builder was accepted as the scaffold marker"
-  assert_absent "$home/state/role-task-only-c6.meta" "task-only Role: spawn wrote task metadata"
+  [ "$status" -ne 0 ] || fail "brief prose Role: lines must not satisfy the role gate without a role marker"
+  assert_contains "$out" "records no role" "brief prose Role: builder was accepted without a role marker"
+  assert_absent "$home/state/role-task-only-c6.meta" "prose-only Role: spawn wrote task metadata"
 
-  # Intermediate headings end # Task; Role: prose after them must not beat DoD,
-  # and must not satisfy the gate when DoD has no Role: line.
-  mkdir -p "$home/data/role-heading-escape-c7"
-  cat > "$home/data/role-heading-escape-c7/brief.md" <<'EOF'
+  # Recovery-style progress append after the scaffold DoD must not overwrite markers.
+  mkdir -p "$home/data/role-progress-append-c7"
+  cat > "$home/data/role-progress-append-c7/brief.md" <<'EOF'
 You are a crewmate.
 
 # Task
 Body text about the feature.
-
-# Details
-Role: verifier is legal only with --mode no-mistakes.
 
 # Definition of done
 Delivery contract: mode=no-mistakes
 Role: builder
+Implement the feature and stop.
+
+## Progress so far
+Delivery contract: mode=direct-PR looked worse after investigation.
+Role: verifier
 EOF
-  out=$(run_spawn "$home" "$fakebin" role-heading-escape-c7 "$proj" claude --mode no-mistakes --yolo off --role builder)
+  printf '%s\n' builder > "$home/data/role-progress-append-c7/role"
+  printf '%s\n' no-mistakes > "$home/data/role-progress-append-c7/mode"
+  out=$(run_spawn "$home" "$fakebin" role-progress-append-c7 "$proj" claude --mode no-mistakes --yolo off --role builder)
   assert_not_contains "$out" "role mismatch" \
-    "post-heading Role: verifier prose poisoned an agreeing scaffold Role: builder"
-  assert_not_contains "$out" "records no Role: line" \
-    "post-heading Role: prose hid the scaffold Role: builder"
-
-  mkdir -p "$home/data/role-heading-only-c8"
-  cat > "$home/data/role-heading-only-c8/brief.md" <<'EOF'
-You are a crewmate.
-
-# Task
-Body text about the feature.
-
-# Details
-Role: builder is required for ship work.
-
-# Definition of done
-Delivery contract: mode=no-mistakes
-EOF
-  out=$(run_spawn "$home" "$fakebin" role-heading-only-c8 "$proj" claude --mode no-mistakes --yolo off --role builder)
-  status=$?
-  [ "$status" -ne 0 ] || fail "a Role: line only after an intermediate heading must not satisfy the role gate"
-  assert_contains "$out" "records no Role: line" \
-    "post-heading Role: builder was accepted as the scaffold marker"
-  assert_absent "$home/state/role-heading-only-c8.meta" \
-    "post-heading-only Role: spawn wrote task metadata"
-
-  # A task-authored earlier # Definition of done must not beat the trailing
-  # scaffold DoD for Role: or Delivery contract: mode=.
-  mkdir -p "$home/data/role-nested-dod-c9"
-  cat > "$home/data/role-nested-dod-c9/brief.md" <<'EOF'
-You are a crewmate.
-
-# Task
-Body text about the feature.
-
-# Definition of done
-Role: verifier is the second-context worker.
-Delivery contract: mode=direct-PR is shown only as a counter-example.
-
-# Setup
-Disposable worktree setup text.
-
-# Definition of done
-Delivery contract: mode=no-mistakes
-Role: builder
-EOF
-  out=$(run_spawn "$home" "$fakebin" role-nested-dod-c9 "$proj" claude --mode no-mistakes --yolo off --role builder)
-  assert_not_contains "$out" "role mismatch" \
-    "task-authored DoD Role: verifier poisoned trailing scaffold Role: builder"
+    "progress-append Role: verifier poisoned the machine role marker"
   assert_not_contains "$out" "delivery mismatch" \
-    "task-authored DoD mode=direct-PR poisoned trailing scaffold mode=no-mistakes"
-  assert_not_contains "$out" "records no Role: line" \
-    "task-authored DoD hid trailing scaffold Role: builder"
+    "progress-append Delivery contract: mode=direct-PR poisoned the machine mode marker"
+  assert_not_contains "$out" "records no role" \
+    "progress-append hid the machine role marker"
 
-  mkdir -p "$home/data/role-nested-dod-only-c10"
-  cat > "$home/data/role-nested-dod-only-c10/brief.md" <<'EOF'
-You are a crewmate.
-
-# Task
-Body text about the feature.
-
-# Definition of done
-Role: builder
-Delivery contract: mode=no-mistakes
-
-# Setup
-Disposable worktree setup text.
-
-# Definition of done
-Delivery contract: mode=no-mistakes
-EOF
-  out=$(run_spawn "$home" "$fakebin" role-nested-dod-only-c10 "$proj" claude --mode no-mistakes --yolo off --role builder)
-  status=$?
-  [ "$status" -ne 0 ] || fail "a Role: only in an earlier task-authored DoD must not satisfy the role gate"
-  assert_contains "$out" "records no Role: line" \
-    "earlier-DoD Role: builder was accepted when trailing scaffold DoD had none"
-  assert_absent "$home/state/role-nested-dod-only-c10.meta" \
-    "earlier-DoD-only Role: spawn wrote task metadata"
-
-  pass "fm-spawn: --role selects the role file and refuses a missing or mismatched Role:"
+  pass "fm-spawn: --role selects the role file and refuses a missing or mismatched role marker"
 }
 
 # The registry is the captain's standing posture, so dropping below its rigor is
