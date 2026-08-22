@@ -25,8 +25,10 @@
 #   refused as a flag value.
 #   --harness <name> is the explicit per-spawn harness/profile adapter. The old
 #   positional harness arg still works for back-compat.
-#   --model <name> and --effort <low|medium|high|xhigh|max> are concrete profile
-#   axes chosen by firstmate at intake. They are only threaded into harnesses whose
+#   --model <name> and --effort <low|medium|high|xhigh|max|default> are concrete
+#   profile axes chosen by firstmate at intake. `default` names the selected
+#   harness's own default for that axis and still counts as chosen; launch omits
+#   the flag, matching an omitted axis. They are only threaded into harnesses whose
 #   installed CLIs were verified to support that axis; unsupported axes are omitted
 #   from that harness's launch rather than guessed.
 #   --backend <name> is the explicit runtime session-provider backend for this
@@ -89,8 +91,9 @@
 #   even when they select different backends.
 #   With no harness arg, a crewmate/scout spawn resolves the CREW harness only when
 #   config/crew-dispatch.json is absent. When that file exists, crewmate/scout
-#   spawns require an explicit harness so firstmate cannot silently skip dispatch
-#   profile consultation. A --secondmate spawn is exempt and resolves the SECONDMATE
+#   spawns require an explicit harness, --model, and --effort so firstmate cannot
+#   silently skip dispatch profile consultation. A --secondmate spawn is exempt
+#   and resolves the SECONDMATE
 #   harness (config/secondmate-harness -> config/crew-harness -> own), so the
 #   secondmate-vs-crewmate split is DURABLE across every respawn (recovery,
 #   /updatefirstmate, restart). A bare adapter name (claude|codex|opencode|pi|pi-signed|grok|kimi|muse)
@@ -125,8 +128,9 @@
 #   source of truth; shared --scout/--harness/--model/--effort/--backend/--mode/--yolo
 #   applies to every pair. A ship batch therefore carries one delivery contract, and each
 #   pair still checks it against its own brief; a batch spanning modes is two invocations.
-#   If config/crew-dispatch.json exists, shared --harness is required for crewmate
-#   and scout batches. The loop lives here, in bash, so callers never hand-write a
+#   If config/crew-dispatch.json exists, shared --harness, --model, and --effort
+#   are required for crewmate and scout batches. The loop lives here, in bash, so
+#   callers never hand-write a
 #   multi-task shell loop (the tool shell is zsh, which does not word-split unquoted
 #   $vars and silently breaks ad-hoc `for ... in $pairs` loops).
 #   Launch templates live in launch_template() below; placeholders replaced before launch:
@@ -320,8 +324,8 @@ if [ "$TRACEPARENT_SET" -eq 1 ]; then
   }
 fi
 case "$EFFORT" in
-  ''|low|medium|high|xhigh|max) ;;
-  *) echo "error: --effort must be one of low, medium, high, xhigh, max" >&2; exit 1 ;;
+  ''|low|medium|high|xhigh|max|default) ;;
+  *) echo "error: --effort must be one of low, medium, high, xhigh, max, default" >&2; exit 1 ;;
 esac
 
 # Delivery contract (AGENTS.md section 7). A ship task's mode and yolo are
@@ -974,6 +978,20 @@ case "$ARG3" in
     LAUNCH=$(launch_template "$HARNESS" "$KIND") || { echo "error: unknown harness '$HARNESS'; pass a raw launch command to use an unverified adapter" >&2; exit 1; }
     ;;
 esac
+
+# Presence-only consultation backstop for the other two profile axes. An omitted
+# harness still loses first (the empty-ARG3 arm above); positional harness and
+# raw launch still have to name model and effort. `default` is a chosen axis.
+if [ "$KIND" != secondmate ] && [ -f "$CONFIG/crew-dispatch.json" ]; then
+  if [ "$MODEL_SET" -eq 0 ]; then
+    echo "error: config/crew-dispatch.json is active - pass an explicit model resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
+    exit 1
+  fi
+  if [ "$EFFORT_SET" -eq 0 ]; then
+    echo "error: config/crew-dispatch.json is active - pass an explicit effort resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
+    exit 1
+  fi
+fi
 
 case "$HARNESS" in
   pi|pi-signed) LAUNCH="FM_PI_HARNESS=$HARNESS $LAUNCH" ;;

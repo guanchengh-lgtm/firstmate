@@ -172,7 +172,7 @@ Re-run the two commands above and update this section and the pinned version tog
 
 `tests/fm-vendor-auth-probe.test.sh` drives the real script against a fake vendor CLI that records every invocation's argv and anything readable on stdin.
 It asserts that the script accepts no harness, model, or provider input, never calls `quota-axi`, exits alike for every probe result because it renders no verdict, invokes only the two fixed non-destructive argv forms with stdin closed, holds a real bound even when the configured bound is zero or malformed, and never echoes raw vendor output.
-`tests/fm-spawn-dispatch-profile.test.sh` owns spawn's deterministic profile and harness refusals.
+`tests/fm-spawn-dispatch-profile.test.sh` owns spawn's deterministic profile-axis refusals for harness, model, and effort when dispatch is active.
 `tests/fm-bootstrap.test.sh` owns the quota-axi version-floor diagnostic.
 `tests/fm-quota-array-dispatch-live-e2e.test.sh` drives the public Pi skill-loading interface against one fake `quota-axi --json` snapshot per case.
 It covers the Claude 1 percent versus Codex 55 percent reserve regression, explicit accounting for unmeasurable runway, the strongest-reasoning constraint, about-one-day spend-hard bias, two-to-three-day nearer weekly reset bias, four-to-six-day farther-horizon remaining comparison, and the multi-window rule that far remaining comes from the longer-cycle window rather than `five_hour`.
