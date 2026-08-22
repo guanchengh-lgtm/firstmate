@@ -692,6 +692,154 @@ test_skill_load_record_appends_normalized_token() {
   pass "owner-invoke-wait: skill-load recorder appends normalized token"
 }
 
+# Fake tmux for OV liveness: pane present, foreground is a shell husk (dead)
+# or a live harness agent. list-windows + pane_id keep target_exists true.
+make_ov_liveness_tmux() {  # <dir> <window> <pane_current_command>
+  local dir=$1 window=$2 comm=$3 fakebin
+  fakebin=$(fm_fakebin "$dir")
+  cat > "$fakebin/tmux" <<SH
+#!/usr/bin/env bash
+set -u
+case "\${1:-}" in
+  display-message)
+    for a in "\$@"; do
+      case "\$a" in
+        *pane_id*) printf '%s\n' '%1'; exit 0 ;;
+        *pane_tty*) exit 1 ;;
+        *pane_current_command*) printf '%s\n' '$comm'; exit 0 ;;
+      esac
+    done
+    exit 0 ;;
+  list-windows) printf '%s\n' '$window'; exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/tmux"
+  printf '%s\n' "$fakebin"
+}
+
+test_hook_refuses_husk_ov_worker_without_report() {
+  local home out rc payload transcript ship_wt fakebin base_path
+  home=$(make_primary_home "$TMP_ROOT/hook-husk-ov")
+  ship_wt="$home/ships/spec-compile-check"
+  mkdir -p "$home/data/spec-compile-check" "$home/data/spec-compile-check-ov" "$ship_wt"
+  printf '7171\n' > "$home/state/.lock"
+  printf '%s\n' 'kind=ship' 'ov=spec-compile-check-ov' 'session=7171' \
+    "worktree=$ship_wt" > "$home/state/spec-compile-check.meta"
+  # Pane still present as a bare shell; agent exited with no report.md.
+  printf '%s\n' 'kind=scout' 'backend=tmux' 'window=firstmate:fm-ov-husk' \
+    > "$home/state/spec-compile-check-ov.meta"
+  fakebin=$(make_ov_liveness_tmux "$TMP_ROOT/husk-tmux" fm-ov-husk bash)
+  base_path=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
+  transcript="$home/transcript.jsonl"
+  : > "$transcript"
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$home")
+  set +e
+  out=$(printf '%s' "$payload" | PATH="$fakebin:$base_path" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "husk OV without report exited $rc with: $out"
+  assert_contains "$out" 'R-ov-missing-report' \
+    "husk pane presence incorrectly treated dead OV as in-progress"
+  pass "owner-invoke-wait: husk OV pane without report refuses"
+}
+
+test_hook_live_ov_agent_without_report_passes() {
+  local home out rc payload transcript ship_wt fakebin base_path
+  home=$(make_primary_home "$TMP_ROOT/hook-live-ov")
+  ship_wt="$home/ships/spec-compile-check"
+  mkdir -p "$home/data/spec-compile-check" "$home/data/spec-compile-check-ov" "$ship_wt"
+  printf '7272\n' > "$home/state/.lock"
+  printf '%s\n' 'kind=ship' 'ov=spec-compile-check-ov' 'session=7272' \
+    "worktree=$ship_wt" > "$home/state/spec-compile-check.meta"
+  printf '%s\n' 'kind=scout' 'backend=tmux' 'window=firstmate:fm-ov-live' \
+    > "$home/state/spec-compile-check-ov.meta"
+  fakebin=$(make_ov_liveness_tmux "$TMP_ROOT/live-tmux" fm-ov-live claude)
+  base_path=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
+  transcript="$home/transcript.jsonl"
+  : > "$transcript"
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$home")
+  set +e
+  out=$(printf '%s' "$payload" | PATH="$fakebin:$base_path" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "live OV agent without report exited $rc with: $out"
+  [ -z "$out" ] || fail "live OV agent without report printed: $out"
+  pass "owner-invoke-wait: live OV agent without report passes"
+}
+
+test_crewmate_settings_carry_skill_recorder() {
+  local case_dir home proj wt fakebin id=ov-scout-skill out settings cmd skills
+  case_dir="$TMP_ROOT/crewmate-skill-settings"
+  home="$case_dir/home"
+  proj="$case_dir/project"
+  wt="$case_dir/wt"
+  fakebin=$(fm_fakebin "$case_dir/fake")
+  cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "$*" in
+  *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
+esac
+case "${1:-}" in
+  display-message) printf 'firstmate\n'; exit 0 ;;
+  list-windows) exit 0 ;;
+  has-session|new-session|new-window|kill-window|send-keys) exit 0 ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/tmux"
+  fm_fake_exit0 "$fakebin" treehouse pi opencode claude codex
+  mkdir -p "$home/data" "$home/projects" "$home/state" "$home/config"
+  printf '%s\n' claude > "$home/config/crew-harness"
+  fm_git_worktree "$proj" "$wt" "wt-crewmate-skill"
+  touch "$home/state/.last-watcher-beat"
+  mkdir -p "$home/data/$id"
+  printf '%s\n' 'Role: scout' "brief for $id" > "$home/data/$id/brief.md"
+  printf '%s\n' scout > "$home/data/$id/role"
+  set +e
+  out=$(FM_ROOT_OVERRIDE='' FM_HOME="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
+    PATH="$fakebin:$PATH" \
+    "$ROOT/bin/fm-spawn.sh" "$id" "$proj" --scout 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "claude scout spawn should succeed: $out"
+  settings="$wt/.claude/settings.local.json"
+  [ -f "$settings" ] || fail "crewmate spawn did not write settings.local.json"
+  jq -e '.hooks.PostToolUse[] | select(.matcher == "Skill")' "$settings" >/dev/null \
+    || fail "crewmate settings lack PostToolUse matcher Skill"
+  cmd=$(jq -r '.hooks.PostToolUse[] | select(.matcher == "Skill") | .hooks[0].command' "$settings")
+  [ -n "$cmd" ] && [ "$cmd" != null ] || fail "crewmate Skill recorder command empty"
+  case "$cmd" in
+    *"$ROOT/bin/fm-skill-load-record.sh"*) ;;
+    *) fail "crewmate Skill recorder is not absolute FM_ROOT path: $cmd" ;;
+  esac
+  # Emitted config contract: running the wired command records a real load.
+  printf '%s\n' 'kind=scout' > "$home/state/$id.meta"
+  set +e
+  out=$(printf '%s' '{"tool_name":"Skill","tool_input":{"skill":"plan-eng-review"}}' \
+    | FM_HOME="$home" FM_TASK_ID="$id" sh -c "$cmd" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "crewmate Skill recorder command exited $rc with: $out"
+  skills="$home/data/$id/skills"
+  [ -f "$skills" ] || fail "crewmate Skill recorder did not write skills"
+  assert_contains "$(cat "$skills")" 'plan-eng-review' \
+    "crewmate Skill recorder did not append plan-eng-review"
+  pass "owner-invoke-wait: crewmate settings wire Skill load recorder"
+}
+
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
 test_missing_and_empty_input_are_structural
@@ -716,6 +864,9 @@ test_pretool_credits_transcript_skill_load
 test_hook_ignores_prior_session_ships
 test_missing_skills_record_counts_as_unloaded
 test_skill_load_record_appends_normalized_token
+test_hook_refuses_husk_ov_worker_without_report
+test_hook_live_ov_agent_without_report_passes
+test_crewmate_settings_carry_skill_recorder
 test_brief_reads_ov_worker_report_and_skills
 
 echo "# all fm-owner-invoke-wait-check tests passed"

@@ -50,14 +50,19 @@
 # For each gathered ship with ov=<ov>, Stop ladder in this order:
 #   a. data/<ov>/report.md non-empty -> require plan-eng-review in
 #      data/<ov>/skills (absent/empty file = unloaded); no liveness check
-#   b. else if <ov>.meta exists and its endpoint is alive -> PASS
+#   b. else if <ov>.meta exists and its agent is alive -> PASS
 #      (review in progress; never refuse merely for a missing report)
 #   c. else refuse: review worker gone with no report
+# Alive means the harness agent, not bare pane presence: agent_alive=alive
+# passes; dead|missing fails; only unknown (zellij/orca/unreadable) falls
+# back to target_exists so unverified backends do not wedge. A shell husk
+# after the agent exits is not in-progress.
 # A gathered ship with no ov= passes at turn-end; spawn-time R-ov-missing is
 # the empty-ov start gate. Skills evaluation is completion-time, gated by
 # the report, even though it runs at turn-end. fm-spawn.sh writes session=
-# and exports FM_TASK_ID/FM_HOME; Claude PostToolUse Skill runs
-# bin/fm-skill-load-record.sh to append normalized loads (strip gstack-,
+# and exports FM_TASK_ID/FM_HOME; Claude PostToolUse Skill (crewmate
+# settings.local.json absolute $FM_ROOT path, plus tracked settings.json)
+# runs bin/fm-skill-load-record.sh to append normalized loads (strip gstack-,
 # lowercase) into data/<id>/skills. Matcher is exact element plan-eng-review.
 #
 # Exact-count regression requires both --expect-rule and --expect-count and
@@ -374,6 +379,29 @@ json_escape() {
   printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr '\n' ' '
 }
 
+# Agent-alive first; pane presence only when agent state is unknown.
+ov_endpoint_alive() {  # <ov-meta-path>
+  local meta=$1 backend target agent_state
+  [ -f "$meta" ] && [ ! -L "$meta" ] || return 1
+  type fm_backend_of_meta >/dev/null 2>&1 || return 1
+  type fm_backend_target_of_meta >/dev/null 2>&1 || return 1
+  backend=$(fm_backend_of_meta "$meta")
+  target=$(fm_backend_target_of_meta "$meta")
+  [ -n "$target" ] || return 1
+  if type fm_backend_agent_alive >/dev/null 2>&1; then
+    agent_state=$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null || true)
+    case "$agent_state" in
+      alive) return 0 ;;
+      dead) return 1 ;;
+    esac
+  fi
+  if type fm_backend_target_exists >/dev/null 2>&1 \
+    && fm_backend_target_exists "$backend" "$target" >/dev/null 2>&1; then
+    return 0
+  fi
+  return 1
+}
+
 hook_refuse() {  # <finding>
   local finding=$1 reason escaped rule
   reason="Start that act now. A yes-ask or omission is not done."
@@ -423,12 +451,8 @@ if [ -n "$brief" ]; then
     elif [ -f "$STATE/$brief_ov.meta" ] && [ ! -L "$STATE/$brief_ov.meta" ]; then
       # shellcheck source=bin/fm-backend.sh
       . "$SCRIPT_DIR/fm-backend.sh" 2>/dev/null || true
-      if type fm_backend_of_meta >/dev/null 2>&1 && type fm_backend_target_of_meta >/dev/null 2>&1; then
-        brief_backend=$(fm_backend_of_meta "$STATE/$brief_ov.meta")
-        brief_target=$(fm_backend_target_of_meta "$STATE/$brief_ov.meta")
-        if [ -n "$brief_target" ] && fm_backend_target_exists "$brief_backend" "$brief_target" >/dev/null 2>&1; then
-          brief_ov_alive=true
-        fi
+      if ov_endpoint_alive "$STATE/$brief_ov.meta"; then
+        brief_ov_alive=true
       fi
     fi
   fi
@@ -522,25 +546,6 @@ gather_meta() {
   done
   owned_json=$owned
   map_json=$maps
-}
-
-ov_endpoint_alive() {  # <ov-meta-path>
-  local meta=$1 backend target
-  [ -f "$meta" ] && [ ! -L "$meta" ] || return 1
-  type fm_backend_of_meta >/dev/null 2>&1 || return 1
-  type fm_backend_target_of_meta >/dev/null 2>&1 || return 1
-  backend=$(fm_backend_of_meta "$meta")
-  target=$(fm_backend_target_of_meta "$meta")
-  [ -n "$target" ] || return 1
-  if type fm_backend_target_exists >/dev/null 2>&1 \
-    && fm_backend_target_exists "$backend" "$target" >/dev/null 2>&1; then
-    return 0
-  fi
-  if type fm_backend_agent_alive >/dev/null 2>&1; then
-    [ "$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null || true)" = alive ]
-    return $?
-  fi
-  return 1
 }
 
 gather_ships() {
