@@ -2,10 +2,11 @@
 # Behavior tests for the explicit per-task delivery contract (AGENTS.md section 7)
 # across bin/fm-spawn.sh, bin/fm-promote.sh, and bin/fm-project-mode.sh.
 #
-# A ship task's delivery mode and yolo posture are firstmate's decision at intake,
-# so the tools refuse to guess: the spawn and a scout promotion require both flags,
-# validate them against a closed set, and the spawn additionally refuses to launch
-# when the brief it is about to hand the worker records a different mode. Scout
+# A ship task's delivery mode, yolo posture, and launch role are firstmate's
+# decision at intake, so the tools refuse to guess: the spawn and a scout
+# promotion require the delivery flags, ship spawns also require --role, they
+# validate against a closed set, and the spawn additionally refuses to launch
+# when the file it is about to encode records a different mode or Role. Scout
 # spawns carry no delivery posture at all. The registry keeps only the captain's
 # standing posture, for the mechanical consumers and for one advisory notice.
 #
@@ -40,12 +41,20 @@ make_home() {  # <name> [<registry-line>...]
   printf '%s\n' "$home|$projects/proj|$fakebin"
 }
 
-write_brief() {  # <home> <id> [<recorded-mode>]
-  local home=$1 id=$2 mode=${3:-}
+write_brief() {  # <home> <id> [<recorded-mode>] [<role>]
+  local home=$1 id=$2 mode=${3:-} role
+  if [ "$#" -ge 4 ]; then
+    role=$4
+  elif [ -n "$mode" ]; then
+    role=builder
+  else
+    role=
+  fi
   mkdir -p "$home/data/$id"
   {
     printf 'You are a crewmate.\n\n# Definition of done\n'
     [ -z "$mode" ] || printf 'Delivery contract: mode=%s\n' "$mode"
+    [ -z "$role" ] || printf 'Role: %s\n' "$role"
   } > "$home/data/$id/brief.md"
 }
 
@@ -84,8 +93,11 @@ missing --mode|--yolo off|ship spawns require --mode
 unknown mode|--mode nope --yolo off|must be one of no-mistakes, direct-PR, local-only
 unknown yolo|--mode no-mistakes --yolo maybe|--yolo must be on or off
 conditional policy as a task mode|--mode no-mistakes-prod-only --yolo off|classify this task's surface
+missing --role|--mode no-mistakes --yolo off|ship spawns require --role
+unknown role|--mode no-mistakes --yolo off --role maybe|must be builder or verifier
+verifier on direct-PR|--mode direct-PR --yolo off --role verifier|--role verifier is legal only with --mode no-mistakes
 ROWS
-  pass "fm-spawn: a ship spawn requires a valid explicit mode and yolo before anything is created"
+  pass "fm-spawn: a ship spawn requires a valid explicit mode, yolo, and role before anything is created"
 }
 
 # A scout has no merge to govern and a secondmate's posture is fixed, so the flags
@@ -108,10 +120,20 @@ EOF
   [ "$status" -ne 0 ] || fail "a scout spawn carrying --yolo should exit non-zero"
   assert_contains "$out" "--yolo applies only to ship spawns" "scout spawn did not refuse --yolo"
 
-  out=$(run_spawn "$home" "$fakebin" delivery-sm-a2 "$home" --secondmate --mode no-mistakes --yolo off)
+  out=$(run_spawn "$home" "$fakebin" delivery-sm-a2 "$home" --secondmate --mode no-mistakes --yolo off --role builder)
   status=$?
   [ "$status" -ne 0 ] || fail "a secondmate spawn carrying delivery flags should exit non-zero"
   assert_contains "$out" "applies only to ship spawns" "secondmate spawn did not refuse the delivery flags"
+
+  out=$(run_spawn "$home" "$fakebin" delivery-scout-a1 "$proj" claude --scout --role builder)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a scout spawn carrying --role should exit non-zero"
+  assert_contains "$out" "--role applies only to ship spawns" "scout spawn did not refuse --role"
+
+  out=$(run_spawn "$home" "$fakebin" delivery-sm-role-a3 "$home" --secondmate --role verifier)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a secondmate spawn carrying --role should exit non-zero"
+  assert_contains "$out" "--role applies only to ship spawns" "secondmate spawn did not refuse --role"
   pass "fm-spawn: scout and secondmate spawns refuse ship delivery flags"
 }
 
@@ -125,7 +147,7 @@ test_spawn_refuses_a_brief_mode_mismatch() {
 $rec
 EOF
   write_brief "$home" delivery-mismatch-b1 no-mistakes
-  out=$(run_spawn "$home" "$fakebin" delivery-mismatch-b1 "$proj" claude --mode direct-PR --yolo off)
+  out=$(run_spawn "$home" "$fakebin" delivery-mismatch-b1 "$proj" claude --mode direct-PR --yolo off --role builder)
   status=$?
   [ "$status" -ne 0 ] || fail "a brief/spawn mode mismatch should exit non-zero"
   assert_contains "$out" "delivery mismatch for delivery-mismatch-b1" "mismatch refusal did not name the task"
@@ -135,15 +157,59 @@ EOF
 
   # The agreeing case clears the check and only fails later, at the refusing tmux.
   write_brief "$home" delivery-agree-b2 direct-PR
-  out=$(run_spawn "$home" "$fakebin" delivery-agree-b2 "$proj" claude --mode direct-PR --yolo off)
+  out=$(run_spawn "$home" "$fakebin" delivery-agree-b2 "$proj" claude --mode direct-PR --yolo off --role builder)
   assert_not_contains "$out" "delivery mismatch" "an agreeing mode was reported as a mismatch"
 
   # A brief scaffolded before the contract line existed warns once and continues.
-  write_brief "$home" delivery-legacy-b3
-  out=$(run_spawn "$home" "$fakebin" delivery-legacy-b3 "$proj" claude --mode local-only --yolo off)
+  write_brief "$home" delivery-legacy-b3 "" builder
+  out=$(run_spawn "$home" "$fakebin" delivery-legacy-b3 "$proj" claude --mode local-only --yolo off --role builder)
   assert_contains "$out" "records no delivery contract line" "a legacy brief did not warn about its missing contract"
   assert_not_contains "$out" "delivery mismatch" "a legacy brief was treated as a mismatch"
   pass "fm-spawn: the brief's recorded mode and the spawn's explicit mode must agree"
+}
+
+# --role is the launch gate: missing flag, missing Role: line, missing verifier
+# file, and Role mismatch all refuse before metadata. A verifier spawn must not
+# encode brief.md.
+test_spawn_role_gate_selects_the_role_file() {
+  local rec home proj fakebin out status
+  rec=$(make_home role-gate)
+  IFS='|' read -r home proj fakebin <<EOF
+$rec
+EOF
+
+  write_brief "$home" role-missing-line-c1 no-mistakes ""
+  out=$(run_spawn "$home" "$fakebin" role-missing-line-c1 "$proj" claude --mode no-mistakes --yolo off --role builder)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a ship spawn whose file has no Role: line should exit non-zero"
+  assert_contains "$out" "records no Role: line" "missing Role: line did not refuse"
+  assert_absent "$home/state/role-missing-line-c1.meta" "missing Role: spawn wrote task metadata"
+
+  write_brief "$home" role-builder-only-c2 no-mistakes
+  out=$(run_spawn "$home" "$fakebin" role-builder-only-c2 "$proj" claude --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  [ "$status" -ne 0 ] || fail "--role verifier against builder-only brief.md should exit non-zero"
+  assert_contains "$out" "no verifier brief at" "verifier spawn did not name the missing verifier-brief.md"
+  assert_contains "$out" "verifier-brief.md" "verifier spawn did not select verifier-brief.md"
+  assert_not_contains "$out" "encode the builder brief" "missing verifier file was reported as a builder-encode"
+  assert_absent "$home/state/role-builder-only-c2.meta" "verifier spawn against builder-only brief wrote task metadata"
+
+  write_brief "$home" role-mismatch-c3 no-mistakes
+  mkdir -p "$home/data/role-mismatch-c3"
+  printf 'Role: builder\nDelivery contract: mode=no-mistakes\n' > "$home/data/role-mismatch-c3/verifier-brief.md"
+  out=$(run_spawn "$home" "$fakebin" role-mismatch-c3 "$proj" claude --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  [ "$status" -ne 0 ] || fail "Role: mismatch on verifier-brief.md should exit non-zero"
+  assert_contains "$out" "role mismatch for role-mismatch-c3" "role mismatch refusal did not name the task"
+  assert_contains "$out" "the brief says Role: builder but this spawn passed --role verifier" \
+    "role mismatch refusal did not show both sides of the disagreement"
+  assert_absent "$home/state/role-mismatch-c3.meta" "mismatched role spawn wrote task metadata"
+
+  write_brief "$home" role-agree-c4 no-mistakes
+  out=$(run_spawn "$home" "$fakebin" role-agree-c4 "$proj" claude --mode no-mistakes --yolo off --role builder)
+  assert_not_contains "$out" "role mismatch" "an agreeing builder role was reported as a mismatch"
+  assert_not_contains "$out" "no verifier brief" "a builder spawn looked for verifier-brief.md"
+  pass "fm-spawn: --role selects the role file and refuses a missing or mismatched Role:"
 }
 
 # The registry is the captain's standing posture, so dropping below its rigor is
@@ -161,7 +227,7 @@ test_spawn_notices_a_rigor_downgrade_against_the_registry() {
 $rec
 EOF
     write_brief "$home" "delivery-dev-$n" "$mode"
-    out=$(run_spawn "$home" "$fakebin" "delivery-dev-$n" "$proj" claude --mode "$mode" --yolo off)
+    out=$(run_spawn "$home" "$fakebin" "delivery-dev-$n" "$proj" claude --mode "$mode" --yolo off --role builder)
     case "$expect" in
       notice)
         assert_contains "$out" "less rigor than the captain's standing posture" \
@@ -275,6 +341,7 @@ EOF
 test_ship_spawn_requires_a_valid_delivery_contract
 test_scout_and_secondmate_refuse_delivery_flags
 test_spawn_refuses_a_brief_mode_mismatch
+test_spawn_role_gate_selects_the_role_file
 test_spawn_notices_a_rigor_downgrade_against_the_registry
 test_scout_records_no_delivery_posture
 test_promote_requires_and_records_the_delivery_contract
