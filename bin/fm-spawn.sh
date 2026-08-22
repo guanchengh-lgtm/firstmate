@@ -18,18 +18,20 @@
 #   the mode up. --role builder|verifier is the launch-role gate, REQUIRED for
 #   every ship spawn and refused on --scout and --secondmate. --role verifier is
 #   legal only with --mode no-mistakes. A ship spawn reads the machine-owned
-#   sibling markers written by fm-brief.sh - data/<id>/mode and either
-#   data/<id>/role (builder) or data/<id>/verifier-role (verifier) - and REFUSES
-#   a missing or mismatched marker (no warn-and-launch for role; a missing mode
-#   marker from a pre-marker brief warns once and launches on the flag). Brief
-#   prose is never scanned for Role: or Delivery contract: lines, so task text
-#   and recovery appends cannot forge or poison the gate. --role builder encodes
-#   data/<id>/brief.md. --role verifier encodes data/<id>/verifier-brief.md and
-#   refuses if that file is missing. Recovery reads recorded role= from meta; it
-#   does not infer role from git and does not default an omitted --role to
-#   builder. When
-#   the explicit mode carries less rigor than the project's standing posture, a
-#   loud one-line deviation notice is printed and the spawn continues.
+#   sibling markers written by fm-brief.sh or fm-promote.sh - data/<id>/mode and
+#   either data/<id>/role (builder) or data/<id>/verifier-role (verifier) - and
+#   REFUSES a missing or mismatched marker (no warn-and-launch for role; a
+#   missing mode marker from a pre-marker brief warns once and launches on the
+#   flag). Brief prose is never scanned for Role: or Delivery contract: lines, so
+#   task text and recovery appends cannot forge or poison the gate. --role
+#   builder encodes data/<id>/brief.md. --role verifier encodes
+#   data/<id>/verifier-brief.md and refuses if that file is missing. Recovery
+#   reads recorded role= from meta; it does not infer role from git and does not
+#   default an omitted --role to builder. bin/fm-promote.sh records role=builder
+#   (header owns the sibling-marker write) so a scout-to-ship respawn has a role
+#   to pass. When the explicit mode carries less rigor than the project's
+#   standing posture, a loud one-line deviation notice is printed and the spawn
+#   continues.
 #   no-mistakes-prod-only is a registry policy rather than a task mode and is
 #   refused as a flag value.
 #   --harness <name> is the explicit per-spawn harness/profile adapter. The old
@@ -1458,9 +1460,9 @@ delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task
 }
 
 # Brief/spawn delivery agreement, checked before any endpoint exists.
-# fm-brief.sh records mode and role in machine-owned sibling files under
-# data/<id>/ (not in brief prose). A spawn that disagrees would launch a worker
-# whose launch role/mode and whose recorded task delivery differ.
+# fm-brief.sh and fm-promote.sh record mode and role in machine-owned sibling
+# files under data/<id>/ (not in brief prose). A spawn that disagrees would
+# launch a worker whose launch role/mode and whose recorded task delivery differ.
 if [ "$KIND" = ship ]; then
   PROJ_NAME=$(basename "$PROJ_ABS")
   MODE_MARKER="$DATA/$ID/mode"
