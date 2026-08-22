@@ -943,6 +943,8 @@ test_default_is_bounded_and_local_only() {
   assert_contains "$toon" "live PR discovery + checks,\"--include-prs\"" "omitted must mark the dropped live-PR surface"
   # Valid JSON, correct schema.
   printf '%s' "$json" | jq -e '.schema == "fm-bearings.v1"' >/dev/null || fail "json schema wrong"
+  printf '%s' "$json" | jq -e 'has("prior_session")' >/dev/null \
+    || fail "default snapshot omitted required prior_session retrieve"
   pass "default output is bounded, local-only, and marks omitted surfaces"
 }
 
@@ -988,6 +990,29 @@ test_open_decision_surfaces_end_to_end() {
       and .key == "mate-decision-race" and .verb == "captain-hold")
   ' >/dev/null || fail "an authoritative captain hold must surface in decisions_open: $json"
   pass "an authoritative captain hold surfaces end-to-end"
+}
+
+test_prior_session_retrieve_includes_lock_words() {
+  local home fakebin json log retrieve
+  home=$(make_home prior-session-retrieve)
+  write_fixture "$home"
+  printf '7500\n' > "$home/config/startup-memory-budget"
+  log="$home/prior.jsonl"
+  cat "$ROOT/tests/fixtures/fm-session-progress-retrieve-check/historical-answered-pick/prior.jsonl" > "$log"
+  fakebin=$(make_fakebin "$home")
+  json=$(FM_PRIOR_SESSION_LOG="$log" run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e --arg words "Go with Playbook/TV." \
+    'has("prior_session") and (.prior_session | contains($words))' >/dev/null \
+    || fail "bearings snapshot did not retrieve captain lock words: $json"
+  printf '%s' "$json" | jq -e --arg aside "The weather is pleasant today." \
+    '.prior_session | contains($aside) | not' >/dev/null \
+    || fail "bearings snapshot retrieved an aside: $json"
+  retrieve="$home/retrieve.json"
+  printf '%s\n' "$json" > "$retrieve"
+  "$ROOT/bin/fm-session-progress-retrieve-check.sh" \
+    --prior-log "$log" --retrieve "$retrieve" \
+    || fail "bearings snapshot retrieve failed the progress check"
+  pass "bearings snapshot required retrieve keeps lock words and drops asides"
 }
 
 test_lock_file_open_pick_surfaces_in_decisions_open() {
@@ -2033,6 +2058,7 @@ test_mixed_secondmate_roles_partial_state_and_captain_readiness
 test_main_captain_readiness_matches_secondmate_projection
 test_completed_scout_report_not_pending
 test_open_decision_surfaces_end_to_end
+test_prior_session_retrieve_includes_lock_words
 test_lock_file_open_pick_surfaces_in_decisions_open
 test_report_pointers_surface
 test_superseded_queued_item_dropped_by_default

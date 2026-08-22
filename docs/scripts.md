@@ -8,7 +8,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | Script                   | Purpose                                                                              |
 | ------------------------ | ------------------------------------------------------------------------------------ |
 | `fm-session-start.sh`    | Compose lock, bootstrap, and wake drain into the single ordered session-start digest |
-| `fm-prior-session-fold.sh` | Print the bounded PRIOR SESSION fold of live jobs, durable keyed open picks, unverified pick context, and lock-changing captain words |
+| `fm-prior-session-fold.sh` | Print the required PRIOR SESSION retrieve of live jobs, durable keyed open picks, unverified pick context, and lock-changing captain words |
 | `fm-sessionstart-nudge.sh` | Print the native session-start hook nudge when the primary has not already run the digest |
 | `fm-sessionstart-run.sh` | Route a native session-open hook to the full digest, a context re-emit, or the nudge |
 | `fm-operational-input.sh` | Construct and parse the canonical cross-language operational-input protocol |
@@ -18,11 +18,12 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-map-fog-check.sh`    | Detect live `## Not yet specified` fog on map files; `--strict` refuses, missing section is structural |
 | `fm-stow-open-lock-check.sh` | Refuse a reset-safe stow receipt that omits a still-open lock-file pick; `--list-open` feeds the fleet snapshot |
 | `fm-class-too-narrow-check.sh` | Refuse a class claims file named as one command or situation while its instances are a broader mechanism |
+| `fm-session-progress-retrieve-check.sh` | Refuse a session-start or Bearings retrieve surface that omits live jobs, open picks, or captain lock words the prior-session fold already extracted |
 | `fm-startup-network.sh`  | Run session start's network checks off its blocking path in a bounded detached worker, and publish the result inline or as a wake |
 | `fm-fleet-sync.sh`       | Refresh project clones with safe fast-forwards, self-heals, `STUCK:` reports, branch pruning, and bounded recovery from an orphaned `.git/packed-refs.lock` |
 | `fm-fleet-snapshot.sh`   | Print the read-only structured fleet snapshot JSON (schema `fm-fleet-snapshot.v1`)   |
 | `fm-fleet-view.sh`       | Render the fleet snapshot as a human Markdown view                                   |
-| `fm-bearings-snapshot.sh` | Project the fleet snapshot to the compact TOON bearings view; local-only unless `--include-prs` |
+| `fm-bearings-snapshot.sh` | Project the fleet snapshot to the compact TOON bearings view with required prior-session retrieve; local-only unless `--include-prs` |
 | `fm-update.sh`           | Fast-forward-only self-update of firstmate and local or remote secondmate homes       |
 | `fm-pi-midline-slash-patch.sh` | Reapply the local Pi mid-line `/` dist patch; skip if Pi is absent, fail without writing if the dist layout changed |
 | `fm-on.sh`               | Execute one tracked Firstmate command in a configured remote secondmate home, using its job worker except for the doctor bootstrap |

@@ -142,6 +142,7 @@ family_for_basename() {
     fm-pi-midline-slash-patch.test.sh|\
     fm-stow-open-lock-check.test.sh|\
     fm-class-too-narrow-check.test.sh|\
+    fm-session-progress-retrieve-check.test.sh|\
     fm-kimi-harness.test.sh|fm-muse-harness.test.sh|fm-herdr-lab.test.sh|fm-lint.test.sh|\
     fm-operational-input.test.sh|fm-pi-primary-types.test.sh|\
     fm-project-write-pretool-check.test.sh|\
@@ -956,6 +957,11 @@ families_for_changed_path() {
       ;;
     bin/fm-class-too-narrow-check.sh)
       printf '%s\n' pure-contract-unit
+      ;;
+    bin/fm-session-progress-retrieve-check.sh)
+      printf '%s\n' pure-contract-unit
+      printf '%s\n' snapshot-bearings
+      printf '%s\n' session-bootstrap
       ;;
     bin/fm-install-herdr.sh|bin/fm-install-treehouse.sh|bin/fm-herdr-ci-cleanup.sh)
       printf '%s\n' pure-contract-unit

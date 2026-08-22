@@ -1,0 +1,4 @@
+{"type":"session","cwd":"/historical-session-progress-log"}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Which Map 2 second-mate path should we lock: Playbook/TV, or skip?"}]}}
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"Go with Playbook/TV."}]}}
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"The weather is pleasant today."}]}}

@@ -197,7 +197,7 @@ Malformed, multi-line, symlinked, hardlinked, special, or otherwise unsafe value
 Use `bin/fm-startup-memory-budget.sh read` to validate and print the effective value, or `bin/fm-startup-memory-budget.sh report` to account for the three files.
 The stable local estimate is `ceil(UTF-8 bytes / 3)` per file, a conservative portable approximation rather than a provider-exact tokenizer.
 An inherited `data/captain-shared.md` counts in a secondmate's total but remains primary-owned and read-only there.
-The session-start prior-session fold charges those three files first and then spends only remaining budget under its own token cap; `bin/fm-prior-session-fold.sh`'s header owns that residual bound, format, and incompleteness contract.
+The session-start and Bearings prior-session retrieve charges those three files first and then spends only remaining budget under its own token cap; `bin/fm-prior-session-fold.sh`'s header owns that residual bound, format, and incompleteness contract.
 The internal [`/stow` skill](../.agents/skills/stow/SKILL.md) owns curation and its automatic secondmate cascade, which accounts every home against this same per-home allowance separately rather than against a fleet total.
 `bin/fm-startup-memory-budget.sh`'s header owns exact parsing, publication, and report output mechanics.
 
@@ -317,6 +317,16 @@ The checker reads ordinary files directly under `data/decisions/` for Q-items wi
 A pick never written to any decision file cannot be seen.
 The script header owns the marker grammar, rule ids, structural exit 2, exact-count regression flags, and residual coverage.
 Claims live in [`verification/stow-open-lock-recurring-defect-claims.json`](verification/stow-open-lock-recurring-defect-claims.json).
+
+## Session-progress retrieve check
+
+Session-start and Bearings must retrieve the prior-session fold after an accidental end.
+They use captain picks already written to `data/decisions/` at answer time and old session talk already on disk.
+They do not wait for `/stow` and do not write a second progress file.
+[`bin/fm-session-progress-retrieve-check.sh`](../bin/fm-session-progress-retrieve-check.sh) refuses a retrieve surface that omits live jobs, open picks, or captain lock words the fold already extracted.
+Asides outside that bar are not covered.
+The script header owns the rule id, structural exit 2, exact-count regression flags, and residual coverage.
+Claims live in [`verification/session-progress-retrieve-claims.json`](verification/session-progress-retrieve-claims.json).
 
 ## Defect-class name list (data/defect-classes.tsv)
 

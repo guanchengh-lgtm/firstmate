@@ -63,6 +63,9 @@
 #   -h,--help        usage
 #
 # Output contract: `fm-bearings.v1`. Read-only; no locks, no mutation, no reports.
+# `prior_session` is the required retrieve of live jobs, open picks, and captain
+# lock words from bin/fm-prior-session-fold.sh (old session talk plus durable
+# hold state). This wrapper does not write a progress file.
 # `ideas_unscheduled` counts readable main and registered secondmate ledgers.
 # `ideas_warnings` names ledgers that could not be read or parsed, so an
 # incomplete count is never presented as a silent zero.
@@ -118,7 +121,8 @@ usage: fm-bearings-snapshot.sh [--json] [--include-prs] [--fields <list>]
 Compact bearings projection over fm-fleet-snapshot.sh. TOON by default.
 Default is LOCAL-ONLY (no network); --include-prs is the only path that fetches.
 
-Default fields: schema, home, generated, prs, in_flight{id,kind,state,doing},
+Default fields: schema, home, generated, prs, prior_session,
+  in_flight{id,kind,state,doing},
   secondmates{id,state,doing,provenance,freshness,age_seconds,contradiction,reason},
   decisions_open{id,key,verb,summary,owner}, ideas_unscheduled,
   ideas_warnings{home,path,reason}, landed{id,what,artifact,owner},
@@ -563,6 +567,11 @@ MODEL=$(printf '%s' "$SNAP" | jq \
         (if $include_prs == 1 and $pr_rows_capped > 0 then {surface:("candidate_prs showing \($candidate_prs | length) of at least \($pr_rows_min_total); capped in \($pr_rows_capped) repo(s)"), reveal:"raise FM_BEARINGS_PR_LIMIT"} else empty end),
         (if $include_prs == 1 then empty else {surface:"live PR discovery + checks", reveal:"--include-prs"} end) ]) }
 ') || { echo "fm-bearings-snapshot: projection failed" >&2; exit 1; }
+
+PRIOR_SESSION=$("$SCRIPT_DIR/fm-prior-session-fold.sh") || true
+MODEL=$(printf '%s' "$MODEL" | jq --arg prior_session "$PRIOR_SESSION" \
+  '. + {prior_session: $prior_session}') \
+  || { echo "fm-bearings-snapshot: prior-session retrieve failed" >&2; exit 1; }
 
 if [ "$FORMAT" = json ]; then
   printf '%s\n' "$MODEL"

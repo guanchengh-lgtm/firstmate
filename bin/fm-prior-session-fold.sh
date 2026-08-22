@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Print one bounded PRIOR SESSION fold from this home's prior Pi or Claude JSONL session log.
+# Session-start and Bearings use this as required retrieve after an accidental end.
+# It is not optional, and it is not a new progress store.
 #
 # Format:
 #   PRIOR SESSION
