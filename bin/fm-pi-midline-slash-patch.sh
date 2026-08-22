@@ -3,9 +3,13 @@
 #
 # A global `npm i -g @earendil-works/pi-coding-agent` install replaces `@earendil-works/pi-tui` dist files and drops the mid-line `/` dropdown.
 # This helper restores that dropdown against the installed dist without opening an upstream PR (https://github.com/earendil-works/pi/issues/8015).
-# It is idempotent: an already-patched dist reports already patched and is not rewritten.
+# A successful apply also makes isSlashMenuAllowed() return true on every editor line, so the menu can open after line 1.
+# Mid-line whitespace-bounded `/token` stays required; word-internal `/` and path tokens like `/usr/bin` stay closed.
+# It is idempotent: a dist that already has both the mid-line replacements and the any-line gate reports already patched and is not rewritten.
+# A dist that already has the mid-line replacements but still uses the first-line-only gate is upgraded in place and reports patched.
+# Mid-line markers alone are not "already patched" while the first-line gate remains.
 # Missing Pi, or a missing dist directory, prints a clear skip and exits 0.
-# A dist whose layout no longer matches the 0.84.x slash gates prints a clear fail and writes nothing, so a version change never half-patches.
+# A dist whose layout no longer matches the 0.84.x slash gates, including a mixed or unknown layout, prints a clear fail and writes nothing, so a version change never half-patches.
 # A running Pi process keeps old modules in memory until it restarts.
 # This helper does not kill the primary Pi process.
 #
@@ -104,6 +108,28 @@ PATCHED_MARKERS = {
     ),
 }
 
+# The first-line-only gate is independent of the mid-line token markers.
+# Today's mid-line-only output still has FIRST_LINE_GATE; a finished patch has ANY_LINE_GATE.
+FIRST_LINE_GATE = (
+    "// Slash menu only allowed on the first line of the editor",
+    "return this.state.cursorLine === 0;",
+)
+ANY_LINE_GATE = (
+    "// Slash menu allowed on any editor line",
+)
+
+GATE_REPLACEMENT = (
+    "    // Slash menu only allowed on the first line of the editor\n"
+    "    isSlashMenuAllowed() {\n"
+    "        return this.state.cursorLine === 0;\n"
+    "    }",
+    "    // Slash menu allowed on any editor line\n"
+    "    isSlashMenuAllowed() {\n"
+    "        return true;\n"
+    "    }",
+)
+GATE_REPLACEMENTS = (GATE_REPLACEMENT,)
+
 REPLACEMENTS = {
     "components/editor.js": (
         (
@@ -151,6 +177,7 @@ REPLACEMENTS = {
             "        return SLASH_COMMAND_TOKEN_PATTERN.test(textBeforeCursor);\n"
             "    }",
         ),
+        GATE_REPLACEMENT,
     ),
     "autocomplete.js": (
         (
@@ -232,19 +259,29 @@ def has_any(text: str, markers: tuple[str, ...]) -> bool:
 def classify(rel: str, text: str) -> str:
     clean = CLEAN_MARKERS[rel]
     patched = PATCHED_MARKERS[rel]
-    is_clean = has_all(text, clean) and not has_any(text, patched)
-    is_patched = has_all(text, patched) and not has_any(text, clean)
-    if is_clean and is_patched:
+    is_clean_mid = has_all(text, clean) and not has_any(text, patched)
+    is_patched_mid = has_all(text, patched) and not has_any(text, clean)
+    if rel == "components/editor.js":
+        first_line = has_all(text, FIRST_LINE_GATE)
+        any_line = has_all(text, ANY_LINE_GATE)
+        if is_clean_mid and first_line and not any_line:
+            return "clean"
+        if is_patched_mid and first_line and not any_line:
+            return "midline_only"
+        if is_patched_mid and any_line and not first_line:
+            return "patched"
         return "unknown"
-    if is_patched:
+    if is_clean_mid and is_patched_mid:
+        return "unknown"
+    if is_patched_mid:
         return "patched"
-    if is_clean:
+    if is_clean_mid:
         return "clean"
     return "unknown"
 
 
-def apply_replacements(rel: str, text: str) -> str:
-    for old, new in REPLACEMENTS[rel]:
+def apply_replacements(rel: str, text: str, pairs: tuple[tuple[str, str], ...]) -> str:
+    for old, new in pairs:
         count = text.count(old)
         if count != 1:
             fail(
@@ -268,14 +305,30 @@ def main() -> None:
     if unique == {"patched"}:
         print(f"pi-midline-slash: already patched {DIST}")
         return
-    if "unknown" in unique or unique != {"clean"}:
+
+    editor_state = states["components/editor.js"]
+    others_patched = all(
+        states[rel] == "patched" for rel in FILES if rel != "components/editor.js"
+    )
+    if unique == {"clean"}:
+        mode = "full"
+    elif editor_state == "midline_only" and others_patched:
+        mode = "upgrade"
+    else:
         fail(
             "dist layout changed: slash gates are mixed or no longer match 0.84.x"
         )
 
     patched: dict[str, str] = {}
-    for rel, text in contents.items():
-        updated = apply_replacements(rel, text)
+    if mode == "full":
+        for rel, text in contents.items():
+            updated = apply_replacements(rel, text, REPLACEMENTS[rel])
+            if classify(rel, updated) != "patched":
+                fail(f"dist layout changed: patched {rel} did not verify")
+            patched[rel] = updated
+    else:
+        rel = "components/editor.js"
+        updated = apply_replacements(rel, contents[rel], GATE_REPLACEMENTS)
         if classify(rel, updated) != "patched":
             fail(f"dist layout changed: patched {rel} did not verify")
         patched[rel] = updated
