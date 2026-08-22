@@ -66,6 +66,16 @@ write_tool_line() {
   printf '{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"%s","input":{"file_path":"%s"}}]}}' "$name" "$path"
 }
 
+tool_result_line() {
+  local body=${1:-ok}
+  python3 -c 'import json,sys; print(json.dumps({"type":"message","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tu_1","content":sys.argv[1]}]}}))' "$body"
+}
+
+meta_user_line() {
+  local text=$1
+  python3 -c 'import json,sys; print(json.dumps({"type":"user","isMeta":True,"message":{"role":"user","content":[{"type":"text","text":sys.argv[1]}]}}))' "$text"
+}
+
 bash_tool_line() {
   local cmd=$1
   python3 -c 'import json,sys; print(json.dumps({"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":sys.argv[1]}}]}}))' "$cmd"
@@ -115,6 +125,31 @@ test_write_renames_d8_and_refuses() {
   expect_code 2 "$rc" "renaming D8 in the spec must refuse"
   assert_contains "$out" "R-ticket-lock-missing: D8" "D8 rename did not name missing D8"
   pass "spec compile stop: Write that renames D8 exits 2"
+}
+
+test_write_then_tool_result_still_refuses() {
+  local home spec transcript payload out rc
+  home=$(write_green_home "$TMP_ROOT/write-tool-result")
+  spec="$home/data/wf-map2-loops/spec.md"
+  write_spec "$spec" \
+    "# Spec" \
+    "Cite \`data/synth/report.md\`." \
+    "D1 is the lock." \
+    "DX is the lock." \
+    "XG-keep \"Node contract\"."
+  transcript="$home/transcript.jsonl"
+  write_transcript "$transcript" \
+    "$(write_tool_line Write "$spec")" \
+    "$(tool_result_line "Wrote contents")" \
+    "$(meta_user_line "Skill reference says keep going.")"
+  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  set +e
+  out=$(run_adapter "$payload")
+  rc=$?
+  set -e
+  expect_code 2 "$rc" "Write followed by tool_result/isMeta must still refuse"
+  assert_contains "$out" "R-ticket-lock-missing: D8" "tool_result after Write cleared the this-turn window"
+  pass "spec compile stop: Write then tool_result/isMeta still exits 2"
 }
 
 test_bash_sed_closed_ticket_without_tag_refuses() {
@@ -273,6 +308,7 @@ test_child_worktree_guard_seat_before_scope() {
 command -v python3 >/dev/null 2>&1 || { echo "skip: python3 not found"; exit 0; }
 
 test_write_renames_d8_and_refuses
+test_write_then_tool_result_still_refuses
 test_bash_sed_closed_ticket_without_tag_refuses
 test_no_write_this_turn_is_inert_while_spec_red
 test_child_worktree_write_checks_that_tree

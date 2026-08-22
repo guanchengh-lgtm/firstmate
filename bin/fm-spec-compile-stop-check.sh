@@ -12,8 +12,9 @@
 #
 # It runs before primary-scope so child firstmate worktrees are not skipped.
 # This-turn writes are taken from the Stop transcript after the last
-# non-operational user message: Write / Edit / MultiEdit / NotebookEdit
-# file_path values, and Bash command strings. A write counts when the string
+# captain/user turn text (skip isMeta, tool_result-only, empty-text, and
+# operational FIRSTMATE_OP follow-ups): Write / Edit / MultiEdit /
+# NotebookEdit file_path values, and Bash command strings. A write counts when the string
 # contains a suffix data/wf-map2-loops/spec.md, data/wf-map2-loops/tickets/<name>.md,
 # or a data/<id>/report.md the spec cites in backticks. Home is the absolute
 # prefix before /data/ in that path. A relative data/... path resolves against
@@ -152,6 +153,31 @@ def is_operational(text):
     return OP_MARK in text or "FIRSTMATE_OP:" in text or "turn-end-guard" in text
 
 
+def is_tool_result_only(content):
+    if not isinstance(content, list) or not content:
+        return False
+    for part in content:
+        if not isinstance(part, dict):
+            return False
+        typ = str(part.get("type") or "")
+        if typ not in ("tool_result", "toolResult"):
+            return False
+    return True
+
+
+def is_captain_turn(record, content):
+    if isinstance(record, dict) and record.get("isMeta") is True:
+        return False
+    if is_tool_result_only(content):
+        return False
+    text = "\n".join(texts_of(content))
+    if not text.strip():
+        return False
+    if is_operational(text):
+        return False
+    return True
+
+
 def collect_tools(content, file_paths, bash_cmds):
     if not isinstance(content, list):
         return
@@ -196,8 +222,7 @@ for record in iter_records(transcript):
     role = role_of(blob or {}, record)
     content = blob.get("content") if isinstance(blob, dict) else None
     if role == "user":
-        text = "\n".join(texts_of(content))
-        if not is_operational(text):
+        if is_captain_turn(record, content):
             file_paths = []
             bash_cmds = []
         continue
