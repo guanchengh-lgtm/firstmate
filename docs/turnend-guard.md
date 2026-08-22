@@ -7,7 +7,7 @@ Harness hook files adapt each enabled primary harness integration's turn-end mec
 
 Related PreToolUse guards deny unsafe commands before execution rather than detecting a blind turn end afterward.
 Their separate owners are [`arm-pretool-check.md`](arm-pretool-check.md), [`cd-guard.md`](cd-guard.md), [`subagent-guard.md`](subagent-guard.md), and [`project-write-guard.md`](project-write-guard.md).
-Claude also registers an `AskUserQuestion` PreToolUse that runs the same `bin/fm-sot-speech-check.sh` helper as this guard's speech predicate; that helper's header owns the PreToolUse path.
+Claude also registers `AskUserQuestion` PreToolUse hooks for the same `bin/fm-sot-speech-check.sh` helper as this guard's speech predicate and for `bin/fm-owner-invoke-wait-check.sh`; each helper's header owns its PreToolUse path.
 Do not infer this guard's scope, loop safety, or compatibility tradeoffs for those other guards.
 
 ## Current invariant
@@ -16,6 +16,8 @@ Do not infer this guard's scope, loop safety, or compatibility tradeoffs for tho
 The turn-end guard closes the remaining gap at the primary's own turn boundary.
 When work, a process-event source, or Relay polling needs supervision at that boundary and no identity-matched watcher has a fresh beacon, the harness integration must either block the turn end or force one bounded follow-up that uses the recovery instruction from the emitted session-start protocol.
 Separately, the same script refuses ending a turn as prose-only waiting when a ready queued ticket has no worker owner; `bin/fm-turnend-guard.sh`'s header owns that ready-action contract.
+The same family refuses a held locked next act with no worker, a tight `OWNER_INVOKE_WAIT` marker on an owner-invoke skill, and session-scoped durable ship records whose OV review worker is gone without a report or whose report-gated Claude `skills` record never listed plan-eng-review; `bin/fm-owner-invoke-wait-check.sh` owns those rules.
+It does not hunt free English. Split transcript windows and live fog gather stay as gather holes.
 It also refuses ending a turn on an unchecked yen126/TradingView login or session-death block from a `tradingview-tools` task; that same header owns the session-diagnosis contract.
 Before primary scope, it also refuses a Stop that wrote Map 2 spec, tickets, or keep-list files this turn while `bin/fm-spec-compile-check.sh` is red; `bin/fm-spec-compile-stop-check.sh`'s header owns that adapter.
 The mid-turn pull warning uses the model-aware supervision verdict described below, while the turn-end guard keeps the PID-strict watcher predicate.
@@ -33,11 +35,12 @@ An unmarked checkout or invalid marker falls through to the git-dir check.
 That check keeps crewmate and scout linked worktrees inert for supervision because their git dir differs from their git common dir.
 It also requires `AGENTS.md`, `bin/`, and the effective state directory.
 
-For an in-scope primary, before the supervision check, the guard runs `bin/fm-sot-speech-check.sh` against registered file-backed SoT identifiers, then refuses an unchecked yen126/TradingView login or session-death block from a `tradingview-tools` task, then refuses a ready queued ticket that still lacks matching `state/<id>.meta` worker ownership.
+For an in-scope primary, before the supervision check, the guard runs `bin/fm-sot-speech-check.sh` against registered file-backed SoT identifiers, then refuses an unchecked yen126/TradingView login or session-death block from a `tradingview-tools` task, then refuses a ready queued ticket that still lacks matching `state/<id>.meta` worker ownership, then runs `bin/fm-owner-invoke-wait-check.sh`.
 The speech helper's header owns the registry, read window, declared-unread escape, fail-open cases, and residual coverage.
+The owner-invoke helper's header owns held locked-next, the `OWNER_INVOKE_WAIT` marker, fog gather, session-scoped ship gather (`session=` matching `state/.lock`), the Stop ladder on `data/<ov>/report.md` then live OV *agent* (not bare pane husk) then refuse, report-gated `data/<ov>/skills` for plan-eng-review only when durable `ov_harness` is claude/claude* (non-Claude or missing harness is a disclosed gap), fail-closed CLI input, and residual coverage. Claude crewmate `settings.local.json` wires absolute-path PostToolUse Skill recording via `bin/fm-skill-load-record.sh`.
 `bin/fm-turnend-guard.sh`'s header owns the yen126 session-diagnosis contract and still blocks under Claude `--claude` when `stop_hook_active` is true.
 A spawn or steer leaves that metadata; recording a concrete backlog blocker removes the ticket from `tasks-axi ready`.
-The ready-action check fails open when the tasks-axi backend cannot be read, honors `config/backlog-backend=manual`, has no skip flag, and still blocks under Claude `--claude` when `stop_hook_active` is true.
+The ready-action check and the owner-invoke held-locked-next gather fail open when the tasks-axi backend cannot be read, honor `config/backlog-backend=manual`, have no skip flag, and still block under Claude `--claude` when `stop_hook_active` is true.
 
 After those pre-checks, the guard counts in-flight work from `state/*.meta`.
 Registered `state/procevent/*.source` records also require supervision even though they have no task metadata.
@@ -66,12 +69,12 @@ If `jq` is missing after the spec compile adapter, the remaining predicates exit
   Both markers are required because Grok does not inject the same variables into every process kind: grok 0.2.73 set `GROK_AGENT` for child and tool processes, while grok 1.0.0 hook processes carry `GROK_HOOK_EVENT`, `GROK_HOOK_NAME`, `GROK_SESSION_ID`, and `GROK_WORKSPACE_ROOT` but no `GROK_AGENT`.
   A guard keyed on `GROK_AGENT` alone therefore stopped firing on grok 1.0.0, and the resulting Claude-only auto-arm ran synchronously under Grok - Grok has no `asyncRewake`, so it waited on the foregrounded watcher for the declared 28800-second timeout and the Grok turn never ended.
   Do NOT widen this guard to `GROK_SESSION_ID`: Grok injects that into every child process, so it can survive into a Claude session that Grok launched and would silently disable Claude's own continuity.
-  The same marker guard carries every tracked `.claude/settings.json` entry whose event Grok already covers through its own `.grok/hooks/` registration, which is both `Stop` entries, the `SessionStart` entry, the `AskUserQuestion` SoT-speech `PreToolUse` entry, and the two `PreToolUse` Bash entries; the two match-all `PreToolUse` entries are the deliberate unguarded exceptions, because no Grok registration covers the subagent-spawn or project-write events, recorded in [`subagent-guard.md`](subagent-guard.md) and [`project-write-guard.md`](project-write-guard.md) "Known residual gap".
-  `tests/fm-turnend-guard.test.sh` pins that inventory so neither the guarded set nor the exception can change silently.
+  The same marker guard carries every tracked `.claude/settings.json` entry whose event Grok already covers through its own `.grok/hooks/` registration, which is both `Stop` entries, the `SessionStart` entry, both `AskUserQuestion` PreToolUse entries (SoT-speech and owner-invoke-wait), the `PostToolUse` Skill load recorder, and the two `PreToolUse` Bash entries; the two match-all `PreToolUse` entries are the deliberate unguarded exceptions, because no Grok registration covers the subagent-spawn or project-write events, recorded in [`subagent-guard.md`](subagent-guard.md) and [`project-write-guard.md`](project-write-guard.md) "Known residual gap".
+  `tests/fm-turnend-guard.test.sh` pins that inventory (8 grok-guarded entries, 2 unguarded exceptions) so neither the guarded set nor the exception can change silently.
 
 Claude and Codex can block a Stop directly with exit status 2 and stderr.
 Both payloads carry `stop_hook_active`.
-In the default Codex mode, a true value lets the second stop finish after one forced continuation for every predicate that runs after that allow, including SoT speech, ready-action, session-diagnosis, and supervision.
+In the default Codex mode, a true value lets the second stop finish after one forced continuation for every predicate that runs after that allow, including SoT speech, ready-action, owner-invoke wait, session-diagnosis, and supervision.
 The spec compile-check adapter is seated before that allow; see Known residual gap.
 
 Claude runs the guard with `--claude`, which ignores `stop_hook_active` and cooperates with the Stop-owned auto-arm.
@@ -132,8 +135,9 @@ On Codex and Grok default mode it also runs before the `stop_hook_active` / `sto
 
 ## Regression coverage
 
-`tests/fm-turnend-guard.test.sh` covers the predicate, main and secondmate primary scope, child-worktree exclusion, `FM_HOME` and `FM_STATE_OVERRIDE` precedence, the ready-action refusal for ownerless queued tickets, every-ready-id checking, matching-worker acceptance, Claude `stop_hook_active` non-bypass of ready-action, the TradingView session-diagnosis refusal for missing evidence and failing checker findings, passing-checker acceptance, unrelated-blocker negative controls, Claude `stop_hook_active` non-bypass of that session gate, the live-lock and fresh-beacon guard predicate, the cooperative `--claude` claim wait, monotonic failed-epoch progression, bounded attended fail-open, post-alarm continuation suppression, positive recovery reset, Pi logical-run latching, missing-`jq` behavior, all five primary registrations, Grok native and legacy selection, typed field precedence, malformed input, and exactly-one-path safety.
+`tests/fm-turnend-guard.test.sh` covers the predicate, main and secondmate primary scope, child-worktree exclusion, `FM_HOME` and `FM_STATE_OVERRIDE` precedence, the ready-action refusal for ownerless queued tickets, every-ready-id checking, matching-worker acceptance, Claude `stop_hook_active` non-bypass of ready-action, held locked-next and owner-invoke yes-ask refusals, the TradingView session-diagnosis refusal for missing evidence and failing checker findings, passing-checker acceptance, unrelated-blocker negative controls, Claude `stop_hook_active` non-bypass of that session gate, the live-lock and fresh-beacon guard predicate, the cooperative `--claude` claim wait, monotonic failed-epoch progression, bounded attended fail-open, post-alarm continuation suppression, positive recovery reset, Pi logical-run latching, missing-`jq` behavior, all five primary registrations, Grok native and legacy selection, typed field precedence, malformed input, and exactly-one-path safety.
 `tests/fm-spec-compile-stop-check.test.sh` covers the spec compile Stop adapter's this-turn write window, path-derived `--home`, child-worktree seat before primary-scope, no-write and no-transcript inertness, and red-matcher refuse.
+`tests/fm-owner-invoke-wait-check.test.sh` covers the helper's fail-closed input, exact-count fixtures, held locked-next, owner-invoke yes-ask, fog-pin wait, session-scoped ship gather, live-agent-no-report pass, husk-pane-without-report refuse, torn-down worker with report, report-gated Claude skills refusal, finished non-Claude review without skills pass, skill-load recorder normalization, crewmate Skill PostToolUse wiring, current-turn skill-load scoping, and invoked-skill acceptance.
 `tests/fm-guard-stale-banner.test.sh` covers the pull-guard predicate, including the persistent-model fresh-leftover-beacon negative control, the auto-arm model's healthy fresh-beacon-without-a-watcher case and its stale-beacon alarm, the true-reason banner wording, and the reason-keyed episode dedup surviving a beacon mtime change.
 `tests/fm-kimi-harness.test.sh` covers the separate Kimi crew hook's format preservation, idempotence, refusal cases, token guard, spawn registration, and teardown cleanup.
 `tests/fm-supervision-instructions.test.sh` covers recovery-line ownership and pi-signed's identity-preserving reuse of Pi's protocol.

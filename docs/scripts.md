@@ -20,6 +20,8 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-class-too-narrow-check.sh` | Refuse a class claims file named as one command or situation while its instances are a broader mechanism |
 | `fm-spec-compile-check.sh` | Assert every closed ticket id and every keep-row title appears in a spec as a tag or an explicit refusal, not grounding |
 | `fm-spec-compile-stop-check.sh` | Refuse a Stop that wrote Map 2 spec, tickets, or keep-list files while that matcher is red; path-derived `--home`, before primary-scope |
+| `fm-owner-invoke-wait-check.sh` | Refuse a locked next act, an OWNER_INVOKE_WAIT marker, or this session's ships whose OV review is gone without a report or (Claude ov_harness only) never loaded plan-eng-review |
+| `fm-skill-load-record.sh` | Claude PostToolUse Skill recorder (crewmate settings.local.json absolute path + tracked settings.json): append normalized skill loads into data/<task>/skills when FM_TASK_ID/FM_HOME are set |
 | `fm-session-progress-retrieve-check.sh` | Refuse a session-start or Bearings retrieve surface that omits live jobs, open picks, or captain lock words the prior-session fold already extracted |
 | `fm-startup-network.sh`  | Run session start's network checks off its blocking path in a bounded detached worker, and publish the result inline or as a wake |
 | `fm-fleet-sync.sh`       | Refresh project clones with safe fast-forwards, self-heals, `STUCK:` reports, branch pruning, and bounded recovery from an orphaned `.git/packed-refs.lock` |
@@ -51,7 +53,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-primary-scope-lib.sh` | Shared marker-or-plain-checkout primary-home predicate for tracked hooks             |
 | `fm-session-lock-lib.sh` | Shared session-lock harness identity (ancestry walk and holder liveness) for fm-lock.sh and the Claude Stop auto-arm |
 | `fm-claude-stop-autoarm.sh` | Claude Stop `asyncRewake` hook owning tokenless watcher continuity with single-flight exit-2 rewake (docs/watcher-continuity.md) |
-| `fm-turnend-guard.sh`    | Shared primary turn-end guard: no blind end, no prose-only ready-action idle, registered SoT speech without open evidence, and no unchecked TradingView session login block (docs/turnend-guard.md; script header owns the session-diagnosis contract) |
+| `fm-turnend-guard.sh`    | Shared primary turn-end guard: no blind end, no prose-only ready-action idle, no owner-invoke wait, registered SoT speech without open evidence, and no unchecked TradingView session login block (docs/turnend-guard.md; script header owns the session-diagnosis contract) |
 | `fm-turnend-guard-grok.sh` | Grok Stop-hook adapter for the primary turn-end guard                              |
 | `fm-kimi-turnend-hook.sh` | Surgically install or remove Kimi's guarded global crew turn-end hook                |
 | `fm-arm-pretool-check.sh` | Stable PreToolUse transport for the watcher-arm command policy (docs/arm-pretool-check.md) |
@@ -65,7 +67,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-remote-home-seed.sh` | Register and provision a whole secondmate home on an SSH-reachable host              |
 | `fm-remote-readiness-lib.sh` | Shared remote second-mate readiness gate: check and, when needed, repair then re-check through `fm-remote-doctor.sh` |
 | [`fm-project-origin-lib.sh`](../bin/fm-project-origin-lib.sh) | Accepted origin-form owner shared by both remote provisioning boundaries |
-| `fm-spawn.sh`            | Spawn crewmates, scouts, `id=repo` batches, and secondmates; require ship `--role`; record optional `map` and locked `map_next`; refuse a ship `--map` while fog is live |
+| `fm-spawn.sh`            | Spawn crewmates, scouts, `id=repo` batches, and secondmates; require ship `--role` and a distinct filled-ship `--ov`; record optional `map` and locked `map_next`; refuse a ship `--map` while fog is live |
 | `fm-backend.sh`          | Runtime-backend selection, meta helpers, selector resolution, and operation dispatch |
 | `fm-backend-hometag-lib.sh` | Shared per-installation home-tag derivation for zellij tab and cmux workspace titles |
 | `fm-composer-lib.sh`     | Single fleet-wide owner of composer-content classification for all backends          |

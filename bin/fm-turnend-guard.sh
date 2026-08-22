@@ -13,8 +13,13 @@
 # It also refuses a prose-only idle turn when tasks-axi reports a ready queued
 # ticket but that exact ticket has no state/<id>.meta worker owner. A spawn or
 # steer has matching metadata; a concrete backlog blocker removes the ticket
-# from `tasks-axi ready`. The check fails open when the tasks-axi backend cannot
-# be read, honors the existing manual-backlog backend, and has no skip flag.
+# from `tasks-axi ready`. The same family refuses a held locked next act
+# (map_next, a passed until date, or an invented captain go-hold) with no
+# worker, a yes-ask on an owner-invoke skill, and session-scoped ship OV
+# waits; bin/fm-owner-invoke-wait-check.sh owns those rules. Ready-action and
+# the owner-invoke held-locked-next gather fail open when the tasks-axi
+# backend cannot be read, honor the existing manual-backlog backend, and have
+# no skip flag.
 # Before accepting an open `blocked:` event from a task whose metadata project
 # basename is `tradingview-tools`, this guard also validates any summary that
 # claims a yen126/TradingView login or dead session, says the user is Guest, or
@@ -56,8 +61,9 @@
 # docs/turnend-guard.md Known residual gap owns that seat.
 #
 # Loop-guard, codex/Grok (default) mode: never block twice in the same turn for
-# every predicate after the allow (SoT speech, ready-action, session-diagnosis,
-# supervision). Codex uses stop_hook_active and Grok uses stopHookActive; typed
+# every predicate after the allow (SoT speech, ready-action, owner-invoke
+# wait, session-diagnosis, supervision). Codex uses stop_hook_active and Grok
+# uses stopHookActive; typed
 # camel-case takes precedence when both spellings are present. A true value
 # means the current stop attempt already follows a block, so those later
 # predicates always allow it. Spec compile is the seated exception above.
@@ -334,6 +340,16 @@ fi
 
 if ready_action_without_owner; then
   block_ready_action
+fi
+
+if [ -x "$SCRIPT_DIR/fm-owner-invoke-wait-check.sh" ]; then
+  if [ "$CLAUDE_MODE" -eq 1 ]; then
+    printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-owner-invoke-wait-check.sh" --claude
+  else
+    printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-owner-invoke-wait-check.sh"
+  fi
+  owner_invoke_rc=$?
+  [ "$owner_invoke_rc" -ne 2 ] || exit 2
 fi
 
 if [ "$FM_SUP_NEEDED" = false ]; then

@@ -49,6 +49,9 @@
 # gate appends one working: event so an earlier done: is mechanically taken back.
 # Teardown proceeds only once the report exists, its named sources pass, and the shared
 # decision-hold completion gate verifies its captain-held and product-idea inventory.
+# When this task is ov= for a ship, a present scout report is also copied to
+# data/<ship>/ov-report.md. The owner-invoke Stop ladder reads
+# data/<ov>/report.md, not that ship-side copy.
 # A task spawned with map_next=<id> has one additional unconditional completion
 # gate: that id must already exist in data/backlog.md under Queued, In flight,
 # or Done. The refusal runs before remote or local cleanup, is not bypassed by
@@ -2557,6 +2560,27 @@ if [ "$KIND" = scout ] && [ "$FORCE" != "--force" ]; then
     echo "Inventory its report and any visual review through bin/fm-decision-hold.sh before teardown." >&2
     exit 1
   fi
+fi
+
+# When this task is the outside-voice worker for a ship, promote its scout
+# report into the ship's durable ov-report.md (ship-side copy; turn-end reads
+# data/<ov>/report.md).
+if [ -f "$DATA/$ID/report.md" ] && [ ! -L "$DATA/$ID/report.md" ] && [ -s "$DATA/$ID/report.md" ]; then
+  for ov_ship_meta in "$STATE"/*.meta; do
+    [ -f "$ov_ship_meta" ] && [ ! -L "$ov_ship_meta" ] || continue
+    ov_ship_id=$(basename "$ov_ship_meta")
+    ov_ship_id=${ov_ship_id%.meta}
+    [ -n "$ov_ship_id" ] || continue
+    ov_ship_kind=$(sed -n 's/^kind=//p' "$ov_ship_meta" 2>/dev/null | tail -1)
+    [ "$ov_ship_kind" = ship ] || continue
+    ov_ship_ov=$(sed -n 's/^ov=//p' "$ov_ship_meta" 2>/dev/null | tail -1)
+    [ "$ov_ship_ov" = "$ID" ] || continue
+    mkdir -p "$DATA/$ov_ship_id" || true
+    if [ -e "$DATA/$ov_ship_id/ov-report.md" ] && { [ -L "$DATA/$ov_ship_id/ov-report.md" ] || [ ! -f "$DATA/$ov_ship_id/ov-report.md" ]; }; then
+      continue
+    fi
+    cp "$DATA/$ID/report.md" "$DATA/$ov_ship_id/ov-report.md" 2>/dev/null || true
+  done
 fi
 
 # A public commitment is not kept until its final reply lands in the ORIGINAL
