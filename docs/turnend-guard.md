@@ -29,6 +29,9 @@ An unmarked checkout or invalid marker falls through to the git-dir check.
 That check keeps crewmate and scout linked worktrees inert because their git dir differs from their git common dir.
 It also requires `AGENTS.md`, `bin/`, and the effective state directory.
 
+Independently of that skip, the guard runs `bin/fm-spec-compile-turnend.sh` so a child firstmate worktree that wrote Map 2 spec, tickets, or keep-list files cannot end while the matcher is red.
+That adapter's header owns the write window and home derivation from the written path.
+
 For an in-scope primary, before the supervision check, the guard runs `bin/fm-sot-speech-check.sh` against registered file-backed SoT identifiers, then refuses an unchecked yen126/TradingView login or session-death block from a `tradingview-tools` task, then refuses a ready queued ticket that still lacks matching `state/<id>.meta` worker ownership.
 The speech helper's header owns the registry, read window, declared-unread escape, fail-open cases, and residual coverage.
 `bin/fm-turnend-guard.sh`'s header owns the yen126 session-diagnosis contract and still blocks under Claude `--claude` when `stop_hook_active` is true.

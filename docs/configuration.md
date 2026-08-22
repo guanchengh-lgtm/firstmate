@@ -302,6 +302,13 @@ The registry is private to the home and is never tracked in firstmate git.
 [`bin/fm-sot-speech-check.sh`](../bin/fm-sot-speech-check.sh)'s header owns the row format, turn-end and AskUserQuestion PreToolUse refuse paths, declared-unread escape, fail-open cases, and residual coverage.
 `AGENTS.md` section 9 carries the always-loaded declared-unread sentence.
 
+## Spec compile-check refuse-hook
+
+A Stop that wrote Map 2 spec, tickets, or keep-list files this turn must not end while [`bin/fm-spec-compile-check.sh`](../bin/fm-spec-compile-check.sh) is red.
+[`bin/fm-spec-compile-turnend.sh`](../bin/fm-spec-compile-turnend.sh)'s header owns write detection, home derivation from the written path, the child-worktree seat, fail-open cases, and residual coverage.
+The matcher header owns ticket-id and keep-row rules, structural empty input, and matcher limits.
+The refuse is not a session-start diagnostic and does not read `FM_HOME` as an implicit compile home.
+
 ## Build-map fog check
 
 Session-start bootstrap runs [`bin/fm-map-fog-check.sh`](../bin/fm-map-fog-check.sh) in detect-only mode over ordinary `map.md` files under `data/`, printing `MAP_FOG` lines without blocking start, while structural failures remain loud.
