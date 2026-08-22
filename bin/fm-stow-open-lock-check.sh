@@ -306,7 +306,7 @@ findings=$(jq -n \
   --argjson run_bearings "$run_bearings" '
   def norm: tostring | gsub("\\s+"; " ") | ascii_downcase;
   def listed($pick):
-    ([ $pick.id, $pick.key, ($pick.file | split("/")[-1] | sub("\\.md$"; ""))] | map(norm)) as $tokens
+    ([ $pick.id, $pick.key ] | map(norm)) as $tokens
     | any($remaining[];
         (norm) as $item
         | ($item != "") and (($tokens | index($item)) != null));

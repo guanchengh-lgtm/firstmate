@@ -181,6 +181,40 @@ test_summary_substring_remaining_pick_is_not_clean() {
   pass "stow open-lock: summary substring remaining picks are not clean"
 }
 
+test_file_stem_remaining_pick_is_not_clean() {
+  local out rc bogus decisions
+  bogus="$TMP_ROOT/file-stem-remaining.json"
+  decisions="$TMP_ROOT/session-stem-decisions"
+  mkdir -p "$decisions"
+  cat > "$decisions/session.md" <<'EOF'
+# session
+- **Q1 Scope.** Still open.
+- **Q2 Scope.** Still open.
+EOF
+  # File stem alone must not cover every open pick in that decision file.
+  printf '%s\n' '{"reset_safe":true,"remaining_session_picks":["session"]}' > "$bogus"
+  set +e
+  out=$(run_check --input "$bogus" --decisions-dir "$decisions")
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "session stem remaining pick exited $rc: $out"
+  assert_contains "$out" "R-stow-open-lock-unlisted" \
+    "session stem remaining pick did not fire unlisted"
+  assert_contains "$out" "Q1" "session stem remaining pick did not name Q1"
+  assert_contains "$out" "Q2" "session stem remaining pick did not name Q2"
+  printf '%s\n' '{"reset_safe":true,"remaining_session_picks":["secondmate-2026-08-22"]}' > "$bogus"
+  set +e
+  out=$(run_check --input "$bogus" --decisions-dir "$HIST/decisions")
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "historical file-stem remaining pick exited $rc: $out"
+  assert_contains "$out" "R-stow-open-lock-unlisted" \
+    "historical file-stem remaining pick did not fire unlisted"
+  assert_contains "$out" "Q2" \
+    "historical file-stem remaining pick did not name Q2"
+  pass "stow open-lock: decision file-stem remaining picks are not clean"
+}
+
 test_snapshot_key_collision_is_not_clean() {
   local out rc receipt decisions snap
   receipt="$TMP_ROOT/not-safe-key-collision.json"
@@ -276,6 +310,7 @@ test_bearings_omit_fires_exact_count
 test_list_open_and_expect_count_zero_are_structural_or_public
 test_quoted_still_open_mention_is_not_a_marker
 test_summary_substring_remaining_pick_is_not_clean
+test_file_stem_remaining_pick_is_not_clean
 test_snapshot_key_collision_is_not_clean
 
 echo "# all fm-stow-open-lock-check tests passed"
