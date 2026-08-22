@@ -1,0 +1,34 @@
+{
+  "size": "light",
+  "size_reason": "Refuse-hook on stow receipt plus bearings snapshot surface. Not a new taxonomy: this promotes the home-local stow-reset-safe checker (exit 0/1/2, --input, exact-count). Historical instance is reconstructed from the lock file's own prior-text note because the home decision file is gitignored.",
+  "shape": "After /stow and a session reset, the next session (Bearings or a map resume) speaks as if an alignment never happened, because the pick lived in talk or the lock file was left still open.",
+  "form": "refuse-hook",
+  "structure": "data/decisions/*.md Q-item and Still-open lead-in markers; data/stow-receipt.json; bearings snapshot decisions_open via fm-fleet-snapshot.sh calling --list-open",
+  "rules": ["R-stow-open-lock", "R-bearings-lists-open-locks"],
+  "instances": [
+    "2026-08-18 session-resume: picks lived in talk; next session invented replacements.",
+    "2026-08-22 Map 2 second mate: captain answered Q2=Playbook/TV; lock file still said Q2 still open; stow said reset-safe; next bearings omitted sm on Map 2."
+  ],
+  "fixture": "reconstructed-historical",
+  "fixture_artifact": "tests/fixtures/fm-stow-open-lock-check/historical-q2-open",
+  "fixture_source": {
+    "date": "2026-08-22",
+    "derivation": "reverse the documented lock in data/decisions/secondmate-2026-08-22.md that says prior text was Still open after the captain answered a in session 2026-08-20T07-33-50"
+  },
+  "regression": {
+    "test": "tests/fm-stow-open-lock-check.test.sh",
+    "exact_counts": [1],
+    "snapshot_test": "tests/fm-bearings-snapshot.test.sh"
+  },
+  "adversary_rounds": 0,
+  "adversary_verdict": "skipped-light-size",
+  "skipped": [
+    "Adversarial rounds because size is light: one fresh reader via the test suite is enough.",
+    "Transcript scraping because the class owner forbids it.",
+    "A second checker taxonomy; this extends stow-reset-safe."
+  ],
+  "limits": [
+    "A pick never written to any decision file cannot be seen.",
+    "Prose that merely mentions still open without a Q-item lacking a locked answer or a Still-open lead-in is invisible."
+  ]
+}

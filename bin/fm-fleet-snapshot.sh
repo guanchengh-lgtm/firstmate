@@ -39,6 +39,13 @@
 #     current backlog rows). Does not invent live tasks; meta remains truth for
 #     workers. Bearings maps failures into omitted[] disclosure (and a Charted
 #     Next gate line) rather than silent empty Underway.
+#   decision_locks_open[]: still-open lock-file picks from this home's
+#     data/decisions/*.md via bin/fm-stow-open-lock-check.sh --list-open (single
+#     reader; no parallel parse). Each row is
+#     {id,key,verb:"lock-open",summary,source,file}. A pick never written to any
+#     decision file cannot be seen. Registered secondmate homes surface their own
+#     open locks in that home's decisions_open through the same reader; Bearings
+#     merges both into its decisions_open projection.
 #   secondmate_current: {records[],total,shown,truncated} - bounded current summaries
 #     for registered secondmates, selected from validated structured state inside
 #     each home with explicit provenance, freshness, endpoint evidence, and unknown
@@ -47,6 +54,7 @@
 #     Each structured-home record carries active_children, decisions_open, holds,
 #     queued, landed, endpoints, counts, and omitted. Actionable captain holds
 #     appear in decisions_open; blocked captain holds remain queued with metadata.
+#     Open lock-file picks also appear in decisions_open (see decision_locks_open).
 #   secondmate_landed: {records[],truncated[],unreadable[],partial[]} - the
 #     compatibility landed-work roll-up derived from secondmate_current. Readable
 #     structured homes with an unknown current classification are partial, not
@@ -153,6 +161,8 @@ Its invalidity object names the normalized failure kind and affected ids.
 Actionable tasks-axi captain holds appear as decisions_open and stay visible in
 queued with hold_reason, hold_kind, and plural blocker fields for downstream
 projections. A captain hold is actionable only when every blocker is Done.
+Open lock-file picks from data/decisions/*.md use the same --list-open reader
+as fm-stow-open-lock-check.sh and also appear in decisions_open.
 Cross-home reads use FM_SNAPSHOT_SECONDMATES (default 20, 0 lifts the count
 bound), FM_SNAPSHOT_SECONDMATE_TIMEOUT, and FM_SNAPSHOT_SECONDMATE_MAX_BYTES.
 Terminal contradiction evidence uses
@@ -186,6 +196,23 @@ path_present_json() {  # <path>
   [ -e "$1" ] && present=1
   jq -n --arg path "$1" --argjson present "$(bool_json "$present")" \
     '{path:$path,present:$present}'
+}
+
+# Single reader for still-open lock-file picks. Same command Bearings consumes
+# through this snapshot; do not parse data/decisions/*.md a second time.
+decision_locks_open_json() {
+  local dir="$DATA/decisions" out
+  out=$("$SCRIPT_DIR/fm-stow-open-lock-check.sh" --list-open --decisions-dir "$dir") || {
+    echo "fm-fleet-snapshot: open lock-file pick listing failed" >&2
+    return 1
+  }
+  case "$out" in
+    '['*) printf '%s' "$out" ;;
+    *)
+      echo "fm-fleet-snapshot: open lock-file pick listing was not JSON" >&2
+      return 1
+      ;;
+  esac
 }
 
 meta_value() {  # <meta-file> <key>
@@ -636,6 +663,8 @@ main_inventory_json() {  # <backlog-json> <tasks-json>
 # This mode never reads parent events or terminal text and never aggregates
 # nested secondmates.
 secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
+  local locks
+  locks=$(decision_locks_open_json) || return 1
   jq -n \
     --arg generated "$SNAPSHOT_NOW" \
     --arg home "$FM_HOME" \
@@ -644,7 +673,8 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
     --argjson decisions_n "$FM_SNAPSHOT_SECONDMATE_DECISIONS" \
     --argjson landed_n "$FM_SNAPSHOT_SECONDMATE_LANDED_PER_HOME" \
     --argjson backlog "$1" \
-    --argjson tasks "$2" '
+    --argjson tasks "$2" \
+    --argjson locks "$locks" '
     def trunc($n):
       tostring | gsub("\\s+"; " ")
       | if length > $n then .[:$n] + "…" else . end;
@@ -704,7 +734,9 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
          | select(.id == $work.id and .current_state.state == "working")
          | {id,kind,state:.current_state.state,source:.current_state.source,
             doing:((.current_state.detail // "") | trunc(120))} ]) as $active_all
-    | ($captain_holds_all
+    | ([ $locks[]
+          | {id,key,verb,summary:(.summary | trunc(160)),reason:null,source} ]
+       + $captain_holds_all
        + ([ $tasks[] as $t | ($t.hints.open_decisions // [])[]
             | {id:$t.id,key,verb,summary:(.summary | trunc(160)),reason:null,source:"status"} ])) as $decisions_all
     | ([ $queued_all[]
@@ -735,7 +767,7 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
        elif ($unknown_children | length) > 0 then {kind:"child_current_unavailable",ids:($unknown_children | map(.id))}
        else {kind:null,ids:[]} end) as $invalidity
     | (if $valid | not then "unknown"
-       elif any($decisions_all[]; .verb == "needs-decision" or .verb == "captain-hold") then "captain_decision"
+       elif any($decisions_all[]; .verb == "needs-decision" or .verb == "captain-hold" or .verb == "lock-open") then "captain_decision"
        elif ($active_all | length) > 0 then "active_child_work"
        elif ($holds_all | length) > 0 then "externally_held"
        else "no_active_work" end) as $state
@@ -1357,6 +1389,8 @@ fi
 SCOUT_REPORTS_JSON=$(scout_report_lines)
 MAIN_INVENTORY_JSON=$(main_inventory_json "$BACKLOG_JSON" "$TASKS_JSON") \
   || { echo "fm-fleet-snapshot: main inventory summary failed" >&2; exit 1; }
+DECISION_LOCKS_JSON=$(decision_locks_open_json) \
+  || { echo "fm-fleet-snapshot: open lock-file pick listing failed" >&2; exit 1; }
 SECONDMATE_CURRENT_JSON=$(secondmate_current_json "$TASKS_JSON") \
   || { echo "fm-fleet-snapshot: registered secondmate aggregation failed" >&2; exit 1; }
 SECONDMATE_LANDED_JSON=$(secondmate_landed_from_current_json "$SECONDMATE_CURRENT_JSON") \
@@ -1374,6 +1408,7 @@ jq -n \
   --argjson tasks "$TASKS_JSON" \
   --argjson main_inventory "$MAIN_INVENTORY_JSON" \
   --argjson scout_reports "$SCOUT_REPORTS_JSON" \
+  --argjson decision_locks_open "$DECISION_LOCKS_JSON" \
   --argjson secondmate_current "$SECONDMATE_CURRENT_JSON" \
   --argjson secondmate_landed "$SECONDMATE_LANDED_JSON" \
   'def backlog_by_id($id): ($backlog.records[]? | select(.structured == true and .id == $id) | .) // null;
@@ -1388,6 +1423,7 @@ jq -n \
      tasks:($tasks | map(. + {backlog:backlog_by_id(.id)})),
      main_inventory:$main_inventory,
      scout_reports:($scout_reports | map(. + {kind:report_kind(.id)})),
+     decision_locks_open:$decision_locks_open,
      secondmate_current:$secondmate_current,
      secondmate_landed:$secondmate_landed,
      secondmate_guidance:{

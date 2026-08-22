@@ -38,6 +38,8 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
    For registered secondmates, use the snapshot's structured-home classification and provenance.
    A parent event or bounded terminal contradiction is fallback evidence, never authority over readable structured home state.
    Structured captain-held decisions come from `decision-hold-lifecycle` and appear under `decisions_open`.
+   Open lock-file picks from `data/decisions/` also appear under `decisions_open` with verb `lock-open`; render them in Captain's Call so a new session cannot omit them.
+   A pick never written to any decision file cannot be seen.
    Render a nonzero `ideas_unscheduled` count as one Charted Next line, and name any `ideas_warnings` disclosure rather than presenting an incomplete count as complete.
    Do not scrape reports, visual-review artifacts, raw status-event tails, or visible conversation history to supplement current state.
    A queued item under `gates` only becomes "next work" when its blocker is gone and its time/date gate has arrived.

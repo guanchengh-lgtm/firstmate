@@ -309,6 +309,15 @@ A ship spawn with `--map` runs the same checker in `--strict` and refuses while 
 The checker never writes `[parked]` or `[closed]` tokens; those remain captain-only.
 The script header owns live-fog tokens, `MAP_FOG` lines, structural missing-section failure, `--strict`, and residual coverage.
 
+## Stow open-lock check
+
+`/stow` writes `data/stow-receipt.json` and must not call the session reset-safe unless [`bin/fm-stow-open-lock-check.sh`](../bin/fm-stow-open-lock-check.sh) exits 0.
+The checker reads ordinary files directly under `data/decisions/` for Q-items without a locked answer and for Still-open lead-ins, then compares them to the receipt list and, when given, to a Bearings snapshot `decisions_open` array.
+[`bin/fm-fleet-snapshot.sh`](../bin/fm-fleet-snapshot.sh) calls the same `--list-open` reader so Bearings lists those still-open lock-file picks; do not add a parallel parser.
+A pick never written to any decision file cannot be seen.
+The script header owns the marker grammar, rule ids, structural exit 2, exact-count regression flags, and residual coverage.
+Claims live in [`verification/stow-open-lock-recurring-defect-claims.json`](verification/stow-open-lock-recurring-defect-claims.json).
+
 ## Defect-class name list (data/defect-classes.tsv)
 
 An optional home-local registry binds miss-line phrasings to one class id so cleanup can refuse a second-occurrence ship that did not touch an enforcing file.

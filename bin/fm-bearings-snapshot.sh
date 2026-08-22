@@ -22,6 +22,9 @@
 # This wrapper consumes canonical status decisions plus canonically normalized
 # backlog roles, unresolved blockers, and captain actionability. It never infers
 # decisions from report or visual-review prose or reimplements snapshot semantics.
+# Open lock-file picks arrive through the canonical snapshot's decision_locks_open
+# field and structured-home decisions_open rows with verb lock-open; this wrapper
+# does not parse data/decisions/*.md itself.
 #
 # Main-home inventory validity comes from the canonical snapshot's main_inventory
 # object (orphan structured in-flight without meta, unstructured current rows).
@@ -400,7 +403,10 @@ MODEL=$(printf '%s' "$SNAP" | jq \
          | select(.endpoint.exists == false or .endpoint.agent_alive == "dead")
          | {id:($m.id + "/" + .id),backend:"secondmate-home",target:(.endpoint.target // "-"),exists:.endpoint.exists,agent:.endpoint.agent_alive} ]) as $unhealthy_all
   | ([ (.secondmate_current.records // [])[]
-       | ([.decisions_open[]? | select(.source == "backlog" and .verb == "captain-hold")]) as $captain_holds
+       | ([.decisions_open[]? | select(
+            (.source == "backlog" and .verb == "captain-hold")
+            or (.verb == "lock-open")
+          )]) as $captain_holds
        | ([.holds[]? | select(.source == "backlog")]) as $backlog_holds
        | . + {
            bearings_captain_holds:$captain_holds,
@@ -448,14 +454,23 @@ MODEL=$(printf '%s' "$SNAP" | jq \
          | select(.bearings_state == "active_child_work")
          | {id,kind:"secondmate",state:.bearings_state,
             doing:([.active_children[] | .id + ": " + (.doing // .state)] | join("; ") | trunc(90))} ]) as $in_flight_all
-  | ([ .backlog.records[]
+  | ([ (.decision_locks_open // [])[]
+         | {id,key,verb,summary:(.summary | trunc(90)),owner:"(main)"} ]
+     + [ (.secondmate_current.records // [])[] as $m | $m.decisions_open[]?
+         | select(.verb == "lock-open")
+         | {id:($m.id + "/" + .id),key,verb,
+            summary:((.summary // .id) | trunc(90)),owner:$m.id} ]
+     + [ .backlog.records[]
          | select(.structured and .captain_actionable == true)
          | {id,key:.id,verb:"captain-hold",
             summary:((.title + ": " + .hold_reason) | trunc(90)),owner:"(main)"} ]
      + [ (.secondmate_current.records // [])[] as $m | $m.decisions_open[]?
          | select(.source == "backlog" and .verb == "captain-hold")
          | {id:($m.id + "/" + .id),key,verb,
-            summary:(((.summary // .id) + ": " + (.reason // "captain decision pending")) | trunc(90)),owner:$m.id} ]) as $decisions_all
+            summary:(((.summary // .id)
+              + (if .reason != null and (.reason | tostring | length) > 0
+                 then ": " + (.reason | tostring) else "" end)) | trunc(90)),
+            owner:$m.id} ]) as $decisions_all
   | ((if (.main_inventory.valid == false) then
         [{id:"(main-inventory)",
           title:((.main_inventory.reason // "main inventory invalid") | trunc(60)),

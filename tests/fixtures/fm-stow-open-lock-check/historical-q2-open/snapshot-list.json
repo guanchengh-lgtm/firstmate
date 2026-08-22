@@ -1,0 +1,11 @@
+{
+  "decisions_open": [
+    {
+      "id": "secondmate-2026-08-22/Q2",
+      "key": "Q2",
+      "verb": "lock-open",
+      "summary": "Q2 Scope still open",
+      "owner": "(main)"
+    }
+  ]
+}
