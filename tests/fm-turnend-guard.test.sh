@@ -119,9 +119,10 @@ install_guard_scripts() {
   cp "$ROOT/bin/fm-sot-speech-check.sh" "$dir/bin/fm-sot-speech-check.sh"
   cp "$ROOT/bin/fm-spec-compile-check.sh" "$dir/bin/fm-spec-compile-check.sh"
   cp "$ROOT/bin/fm-spec-compile-stop-check.sh" "$dir/bin/fm-spec-compile-stop-check.sh"
+  cp "$ROOT/bin/fm-owner-invoke-wait-check.sh" "$dir/bin/fm-owner-invoke-wait-check.sh"
   mkdir -p "$dir/docs"
   cp -R "$ROOT/docs/supervision-protocols" "$dir/docs/supervision-protocols"
-  chmod +x "$dir/bin/fm-turnend-guard.sh" "$dir/bin/fm-turnend-guard-grok.sh" "$dir/bin/fm-operational-input.sh" "$dir/bin/fm-supervision-instructions.sh" "$dir/bin/fm-harness.sh" "$dir/bin/fm-sot-speech-check.sh" "$dir/bin/fm-spec-compile-check.sh" "$dir/bin/fm-spec-compile-stop-check.sh"
+  chmod +x "$dir/bin/fm-turnend-guard.sh" "$dir/bin/fm-turnend-guard-grok.sh" "$dir/bin/fm-operational-input.sh" "$dir/bin/fm-supervision-instructions.sh" "$dir/bin/fm-harness.sh" "$dir/bin/fm-sot-speech-check.sh" "$dir/bin/fm-spec-compile-check.sh" "$dir/bin/fm-spec-compile-stop-check.sh" "$dir/bin/fm-owner-invoke-wait-check.sh"
 }
 
 mark_codex_hook_root() {
@@ -316,6 +317,80 @@ test_hook_claude_ready_action_ignores_stop_hook_active() {
   assert_contains "$out" 'map-s4 is unblocked and queued' \
     "claude ready-action refusal did not name the ownerless ticket under stop_hook_active"
   pass "fm-turnend-guard --claude: stop_hook_active cannot skip unowned ready-action"
+}
+
+write_fake_held_tasks_axi() {  # <dir> <held-id> <hold_kind> <hold_reason> <hold_until>
+  local dir=$1 id=$2 kind=$3 reason=$4 until=$5
+  mkdir -p "$dir/fakebin" "$dir/data"
+  printf '%s\n' '# backlog fixture' > "$dir/data/backlog.md"
+  cat > "$dir/fakebin/tasks-axi" <<SH
+#!/usr/bin/env bash
+id='$id'
+kind='$kind'
+reason='$reason'
+until='$until'
+if [ "\${1:-}" = ready ]; then
+  printf 'count: 0\\nready: 0 unblocked queued tasks\\n'
+  printf 'held[1]{id,state,kind,repo,title,hold_reason,hold_kind,hold_until}:\\n'
+  printf '  %s,queued,ship,firstmate,Held slice,%s,%s,%s\\n' "\$id" "\$reason" "\$kind" "\$until"
+  exit 0
+fi
+if [ "\${1:-}" = show ]; then
+  printf 'task:\\n'
+  printf '  id: %s\\n' "\$id"
+  printf '  hold_reason: %s\\n' "\$reason"
+  printf '  hold_kind: %s\\n' "\$kind"
+  printf '  hold_until: %s\\n' "\$until"
+  exit 0
+fi
+exit 1
+SH
+  chmod +x "$dir/fakebin/tasks-axi"
+}
+
+test_hook_refuses_held_map_next_without_worker() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-held-map-next")
+  write_fake_held_tasks_axi "$dir" map-s2 captain "waiting for captain go" "-"
+  printf '%s\n' 'kind=ship' 'map_next=map-s2' > "$dir/state/blocker.meta"
+  out=$(PATH="$dir/fakebin:$PATH" run_hook "$dir" false); status=$?
+  expect_code 2 "$status" "turn end must refuse a held locked next slice with no worker"
+  assert_contains "$out" 'OWNER-OWNED NEXT ACT WAS NOT STARTED' \
+    "held map_next refusal did not use the owner-invoke banner"
+  assert_contains "$out" 'map-s2 is a locked next act still held without a worker' \
+    "held map_next refusal did not name the locked id"
+  pass "fm-turnend-guard: a held map_next ticket cannot end as a yes-ask"
+}
+
+test_hook_refuses_owner_invoke_yes_ask() {
+  local dir out status transcript payload
+  dir=$(make_primary_dir "$TMP_ROOT/hook-owner-yes-ask")
+  transcript="$dir/transcript.jsonl"
+  printf '%s\n' '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Named /recurring-defect. Want me to start?"}]}}' \
+    > "$transcript"
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s"}' "$transcript")
+  out=$(printf '%s' "$payload" | CLAUDECODE=1 FM_HOME="$(cd "$dir" && pwd)" \
+    bash "$dir/bin/fm-turnend-guard.sh" 2>&1); status=$?
+  expect_code 2 "$status" "turn end must refuse an owner-invoke yes-ask"
+  assert_contains "$out" 'named /recurring-defect and asked for a yes' \
+    "owner-invoke refusal did not name the skill"
+  pass "fm-turnend-guard: naming /recurring-defect and waiting is not done"
+}
+
+test_hook_claude_owner_invoke_ignores_stop_hook_active() {
+  local dir out status transcript payload
+  dir=$(make_primary_dir "$TMP_ROOT/hook-claude-owner-yes")
+  transcript="$dir/transcript.jsonl"
+  printf '%s\n' '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Named /recurring-defect. Want me to start?"}]}}' \
+    > "$transcript"
+  payload=$(printf '{"stop_hook_active":true,"transcript_path":"%s"}' "$transcript")
+  out=$(printf '%s' "$payload" | CLAUDECODE=1 FM_HOME="$(cd "$dir" && pwd)" \
+    FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 \
+    bash "$dir/bin/fm-turnend-guard.sh" --claude 2>&1); status=$?
+  expect_code 2 "$status" "--claude mode must still refuse owner-invoke wait when stop_hook_active=true"
+  assert_contains "$out" 'named /recurring-defect and asked for a yes' \
+    "claude owner-invoke refusal did not name the skill under stop_hook_active"
+  pass "fm-turnend-guard --claude: stop_hook_active cannot skip owner-invoke wait"
 }
 
 install_session_diagnosis_checker() {
@@ -1076,6 +1151,7 @@ test_tracked_claude_entries_inert_under_grok() {
   mkdir -p "$dir/bin"
   for script in fm-turnend-guard.sh fm-claude-stop-autoarm.sh fm-sessionstart-run.sh \
     fm-arm-pretool-check.sh fm-cd-pretool-check.sh fm-sot-speech-check.sh \
+    fm-owner-invoke-wait-check.sh \
     fm-subagent-pretool-check.sh \
     fm-project-write-pretool-check.sh; do
     printf '#!/usr/bin/env bash\nprintf ran >> %q\n' "$dir/invoked" > "$dir/bin/$script"
@@ -1120,7 +1196,7 @@ test_tracked_claude_entries_inert_under_grok() {
       || fail "tracked entry for $target ran under a legacy GROK_AGENT environment"
   done < <(jq -r '.hooks[][].hooks[].command' "$ROOT/.claude/settings.json")
 
-  [ "$guarded" -eq 6 ] || fail "expected 6 grok-guarded tracked entries, saw $guarded"
+  [ "$guarded" -eq 7 ] || fail "expected 7 grok-guarded tracked entries, saw $guarded"
   [ "$unguarded" -eq 2 ] || fail "expected 2 documented unguarded tracked entries, saw $unguarded"
   pass "tracked .claude/settings.json entries: $guarded inert under grok, the 2 documented PreToolUse exceptions still armed, all live under Claude"
 }
@@ -1889,6 +1965,9 @@ test_hook_silent_when_no_work_in_flight
 test_hook_refuses_prose_only_ready_action
 test_hook_ready_action_checks_every_ready_ticket
 test_hook_ready_action_accepts_matching_worker_owner
+test_hook_refuses_held_map_next_without_worker
+test_hook_refuses_owner_invoke_yes_ask
+test_hook_claude_owner_invoke_ignores_stop_hook_active
 test_hook_refuses_tradingview_login_block_without_evidence
 test_hook_refuses_latest_same_key_tradingview_json_block
 test_hook_surfaces_session_checker_r5_and_r3_findings

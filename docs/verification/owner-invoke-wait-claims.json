@@ -1,0 +1,47 @@
+{
+  "size": "light",
+  "size_reason": "Same family as the landed go-gate / ready-action hook. Widen that owner. Event is speech plus a locked next act, or a filled ship Task that omits the owned skill. Full adversary rounds are a later ship if the light refuse is trusted.",
+  "shape": "A node owns a skill or a next act. This seat proceeds without invoking that skill or starting that act.",
+  "form": "refuse-hook",
+  "structure": "Existing ready-action refuse in bin/fm-turnend-guard.sh plus invented go-gate map_next teardown. Widen with bin/fm-owner-invoke-wait-check.sh so held locked-next slices, owner-invoke yes-asks, live fog pin questions, and filled ship briefs that omit plan-eng-review cannot end as a wait.",
+  "rules": [
+    "R-held-locked-next",
+    "R-owner-invoke-wait",
+    "R-fog-pin-wait",
+    "R-required-skill-omitted"
+  ],
+  "instances": [
+    "Asked when to pin the next fog item after the map still had open fog and continue was locked.",
+    "Asked whether to start Spec compile-check after calling it obvious.",
+    "Named /recurring-defect and waited for yes after the second instance.",
+    "Started or recommended ships without /plan-eng-review when that node owns the skill."
+  ],
+  "fixture": "reconstructed-historical",
+  "fixture_artifact": "tests/fixtures/fm-owner-invoke-wait-check/",
+  "fixture_source": {
+    "date": "2026-08-22",
+    "derivation": "reconstruct the 2026-08-22 sitting: a /recurring-defect yes-ask, a live-fog pin question, and a filled ship Task that omitted plan-eng-review"
+  },
+  "regression": {
+    "test": "tests/fm-owner-invoke-wait-check.test.sh",
+    "exact_counts": [1]
+  },
+  "ci_gate": ".github/workflows/ci.yml runs bin/fm-test-run.sh --check-coverage and all portable lanes; the test inventory includes tests/fm-owner-invoke-wait-check.test.sh and tests/fm-turnend-guard.test.sh",
+  "structural_failure_exit": 2,
+  "findings_exit": 1,
+  "adversary_rounds": 0,
+  "adversary_verdict": "skipped-light-size",
+  "limits": [
+    "English yes-ask cannot be 100%.",
+    "A real captain hold is invisible.",
+    "Empty Task sections and the unreplaced placeholder are skipped.",
+    "This check does not prove the worker ran the skill.",
+    "Independent OV on compile-check is not this hook.",
+    "Name-and-wait skills stay askable."
+  ],
+  "skipped": [
+    "Adversarial rounds because size is light: one fresh reader via the test suite is enough.",
+    "A skill-picker product.",
+    "Changing Spec compile-check."
+  ]
+}

@@ -13,7 +13,10 @@
 # It also refuses a prose-only idle turn when tasks-axi reports a ready queued
 # ticket but that exact ticket has no state/<id>.meta worker owner. A spawn or
 # steer has matching metadata; a concrete backlog blocker removes the ticket
-# from `tasks-axi ready`. The check fails open when the tasks-axi backend cannot
+# from `tasks-axi ready`. The same family refuses a held locked next act
+# (map_next, a passed until date, or an invented captain go-hold) with no
+# worker, and a yes-ask on an owner-invoke skill; bin/fm-owner-invoke-wait-check.sh
+# owns those rules. The check fails open when the tasks-axi backend cannot
 # be read, honors the existing manual-backlog backend, and has no skip flag.
 # Before accepting an open `blocked:` event from a task whose metadata project
 # basename is `tradingview-tools`, this guard also validates any summary that
@@ -334,6 +337,16 @@ fi
 
 if ready_action_without_owner; then
   block_ready_action
+fi
+
+if [ -x "$SCRIPT_DIR/fm-owner-invoke-wait-check.sh" ]; then
+  if [ "$CLAUDE_MODE" -eq 1 ]; then
+    printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-owner-invoke-wait-check.sh" --claude
+  else
+    printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-owner-invoke-wait-check.sh"
+  fi
+  owner_invoke_rc=$?
+  [ "$owner_invoke_rc" -ne 2 ] || exit 2
 fi
 
 if [ "$FM_SUP_NEEDED" = false ]; then

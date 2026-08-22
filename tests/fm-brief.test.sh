@@ -216,6 +216,7 @@ test_ship_modes_generate_clean_briefs() {
     grep -qx builder "$home/data/$id/role" \
       || fail "$id: role marker file was not written as builder"
     assert_grep "{TASK}" "$brief" "$id: brief missing the {TASK} placeholder"
+    assert_grep "plan-eng-review" "$brief" "$id: ship brief omitted the owner-invoke plan-eng-review line"
     assert_grep "mid-task \`working:\` line (including setup complete) is nonterminal" "$brief" \
       "$id: brief missing nonterminal working:/setup-complete gate protection"
     assert_grep 'needs-decision [key=<decision-slug>]: {summary of options}' "$brief" \
@@ -405,10 +406,25 @@ test_worker_brief_check_refuses_fake_skill_slashes() {
       "worker brief refusal did not name forbidden invocation $token"
   done
 
-  printf '# Task\nName last30days and wiki as optional feeders; do not invoke them.\n\n# Setup\nfixture\n' > "$brief"
+  printf '# Task\nName last30days and wiki as optional feeders; do not invoke them. Run plan-eng-review on this ship plan.\n\n# Setup\nfixture\n' > "$brief"
   FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-brief.sh" --check-worker ship "$brief" >/dev/null 2>&1 \
     || fail "worker brief check confused a plain name with a slash invocation"
   pass "fm-brief.sh: worker check refuses fake slashes but permits names"
+}
+
+test_worker_brief_check_refuses_ship_without_eng_review() {
+  local brief out status
+  brief="$TMP_ROOT/ship-without-eng-review.md"
+  printf '# Task\nStart the locked next ship. The next act is obvious.\n\n# Setup\nfixture\n' > "$brief"
+  out=$(FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-brief.sh" --check-worker ship "$brief" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "worker brief check accepted a ship Task without plan-eng-review"
+  assert_contains "$out" "plan-eng-review" \
+    "ship omission refusal did not name plan-eng-review"
+  printf 'brief for stub\n' > "$brief"
+  FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-brief.sh" --check-worker ship "$brief" >/dev/null 2>&1 \
+    || fail "worker brief check refused a spawn-harness stub with no Task section"
+  pass "fm-brief.sh: worker check refuses filled ships that omit plan-eng-review"
 }
 
 test_ship_project_memory_wording() {
@@ -896,6 +912,7 @@ test_no_mistakes_dod_wording
 test_verifier_brief_leads_with_verifier_contract
 test_scout_named_sources_are_manifested
 test_worker_brief_check_refuses_fake_skill_slashes
+test_worker_brief_check_refuses_ship_without_eng_review
 test_ship_project_memory_wording
 test_herdr_lab_contract_is_explicit_and_complete
 test_herdr_lab_contract_quotes_foreign_firstmate_path
