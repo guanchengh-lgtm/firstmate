@@ -23,14 +23,17 @@
 # fm-bootstrap.sh, so there is one ff implementation, not several.
 #
 # It does NOT re-read AGENTS.md or nudge secondmates itself - those are LLM /
-# tmux actions the skill performs. The script's job is the safe git mechanics
-# plus a parseable summary telling the caller what to do next:
+# tmux actions the skill performs. The script's job is the safe git mechanics,
+# the Pi mid-line patch reapply below, and a parseable summary telling the caller
+# what to do next:
 #   - one status line per target (updated/already current/skipped)
+#   - optional pi-midline-slash: lines from the helper when firstmate updated or is current
 #   - reread-firstmate: yes|no    (did the running firstmate's instructions change)
 #   - nudge-secondmates: fm-<id>...|none   (updated live secondmates to nudge)
 #
 # After a successful firstmate fast-forward, or when firstmate is already current, it also runs bin/fm-pi-midline-slash-patch.sh so a wiped Pi dist is repaired on the next update.
-# An honest patch skip does not fail the git update.
+# That helper's header owns the patch contract, including skip/fail and the running-Pi restart limit.
+# An honest patch skip or layout-change fail does not fail the git update.
 #
 # Usage: fm-update.sh [--help]
 set -eu

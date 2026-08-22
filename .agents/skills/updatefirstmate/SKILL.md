@@ -30,7 +30,10 @@ This touches only the firstmate repo and its own worktrees, never anything under
    bin/fm-update.sh
    ```
    It fast-forwards this firstmate repo's default branch from its preferred update remote, then updates every registered local or remote secondmate home through its placement-specific guarded path.
-   It prints one status line per target (`updated <old>..<new>` / `already current` / `skipped: <reason>`), followed by two action lines that tell you exactly what to do next:
+   When firstmate itself is updated or already current, it also runs `bin/fm-pi-midline-slash-patch.sh` so a wiped Pi mid-line `/` dropdown is repaired.
+   That helper's header owns the patch contract, including skip/fail and the running-Pi restart limit.
+   A non-zero patch exit does not fail the fleet update.
+   It prints one status line per target (`updated <old>..<new>` / `already current` / `skipped: <reason>`), optional `pi-midline-slash:` lines from the helper, and two action lines that tell you exactly what to do next:
    - `reread-firstmate: yes|no`
    - `nudge-secondmates: fm-<id>...|none`
 
