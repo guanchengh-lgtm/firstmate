@@ -382,13 +382,15 @@ test_hook_gathers_ship_skill_and_ov_report_records() {
   local home out rc payload transcript
   home=$(make_primary_home "$TMP_ROOT/hook-ships")
   mkdir -p "$home/data/spec-compile-check"
-  printf '%s\n' 'kind=ship' 'ov=spec-compile-check-ov' > "$home/state/spec-compile-check.meta"
+  printf '%s\n' 'kind=ship' 'ov=spec-compile-check-ov' "worktree=$home" \
+    > "$home/state/spec-compile-check.meta"
   printf '%s\n' 'kind=scout' > "$home/state/spec-compile-check-ov.meta"
   printf '%s\n' 'codebase-design' > "$home/data/spec-compile-check/skills"
   printf 'OV done\n' > "$home/data/spec-compile-check/ov-report.md"
   transcript="$home/transcript.jsonl"
   : > "$transcript"
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s"}' "$transcript")
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$home")
   set +e
   out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
@@ -425,11 +427,12 @@ test_hook_does_not_rerefuse_inflight_ship_without_ov() {
   local home out rc payload transcript
   home=$(make_primary_home "$TMP_ROOT/hook-no-ov")
   mkdir -p "$home/data/legacy-ship"
-  printf '%s\n' 'kind=ship' > "$home/state/legacy-ship.meta"
+  printf '%s\n' 'kind=ship' "worktree=$home" > "$home/state/legacy-ship.meta"
   printf '%s\n' 'plan-eng-review' > "$home/data/legacy-ship/skills"
   transcript="$home/transcript.jsonl"
   : > "$transcript"
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s"}' "$transcript")
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$home")
   set +e
   out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
@@ -513,6 +516,98 @@ test_brief_reads_ov_meta_and_report() {
   pass "owner-invoke-wait: brief mode reads ov meta and ov-report.md"
 }
 
+test_tool_result_user_message_keeps_same_turn_invoke_credit() {
+  local home out rc payload transcript
+  home=$(make_primary_home "$TMP_ROOT/hook-tool-result")
+  transcript="$home/transcript.jsonl"
+  cat > "$transcript" <<'JSONL'
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"wayfinder"}}]}}
+{"type":"message","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"1","content":"loaded"}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"OWNER_INVOKE_WAIT /wayfinder"}]}}
+JSONL
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s"}' "$transcript")
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "tool_result same-turn Skill load exited $rc with: $out"
+  [ -z "$out" ] || fail "tool_result same-turn Skill load printed: $out"
+  pass "owner-invoke-wait: tool_result user message keeps same-turn invoke credit"
+}
+
+test_pretool_credits_transcript_skill_load() {
+  local home out rc payload transcript
+  home=$(make_primary_home "$TMP_ROOT/pretool-skill")
+  transcript="$home/transcript.jsonl"
+  cat > "$transcript" <<'JSONL'
+{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"wayfinder"}}]}}
+{"type":"message","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"1","content":"ok"}]}}
+JSONL
+  payload=$(printf '{"tool_name":"AskUserQuestion","transcript_path":"%s","tool_input":{"questions":[{"question":"OWNER_INVOKE_WAIT /wayfinder"}]}}' "$transcript")
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" --pretool --claude 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "pretool with same-turn Skill load exited $rc with: $out"
+  [ -z "$out" ] || fail "pretool with same-turn Skill load printed: $out"
+  pass "owner-invoke-wait: PreToolUse credits transcript skill-load invokes"
+}
+
+test_hook_ignores_other_ship_records() {
+  local home out rc payload transcript other
+  home=$(make_primary_home "$TMP_ROOT/hook-other-ship")
+  other="$home/other-wt"
+  mkdir -p "$home/data/other-ship" "$other" "$home/data/current-ship"
+  printf '%s\n' 'kind=ship' 'ov=other-ov' "worktree=$other" > "$home/state/other-ship.meta"
+  printf '%s\n' 'kind=scout' > "$home/state/other-ov.meta"
+  printf '%s\n' 'codebase-design' > "$home/data/other-ship/skills"
+  printf '%s\n' 'kind=ship' 'ov=current-ov' "worktree=$home" > "$home/state/current-ship.meta"
+  printf '%s\n' 'kind=scout' > "$home/state/current-ov.meta"
+  printf '%s\n' 'plan-eng-review' > "$home/data/current-ship/skills"
+  printf 'OV ok\n' > "$home/data/current-ship/ov-report.md"
+  transcript="$home/transcript.jsonl"
+  : > "$transcript"
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$home")
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "other-ship records wedged current ship exited $rc with: $out"
+  [ -z "$out" ] || fail "other-ship records printed: $out"
+  pass "owner-invoke-wait: hook scopes ship gather to current ship only"
+}
+
+test_missing_skills_record_counts_as_unloaded() {
+  local home out rc payload transcript
+  home=$(make_primary_home "$TMP_ROOT/hook-missing-skills")
+  mkdir -p "$home/data/spec-compile-check"
+  printf '%s\n' 'kind=ship' 'ov=spec-compile-check-ov' "worktree=$home" \
+    > "$home/state/spec-compile-check.meta"
+  printf '%s\n' 'kind=scout' > "$home/state/spec-compile-check-ov.meta"
+  printf 'OV done\n' > "$home/data/spec-compile-check/ov-report.md"
+  transcript="$home/transcript.jsonl"
+  : > "$transcript"
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$home")
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "missing skills record exited $rc with: $out"
+  assert_contains "$out" 'R-skill-unloaded-plan-eng-review' \
+    "missing skills record did not count as unloaded"
+  pass "owner-invoke-wait: missing skills record counts as unloaded"
+}
+
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
 test_missing_and_empty_input_are_structural
@@ -532,6 +627,10 @@ test_hook_gathers_ship_skill_and_ov_report_records
 test_hook_does_not_rerefuse_inflight_ship_without_ov
 test_prior_turn_tool_mention_is_not_invoke_credit
 test_same_turn_skill_tool_load_is_invoke_credit
+test_tool_result_user_message_keeps_same_turn_invoke_credit
+test_pretool_credits_transcript_skill_load
+test_hook_ignores_other_ship_records
+test_missing_skills_record_counts_as_unloaded
 test_brief_reads_ov_meta_and_report
 
 echo "# all fm-owner-invoke-wait-check tests passed"

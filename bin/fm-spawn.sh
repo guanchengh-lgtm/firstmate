@@ -13,7 +13,10 @@
 #   as queued, in flight, or done, so a landed blocker cannot invent a new go gate.
 #   --ov records a distinct already-spawned outside-voice worker as ov= in
 #   ship meta. A filled ship Task requires it; builder self-review is not OV.
-#   bin/fm-owner-invoke-wait-check.sh owns the rule. --ov is ship-only.
+#   bin/fm-owner-invoke-wait-check.sh owns the rule. --ov is ship-only. A ship
+#   spawn also creates data/<id>/skills (empty loaded-skills record) and, when
+#   the OV worker already has data/<ov>/report.md, copies it to
+#   data/<id>/ov-report.md.
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
 #   spawn and refused on --scout and --secondmate spawns. Firstmate resolves both
 #   per task at intake (AGENTS.md section 7); data/projects.md holds the captain's
@@ -1468,7 +1471,7 @@ if [ "$KIND" != secondmate ]; then
   "$FM_ROOT/bin/fm-brief.sh" --check-worker "$KIND" "$BRIEF" || exit $?
 fi
 
-if [ "$KIND" = ship ] && [ -x "$FM_ROOT/bin/fm-owner-invoke-wait-check.sh" ]; then
+if [ "$KIND" = ship ] && [ "${ROLE:-}" != verifier ] && [ -x "$FM_ROOT/bin/fm-owner-invoke-wait-check.sh" ]; then
   ov_task=$(awk '
     /^# Task[[:space:]]*$/ { in_task = 1; next }
     in_task && /^# / { exit }
@@ -1496,6 +1499,27 @@ if [ "$KIND" = ship ] && [ -x "$FM_ROOT/bin/fm-owner-invoke-wait-check.sh" ]; th
     exit 1
   fi
   rm -f "$ov_turn"
+  mkdir -p "$DATA/$ID" || {
+    echo "error: could not create data directory for $ID" >&2
+    exit 2
+  }
+  if [ ! -e "$DATA/$ID/skills" ]; then
+    : > "$DATA/$ID/skills" || {
+      echo "error: could not create skills record for $ID" >&2
+      exit 2
+    }
+  elif [ -L "$DATA/$ID/skills" ] || [ ! -f "$DATA/$ID/skills" ]; then
+    echo "error: skills record path is not a regular file: $DATA/$ID/skills" >&2
+    exit 2
+  fi
+  if [ -n "${OV:-}" ] \
+    && [ -f "$DATA/$OV/report.md" ] && [ ! -L "$DATA/$OV/report.md" ] && [ -s "$DATA/$OV/report.md" ] \
+    && { [ ! -e "$DATA/$ID/ov-report.md" ] || { [ -f "$DATA/$ID/ov-report.md" ] && [ ! -L "$DATA/$ID/ov-report.md" ]; }; }; then
+    cp "$DATA/$OV/report.md" "$DATA/$ID/ov-report.md" || {
+      echo "error: could not write OV report record for $ID" >&2
+      exit 2
+    }
+  fi
 fi
 
 delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task mode

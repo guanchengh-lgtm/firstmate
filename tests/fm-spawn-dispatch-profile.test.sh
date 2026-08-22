@@ -784,6 +784,8 @@ test_spawn_refuses_filled_ship_without_ov() {
   meta="$HOME_DIR/state/$id.meta"
   assert_grep 'ov=spec-compile-check-ov' "$meta" \
     "spawn did not record ov= for the distinct OV worker"
+  [ -f "$HOME_DIR/data/$id/skills" ] || fail "spawn did not create data/$id/skills record"
+  [ ! -s "$HOME_DIR/data/$id/skills" ] || fail "fresh skills record should start empty"
 
   id=profile-ship-self-ov-z23
   rec=$(make_spawn_case profile-ship-self-ov claude "$id")

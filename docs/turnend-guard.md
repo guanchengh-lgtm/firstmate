@@ -37,7 +37,7 @@ It also requires `AGENTS.md`, `bin/`, and the effective state directory.
 
 For an in-scope primary, before the supervision check, the guard runs `bin/fm-sot-speech-check.sh` against registered file-backed SoT identifiers, then refuses an unchecked yen126/TradingView login or session-death block from a `tradingview-tools` task, then refuses a ready queued ticket that still lacks matching `state/<id>.meta` worker ownership, then runs `bin/fm-owner-invoke-wait-check.sh`.
 The speech helper's header owns the registry, read window, declared-unread escape, fail-open cases, and residual coverage.
-The owner-invoke helper's header owns held locked-next, the `OWNER_INVOKE_WAIT` marker, fog gather, ship durable-record gather (`state/*.meta` kind=ship, `data/<id>/skills`, `data/<id>/ov-report.md`), missing OV report, unloaded plan-eng-review, fail-closed CLI input, and residual coverage.
+The owner-invoke helper's header owns held locked-next, the `OWNER_INVOKE_WAIT` marker, fog gather, current-ship durable-record gather (`worktree=`/`FM_OWNER_INVOKE_SHIP`, `data/<id>/skills`, `data/<id>/ov-report.md`), missing OV report, unloaded plan-eng-review, fail-closed CLI input, and residual coverage.
 `bin/fm-turnend-guard.sh`'s header owns the yen126 session-diagnosis contract and still blocks under Claude `--claude` when `stop_hook_active` is true.
 A spawn or steer leaves that metadata; recording a concrete backlog blocker removes the ticket from `tasks-axi ready`.
 The ready-action and owner-invoke checks fail open when the tasks-axi backend cannot be read, honor `config/backlog-backend=manual`, have no skip flag, and still block under Claude `--claude` when `stop_hook_active` is true.
