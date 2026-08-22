@@ -50,7 +50,8 @@
 # Teardown proceeds only once the report exists, its named sources pass, and the shared
 # decision-hold completion gate verifies its captain-held and product-idea inventory.
 # When this task is ov= for a ship, a present scout report is also copied to
-# data/<ship>/ov-report.md for the owner-invoke durable gather.
+# data/<ship>/ov-report.md. The owner-invoke Stop ladder reads
+# data/<ov>/report.md, not that ship-side copy.
 # A task spawned with map_next=<id> has one additional unconditional completion
 # gate: that id must already exist in data/backlog.md under Queued, In flight,
 # or Done. The refusal runs before remote or local cleanup, is not bypassed by
@@ -2562,7 +2563,8 @@ if [ "$KIND" = scout ] && [ "$FORCE" != "--force" ]; then
 fi
 
 # When this task is the outside-voice worker for a ship, promote its scout
-# report into the ship's durable ov-report.md so turn-end can see it.
+# report into the ship's durable ov-report.md (ship-side copy; turn-end reads
+# data/<ov>/report.md).
 if [ -f "$DATA/$ID/report.md" ] && [ ! -L "$DATA/$ID/report.md" ] && [ -s "$DATA/$ID/report.md" ]; then
   for ov_ship_meta in "$STATE"/*.meta; do
     [ -f "$ov_ship_meta" ] && [ ! -L "$ov_ship_meta" ] || continue
