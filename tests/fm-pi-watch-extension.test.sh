@@ -2148,7 +2148,9 @@ printf 'guard ran after external healthy watcher\n' >&2
 exit 2
 SH
   chmod +x "$repo/bin/fm-watch-arm.sh" "$repo/bin/fm-turnend-guard.sh"
-  out=$(ARM_PLUGIN="$arm_plugin" GUARD_PLUGIN="$guard_plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_GUARD_LOG="$guard_log" node 2>&1 <<'EOF'
+  # HOME isolates bash -lc from the runner profile. External healthy is a
+  # terminal arm status (no retry storm); the turn-end guard must still fire.
+  out=$(ARM_PLUGIN="$arm_plugin" GUARD_PLUGIN="$guard_plugin" HOME="$home" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_GUARD_LOG="$guard_log" FM_OPENCODE_ARM_READY_TIMEOUT_MS=2000 node 2>&1 <<'EOF'
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
@@ -2193,10 +2195,13 @@ if (!promptBody.includes("TURN WOULD END BLIND")) {
   console.error(`missing blind-turn prompt: ${promptBody}`);
   process.exit(1);
 }
+process.exit(0);
 EOF
 )
   status=$?
-  expect_code 0 "$status" "OpenCode watch plugin must not treat external healthy output as an owned arm"
+  if [ "$status" -ne 0 ]; then
+    fail "OpenCode watch plugin must not treat external healthy output as an owned arm: expected exit 0, got $status${out:+; $out}"
+  fi
   [ -z "$out" ] || fail "OpenCode external-healthy test printed output: $out"
   pass "OpenCode healthy arm output does not suppress the turn-end guard"
 }
