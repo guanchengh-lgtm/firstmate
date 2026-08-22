@@ -327,6 +327,15 @@ Each non-comment row is tab-separated: `class_id <TAB> miss_regex`.
 `bin/fm-teardown.sh`'s header owns the match, scout exemption, enforcing-file set, and the refusal that a queued next slice does not discharge.
 See [`class-repeat-gate.md`](class-repeat-gate.md) for what the check covers and what it does not, and [`defect-classes.example.tsv`](defect-classes.example.tsv) for a non-live copyable shape.
 
+## Class-too-narrow claims check
+
+A new class claims file under `docs/verification/` must state a property, name two or more instances in different clothes, and must not name the class as one command or situation while those instances are a broader mechanism.
+[`bin/fm-class-too-narrow-check.sh`](../bin/fm-class-too-narrow-check.sh)'s header owns the claims JSON fields, rule ids, structural exit 2, exact-count regression flags, and residual coverage.
+See [`class-too-narrow-check.md`](class-too-narrow-check.md) for what the check covers and what it does not.
+Claims live in [`verification/class-too-narrow-check-claims.json`](verification/class-too-narrow-check-claims.json).
+English "broader than" cannot be 100%.
+That limit is stated next to the check.
+
 ## Crew dispatch profiles (config/crew-dispatch.json)
 
 `config/crew-dispatch.json` is an optional local, gitignored file containing natural-language rules that firstmate reads before dispatching a crewmate or scout.
