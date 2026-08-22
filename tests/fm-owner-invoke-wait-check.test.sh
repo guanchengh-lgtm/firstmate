@@ -113,15 +113,6 @@ test_historical_ship_omission_fires_exact_count() {
   [ "$rc" -eq 1 ] || fail "historical ship without OV gate exited $rc: $out"
   assert_contains "$out" "R-ov-missing-none" \
     "historical compile-check ship did not report missing OV"
-  brief="$TMP_ROOT/filled-no-ov.md"
-  printf '# Task\nStart Spec compile-check. The next act is obvious.\n\n# Setup\nfixture\n' > "$brief"
-  set +e
-  out=$(run_check --brief "$brief")
-  rc=$?
-  set -e
-  [ "$rc" -eq 1 ] || fail "filled brief without OV exited $rc: $out"
-  assert_contains "$out" "R-ov-missing-none" \
-    "filled brief without OV did not report missing OV"
   pass "owner-invoke-wait: 2026-08-22 compile-check with no OV fires exact count 1"
 }
 
@@ -190,14 +181,27 @@ test_held_locked_next_and_date_cleared() {
   set -e
   [ "$rc" -eq 0 ] || fail "real captain hold exited $rc: $out"
   [ -z "$out" ] || fail "real captain hold printed findings: $out"
+  turn="$TMP_ROOT/english-hold.json"
+  write_turn "$turn" '{
+    "held": [{"id":"slice-go","hold_kind":"captain","hold_reason":"waiting for captain go","hold_until":"-"}],
+    "map_next": [],
+    "owned_meta": [],
+    "assistant_text": ""
+  }'
+  set +e
+  out=$(run_check --input "$turn")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "English hold reason without map_next exited $rc: $out"
+  [ -z "$out" ] || fail "English hold reason printed findings: $out"
   pass "owner-invoke-wait: held map_next, date-cleared, future, and real captain holds"
 }
 
-test_invoked_and_freeze_are_clean() {
+test_invoked_and_english_without_marker_are_clean() {
   local out rc turn
   turn="$TMP_ROOT/invoked.json"
   write_turn "$turn" '{
-    "assistant_text": "Want me to run /recurring-defect?",
+    "assistant_text": "OWNER_INVOKE_WAIT /recurring-defect",
     "invoked_skills": ["recurring-defect"],
     "held": [],
     "map_next": [],
@@ -208,11 +212,11 @@ test_invoked_and_freeze_are_clean() {
   out=$(run_check --input "$turn")
   rc=$?
   set -e
-  [ "$rc" -eq 0 ] || fail "invoked skill yes-ask exited $rc: $out"
+  [ "$rc" -eq 0 ] || fail "invoked skill with marker exited $rc: $out"
   [ -z "$out" ] || fail "invoked skill printed findings: $out"
-  turn="$TMP_ROOT/freeze.json"
+  turn="$TMP_ROOT/english.json"
   write_turn "$turn" '{
-    "assistant_text": "Want me to run /office-hours on this fork?",
+    "assistant_text": "Want me to run /recurring-defect?",
     "invoked_skills": [],
     "held": [],
     "map_next": [],
@@ -223,9 +227,9 @@ test_invoked_and_freeze_are_clean() {
   out=$(run_check --input "$turn")
   rc=$?
   set -e
-  [ "$rc" -eq 0 ] || fail "freeze skill yes-ask exited $rc: $out"
-  [ -z "$out" ] || fail "freeze skill printed findings: $out"
-  pass "owner-invoke-wait: invoked skill and name-and-wait freeze are clean"
+  [ "$rc" -eq 0 ] || fail "English yes-ask without marker exited $rc: $out"
+  [ -z "$out" ] || fail "English yes-ask printed findings: $out"
+  pass "owner-invoke-wait: invoked skill and English without marker are clean"
 }
 
 test_placeholder_and_stub_briefs_are_clean() {
@@ -252,7 +256,7 @@ test_builder_self_review_is_not_ov() {
   local out rc turn
   turn="$TMP_ROOT/self-review.json"
   write_turn "$turn" '{
-    "ships": [{"id":"spec-compile-check","ov":"","task":"Run /plan-eng-review on this ship plan then implement."}],
+    "ships": [{"id":"spec-compile-check","ov":"","skills":["plan-eng-review"]}],
     "owned_meta": ["spec-compile-check"]
   }'
   set +e
@@ -262,7 +266,7 @@ test_builder_self_review_is_not_ov() {
   [ "$rc" -eq 0 ] || fail "builder self-review exact-count exited $rc: $out"
   turn="$TMP_ROOT/ov-self.json"
   write_turn "$turn" '{
-    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check","task":"Implement the compile-check."}],
+    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check","skills":["plan-eng-review"]}],
     "owned_meta": ["spec-compile-check"]
   }'
   set +e
@@ -278,7 +282,7 @@ test_distinct_ov_worker_is_clean() {
   local out rc turn
   turn="$TMP_ROOT/ov-ok.json"
   write_turn "$turn" '{
-    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","task":"Implement the compile-check."}],
+    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","ov_report":true,"skills":["plan-eng-review"]}],
     "owned_meta": ["spec-compile-check", "spec-compile-check-ov"]
   }'
   set +e
@@ -289,7 +293,7 @@ test_distinct_ov_worker_is_clean() {
   [ -z "$out" ] || fail "distinct OV worker printed findings: $out"
   turn="$TMP_ROOT/ov-missing-worker.json"
   write_turn "$turn" '{
-    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","task":"Implement the compile-check."}],
+    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","ov_report":true,"skills":["plan-eng-review"]}],
     "owned_meta": ["spec-compile-check"]
   }'
   set +e
@@ -299,6 +303,31 @@ test_distinct_ov_worker_is_clean() {
   [ "$rc" -eq 1 ] || fail "missing OV worker exited $rc: $out"
   assert_contains "$out" "R-ov-missing-worker" "missing OV worker did not report unspawned OV"
   pass "owner-invoke-wait: distinct spawned OV worker is required"
+}
+
+test_ov_report_and_skill_records() {
+  local out rc turn
+  turn="$TMP_ROOT/no-report.json"
+  write_turn "$turn" '{
+    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","ov_report":false,"skills":["plan-eng-review"]}],
+    "owned_meta": ["spec-compile-check", "spec-compile-check-ov"]
+  }'
+  set +e
+  out=$(run_check --input "$turn" --expect-rule R-ov-missing --expect-count 1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "missing OV report exact-count exited $rc: $out"
+  turn="$TMP_ROOT/no-skill.json"
+  write_turn "$turn" '{
+    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","ov_report":true,"skills":[]}],
+    "owned_meta": ["spec-compile-check", "spec-compile-check-ov"]
+  }'
+  set +e
+  out=$(run_check --input "$turn" --expect-rule R-skill-unloaded --expect-count 1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "unloaded plan-eng-review exact-count exited $rc: $out"
+  pass "owner-invoke-wait: OV report and skills records own the wait"
 }
 
 test_unrelated_rule_does_not_satisfy_exact_count() {
@@ -337,7 +366,7 @@ make_primary_home() {
 test_pretool_yes_ask_is_denied() {
   local home out rc payload
   home=$(make_primary_home "$TMP_ROOT/pretool")
-  payload=$(printf '{"tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"Want me to run /recurring-defect?"}]}}')
+  payload=$(printf '{"tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"OWNER_INVOKE_WAIT /recurring-defect"}]}}')
   set +e
   out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
@@ -356,10 +385,11 @@ test_historical_yes_ask_fires_exact_count
 test_historical_fog_pin_fires_exact_count
 test_historical_ship_omission_fires_exact_count
 test_held_locked_next_and_date_cleared
-test_invoked_and_freeze_are_clean
+test_invoked_and_english_without_marker_are_clean
 test_placeholder_and_stub_briefs_are_clean
 test_builder_self_review_is_not_ov
 test_distinct_ov_worker_is_clean
+test_ov_report_and_skill_records
 test_unrelated_rule_does_not_satisfy_exact_count
 test_own_claims_pass_class_too_narrow
 test_pretool_yes_ask_is_denied

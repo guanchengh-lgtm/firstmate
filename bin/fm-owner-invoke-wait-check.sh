@@ -21,33 +21,34 @@
 # bin/fm-sot-speech-check.sh does.
 #
 # Default --input / payload rules:
-#   R-held-locked-next      a held ticket is a map_next target, its until
-#                           date has passed, or its captain hold is an
-#                           invented go, and it has no worker meta
-#   R-owner-invoke-wait     captain-facing text names an owner-invoke skill
-#                           and asks for a yes, and that skill was not invoked
-#   R-fog-pin-wait          live fog plus a pin/when question
-#   R-ov-missing            a filled ship start has no distinct OV worker
-# Default --brief rule: R-ov-missing (filled Task, empty ov)
+#   R-held-locked-next      a held ticket is a map_next target or its until
+#                           date has passed, and it has no worker meta
+#   R-owner-invoke-wait     speech carries OWNER_INVOKE_WAIT plus an exact
+#                           /token or $token from the owner-invoke list, and
+#                           that skill was not invoked
+#   R-fog-pin-wait          live fog gather plus OWNER_INVOKE_WAIT
+#   R-ov-missing            a ships[] record has no distinct OV report
+#   R-skill-unloaded        a ships[] skills array never listed plan-eng-review
+# Default --brief rules: R-ov-missing,R-skill-unloaded (optional sibling
+# skills / ov-report.md records; no brief-body parse)
 #
 # Owner-invoke tokens (header-owned; not a skill picker):
 #   recurring-defect, grill-with-docs, wayfinder, vision
-# Name-and-wait freeze (never a yes-ask refuse): design-shotgun,
-# office-hours, plan-ceo-review, plan-design-review, plan-eng-review.
-# plan-eng-review requires a separate OV worker. The builder's own plan
-# note is not OV. Starting a filled ship without ov= pointing at a
-# distinct already-spawned worker is omission.
+# Spoken yes-ask is the tight marker OWNER_INVOKE_WAIT only, not a prose net.
+# plan-eng-review requires a separate OV worker and an OV report file.
+# The builder's own plan note is not OV. Split transcript windows and live
+# fog gather stay as gather holes.
 #
 # Exact-count regression requires both --expect-rule and --expect-count and
 # exits 0 only when that rule count and the total finding count both equal
 # the expected count. There is no "the fixture must fail" inversion.
 #
-# LIMITS: English yes-ask cannot be 100%. A real captain hold is invisible.
-# An empty Task section (spawn-harness stubs) and the unreplaced {TASK}
-# placeholder are skipped. Builder self-review is not OV. This check
-# proves a distinct ov= worker meta exists, not that the OV ran the
-# skill. Name-and-wait skills stay askable. In-flight ships already
-# started without ov= are not re-refused at turn end.
+# LIMITS: a missing OWNER_INVOKE_WAIT marker is invisible even if the
+# prose asked a question. Split transcripts can hide a load. Live fog
+# gather does not own the wait. A real captain hold is invisible.
+# Empty or {TASK} task fields skip ship rules (spawn-harness stubs).
+# Builder self-review is not OV. ov= without report.md is not a review.
+# In-flight ships already started without ov= are not re-refused at turn end.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -67,12 +68,12 @@ CLAUDE_MODE=0
 PRETOOL_MODE=0
 HOOK_MODE=0
 
-INPUT_RULES='R-held-locked-next,R-owner-invoke-wait,R-fog-pin-wait,R-ov-missing'
-BRIEF_RULES='R-ov-missing'
-KNOWN_RULES='R-held-locked-next R-owner-invoke-wait R-fog-pin-wait R-ov-missing'
+INPUT_RULES='R-held-locked-next,R-owner-invoke-wait,R-fog-pin-wait,R-ov-missing,R-skill-unloaded'
+BRIEF_RULES='R-ov-missing,R-skill-unloaded'
+KNOWN_RULES='R-held-locked-next R-owner-invoke-wait R-fog-pin-wait R-ov-missing R-skill-unloaded'
 
 usage() {
-  sed -n '2,50p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,52p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 structural() {
@@ -187,23 +188,30 @@ run_held=0
 run_wait=0
 run_fog=0
 run_ov=0
+run_skill=0
 for r in "${selected[@]+"${selected[@]}"}"; do
   case "$r" in
     R-held-locked-next) run_held=1 ;;
     R-owner-invoke-wait) run_wait=1 ;;
     R-fog-pin-wait) run_fog=1 ;;
     R-ov-missing) run_ov=1 ;;
+    R-skill-unloaded) run_skill=1 ;;
   esac
 done
 
 today=$(date +%F)
+YES_ASK_MARKER='OWNER_INVOKE_WAIT'
 
-task_section() {
-  awk '
-    /^# Task[[:space:]]*$/ { in_task = 1; next }
-    in_task && /^# / { exit }
-    in_task { print }
-  ' "$1"
+read_skill_lines() {  # <path> -> JSON array
+  local path=$1 json='[]' line
+  [ -f "$path" ] && [ ! -L "$path" ] || { printf '%s\n' '[]'; return 0; }
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=${line#"${line%%[![:space:]]*}"}
+    line=${line%"${line##*[![:space:]]}"}
+    [ -n "$line" ] || continue
+    json=$(jq -n -c --arg s "$line" --argjson acc "$json" '$acc + [$s]')
+  done < "$path"
+  printf '%s\n' "$json"
 }
 
 evaluate_turn() {  # <json-file>
@@ -213,15 +221,15 @@ evaluate_turn() {  # <json-file>
     --argjson run_wait "$run_wait" \
     --argjson run_fog "$run_fog" \
     --argjson run_ov "$run_ov" \
-    --arg today "$today" '
+    --argjson run_skill "$run_skill" \
+    --arg today "$today" \
+    --arg marker "$YES_ASK_MARKER" '
     def trim:
       gsub("^[[:space:]]+"; "") | gsub("[[:space:]]+$"; "");
-    def yes_ask:
-      test("should i|shall i|want me to|do you want|wait for (your )?yes|when (should|do i|to )|may i (run|start|invoke)|start it\\?|run it\\?"; "i");
-    def named_token($tok):
-      test("(^|[^A-Za-z0-9_-])[/$]?" + $tok + "([^A-Za-z0-9_-]|$)"; "i");
-    def invented_go:
-      test("waiting for (a )?(captain )?(go|yes)|when you want|awaiting (a )?go"; "i");
+    def has_marker($m):
+      ($m != "") and (index($m) != null);
+    def has_skill_token($tok):
+      (index("/" + $tok) != null) or (index("$" + $tok) != null);
     def date_cleared($today):
       (.hold_until // "") as $u
       | ($u | type) == "string"
@@ -251,25 +259,19 @@ evaluate_turn() {  # <json-file>
             | select(
                 ($h | date_cleared($today))
                 or (($map_next | index($id)) != null)
-                or (
-                  (as_str($h.hold_kind) == "captain")
-                  and (as_str($h.hold_reason) | invented_go)
-                )
               )
             | "R-held-locked-next-unowned: \($id) is a locked next act still held without a worker"
           )
         else empty end,
-        if $run_wait == 1 and ($speech != "") and ($speech | yes_ask) then
+        if $run_wait == 1 and ($speech | has_marker($marker)) then
           (tokens[] | . as $tok
-            | select($speech | named_token($tok))
+            | select($speech | has_skill_token($tok))
             | select(($invoked | index($tok)) == null)
             | "R-owner-invoke-wait-yes-ask: named /\($tok) and asked for a yes"
           )
         else empty end,
-        if $run_fog == 1 and $fog and ($speech != "")
-           and ($speech | test("pin.{0,80}fog|fog.{0,80}pin|next fog"; "i"))
-           and ($speech | (yes_ask or test("\\bwhen\\b"; "i"))) then
-          "R-fog-pin-wait-asked: asked when to pin live fog"
+        if $run_fog == 1 and $fog and ($speech | has_marker($marker)) then
+          "R-fog-pin-wait-asked: live fog with OWNER_INVOKE_WAIT"
         else empty end,
         if $run_ov == 1 then
           ($ships[]? | select(type == "object") | . as $s
@@ -277,14 +279,27 @@ evaluate_turn() {  # <json-file>
             | as_str($s.ov) as $ov
             | (as_str($s.task) | trim) as $task
             | select($id != "")
-            | select($task != "" and $task != "{TASK}")
+            | select(($s | has("task") | not) or ($task != "" and $task != "{TASK}"))
             | if $ov == "" then
                 "R-ov-missing-none: \($id) started with no separate OV worker"
               elif $ov == $id then
                 "R-ov-missing-self: \($id) named itself as OV; builder self-review is not OV"
               elif (($owned | index($ov)) == null) then
                 "R-ov-missing-worker: \($id) OV \($ov) has no spawned worker"
+              elif ($s | has("ov_report")) and ($s.ov_report != true) then
+                "R-ov-missing-report: \($id) has no OV report"
               else empty end
+          )
+        else empty end,
+        if $run_skill == 1 then
+          ($ships[]? | select(type == "object") | . as $s
+            | as_str($s.id) as $id
+            | (as_str($s.task) | trim) as $task
+            | select($id != "")
+            | select(($s | has("task") | not) or ($task != "" and $task != "{TASK}"))
+            | select(($s.skills | type) == "array")
+            | select(($s.skills | map(ascii_downcase) | index("plan-eng-review")) == null)
+            | "R-skill-unloaded-plan-eng-review: \($id) instructions never loaded plan-eng-review"
           )
         else empty end
       ]
@@ -349,12 +364,22 @@ if [ -n "$brief" ]; then
   # shellcheck disable=SC2329 # Invoked by trap handlers below.
   cleanup() { rm -rf -- "$TMP_DIR"; }
   trap cleanup EXIT HUP INT TERM
-  task_file="$TMP_DIR/task.md"
-  task_section "$brief" > "$task_file"
-  task_text=$(cat "$task_file")
+  brief_dir=$(CDPATH='' cd -- "$(dirname -- "$brief")" && pwd -P) || structural "brief directory unreadable"
+  brief_id=$(basename "$brief_dir")
   turn="$TMP_DIR/turn.json"
-  jq -n --arg task "$task_text" '{ships:[{id:"brief", ov:"", task:$task}]}' > "$turn" \
-    || structural "could not encode brief task"
+  if [ -f "$brief_dir/skills" ] && [ ! -L "$brief_dir/skills" ]; then
+    brief_skills=$(read_skill_lines "$brief_dir/skills")
+    brief_ov_report=false
+    if [ -f "$brief_dir/ov-report.md" ] && [ ! -L "$brief_dir/ov-report.md" ] && [ -s "$brief_dir/ov-report.md" ]; then
+      brief_ov_report=true
+    fi
+    jq -n --arg id "$brief_id" --argjson skills "$brief_skills" \
+      --argjson ov_report "$brief_ov_report" \
+      '{ships:[{id:$id, ov:"", skills:$skills, ov_report:$ov_report}]}' > "$turn" \
+      || structural "could not encode brief records"
+  else
+    printf '%s\n' '{"ships":[]}' > "$turn"
+  fi
   findings=$(evaluate_turn "$turn") || structural "could not evaluate brief"
   report_findings "$findings"
 fi

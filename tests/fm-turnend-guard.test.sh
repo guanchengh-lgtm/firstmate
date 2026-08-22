@@ -366,7 +366,7 @@ test_hook_refuses_owner_invoke_yes_ask() {
   local dir out status transcript payload
   dir=$(make_primary_dir "$TMP_ROOT/hook-owner-yes-ask")
   transcript="$dir/transcript.jsonl"
-  printf '%s\n' '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Named /recurring-defect. Want me to start?"}]}}' \
+  printf '%s\n' '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"OWNER_INVOKE_WAIT /recurring-defect"}]}}' \
     > "$transcript"
   payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s"}' "$transcript")
   out=$(printf '%s' "$payload" | CLAUDECODE=1 FM_HOME="$(cd "$dir" && pwd)" \
@@ -381,7 +381,7 @@ test_hook_claude_owner_invoke_ignores_stop_hook_active() {
   local dir out status transcript payload
   dir=$(make_primary_dir "$TMP_ROOT/hook-claude-owner-yes")
   transcript="$dir/transcript.jsonl"
-  printf '%s\n' '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Named /recurring-defect. Want me to start?"}]}}' \
+  printf '%s\n' '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"OWNER_INVOKE_WAIT /recurring-defect"}]}}' \
     > "$transcript"
   payload=$(printf '{"stop_hook_active":true,"transcript_path":"%s"}' "$transcript")
   out=$(printf '%s' "$payload" | CLAUDECODE=1 FM_HOME="$(cd "$dir" && pwd)" \

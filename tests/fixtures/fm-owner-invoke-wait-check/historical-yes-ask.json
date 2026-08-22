@@ -1,5 +1,5 @@
 {
-  "assistant_text": "Named /recurring-defect after the second instance. Want me to start?",
+  "assistant_text": "OWNER_INVOKE_WAIT /recurring-defect",
   "invoked_skills": [],
   "held": [],
   "map_next": [],

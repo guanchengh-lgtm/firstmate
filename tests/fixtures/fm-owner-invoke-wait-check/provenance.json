@@ -1,4 +1,4 @@
 {
   "date": "2026-08-22",
-  "derivation": "Reconstructed from the 2026-08-22 owner-invoke-wait sitting. historical-yes-ask.json is the named /recurring-defect wait. historical-fog-pin.json is the when-to-pin-fog ask while fog was live. historical-ship-without-ov.json is Spec compile-check started with no separate OV worker."
+  "derivation": "Reconstructed from the 2026-08-22 sitting as durable records plus the OWNER_INVOKE_WAIT marker, not as English-prose regex."
 }
