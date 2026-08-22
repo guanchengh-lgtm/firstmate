@@ -117,6 +117,8 @@ install_guard_scripts() {
   cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/fm-wake-lib.sh"
   cp "$ROOT/bin/fm-classify-lib.sh" "$dir/bin/fm-classify-lib.sh"
   cp "$ROOT/bin/fm-sot-speech-check.sh" "$dir/bin/fm-sot-speech-check.sh"
+  cp "$ROOT/bin/fm-answer-lock-check.sh" "$dir/bin/fm-answer-lock-check.sh"
+  cp "$ROOT/bin/fm-stow-open-lock-check.sh" "$dir/bin/fm-stow-open-lock-check.sh"
   cp "$ROOT/bin/fm-spec-compile-check.sh" "$dir/bin/fm-spec-compile-check.sh"
   cp "$ROOT/bin/fm-spec-compile-stop-check.sh" "$dir/bin/fm-spec-compile-stop-check.sh"
   cp "$ROOT/bin/fm-owner-invoke-wait-check.sh" "$dir/bin/fm-owner-invoke-wait-check.sh"
@@ -124,7 +126,7 @@ install_guard_scripts() {
   cp "$ROOT/bin/fm-reduce-check.sh" "$dir/bin/fm-reduce-check.sh"
   mkdir -p "$dir/docs"
   cp -R "$ROOT/docs/supervision-protocols" "$dir/docs/supervision-protocols"
-  chmod +x "$dir/bin/fm-turnend-guard.sh" "$dir/bin/fm-turnend-guard-grok.sh" "$dir/bin/fm-operational-input.sh" "$dir/bin/fm-supervision-instructions.sh" "$dir/bin/fm-harness.sh" "$dir/bin/fm-sot-speech-check.sh" "$dir/bin/fm-spec-compile-check.sh" "$dir/bin/fm-spec-compile-stop-check.sh" "$dir/bin/fm-owner-invoke-wait-check.sh" "$dir/bin/fm-reduce-check.sh"
+  chmod +x "$dir/bin/fm-turnend-guard.sh" "$dir/bin/fm-turnend-guard-grok.sh" "$dir/bin/fm-operational-input.sh" "$dir/bin/fm-supervision-instructions.sh" "$dir/bin/fm-harness.sh" "$dir/bin/fm-sot-speech-check.sh" "$dir/bin/fm-answer-lock-check.sh" "$dir/bin/fm-stow-open-lock-check.sh" "$dir/bin/fm-spec-compile-check.sh" "$dir/bin/fm-spec-compile-stop-check.sh" "$dir/bin/fm-owner-invoke-wait-check.sh" "$dir/bin/fm-reduce-check.sh"
 }
 
 mark_codex_hook_root() {
@@ -783,6 +785,62 @@ test_hook_loop_guard_allows_retry() {
   pass "fm-turnend-guard: stop_hook_active=true always allows the stop (never blocks twice in one turn)"
 }
 
+plant_answer_lock_clothes() {  # <dir>
+  local dir=$1
+  mkdir -p "$dir/data/wf-map2-v2/tickets" "$dir/data/decisions"
+  cp "$ROOT/tests/fixtures/fm-answer-lock-check/clothes-pick-still-open/tickets/N18-arbitration.fixture" \
+    "$dir/data/wf-map2-v2/tickets/N18-arbitration.md"
+  cp "$ROOT/tests/fixtures/fm-answer-lock-check/clothes-pick-still-open/decisions/map2-counter-metric-2026-08-22.fixture" \
+    "$dir/data/decisions/map2-counter-metric-2026-08-22.md"
+}
+
+test_hook_refuses_answer_lock_on_primary() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-answer-lock")
+  plant_answer_lock_clothes "$dir"
+  out=$(run_hook "$dir" false); status=$?
+  expect_code 2 "$status" "turn end must refuse a Map 2 ticket that stays OPEN after a pick"
+  assert_contains "$out" "ANSWER-TIME LOCK REFUSED" "answer-lock refusal did not use the Stop banner"
+  assert_contains "$out" "Point the ticket at the real lock, or revert status: to OPEN." \
+    "answer-lock refusal did not name the two escapes"
+  assert_not_contains "$out" "write a lock" "answer-lock refusal told the seat to write a lock"
+  pass "fm-turnend-guard: answer-time lock refuses after primary scope"
+}
+
+test_hook_answer_lock_loop_guard_allows_retry() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-answer-lock-loop")
+  plant_answer_lock_clothes "$dir"
+  out=$(run_hook "$dir" true); status=$?
+  expect_code 0 "$status" "answer-lock must sit behind the same stop_hook_active allow as SoT speech"
+  [ -z "$out" ] || fail "answer-lock loop-guarded retry produced output: $out"
+  pass "fm-turnend-guard: answer-lock is behind the SoT speech loop guard"
+}
+
+test_hook_claude_answer_lock_ignores_stop_hook_active() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/hook-claude-answer-lock")
+  plant_answer_lock_clothes "$dir"
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
+  expect_code 2 "$status" "--claude mode must still refuse answer-lock when stop_hook_active=true"
+  assert_contains "$out" "ANSWER-TIME LOCK REFUSED" \
+    "claude answer-lock refusal did not use the Stop banner under stop_hook_active"
+  pass "fm-turnend-guard --claude: stop_hook_active cannot skip answer-time lock"
+}
+
+test_hook_answer_lock_inert_in_crewmate_worktree() {
+  local base dir out status
+  base="$TMP_ROOT/hook-answer-lock-crew-base"
+  dir="$TMP_ROOT/hook-answer-lock-crew-wt"
+  make_crewmate_worktree_dir "$base" "$dir" >/dev/null
+  plant_answer_lock_clothes "$dir"
+  : > "$dir/state/task1.meta"
+  out=$(run_hook "$dir" false); status=$?
+  expect_code 0 "$status" "answer-lock must not run before primary scope in a child worktree"
+  [ -z "$out" ] || fail "answer-lock produced output inside a crewmate worktree: $out"
+  pass "fm-turnend-guard: answer-lock stays inert in a crewmate/scout worktree"
+}
+
 # A secondmate's OWN home runs a primary firstmate session and must be guarded
 # exactly like the main primary. This was the guard's proven blind spot: the
 # .fm-secondmate-home marker used to early-exit here, so an overnight secondmate
@@ -1127,7 +1185,7 @@ test_grok_adapter_missing_jq_and_no_supervision_allow() {
   [ ! -e "$log" ] || fail "missing jq started a resume process"
 
   dir=$(make_primary_dir "$TMP_ROOT/grok-native-no-work")
-  out=$(printf '%s' '{"sessionId":"x","stopHookActive":false}' | GROK_WORKSPACE_ROOT="$dir" bash "$dir/bin/fm-turnend-guard-grok.sh" 2>&1); status=$?
+  out=$(printf '%s' '{"sessionId":"x","stopHookActive":false}' | FM_HOME="$dir" GROK_WORKSPACE_ROOT="$dir" bash "$dir/bin/fm-turnend-guard-grok.sh" 2>&1); status=$?
   expect_code 0 "$status" "healthy no-supervision-needed native stop must allow"
   [ -z "$out" ] || fail "no-supervision-needed native stop produced output: $out"
   pass "fm-turnend-guard-grok: missing jq and no-supervision-needed stops stay silent and bounded"
@@ -1989,6 +2047,9 @@ test_hook_x_mode_only_blocks_in_default_mode
 test_hook_ignores_repo_state_when_fm_home_set
 test_hook_uses_state_override
 test_hook_loop_guard_allows_retry
+test_hook_refuses_answer_lock_on_primary
+test_hook_answer_lock_loop_guard_allows_retry
+test_hook_answer_lock_inert_in_crewmate_worktree
 test_hook_blocks_in_secondmate_own_home
 test_hook_silent_in_idle_secondmate_home
 test_hook_secondmate_loop_guard_allows_retry
@@ -2016,6 +2077,7 @@ test_pi_extension_injects_once_per_logical_agent_run
 test_pi_extension_retries_after_followup_delivery_failure
 test_hook_claude_mode_reblocks_stop_hook_active_when_unhealthy
 test_hook_claude_ready_action_ignores_stop_hook_active
+test_hook_claude_answer_lock_ignores_stop_hook_active
 test_hook_claude_session_block_ignores_stop_hook_active
 test_hook_claude_mode_reblocks_x_mode_without_tasks
 test_hook_claude_mode_allows_when_autoarm_owner_alive
