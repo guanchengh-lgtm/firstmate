@@ -29,6 +29,9 @@
 #   - reread-firstmate: yes|no    (did the running firstmate's instructions change)
 #   - nudge-secondmates: fm-<id>...|none   (updated live secondmates to nudge)
 #
+# After a successful firstmate fast-forward, or when firstmate is already current, it also runs bin/fm-pi-midline-slash-patch.sh so a wiped Pi dist is repaired on the next update.
+# An honest patch skip does not fail the git update.
+#
 # Usage: fm-update.sh [--help]
 set -eu
 
@@ -57,6 +60,11 @@ reread_firstmate="no"
 ff_target "$FM_ROOT" "firstmate" update-remote no no "$CONFIG"
 if [ "$FF_STATUS" = "updated" ] && [ -n "$FF_INSTR" ]; then
   reread_firstmate="yes"
+fi
+
+if [ "$FF_STATUS" = "updated" ] || [ "$FF_STATUS" = "current" ]; then
+  # Honest skip or layout fail must not abort the rest of the fleet update.
+  "$SCRIPT_DIR/fm-pi-midline-slash-patch.sh" || true
 fi
 
 # --- secondmates -----------------------------------------------------------

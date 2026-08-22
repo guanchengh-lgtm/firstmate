@@ -17,6 +17,9 @@
 #   - Secondmate homes resolve from both state/<id>.meta and the
 #     data/secondmates.md registry, deduped, and the firstmate repo is never
 #     re-processed as one of its own secondmates.
+#   - After firstmate updates or is already current, the Pi mid-line slash
+#     dist patch is reapplied; an honest skip or layout fail does not abort
+#     the git update, and a skipped firstmate does not patch.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -127,7 +130,21 @@ add_standalone_sm() {
 
 run_update() {
   local w=$1
-  FM_ROOT_OVERRIDE="$w/main" FM_HOME="$w/home" "$UPDATE" 2>/dev/null
+  # Isolate the Pi dist patch from the live global install. Tests that exercise
+  # the helper set FM_PI_TUI_DIST to a fixture before calling run_update.
+  FM_ROOT_OVERRIDE="$w/main" FM_HOME="$w/home" \
+    FM_PI_TUI_DIST="${FM_PI_TUI_DIST:-$w/absent-pi-tui-dist}" \
+    "$UPDATE" 2>/dev/null
+}
+
+CLEAN_PI_TUI_DIST="$ROOT/tests/fixtures/fm-pi-midline-slash-patch/clean"
+
+copy_clean_pi_tui_dist() {
+  local dest=$1
+  mkdir -p "$dest/components"
+  cp "$CLEAN_PI_TUI_DIST/components/editor.js" "$dest/components/editor.js"
+  cp "$CLEAN_PI_TUI_DIST/autocomplete.js" "$dest/autocomplete.js"
+  cp "$CLEAN_PI_TUI_DIST/components/editor.d.ts" "$dest/components/editor.d.ts"
 }
 
 # --- T1: no upstream falls back to origin; FF, not a merge ------------------
@@ -509,6 +526,81 @@ test_secondmate_bad_update_remote_continues_fleet() {
   pass "secondmate update-remote refusal keeps the fleet sweep running"
 }
 
+test_pi_midline_patch_on_updated_and_already_current() {
+  local w dist out
+  w=$(new_world pi-midline)
+  dist="$w/pi-tui-dist"
+  copy_clean_pi_tui_dist "$dist"
+  bump_origin "$w" instr
+
+  out=$(FM_PI_TUI_DIST="$dist" run_update "$w")
+  assert_contains "$out" "firstmate: updated " "firstmate fast-forwarded"
+  assert_contains "$out" "pi-midline-slash: patched " \
+    "updated firstmate did not reapply the Pi mid-line patch"
+  assert_grep "isAtSlashCommandStart" "$dist/components/editor.js" \
+    "updated firstmate left the clean dist unpatched"
+
+  copy_clean_pi_tui_dist "$dist"
+  out=$(FM_PI_TUI_DIST="$dist" run_update "$w")
+  assert_contains "$out" "firstmate: already current" "second update was not already current"
+  assert_contains "$out" "pi-midline-slash: patched " \
+    "already-current firstmate did not reapply a wiped Pi dist"
+  assert_grep "isAtSlashCommandStart" "$dist/components/editor.js" \
+    "already-current firstmate left the wiped dist unpatched"
+  pass "fm-update.sh reapplies the Pi mid-line patch when firstmate updates or is current"
+}
+
+test_pi_midline_skip_does_not_block_update() {
+  local w out
+  w=$(new_world pi-midline-skip)
+  bump_origin "$w" instr
+
+  out=$(run_update "$w")
+  assert_contains "$out" "firstmate: updated " "firstmate fast-forwarded"
+  assert_contains "$out" "pi-midline-slash: skipped: Pi tui dist not found" \
+    "missing Pi dist did not print an honest skip"
+  assert_contains "$out" "reread-firstmate: yes" "honest patch skip blocked the git update summary"
+  pass "fm-update.sh continues when the Pi mid-line patch skips"
+}
+
+test_pi_midline_not_run_when_firstmate_skipped() {
+  local w dist out
+  w=$(new_world pi-midline-skipped-ff)
+  dist="$w/pi-tui-dist"
+  copy_clean_pi_tui_dist "$dist"
+  bump_origin "$w" instr
+  git -C "$w/main" checkout -q -b feature/wip
+
+  out=$(FM_PI_TUI_DIST="$dist" run_update "$w")
+  assert_contains "$out" "firstmate: skipped: on feature/wip, expected main" \
+    "off-default firstmate skipped"
+  assert_not_contains "$out" "pi-midline-slash:" \
+    "skipped firstmate still ran the Pi mid-line patch"
+  assert_grep "isAtStartOfMessage" "$dist/components/editor.js" \
+    "skipped firstmate mutated the clean dist"
+  pass "fm-update.sh does not patch Pi when firstmate itself is skipped"
+}
+
+test_pi_midline_fail_does_not_block_update() {
+  local w dist out
+  w=$(new_world pi-midline-fail)
+  dist="$w/pi-tui-dist"
+  mkdir -p "$dist/components"
+  printf 'not a pi tui dist\n' > "$dist/components/editor.js"
+  printf 'not a pi tui dist\n' > "$dist/autocomplete.js"
+  printf 'not a pi tui dist\n' > "$dist/components/editor.d.ts"
+  bump_origin "$w" instr
+
+  out=$(FM_PI_TUI_DIST="$dist" run_update "$w")
+  assert_contains "$out" "firstmate: updated " "firstmate fast-forwarded"
+  assert_contains "$out" "pi-midline-slash: failed: dist layout changed:" \
+    "layout-changed dist did not print a fail"
+  assert_contains "$out" "reread-firstmate: yes" "patch fail blocked the git update summary"
+  grep -qx 'not a pi tui dist' "$dist/components/editor.js" \
+    || fail "failed patch helper wrote the layout-changed dist"
+  pass "fm-update.sh continues when the Pi mid-line patch fails"
+}
+
 test_updates_main_and_secondmate
 test_prefers_upstream_without_push
 test_configured_origin_overrides_upstream
@@ -525,5 +617,9 @@ test_firstmate_wrong_branch_skipped
 test_firstmate_detached_head_skipped
 test_unsafe_secondmate_home_skipped_before_git_update
 test_secondmate_bad_update_remote_continues_fleet
+test_pi_midline_patch_on_updated_and_already_current
+test_pi_midline_skip_does_not_block_update
+test_pi_midline_not_run_when_firstmate_skipped
+test_pi_midline_fail_does_not_block_update
 
 echo "# all fm-update tests passed"
