@@ -1445,21 +1445,36 @@ delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task
 # recorded task delivery differ, which is the exact drift this contract prevents.
 if [ "$KIND" = ship ]; then
   PROJ_NAME=$(basename "$PROJ_ABS")
-  BRIEF_MODE=$(sed -n 's/^Delivery contract: mode=\([^ ]*\).*$/\1/p' "$BRIEF" | head -n 1)
+  # Delivery contract and Role: are scaffold markers only: file head (verifier
+  # briefs put Role there) or the # Definition of done block (builder briefs).
+  # Never take the first match anywhere outside # Task - intermediate headings
+  # such as # Details end the task section, and task prose often cites Role: or
+  # Delivery contract: lines for RBAC/acceptance text.
+  BRIEF_MODE=$(awk '
+    BEGIN { zone = "head" }
+    /^# Task([[:space:]]|$)/ { zone = "skip"; next }
+    /^# Definition of done([[:space:]]|$)/ { zone = "dod"; next }
+    /^# / { zone = "skip"; next }
+    (zone == "head" || zone == "dod") && /^Delivery contract: mode=/ {
+      line = $0
+      sub(/^Delivery contract: mode=/, "", line)
+      sub(/[[:space:]].*$/, "", line)
+      if (line != "") { print line; exit }
+    }
+  ' "$BRIEF")
   if [ -z "$BRIEF_MODE" ]; then
     echo "warning: $BRIEF records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode $MODE - confirm its definition of done matches" >&2
   elif [ "$BRIEF_MODE" != "$MODE" ]; then
     echo "error: delivery mismatch for $ID: the brief says mode=$BRIEF_MODE but this spawn passed --mode $MODE; correct the flag or re-scaffold the brief so the worker's instructions and the task record agree" >&2
     exit 1
   fi
-  # Role: is a scaffold marker (file head for verifier; Definition of done for
-  # builder). Never take the first ^Role: in the whole file - task bodies often
-  # mention Role: lines for RBAC acceptance text.
   BRIEF_ROLE=$(awk '
-    /^# Task([[:space:]]|$)/ { in_task=1; next }
-    /^# / { in_task=0 }
-    !in_task && /^Role:[[:space:]]+/ {
-      line=$0
+    BEGIN { zone = "head" }
+    /^# Task([[:space:]]|$)/ { zone = "skip"; next }
+    /^# Definition of done([[:space:]]|$)/ { zone = "dod"; next }
+    /^# / { zone = "skip"; next }
+    (zone == "head" || zone == "dod") && /^Role:[[:space:]]+/ {
+      line = $0
       sub(/^Role:[[:space:]]+/, "", line)
       sub(/[[:space:]].*$/, "", line)
       if (line == "builder" || line == "verifier") { print line; exit }

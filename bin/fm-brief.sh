@@ -321,7 +321,21 @@ if [ "$VERIFIER" -eq 1 ]; then
     echo "error: --verifier requires an existing ship brief at $BRIEF" >&2
     exit 1
   }
-  SRC_MODE=$(sed -n 's/^Delivery contract: mode=\([^ ]*\).*$/\1/p' "$BRIEF" | head -n 1)
+  # Delivery contract lives in the scaffold # Definition of done block (or the
+  # pre-heading head on minimal fixtures). Do not take the first match anywhere
+  # in the file - # Task prose can cite a full Delivery contract: mode= line.
+  SRC_MODE=$(awk '
+    BEGIN { zone = "head" }
+    /^# Task([[:space:]]|$)/ { zone = "skip"; next }
+    /^# Definition of done([[:space:]]|$)/ { zone = "dod"; next }
+    /^# / { zone = "skip"; next }
+    (zone == "head" || zone == "dod") && /^Delivery contract: mode=/ {
+      line = $0
+      sub(/^Delivery contract: mode=/, "", line)
+      sub(/[[:space:]].*$/, "", line)
+      if (line != "") { print line; exit }
+    }
+  ' "$BRIEF")
   [ "$SRC_MODE" = no-mistakes ] || {
     echo "error: --verifier requires an existing no-mistakes ship brief at $BRIEF" >&2
     exit 1

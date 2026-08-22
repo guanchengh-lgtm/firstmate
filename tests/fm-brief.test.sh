@@ -819,6 +819,26 @@ test_verifier_brief_leads_with_verifier_contract() {
   assert_contains "$out" "requires an existing no-mistakes ship brief" \
     "direct-PR source brief was not refused"
   assert_absent "$home/data/$id/verifier-brief.md" "--verifier wrote a verifier file for direct-PR"
+
+  # Task-body Delivery contract: prose must not override the scaffold DoD mode.
+  id='brief-verifier-task-mode'
+  mkdir -p "$home/data/$id"
+  cat > "$home/data/$id/brief.md" <<'EOF'
+You are a crewmate.
+
+# Task
+Delivery contract: mode=direct-PR is the wrong posture here.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+Role: builder
+EOF
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" --verifier 2>&1); status=$?
+  expect_code 0 "$status" \
+    "--verifier should accept DoD mode=no-mistakes despite task-body contract prose (got: $out)"
+  assert_present "$home/data/$id/verifier-brief.md" \
+    "--verifier skipped a valid no-mistakes DoD because task prose cited another mode"
+
   pass "fm-brief.sh: --verifier writes a verifier-leading sibling and leaves brief.md alone"
 }
 

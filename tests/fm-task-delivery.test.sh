@@ -244,6 +244,49 @@ EOF
   assert_contains "$out" "records no Role: line" "task-only Role: builder was accepted as the scaffold marker"
   assert_absent "$home/state/role-task-only-c6.meta" "task-only Role: spawn wrote task metadata"
 
+  # Intermediate headings end # Task; Role: prose after them must not beat DoD,
+  # and must not satisfy the gate when DoD has no Role: line.
+  mkdir -p "$home/data/role-heading-escape-c7"
+  cat > "$home/data/role-heading-escape-c7/brief.md" <<'EOF'
+You are a crewmate.
+
+# Task
+Body text about the feature.
+
+# Details
+Role: verifier is legal only with --mode no-mistakes.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+Role: builder
+EOF
+  out=$(run_spawn "$home" "$fakebin" role-heading-escape-c7 "$proj" claude --mode no-mistakes --yolo off --role builder)
+  assert_not_contains "$out" "role mismatch" \
+    "post-heading Role: verifier prose poisoned an agreeing scaffold Role: builder"
+  assert_not_contains "$out" "records no Role: line" \
+    "post-heading Role: prose hid the scaffold Role: builder"
+
+  mkdir -p "$home/data/role-heading-only-c8"
+  cat > "$home/data/role-heading-only-c8/brief.md" <<'EOF'
+You are a crewmate.
+
+# Task
+Body text about the feature.
+
+# Details
+Role: builder is required for ship work.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+EOF
+  out=$(run_spawn "$home" "$fakebin" role-heading-only-c8 "$proj" claude --mode no-mistakes --yolo off --role builder)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a Role: line only after an intermediate heading must not satisfy the role gate"
+  assert_contains "$out" "records no Role: line" \
+    "post-heading Role: builder was accepted as the scaffold marker"
+  assert_absent "$home/state/role-heading-only-c8.meta" \
+    "post-heading-only Role: spawn wrote task metadata"
+
   pass "fm-spawn: --role selects the role file and refuses a missing or mismatched Role:"
 }
 
