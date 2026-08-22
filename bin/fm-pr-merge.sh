@@ -7,8 +7,10 @@
 # Merge method defaults to --squash when the caller passes none of --squash,
 # --merge, --rebase, or --method after the optional -- separator. Extra args
 # must not include --repo or -R because the repository comes only from the URL.
-# A no-mistakes ship is refused unless current-state source is the validation
-# run (bin/fm-validation-truth-lib.sh), independently of the recording step.
+# A no-mistakes ship is refused unless validation truth is readable
+# (bin/fm-validation-truth-lib.sh), independently of the recording step.
+# After recording, this helper re-reads the forge rollup, refuses a red or
+# pending rollup, and passes --match-head-commit <forge head>.
 # Usage: fm-pr-merge.sh <task-id> <pr-url> [-- <extra gh-axi pr merge args>]
 set -eu
 
@@ -73,7 +75,7 @@ if [ ! -f "$META" ] || [ -L "$META" ]; then
   echo "error: task metadata is unavailable" >&2
   exit 1
 fi
-fm_require_validation_truth "$META" "$ID" || exit 1
+fm_require_validation_truth "$META" "$ID" "$URL" || exit 1
 
 "$SCRIPT_DIR/fm-pr-check.sh" "$ID" "$URL"
 grep -qxF "pr=$URL" "$META" || {
@@ -81,9 +83,11 @@ grep -qxF "pr=$URL" "$META" || {
   exit 1
 }
 
+fm_vt_require_merge_pin "$URL" "$ID" || exit 1
+
 merge_args=()
 if ! caller_has_merge_method "$@"; then
   merge_args=(--squash)
 fi
 
-gh-axi pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" "${merge_args[@]+"${merge_args[@]}"}" "$@"
+gh-axi pr merge "$PR_NUMBER" --repo "$PR_OWNER/$PR_REPO" "${merge_args[@]+"${merge_args[@]}"}" "$@" --match-head-commit "$FM_VT_FORGE_HEAD"

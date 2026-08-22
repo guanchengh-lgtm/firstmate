@@ -65,6 +65,10 @@ SH
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$FM_TEST_GH_LOG"
 case " $* " in
+  *"statusCheckRollup"*)
+    printf '%s %s\n' "${FM_TEST_GH_HEAD:-0123456789abcdef0123456789abcdef01234567}" \
+      "${FM_TEST_GH_ROLLUP_VERDICT:-EMPTY}"
+    ;;
   *" headRefOid "*) printf '%s\n' "${FM_TEST_GH_HEAD:-0123456789abcdef0123456789abcdef01234567}" ;;
   *" state "*)
     [ "${FM_TEST_GH_FAIL:-0}" = 0 ] || exit 1
@@ -551,8 +555,8 @@ test_valid_recording_and_merge_derivation() {
   : > "$dir/gh-axi.log"
   run_merge_entry "$dir" task-a https://github.com/my-org/repo_name.with-dots/pull/37 -- --merge \
     >/dev/null 2>/dev/null || fail "valid merge wrapper failed"
-  grep -qxF 'pr merge 37 --repo my-org/repo_name.with-dots --merge' "$dir/gh-axi.log" \
-    || fail "merge wrapper did not preserve repository derivation and method"
+  grep -qxF 'pr merge 37 --repo my-org/repo_name.with-dots --merge --match-head-commit 0123456789abcdef0123456789abcdef01234567' "$dir/gh-axi.log" \
+    || fail "merge wrapper did not preserve repository derivation, method, and --match-head-commit"
   set +e
   FM_TEST_GH_STATE=MERGED run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/merged-watch.out" 2> "$dir/merged-watch.err"
   rc=$?
