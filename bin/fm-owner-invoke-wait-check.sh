@@ -27,29 +27,38 @@
 #                           /token or $token from the owner-invoke list, and
 #                           that skill was not invoked
 #   R-fog-pin-wait          live fog gather plus OWNER_INVOKE_WAIT
-#   R-ov-missing            a ships[] record has no distinct OV worker
-#                           (spawn --input with task) or, when ov= is set, no
-#                           OV report file (hook/brief durable gather)
-#   R-skill-unloaded        a ships[] skills array never listed plan-eng-review
-# Default --brief rules: R-ov-missing,R-skill-unloaded on sibling durable
-# records only (data/<id>/skills, data/<id>/ov-report.md, state/<id>.meta
-# ov= plus owned worker set). No brief-body parse.
+#   R-ov-missing            spawn --input with task: no distinct OV worker;
+#                           hook/brief ladder: review worker gone with no
+#                           data/<ov>/report.md (live worker without report
+#                           is in-progress and passes)
+#   R-skill-unloaded        report present and data/<ov>/skills never listed
+#                           plan-eng-review (completion-time; gated by report)
+# Default --brief rules: R-ov-missing,R-skill-unloaded on durable OV records
+# (state/<ship>.meta ov=, data/<ov>/report.md, data/<ov>/skills, live
+# endpoint). No brief-body parse.
 #
 # Owner-invoke tokens (header-owned; not a skill picker):
 #   recurring-defect, grill-with-docs, wayfinder, vision
 # Spoken yes-ask is the tight marker OWNER_INVOKE_WAIT only, not a prose net.
-# plan-eng-review requires a separate OV worker and an OV report file.
-# The builder's own plan note is not OV. Split transcript windows and live
-# fog gather stay as gather holes.
+# plan-eng-review requires a separate OV worker. The builder's own plan note
+# is not OV. Split transcript windows and live fog gather stay as gather holes.
 #
-# Production gather (hook mode, non-PreToolUse): only the current ship
-# (payload cwd matching that ship's worktree=, or FM_OWNER_INVOKE_SHIP) is
-# read into ships[]. That row carries ov= from meta, data/<id>/skills lines
-# (missing file => empty skills => unloaded), and ov_report from
-# data/<id>/ov-report.md presence. Other ships never refuse this session.
-# Spawn remains the empty-ov start gate via --input + task + R-ov-missing.
-# Writers: fm-spawn.sh creates data/<id>/skills for ships; scout teardown of
-# an ov= worker promotes data/<ov>/report.md to data/<ship>/ov-report.md.
+# Production gather (hook mode, non-PreToolUse): every state/*.meta with
+# kind=ship whose session= equals the current state/.lock contents (ships
+# this session started). Prior-session ships fall out when a new lock pid is
+# written. No second session-ships list. Does not match cwd to worktree=.
+# For each gathered ship with ov=<ov>, Stop ladder in this order:
+#   a. data/<ov>/report.md non-empty -> require plan-eng-review in
+#      data/<ov>/skills (absent/empty file = unloaded); no liveness check
+#   b. else if <ov>.meta exists and its endpoint is alive -> PASS
+#      (review in progress; never refuse merely for a missing report)
+#   c. else refuse: review worker gone with no report
+# A gathered ship with no ov= passes at turn-end; spawn-time R-ov-missing is
+# the empty-ov start gate. Skills evaluation is completion-time, gated by
+# the report, even though it runs at turn-end. fm-spawn.sh writes session=
+# and exports FM_TASK_ID/FM_HOME; Claude PostToolUse Skill runs
+# bin/fm-skill-load-record.sh to append normalized loads (strip gstack-,
+# lowercase) into data/<id>/skills. Matcher is exact element plan-eng-review.
 #
 # Exact-count regression requires both --expect-rule and --expect-count and
 # exits 0 only when that rule count and the total finding count both equal
@@ -59,13 +68,16 @@
 # prose asked a question. Split transcripts can hide a load. Live fog
 # gather does not own the wait. A real captain hold is invisible.
 # Empty or {TASK} task fields skip ship rules (spawn-harness stubs).
-# Builder self-review is not OV. ov= without ov-report.md is not a review.
-# In-flight ships already started without ov= are not re-refused at turn end.
-# Invoked-skill credit is the current turn only (after the last captain/
-# human user record; tool_result-only and synthetic/meta user shapes do not
-# reset the turn) and only real skill-load tool shapes, not arbitrary
-# tool-input mentions. PreToolUse keeps AskUserQuestion tool_input as speech
-# and still credits current-turn skill loads from transcript_path.
+# Builder self-review is not OV. In-flight ships already started without ov=
+# are not re-refused at turn end. A non-Claude review worker (grok, codex,
+# pi, kimi, opencode, muse) fires no PostToolUse hook, so its skills record
+# is never written; ships whose review runs on another harness are a
+# disclosed gap rather than a refusal. Invoked-skill credit is the current
+# turn only (after the last captain/human user record; tool_result-only and
+# synthetic/meta user shapes do not reset the turn) and only real skill-load
+# tool shapes, not arbitrary tool-input mentions. PreToolUse keeps
+# AskUserQuestion tool_input as speech and still credits current-turn skill
+# loads from transcript_path.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -90,7 +102,7 @@ BRIEF_RULES='R-ov-missing,R-skill-unloaded'
 KNOWN_RULES='R-held-locked-next R-owner-invoke-wait R-fog-pin-wait R-ov-missing R-skill-unloaded'
 
 usage() {
-  sed -n '2,68p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,80p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 structural() {
@@ -303,10 +315,18 @@ evaluate_turn() {  # <json-file>
                 else empty end
               elif $ov == $id then
                 "R-ov-missing-self: \($id) named itself as OV; builder self-review is not OV"
-              elif (($owned | index($ov)) == null) then
-                "R-ov-missing-worker: \($id) OV \($ov) has no spawned worker"
-              elif ($s | has("ov_report")) and ($s.ov_report != true) then
-                "R-ov-missing-report: \($id) has no OV report"
+              elif ($s | has("task")) and (($s | has("ov_report")) | not) then
+                if (($owned | index($ov)) == null) then
+                  "R-ov-missing-worker: \($id) OV \($ov) has no spawned worker"
+                else empty end
+              elif ($s | has("ov_report")) then
+                if $s.ov_report == true then
+                  empty
+                elif $s.ov_alive == true then
+                  empty
+                else
+                  "R-ov-missing-report: \($id) review worker gone with no report"
+                end
               else empty end
           )
         else empty end,
@@ -316,8 +336,9 @@ evaluate_turn() {  # <json-file>
             | (as_str($s.task) | trim) as $task
             | select($id != "")
             | select(($s | has("task") | not) or ($task != "" and $task != "{TASK}"))
-            | select(($s.skills | type) == "array")
-            | select(($s.skills | map(ascii_downcase) | index("plan-eng-review")) == null)
+            | select(($s | has("ov_report")) and ($s.ov_report == true))
+            | (if ($s.skills | type) == "array" then $s.skills else [] end) as $sk
+            | select(($sk | map(ascii_downcase) | index("plan-eng-review")) == null)
             | "R-skill-unloaded-plan-eng-review: \($id) instructions never loaded plan-eng-review"
           )
         else empty end
@@ -391,23 +412,30 @@ if [ -n "$brief" ]; then
   if [ -f "$brief_meta" ] && [ ! -L "$brief_meta" ]; then
     brief_ov=$(sed -n 's/^ov=//p' "$brief_meta" 2>/dev/null | tail -1)
   fi
-  brief_owned='[]'
-  for brief_owned_meta in "$STATE"/*.meta; do
-    [ -f "$brief_owned_meta" ] && [ ! -L "$brief_owned_meta" ] || continue
-    brief_owned_id=$(basename "$brief_owned_meta")
-    brief_owned_id=${brief_owned_id%.meta}
-    [ -n "$brief_owned_id" ] || continue
-    brief_owned=$(jq -n -c --arg id "$brief_owned_id" --argjson acc "$brief_owned" '$acc + [$id]')
-  done
   brief_ov_report=false
-  if [ -f "$brief_dir/ov-report.md" ] && [ ! -L "$brief_dir/ov-report.md" ] && [ -s "$brief_dir/ov-report.md" ]; then
-    brief_ov_report=true
+  brief_ov_alive=false
+  brief_skills='[]'
+  if [ -n "$brief_ov" ]; then
+    if [ -f "$DATA/$brief_ov/report.md" ] && [ ! -L "$DATA/$brief_ov/report.md" ] \
+      && [ -s "$DATA/$brief_ov/report.md" ]; then
+      brief_ov_report=true
+      brief_skills=$(read_skill_lines "$DATA/$brief_ov/skills")
+    elif [ -f "$STATE/$brief_ov.meta" ] && [ ! -L "$STATE/$brief_ov.meta" ]; then
+      # shellcheck source=bin/fm-backend.sh
+      . "$SCRIPT_DIR/fm-backend.sh" 2>/dev/null || true
+      if type fm_backend_of_meta >/dev/null 2>&1 && type fm_backend_target_of_meta >/dev/null 2>&1; then
+        brief_backend=$(fm_backend_of_meta "$STATE/$brief_ov.meta")
+        brief_target=$(fm_backend_target_of_meta "$STATE/$brief_ov.meta")
+        if [ -n "$brief_target" ] && fm_backend_target_exists "$brief_backend" "$brief_target" >/dev/null 2>&1; then
+          brief_ov_alive=true
+        fi
+      fi
+    fi
   fi
-  brief_skills=$(read_skill_lines "$brief_dir/skills")
-  if [ -n "$brief_ov" ] || [ "$brief_ov_report" = true ] || [ -f "$brief_dir/skills" ]; then
+  if [ -n "$brief_ov" ]; then
     jq -n --arg id "$brief_id" --arg ov "$brief_ov" --argjson skills "$brief_skills" \
-      --argjson ov_report "$brief_ov_report" --argjson owned "$brief_owned" \
-      '{ships:[{id:$id, ov:$ov, skills:$skills, ov_report:$ov_report}], owned_meta:$owned}' > "$turn" \
+      --argjson ov_report "$brief_ov_report" --argjson ov_alive "$brief_ov_alive" \
+      '{ships:[{id:$id, ov:$ov, skills:$skills, ov_report:$ov_report, ov_alive:$ov_alive}], owned_meta:[]}' > "$turn" \
       || structural "could not encode brief records"
   else
     printf '%s\n' '{"ships":[],"owned_meta":[]}' > "$turn"
@@ -496,36 +524,38 @@ gather_meta() {
   map_json=$maps
 }
 
-path_is_same_or_under() {  # <path> <root>
-  local path=$1 root=$2
-  [ -n "$path" ] && [ -n "$root" ] || return 1
-  case "$path" in
-    "$root"|"$root"/*) return 0 ;;
-  esac
+ov_endpoint_alive() {  # <ov-meta-path>
+  local meta=$1 backend target
+  [ -f "$meta" ] && [ ! -L "$meta" ] || return 1
+  type fm_backend_of_meta >/dev/null 2>&1 || return 1
+  type fm_backend_target_of_meta >/dev/null 2>&1 || return 1
+  backend=$(fm_backend_of_meta "$meta")
+  target=$(fm_backend_target_of_meta "$meta")
+  [ -n "$target" ] || return 1
+  if type fm_backend_target_exists >/dev/null 2>&1 \
+    && fm_backend_target_exists "$backend" "$target" >/dev/null 2>&1; then
+    return 0
+  fi
+  if type fm_backend_agent_alive >/dev/null 2>&1; then
+    [ "$(fm_backend_agent_alive "$backend" "$target" 2>/dev/null || true)" = alive ]
+    return $?
+  fi
   return 1
 }
 
-resolve_current_ship_id() {
-  local want meta id kind wt cwd normalized
-  want=${FM_OWNER_INVOKE_SHIP:-}
-  if [ -n "$want" ]; then
-    if [ -f "$STATE/$want.meta" ] && [ ! -L "$STATE/$want.meta" ]; then
-      kind=$(sed -n 's/^kind=//p' "$STATE/$want.meta" 2>/dev/null | tail -1)
-      if [ "$kind" = ship ]; then
-        printf '%s\n' "$want"
-        return 0
-      fi
-    fi
-    return 1
+gather_ships() {
+  local session_id meta id kind ov ship_session skills_json ov_report ov_alive ship
+  local ships='[]'
+  session_id=
+  if [ -f "$STATE/.lock" ] && [ ! -L "$STATE/.lock" ]; then
+    session_id=$(tr -d '[:space:]' < "$STATE/.lock" 2>/dev/null || true)
   fi
-  cwd=$(printf '%s' "$PAYLOAD" | jq -r '(.cwd // .CWD // empty)' 2>/dev/null) || cwd=
-  [ -n "$cwd" ] || cwd=$(pwd -P 2>/dev/null || true)
-  [ -n "$cwd" ] || return 1
-  if [ -d "$cwd" ]; then
-    normalized=$(CDPATH='' cd -- "$cwd" && pwd -P) || normalized=$cwd
-  else
-    normalized=$cwd
-  fi
+  [ -n "$session_id" ] || {
+    ships_json='[]'
+    return 0
+  }
+  # shellcheck source=bin/fm-backend.sh
+  . "$SCRIPT_DIR/fm-backend.sh" 2>/dev/null || true
   for meta in "$STATE"/*.meta; do
     [ -f "$meta" ] && [ ! -L "$meta" ] || continue
     id=$(basename "$meta")
@@ -533,48 +563,28 @@ resolve_current_ship_id() {
     [ -n "$id" ] || continue
     kind=$(sed -n 's/^kind=//p' "$meta" 2>/dev/null | tail -1)
     [ "$kind" = ship ] || continue
-    wt=$(sed -n 's/^worktree=//p' "$meta" 2>/dev/null | tail -1)
-    [ -n "$wt" ] || continue
-    if [ -d "$wt" ]; then
-      wt=$(CDPATH='' cd -- "$wt" && pwd -P) || true
+    ship_session=$(sed -n 's/^session=//p' "$meta" 2>/dev/null | tail -1)
+    [ -n "$ship_session" ] || continue
+    [ "$ship_session" = "$session_id" ] || continue
+    ov=$(sed -n 's/^ov=//p' "$meta" 2>/dev/null | tail -1)
+    skills_json='[]'
+    ov_report=false
+    ov_alive=false
+    if [ -n "$ov" ]; then
+      if [ -f "$DATA/$ov/report.md" ] && [ ! -L "$DATA/$ov/report.md" ] \
+        && [ -s "$DATA/$ov/report.md" ]; then
+        ov_report=true
+        skills_json=$(read_skill_lines "$DATA/$ov/skills")
+      elif [ -f "$STATE/$ov.meta" ] && [ ! -L "$STATE/$ov.meta" ] \
+        && ov_endpoint_alive "$STATE/$ov.meta"; then
+        ov_alive=true
+      fi
     fi
-    [ -n "$wt" ] || continue
-    if path_is_same_or_under "$normalized" "$wt"; then
-      printf '%s\n' "$id"
-      return 0
-    fi
+    ship=$(jq -n -c --arg id "$id" --arg ov "$ov" --argjson skills "$skills_json" \
+      --argjson ov_report "$ov_report" --argjson ov_alive "$ov_alive" \
+      '{id:$id, ov:$ov, skills:$skills, ov_report:$ov_report, ov_alive:$ov_alive}')
+    ships=$(jq -n -c --argjson ship "$ship" --argjson acc "$ships" '$acc + [$ship]')
   done
-  return 1
-}
-
-gather_ships() {
-  local id meta kind ov dir skills_json ov_report ship
-  local ships='[]'
-  id=$(resolve_current_ship_id) || {
-    ships_json='[]'
-    return 0
-  }
-  meta="$STATE/$id.meta"
-  [ -f "$meta" ] && [ ! -L "$meta" ] || {
-    ships_json='[]'
-    return 0
-  }
-  kind=$(sed -n 's/^kind=//p' "$meta" 2>/dev/null | tail -1)
-  [ "$kind" = ship ] || {
-    ships_json='[]'
-    return 0
-  }
-  ov=$(sed -n 's/^ov=//p' "$meta" 2>/dev/null | tail -1)
-  dir="$DATA/$id"
-  skills_json=$(read_skill_lines "$dir/skills")
-  ov_report=false
-  if [ -f "$dir/ov-report.md" ] && [ ! -L "$dir/ov-report.md" ] && [ -s "$dir/ov-report.md" ]; then
-    ov_report=true
-  fi
-  ship=$(jq -n -c --arg id "$id" --arg ov "$ov" --argjson skills "$skills_json" \
-    --argjson ov_report "$ov_report" \
-    '{id:$id, ov:$ov, skills:$skills, ov_report:$ov_report}')
-  ships=$(jq -n -c --argjson ship "$ship" --argjson acc "$ships" '$acc + [$ship]')
   ships_json=$ships
 }
 

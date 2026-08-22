@@ -13,10 +13,11 @@
 #   as queued, in flight, or done, so a landed blocker cannot invent a new go gate.
 #   --ov records a distinct already-spawned outside-voice worker as ov= in
 #   ship meta. A filled ship Task requires it; builder self-review is not OV.
-#   bin/fm-owner-invoke-wait-check.sh owns the rule. --ov is ship-only. A ship
-#   spawn also creates data/<id>/skills (empty loaded-skills record) and, when
-#   the OV worker already has data/<ov>/report.md, copies it to
-#   data/<id>/ov-report.md.
+#   bin/fm-owner-invoke-wait-check.sh owns the rule. --ov is ship-only. Spawn
+#   writes session=<state/.lock contents> into meta so turn-end can gather
+#   ships this session started. Exports FM_TASK_ID and FM_HOME into the worker
+#   pane so bin/fm-skill-load-record.sh can append real Skill loads into
+#   data/<id>/skills. Does not pre-create an empty skills file.
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
 #   spawn and refused on --scout and --secondmate spawns. Firstmate resolves both
 #   per task at intake (AGENTS.md section 7); data/projects.md holds the captain's
@@ -1503,23 +1504,6 @@ if [ "$KIND" = ship ] && [ "${ROLE:-}" != verifier ] && [ -x "$FM_ROOT/bin/fm-ow
     echo "error: could not create data directory for $ID" >&2
     exit 2
   }
-  if [ ! -e "$DATA/$ID/skills" ]; then
-    : > "$DATA/$ID/skills" || {
-      echo "error: could not create skills record for $ID" >&2
-      exit 2
-    }
-  elif [ -L "$DATA/$ID/skills" ] || [ ! -f "$DATA/$ID/skills" ]; then
-    echo "error: skills record path is not a regular file: $DATA/$ID/skills" >&2
-    exit 2
-  fi
-  if [ -n "${OV:-}" ] \
-    && [ -f "$DATA/$OV/report.md" ] && [ ! -L "$DATA/$OV/report.md" ] && [ -s "$DATA/$OV/report.md" ] \
-    && { [ ! -e "$DATA/$ID/ov-report.md" ] || { [ -f "$DATA/$ID/ov-report.md" ] && [ ! -L "$DATA/$ID/ov-report.md" ]; }; }; then
-    cp "$DATA/$OV/report.md" "$DATA/$ID/ov-report.md" || {
-      echo "error: could not write OV report record for $ID" >&2
-      exit 2
-    }
-  fi
 fi
 
 delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task mode
@@ -2406,6 +2390,10 @@ fi
 
 META_WINDOW=$T
 [ "$BACKEND" = orca ] && META_WINDOW=$W
+SPAWN_SESSION=
+if [ -f "$STATE/.lock" ] && [ ! -L "$STATE/.lock" ]; then
+  SPAWN_SESSION=$(tr -d '[:space:]' < "$STATE/.lock" 2>/dev/null || true)
+fi
 {
   echo "window=$META_WINDOW"
   echo "endpoint_task_id=$ID"
@@ -2419,6 +2407,7 @@ META_WINDOW=$T
   [ -z "$MAP_NEXT" ] || echo "map_next=$MAP_NEXT"
   [ -z "${MAP:-}" ] || echo "map=$MAP"
   [ -z "${OV:-}" ] || echo "ov=$OV"
+  [ -z "$SPAWN_SESSION" ] || echo "session=$SPAWN_SESSION"
   echo "tasktmp=$TASK_TMP"
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"
@@ -2500,6 +2489,15 @@ fi
 # process (go build, go test, ...) inherit it. Sent before the launch command so
 # the env is set when the agent starts; the brief sleep lets the export land.
 spawn_send_text_line "$T" "export GOTMPDIR=$TASK_TMP/gotmp"
+# Same channel: FM_TASK_ID + FM_HOME so Claude PostToolUse Skill recording can
+# append real loads into data/<id>/skills (bin/fm-skill-load-record.sh).
+if [ "$KIND" = secondmate ]; then
+  SKILL_RECORD_HOME=$PROJ_ABS
+else
+  SKILL_RECORD_HOME=$FM_HOME
+fi
+spawn_send_text_line "$T" "export FM_TASK_ID=$(shell_quote "$ID")"
+spawn_send_text_line "$T" "export FM_HOME=$(shell_quote "$SKILL_RECORD_HOME")"
 # Send through the exact channel that already ships GOTMPDIR, so every backend
 # and harness - ship, scout, and secondmate - gets it before launch. Skipped
 # entirely when trace context is off.

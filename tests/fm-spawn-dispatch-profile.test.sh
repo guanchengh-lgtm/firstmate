@@ -29,12 +29,23 @@ case "${1:-}" in
   send-keys)
     if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then
       prev=
+      saw_l=0
       for a in "$@"; do
         if [ "$prev" = "-l" ]; then
           printf '%s\n' "$a" >> "$FM_FAKE_LAUNCH_LOG"
+          saw_l=1
         fi
         prev=$a
       done
+      if [ "$saw_l" -eq 0 ]; then
+        for a in "$@"; do
+          case "$a" in
+            -t|Enter|C-*) ;;
+            -*) ;;
+            export\ *) printf '%s\n' "$a" >> "$FM_FAKE_LAUNCH_LOG.exports" ;;
+          esac
+        done
+      fi
     fi
     exit 0
     ;;
@@ -86,6 +97,7 @@ run_spawn() {
   local home=$1 wt=$2 fakebin=$3 launchlog=$4
   shift 4
   : > "$launchlog"
+  : > "$launchlog.exports"
   # CLAUDE_CONFIG_DIR is forwarded onto claude launches by fm-spawn, so pin it
   # explicitly (empty by default) instead of leaking the invoking shell's value,
   # which would make launch assertions depend on the developer's environment.
@@ -777,6 +789,7 @@ test_spawn_refuses_filled_ship_without_ov() {
   brief="$HOME_DIR/data/$id/brief.md"
   printf '# Task\nStart Spec compile-check. The next act is obvious.\n\n# Setup\nfixture\nDelivery contract: mode=no-mistakes\n' > "$brief"
   printf '%s\n' 'kind=scout' > "$HOME_DIR/state/spec-compile-check-ov.meta"
+  printf '7777\n' > "$HOME_DIR/state/.lock"
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
     "$id" "$PROJ_DIR" --ov spec-compile-check-ov)
   status=$?
@@ -784,8 +797,14 @@ test_spawn_refuses_filled_ship_without_ov() {
   meta="$HOME_DIR/state/$id.meta"
   assert_grep 'ov=spec-compile-check-ov' "$meta" \
     "spawn did not record ov= for the distinct OV worker"
-  [ -f "$HOME_DIR/data/$id/skills" ] || fail "spawn did not create data/$id/skills record"
-  [ ! -s "$HOME_DIR/data/$id/skills" ] || fail "fresh skills record should start empty"
+  assert_grep 'session=7777' "$meta" \
+    "spawn did not record session= from state/.lock"
+  [ ! -e "$HOME_DIR/data/$id/skills" ] \
+    || fail "spawn must not pre-create an empty skills file"
+  assert_grep "export FM_TASK_ID='$id'" "$LAUNCH_LOG.exports" \
+    "spawn did not export FM_TASK_ID into the worker pane"
+  assert_grep 'export FM_HOME=' "$LAUNCH_LOG.exports" \
+    "spawn did not export FM_HOME into the worker pane"
 
   id=profile-ship-self-ov-z23
   rec=$(make_spawn_case profile-ship-self-ov claude "$id")

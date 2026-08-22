@@ -282,52 +282,85 @@ test_distinct_ov_worker_is_clean() {
   local out rc turn
   turn="$TMP_ROOT/ov-ok.json"
   write_turn "$turn" '{
-    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","ov_report":true,"skills":["plan-eng-review"]}],
+    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","task":"Start Spec compile-check."}],
     "owned_meta": ["spec-compile-check", "spec-compile-check-ov"]
   }'
   set +e
-  out=$(run_check --input "$turn")
+  out=$(run_check --input "$turn" --rules R-ov-missing)
   rc=$?
   set -e
   [ "$rc" -eq 0 ] || fail "distinct OV worker exited $rc: $out"
   [ -z "$out" ] || fail "distinct OV worker printed findings: $out"
   turn="$TMP_ROOT/ov-missing-worker.json"
   write_turn "$turn" '{
-    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","ov_report":true,"skills":["plan-eng-review"]}],
+    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","task":"Start Spec compile-check."}],
+    "owned_meta": ["spec-compile-check"]
+  }'
+  set +e
+  out=$(run_check --input "$turn" --rules R-ov-missing)
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "missing OV worker exited $rc: $out"
+  assert_contains "$out" "R-ov-missing-worker" "missing OV worker did not report unspawned OV"
+  turn="$TMP_ROOT/ov-report-proves.json"
+  write_turn "$turn" '{
+    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","ov_report":true,"ov_alive":false,"skills":["plan-eng-review"]}],
     "owned_meta": ["spec-compile-check"]
   }'
   set +e
   out=$(run_check --input "$turn")
   rc=$?
   set -e
-  [ "$rc" -eq 1 ] || fail "missing OV worker exited $rc: $out"
-  assert_contains "$out" "R-ov-missing-worker" "missing OV worker did not report unspawned OV"
+  [ "$rc" -eq 0 ] || fail "report presence should prove OV without live worker exited $rc: $out"
+  [ -z "$out" ] || fail "report presence printed findings: $out"
   pass "owner-invoke-wait: distinct spawned OV worker is required"
 }
 
 test_ov_report_and_skill_records() {
   local out rc turn
-  turn="$TMP_ROOT/no-report.json"
+  turn="$TMP_ROOT/live-no-report.json"
   write_turn "$turn" '{
-    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","ov_report":false,"skills":["plan-eng-review"]}],
-    "owned_meta": ["spec-compile-check", "spec-compile-check-ov"]
+    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","ov_report":false,"ov_alive":true,"skills":[]}],
+    "owned_meta": []
+  }'
+  set +e
+  out=$(run_check --input "$turn")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "live OV worker without report exited $rc: $out"
+  [ -z "$out" ] || fail "live OV worker without report printed findings: $out"
+  turn="$TMP_ROOT/gone-no-report.json"
+  write_turn "$turn" '{
+    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","ov_report":false,"ov_alive":false,"skills":[]}],
+    "owned_meta": []
   }'
   set +e
   out=$(run_check --input "$turn" --expect-rule R-ov-missing --expect-count 1)
   rc=$?
   set -e
-  [ "$rc" -eq 0 ] || fail "missing OV report exact-count exited $rc: $out"
+  [ "$rc" -eq 0 ] || fail "gone OV worker without report exact-count exited $rc: $out"
   turn="$TMP_ROOT/no-skill.json"
   write_turn "$turn" '{
-    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","ov_report":true,"skills":[]}],
-    "owned_meta": ["spec-compile-check", "spec-compile-check-ov"]
+    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","ov_report":true,"ov_alive":false,"skills":[]}],
+    "owned_meta": []
   }'
   set +e
   out=$(run_check --input "$turn" --expect-rule R-skill-unloaded --expect-count 1)
   rc=$?
   set -e
   [ "$rc" -eq 0 ] || fail "unloaded plan-eng-review exact-count exited $rc: $out"
-  pass "owner-invoke-wait: OV report and skills records own the wait"
+  turn="$TMP_ROOT/skills-before-report.json"
+  write_turn "$turn" '{
+    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","ov_report":false,"ov_alive":true,"skills":[]}],
+    "owned_meta": []
+  }'
+  set +e
+  out=$(run_check --input "$turn" --rules R-skill-unloaded)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "skills gate before report exited $rc: $out"
+  [ -z "$out" ] || fail "skills gate before report printed findings: $out"
+  pass "owner-invoke-wait: OV report ladder and report-gated skills own the wait"
 }
 
 test_unrelated_rule_does_not_satisfy_exact_count() {
@@ -378,15 +411,16 @@ test_pretool_yes_ask_is_denied() {
   pass "owner-invoke-wait: AskUserQuestion PreToolUse denies an owner-invoke yes-ask"
 }
 
-test_hook_gathers_ship_skill_and_ov_report_records() {
-  local home out rc payload transcript
+test_hook_gathers_session_ship_ov_ladder() {
+  local home out rc payload transcript ship_wt
   home=$(make_primary_home "$TMP_ROOT/hook-ships")
-  mkdir -p "$home/data/spec-compile-check"
-  printf '%s\n' 'kind=ship' 'ov=spec-compile-check-ov' "worktree=$home" \
-    > "$home/state/spec-compile-check.meta"
-  printf '%s\n' 'kind=scout' > "$home/state/spec-compile-check-ov.meta"
-  printf '%s\n' 'codebase-design' > "$home/data/spec-compile-check/skills"
-  printf 'OV done\n' > "$home/data/spec-compile-check/ov-report.md"
+  ship_wt="$home/ships/spec-compile-check"
+  mkdir -p "$home/data/spec-compile-check" "$home/data/spec-compile-check-ov" "$ship_wt"
+  printf '4242\n' > "$home/state/.lock"
+  printf '%s\n' 'kind=ship' 'ov=spec-compile-check-ov' 'session=4242' \
+    "worktree=$ship_wt" > "$home/state/spec-compile-check.meta"
+  # Torn-down OV worker: report present, meta gone, skills missing -> skill refuse.
+  printf 'OV done\n' > "$home/data/spec-compile-check-ov/report.md"
   transcript="$home/transcript.jsonl"
   : > "$transcript"
   payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
@@ -397,38 +431,40 @@ test_hook_gathers_ship_skill_and_ov_report_records() {
     "$CHECK" 2>&1)
   rc=$?
   set -e
-  [ "$rc" -eq 2 ] || fail "hook skill gather exited $rc with: $out"
+  [ "$rc" -eq 2 ] || fail "hook report-gated skill refuse exited $rc with: $out"
   assert_contains "$out" 'R-skill-unloaded-plan-eng-review' \
-    "hook did not refuse unloaded plan-eng-review from durable skills record"
-  printf '%s\n' 'plan-eng-review' > "$home/data/spec-compile-check/skills"
-  rm -f "$home/data/spec-compile-check/ov-report.md"
+    "hook did not refuse unloaded plan-eng-review after OV report"
+  printf '%s\n' 'plan-eng-review' > "$home/data/spec-compile-check-ov/skills"
   set +e
   out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     "$CHECK" 2>&1)
   rc=$?
   set -e
-  [ "$rc" -eq 2 ] || fail "hook missing ov-report exited $rc with: $out"
+  [ "$rc" -eq 0 ] || fail "hook torn-down OV with report+skill exited $rc with: $out"
+  [ -z "$out" ] || fail "hook torn-down OV with report+skill printed: $out"
+  rm -f "$home/data/spec-compile-check-ov/report.md" \
+    "$home/data/spec-compile-check-ov/skills"
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "hook gone OV without report exited $rc with: $out"
   assert_contains "$out" 'R-ov-missing-report' \
-    "hook did not refuse missing ov-report.md for ship with ov="
-  printf 'OV done\n' > "$home/data/spec-compile-check/ov-report.md"
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "hook clean ship records exited $rc with: $out"
-  [ -z "$out" ] || fail "hook clean ship records printed: $out"
-  pass "owner-invoke-wait: hook gathers skills and ov-report durable ship records"
+    "hook did not refuse gone OV worker without report"
+  pass "owner-invoke-wait: hook session gather runs OV report ladder"
 }
 
 test_hook_does_not_rerefuse_inflight_ship_without_ov() {
-  local home out rc payload transcript
+  local home out rc payload transcript ship_wt
   home=$(make_primary_home "$TMP_ROOT/hook-no-ov")
-  mkdir -p "$home/data/legacy-ship"
-  printf '%s\n' 'kind=ship' "worktree=$home" > "$home/state/legacy-ship.meta"
-  printf '%s\n' 'plan-eng-review' > "$home/data/legacy-ship/skills"
+  ship_wt="$home/ships/legacy-ship"
+  mkdir -p "$home/data/legacy-ship" "$ship_wt"
+  printf '5151\n' > "$home/state/.lock"
+  printf '%s\n' 'kind=ship' 'session=5151' "worktree=$ship_wt" \
+    > "$home/state/legacy-ship.meta"
   transcript="$home/transcript.jsonl"
   : > "$transcript"
   payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
@@ -486,34 +522,42 @@ JSONL
   pass "owner-invoke-wait: same-turn Skill tool load credits the invoke"
 }
 
-test_brief_reads_ov_meta_and_report() {
+test_brief_reads_ov_worker_report_and_skills() {
   local home out rc brief
   home=$(make_primary_home "$TMP_ROOT/brief-ov")
-  mkdir -p "$home/data/spec-compile-check"
+  mkdir -p "$home/data/spec-compile-check" "$home/data/spec-compile-check-ov"
   brief="$home/data/spec-compile-check/brief.md"
   printf '# Task\nfilled ship work\n' > "$brief"
   printf '%s\n' 'kind=ship' 'ov=spec-compile-check-ov' > "$home/state/spec-compile-check.meta"
-  printf '%s\n' 'kind=scout' > "$home/state/spec-compile-check-ov.meta"
-  printf '%s\n' 'plan-eng-review' > "$home/data/spec-compile-check/skills"
   set +e
   out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     "$CHECK" --brief "$brief" 2>&1)
   rc=$?
   set -e
-  [ "$rc" -eq 1 ] || fail "brief missing ov-report exited $rc with: $out"
+  [ "$rc" -eq 1 ] || fail "brief gone OV without report exited $rc with: $out"
   assert_contains "$out" 'R-ov-missing-report' \
-    "brief mode did not use durable ov= and ov-report.md"
-  printf 'OV ok\n' > "$home/data/spec-compile-check/ov-report.md"
+    "brief mode did not refuse gone OV without report"
+  printf 'OV ok\n' > "$home/data/spec-compile-check-ov/report.md"
   set +e
   out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     "$CHECK" --brief "$brief" 2>&1)
   rc=$?
   set -e
-  [ "$rc" -eq 0 ] || fail "brief with ov-report exited $rc with: $out"
-  [ -z "$out" ] || fail "brief with ov-report printed: $out"
-  pass "owner-invoke-wait: brief mode reads ov meta and ov-report.md"
+  [ "$rc" -eq 1 ] || fail "brief report without skill exited $rc with: $out"
+  assert_contains "$out" 'R-skill-unloaded-plan-eng-review' \
+    "brief mode did not gate skills on OV report"
+  printf '%s\n' 'plan-eng-review' > "$home/data/spec-compile-check-ov/skills"
+  set +e
+  out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" --brief "$brief" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "brief with OV report+skill exited $rc with: $out"
+  [ -z "$out" ] || fail "brief with OV report+skill printed: $out"
+  pass "owner-invoke-wait: brief mode reads OV worker report and skills"
 }
 
 test_tool_result_user_message_keeps_same_turn_invoke_credit() {
@@ -557,18 +601,21 @@ JSONL
   pass "owner-invoke-wait: PreToolUse credits transcript skill-load invokes"
 }
 
-test_hook_ignores_other_ship_records() {
-  local home out rc payload transcript other
+test_hook_ignores_prior_session_ships() {
+  local home out rc payload transcript ship_wt prior_wt
   home=$(make_primary_home "$TMP_ROOT/hook-other-ship")
-  other="$home/other-wt"
-  mkdir -p "$home/data/other-ship" "$other" "$home/data/current-ship"
-  printf '%s\n' 'kind=ship' 'ov=other-ov' "worktree=$other" > "$home/state/other-ship.meta"
-  printf '%s\n' 'kind=scout' > "$home/state/other-ov.meta"
-  printf '%s\n' 'codebase-design' > "$home/data/other-ship/skills"
-  printf '%s\n' 'kind=ship' 'ov=current-ov' "worktree=$home" > "$home/state/current-ship.meta"
-  printf '%s\n' 'kind=scout' > "$home/state/current-ov.meta"
-  printf '%s\n' 'plan-eng-review' > "$home/data/current-ship/skills"
-  printf 'OV ok\n' > "$home/data/current-ship/ov-report.md"
+  ship_wt="$home/ships/current-ship"
+  prior_wt="$home/ships/prior-ship"
+  mkdir -p "$home/data/current-ship" "$home/data/current-ov" \
+    "$home/data/prior-ship" "$home/data/prior-ov" "$ship_wt" "$prior_wt"
+  printf '9001\n' > "$home/state/.lock"
+  printf '%s\n' 'kind=ship' 'ov=prior-ov' 'session=111' "worktree=$prior_wt" \
+    > "$home/state/prior-ship.meta"
+  printf 'bad\n' > "$home/data/prior-ov/report.md"
+  printf '%s\n' 'kind=ship' 'ov=current-ov' 'session=9001' "worktree=$ship_wt" \
+    > "$home/state/current-ship.meta"
+  printf 'OV ok\n' > "$home/data/current-ov/report.md"
+  printf '%s\n' 'plan-eng-review' > "$home/data/current-ov/skills"
   transcript="$home/transcript.jsonl"
   : > "$transcript"
   payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
@@ -579,19 +626,20 @@ test_hook_ignores_other_ship_records() {
     "$CHECK" 2>&1)
   rc=$?
   set -e
-  [ "$rc" -eq 0 ] || fail "other-ship records wedged current ship exited $rc with: $out"
-  [ -z "$out" ] || fail "other-ship records printed: $out"
-  pass "owner-invoke-wait: hook scopes ship gather to current ship only"
+  [ "$rc" -eq 0 ] || fail "prior-session ship wedged current session exited $rc with: $out"
+  [ -z "$out" ] || fail "prior-session ship printed: $out"
+  pass "owner-invoke-wait: hook scopes ship gather to this session only"
 }
 
 test_missing_skills_record_counts_as_unloaded() {
-  local home out rc payload transcript
+  local home out rc payload transcript ship_wt
   home=$(make_primary_home "$TMP_ROOT/hook-missing-skills")
-  mkdir -p "$home/data/spec-compile-check"
-  printf '%s\n' 'kind=ship' 'ov=spec-compile-check-ov' "worktree=$home" \
-    > "$home/state/spec-compile-check.meta"
-  printf '%s\n' 'kind=scout' > "$home/state/spec-compile-check-ov.meta"
-  printf 'OV done\n' > "$home/data/spec-compile-check/ov-report.md"
+  ship_wt="$home/ships/spec-compile-check"
+  mkdir -p "$home/data/spec-compile-check" "$home/data/spec-compile-check-ov" "$ship_wt"
+  printf '6161\n' > "$home/state/.lock"
+  printf '%s\n' 'kind=ship' 'ov=spec-compile-check-ov' 'session=6161' \
+    "worktree=$ship_wt" > "$home/state/spec-compile-check.meta"
+  printf 'OV done\n' > "$home/data/spec-compile-check-ov/report.md"
   transcript="$home/transcript.jsonl"
   : > "$transcript"
   payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
@@ -606,6 +654,42 @@ test_missing_skills_record_counts_as_unloaded() {
   assert_contains "$out" 'R-skill-unloaded-plan-eng-review' \
     "missing skills record did not count as unloaded"
   pass "owner-invoke-wait: missing skills record counts as unloaded"
+}
+
+test_skill_load_record_appends_normalized_token() {
+  local home out rc payload skills recorder
+  home=$(make_primary_home "$TMP_ROOT/skill-load")
+  recorder="$ROOT/bin/fm-skill-load-record.sh"
+  [ -x "$recorder" ] || fail "fm-skill-load-record.sh missing"
+  printf '%s\n' 'kind=scout' > "$home/state/ov-worker.meta"
+  payload='{"tool_name":"Skill","tool_input":{"skill":"gstack-plan-eng-review"}}'
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_TASK_ID=ov-worker \
+    "$recorder" --claude 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "skill-load recorder exited $rc with: $out"
+  skills="$home/data/ov-worker/skills"
+  [ -f "$skills" ] || fail "skill-load recorder did not create skills file"
+  assert_contains "$(cat "$skills")" 'plan-eng-review' \
+    "skill-load recorder did not normalize gstack-plan-eng-review"
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_TASK_ID=ov-worker \
+    "$recorder" --claude 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "skill-load recorder re-append exited $rc with: $out"
+  [ "$(wc -l < "$skills" | tr -d ' ')" = 1 ] \
+    || fail "skill-load recorder duplicated an existing token"
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_TASK_ID=missing \
+    "$recorder" --claude 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "skill-load recorder without meta exited $rc"
+  [ ! -e "$home/data/missing/skills" ] \
+    || fail "skill-load recorder wrote skills without task meta"
+  pass "owner-invoke-wait: skill-load recorder appends normalized token"
 }
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
@@ -623,14 +707,15 @@ test_ov_report_and_skill_records
 test_unrelated_rule_does_not_satisfy_exact_count
 test_own_claims_pass_class_too_narrow
 test_pretool_yes_ask_is_denied
-test_hook_gathers_ship_skill_and_ov_report_records
+test_hook_gathers_session_ship_ov_ladder
 test_hook_does_not_rerefuse_inflight_ship_without_ov
 test_prior_turn_tool_mention_is_not_invoke_credit
 test_same_turn_skill_tool_load_is_invoke_credit
 test_tool_result_user_message_keeps_same_turn_invoke_credit
 test_pretool_credits_transcript_skill_load
-test_hook_ignores_other_ship_records
+test_hook_ignores_prior_session_ships
 test_missing_skills_record_counts_as_unloaded
-test_brief_reads_ov_meta_and_report
+test_skill_load_record_appends_normalized_token
+test_brief_reads_ov_worker_report_and_skills
 
 echo "# all fm-owner-invoke-wait-check tests passed"
