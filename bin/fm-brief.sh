@@ -183,6 +183,8 @@ resolve_directory_input() {
 }
 
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+# shellcheck source=bin/fm-brief-scaffold-lib.sh
+. "$SCRIPT_DIR/fm-brief-scaffold-lib.sh"
 FM_HOME=$(resolve_directory_input FM_HOME "${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}") || exit 1
 if [ -n "${FM_DATA_OVERRIDE:-}" ]; then
   DATA=$(resolve_directory_input FM_DATA_OVERRIDE "$FM_DATA_OVERRIDE") || exit 1
@@ -321,21 +323,10 @@ if [ "$VERIFIER" -eq 1 ]; then
     echo "error: --verifier requires an existing ship brief at $BRIEF" >&2
     exit 1
   }
-  # Delivery contract lives in the scaffold # Definition of done block (or the
-  # pre-heading head on minimal fixtures). Do not take the first match anywhere
-  # in the file - # Task prose can cite a full Delivery contract: mode= line.
-  SRC_MODE=$(awk '
-    BEGIN { zone = "head" }
-    /^# Task([[:space:]]|$)/ { zone = "skip"; next }
-    /^# Definition of done([[:space:]]|$)/ { zone = "dod"; next }
-    /^# / { zone = "skip"; next }
-    (zone == "head" || zone == "dod") && /^Delivery contract: mode=/ {
-      line = $0
-      sub(/^Delivery contract: mode=/, "", line)
-      sub(/[[:space:]].*$/, "", line)
-      if (line != "") { print line; exit }
-    }
-  ' "$BRIEF")
+  # Delivery contract lives in the last scaffold # Definition of done block
+  # (or the pre-heading head on minimal fixtures). Shared reader:
+  # bin/fm-brief-scaffold-lib.sh - a task-authored earlier DoD cannot win.
+  SRC_MODE=$(fm_brief_scaffold_mode "$BRIEF")
   [ "$SRC_MODE" = no-mistakes ] || {
     echo "error: --verifier requires an existing no-mistakes ship brief at $BRIEF" >&2
     exit 1

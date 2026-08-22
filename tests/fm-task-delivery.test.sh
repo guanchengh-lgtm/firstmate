@@ -287,6 +287,59 @@ EOF
   assert_absent "$home/state/role-heading-only-c8.meta" \
     "post-heading-only Role: spawn wrote task metadata"
 
+  # A task-authored earlier # Definition of done must not beat the trailing
+  # scaffold DoD for Role: or Delivery contract: mode=.
+  mkdir -p "$home/data/role-nested-dod-c9"
+  cat > "$home/data/role-nested-dod-c9/brief.md" <<'EOF'
+You are a crewmate.
+
+# Task
+Body text about the feature.
+
+# Definition of done
+Role: verifier is the second-context worker.
+Delivery contract: mode=direct-PR is shown only as a counter-example.
+
+# Setup
+Disposable worktree setup text.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+Role: builder
+EOF
+  out=$(run_spawn "$home" "$fakebin" role-nested-dod-c9 "$proj" claude --mode no-mistakes --yolo off --role builder)
+  assert_not_contains "$out" "role mismatch" \
+    "task-authored DoD Role: verifier poisoned trailing scaffold Role: builder"
+  assert_not_contains "$out" "delivery mismatch" \
+    "task-authored DoD mode=direct-PR poisoned trailing scaffold mode=no-mistakes"
+  assert_not_contains "$out" "records no Role: line" \
+    "task-authored DoD hid trailing scaffold Role: builder"
+
+  mkdir -p "$home/data/role-nested-dod-only-c10"
+  cat > "$home/data/role-nested-dod-only-c10/brief.md" <<'EOF'
+You are a crewmate.
+
+# Task
+Body text about the feature.
+
+# Definition of done
+Role: builder
+Delivery contract: mode=no-mistakes
+
+# Setup
+Disposable worktree setup text.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+EOF
+  out=$(run_spawn "$home" "$fakebin" role-nested-dod-only-c10 "$proj" claude --mode no-mistakes --yolo off --role builder)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a Role: only in an earlier task-authored DoD must not satisfy the role gate"
+  assert_contains "$out" "records no Role: line" \
+    "earlier-DoD Role: builder was accepted when trailing scaffold DoD had none"
+  assert_absent "$home/state/role-nested-dod-only-c10.meta" \
+    "earlier-DoD-only Role: spawn wrote task metadata"
+
   pass "fm-spawn: --role selects the role file and refuses a missing or mismatched Role:"
 }
 

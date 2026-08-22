@@ -839,6 +839,33 @@ EOF
   assert_present "$home/data/$id/verifier-brief.md" \
     "--verifier skipped a valid no-mistakes DoD because task prose cited another mode"
 
+  # A task-authored earlier # Definition of done must not beat the trailing
+  # scaffold DoD when --verifier reads the source mode.
+  id='brief-verifier-nested-dod'
+  mkdir -p "$home/data/$id"
+  cat > "$home/data/$id/brief.md" <<'EOF'
+You are a crewmate.
+
+# Task
+Body text about the feature.
+
+# Definition of done
+Role: verifier is the second-context worker.
+Delivery contract: mode=direct-PR is shown only as a counter-example.
+
+# Setup
+Disposable worktree setup text.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+Role: builder
+EOF
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" --verifier 2>&1); status=$?
+  expect_code 0 "$status" \
+    "--verifier should accept trailing scaffold mode=no-mistakes despite an earlier fake DoD (got: $out)"
+  assert_present "$home/data/$id/verifier-brief.md" \
+    "--verifier skipped a valid trailing no-mistakes DoD because an earlier DoD cited another mode"
+
   pass "fm-brief.sh: --verifier writes a verifier-leading sibling and leaves brief.md alone"
 }
 

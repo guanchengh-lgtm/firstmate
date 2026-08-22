@@ -21,9 +21,11 @@
 #   "Delivery contract: mode=<mode>" line and REFUSES a mismatch, so the worker's
 #   instructions and the recorded task delivery cannot drift apart; a brief
 #   scaffolded before that line existed warns once and launches on the flag. It
-#   also reads the selected file's scaffold "Role: builder|verifier" line (outside
-#   the # Task body, so RBAC text there cannot satisfy or poison the gate) and
-#   REFUSES a missing or mismatched Role: (no warn-and-launch). --role builder encodes
+#   also reads the selected file's scaffold "Role: builder|verifier" line from the
+#   pre-heading head or the last # Definition of done block (shared with
+#   fm-brief.sh --verifier via bin/fm-brief-scaffold-lib.sh), so task prose and a
+#   task-authored earlier DoD cannot satisfy or poison the gate, and REFUSES a
+#   missing or mismatched Role: (no warn-and-launch). --role builder encodes
 #   data/<id>/brief.md. --role verifier encodes data/<id>/verifier-brief.md and
 #   refuses if that file is missing or if the spawn would encode the builder
 #   brief. Recovery reads recorded role= from meta; it does not infer role from
@@ -188,6 +190,8 @@ esac
 
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
+# shellcheck source=bin/fm-brief-scaffold-lib.sh
+. "$SCRIPT_DIR/fm-brief-scaffold-lib.sh"
 
 resolve_directory_input() {
   local name=$1 path=$2 resolved
@@ -1445,41 +1449,17 @@ delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task
 # recorded task delivery differ, which is the exact drift this contract prevents.
 if [ "$KIND" = ship ]; then
   PROJ_NAME=$(basename "$PROJ_ABS")
-  # Delivery contract and Role: are scaffold markers only: file head (verifier
-  # briefs put Role there) or the # Definition of done block (builder briefs).
-  # Never take the first match anywhere outside # Task - intermediate headings
-  # such as # Details end the task section, and task prose often cites Role: or
-  # Delivery contract: lines for RBAC/acceptance text.
-  BRIEF_MODE=$(awk '
-    BEGIN { zone = "head" }
-    /^# Task([[:space:]]|$)/ { zone = "skip"; next }
-    /^# Definition of done([[:space:]]|$)/ { zone = "dod"; next }
-    /^# / { zone = "skip"; next }
-    (zone == "head" || zone == "dod") && /^Delivery contract: mode=/ {
-      line = $0
-      sub(/^Delivery contract: mode=/, "", line)
-      sub(/[[:space:]].*$/, "", line)
-      if (line != "") { print line; exit }
-    }
-  ' "$BRIEF")
+  # Delivery contract and Role: are scaffold markers only: pre-heading head
+  # (verifier briefs put Role there) or the last # Definition of done block
+  # (builder briefs). Shared reader: bin/fm-brief-scaffold-lib.sh.
+  BRIEF_MODE=$(fm_brief_scaffold_mode "$BRIEF")
   if [ -z "$BRIEF_MODE" ]; then
     echo "warning: $BRIEF records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode $MODE - confirm its definition of done matches" >&2
   elif [ "$BRIEF_MODE" != "$MODE" ]; then
     echo "error: delivery mismatch for $ID: the brief says mode=$BRIEF_MODE but this spawn passed --mode $MODE; correct the flag or re-scaffold the brief so the worker's instructions and the task record agree" >&2
     exit 1
   fi
-  BRIEF_ROLE=$(awk '
-    BEGIN { zone = "head" }
-    /^# Task([[:space:]]|$)/ { zone = "skip"; next }
-    /^# Definition of done([[:space:]]|$)/ { zone = "dod"; next }
-    /^# / { zone = "skip"; next }
-    (zone == "head" || zone == "dod") && /^Role:[[:space:]]+/ {
-      line = $0
-      sub(/^Role:[[:space:]]+/, "", line)
-      sub(/[[:space:]].*$/, "", line)
-      if (line == "builder" || line == "verifier") { print line; exit }
-    }
-  ' "$BRIEF")
+  BRIEF_ROLE=$(fm_brief_scaffold_role "$BRIEF")
   if [ -z "$BRIEF_ROLE" ]; then
     echo "error: $BRIEF records no Role: line; a ship spawn requires Role: builder or Role: verifier so the launch input names the worker's role" >&2
     exit 1
