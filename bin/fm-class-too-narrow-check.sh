@@ -23,10 +23,10 @@
 # the expected count. There is no "the fixture must fail" inversion.
 #
 # LIMITS: English "broader than" cannot be 100%. This checker sees a slash-
-# command or ISO date binder in the named shape that an instance does not
-# share. It cannot see a class whose instance strings stay inside the named
-# clothes while the true mechanism is still broader, and it cannot judge
-# paraphrase.
+# command or ISO date binder in shape (or named_as / class_id / class) that
+# an instance does not share. It cannot see a class whose instance strings
+# stay inside the named clothes while the true mechanism is still broader,
+# and it cannot judge paraphrase.
 set -euo pipefail
 
 input=

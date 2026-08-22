@@ -6,7 +6,7 @@ Do not copy that contract here.
 
 ## What it catches
 
-A new class claims file must state a property in `shape`, name two or more instances in different clothes, and fail when a slash-command or ISO date in that named shape is missing from an instance.
+A new class claims file must state a property in `shape`, name two or more instances in different clothes, and fail when a slash-command or ISO date binder in `shape` (or `named_as` / `class_id` / `class`) is missing from an instance.
 The 2026-08-22 historical instance named progress-lost-on-session-end as `/stow` reset-safe and shipped as https://github.com/guanchengh-lgtm/firstmate/pull/29.
 That ship stays.
 This check is so the next class is not named that way.
