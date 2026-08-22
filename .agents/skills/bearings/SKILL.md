@@ -40,8 +40,10 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
    Structured captain-held decisions come from `decision-hold-lifecycle` and appear under `decisions_open`.
    Open lock-file picks from `data/decisions/` also appear under `decisions_open` with verb `lock-open`; render them in Captain's Call so a new session cannot omit them.
    A pick never written to any decision file cannot be seen.
+   The snapshot `prior_session` field is required retrieve of live jobs, open picks, and captain lock words from `bin/fm-prior-session-fold.sh`; render those bar items into the four sections and do not drop lock words after an accidental end.
+   Asides outside that bar are not covered.
    Render a nonzero `ideas_unscheduled` count as one Charted Next line, and name any `ideas_warnings` disclosure rather than presenting an incomplete count as complete.
-   Do not scrape reports, visual-review artifacts, raw status-event tails, or visible conversation history to supplement current state.
+   Do not scrape reports, visual-review artifacts, raw status-event tails, or visible conversation history yourself.
    A queued item under `gates` only becomes "next work" when its blocker is gone and its time/date gate has arrived.
    Until then it stays queued with the reason.
    The `(main-inventory)` gate is an action-free integrity warning rather than queued work.
@@ -72,11 +74,11 @@ It never tears down a task, merges a PR, dispatches new work, steers a worker, a
 This skill is the one owner of the `/bearings` chat-response format; the snapshot and classifier own the data that feeds it, and no other file restates this contract.
 Every `/bearings` chat response renders EXACTLY these four sections, in THIS order, and nothing else structural (there is no At Anchor section):
 
-1. **Captain's Call** - ONLY items that need the captain's own action now: a decision to make, a PR to approve or merge, a credential or login to provide, or a blocker only the captain can clear.
+1. **Captain's Call** - ONLY items that need the captain's own action now: a decision to make, a PR to approve or merge, a credential or login to provide, a blocker only the captain can clear, or a still-open pick from `prior_session`.
    Empty-state: "Nothing needs your action right now."
 2. **Recently Landed** - the bounded current recent-completions baseline: merged PRs, completed scouts, and finished local-only merges across the main fleet and every registered secondmate home.
    Empty-state: "No recent completions are in the current baseline."
-3. **Underway** - live work progressing on its own, one line of current state per direct report.
+3. **Underway** - live work progressing on its own, one line of current state per direct report, plus prior-session live jobs and already-locked captain words from `prior_session`.
    Empty-state: "Nothing is underway."
 4. **Charted Next** - queued or gated work waiting on the fleet or a date, a nonzero unscheduled-product-idea count, any `ideas_warnings` disclosure, plus action-free fleet-integrity warnings, never on the captain.
    Empty-state: "Nothing is queued."
@@ -87,6 +89,7 @@ Rules that keep the contract unambiguous:
 - Every chat digest and file-mode report is a complete current snapshot, never a delta against a prior report.
 - Recently Landed always renders the bounded current baseline, even when the same completions appeared in an earlier report.
 - The four buckets are mutually exclusive, so every item is forced into exactly one: needs-your-action is Captain's Call, done is Recently Landed, self-progressing is Underway, and not-yet-started work, a nonzero unscheduled-product-idea count, an `ideas_warnings` disclosure, or an action-free fleet-integrity warning is Charted Next.
+- Prior-session open picks belong in Captain's Call; prior-session live jobs and already-locked captain words belong in Underway; asides outside that bar do not appear.
 - The strict boundary keeps action-free items OUT of Captain's Call: a working or validating task, a queued item blocked on another task or a date, landed work, a completed scout's report pointer, a declared `paused:` external wait, and a bare recorded PR with no merge-ready signal each belong to one of the other three sections, never Captain's Call.
 - A secondmate's own row appears Underway only for `active_child_work`; `externally_held` belongs in Charted Next, and `unknown` belongs there as an unavailable-state gate unless its reason requires the captain's action.
 - Do not suppress separately projected decisions, landed records, or gates from a `partial-structured` home merely because that secondmate's own row is `unknown`.

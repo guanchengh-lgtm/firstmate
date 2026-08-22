@@ -43,9 +43,9 @@
 #   5. read-once contract - the do-not-re-read contract covering every source
 #                       represented by the prior-session fold and the two
 #                       digests below.
-#   6. prior session  - the bounded targeted fold from the prior Pi or Claude
-#                       JSONL for this home, owned by
-#                       bin/fm-prior-session-fold.sh.
+#   6. prior session  - required retrieve of live jobs, open picks, and captain
+#                       lock words from the prior Pi or Claude JSONL for this
+#                       home, owned by bin/fm-prior-session-fold.sh.
 #   7. fleet digest   - a compact data/backlog.md identity/metadata listing,
 #                       every state/*.meta, a bounded state/*.status tail,
 #                       state/.afk, and a cheap per-task endpoint-liveness read:
@@ -653,7 +653,7 @@ fi
 stage read-once
 section "READ-ONCE CONTRACT"
 cat <<'EOF'
-Everything below provides a bounded PRIOR SESSION fold, every state/*.meta, a
+Everything below provides a required PRIOR SESSION retrieve, every state/*.meta, a
 compact data/backlog.md listing, a bounded tail of every state/*.status,
 data/projects.md, data/secondmates.md, data/captain.md, data/captain-shared.md,
 and data/learnings.md.
