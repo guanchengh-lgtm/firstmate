@@ -812,8 +812,14 @@ test_verifier_brief_leads_with_verifier_contract() {
     "verifier DoD must say to carry manufactured breakage verbatim into --intent"
   assert_grep "Manufactured breakage (required):" "$verifier" \
     "verifier DoD lost the manufactured-breakage sentence"
-  assert_grep "A changed test with no red observation is a blocking finding, not an ask-user finding." "$verifier" \
+  assert_grep "A changed test with no red observation is a blocking pipeline finding, not an ask-user finding." "$verifier" \
     "verifier DoD lost the blocking-not-ask-user manufactured-breakage clause"
+  assert_grep 'breakage: <test-file> subject <file:line> selector <sel> red <artifact>' "$verifier" \
+    "verifier DoD lost the locked breakage record token shape"
+  assert_grep "The firstmate hook in touch 3 is advisory." "$verifier" \
+    "verifier DoD lost the advisory firstmate-hook clause"
+  assert_grep 'confirm `git status --porcelain` is empty' "$verifier" \
+    "verifier DoD lost the porcelain confirmation requirement"
   assert_grep "Mutation runs inside the test-step pipeline worktree, never in the verifier tree." "$verifier" \
     "verifier DoD lost the test-step worktree mutation location"
   assert_no_grep "Manufactured breakage (required):" "$brief" \

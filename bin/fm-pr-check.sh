@@ -9,14 +9,17 @@
 # (bin/fm-validation-truth-lib.sh). The PR URL is passed so a builder id
 # can prove a -nm run keyed by that URL before pr= is recorded.
 # After that proof succeeds, an advisory manufactured-breakage check counts
-# changed test files on the ship against `breakage:` records in
-# `no-mistakes axi logs --step test --run <id> --full` and prints exactly one
-# line when the counts differ:
+# changed test files on the ship against per-file `breakage:` tested[] records
+# in `no-mistakes axi logs --step test --run <id> --full` and prints exactly
+# one line when a changed test file has no covering second-token entry:
 #   BREAKAGE: <n> changed test file(s), <m> red record(s) - run <id>
-# It prints nothing when the counts match or when the run, diff, or log is
-# unreadable, and it never changes the exit code. bin/fm-brief.sh's verifier
-# DoD owns the instruction the test step records; this check only sees the
-# durable `tested[]` prefix. Not a merge refusal.
+# Test-file class (owned here): path matching (^|/)(tests?|spec|__tests__)/,
+# or basename test_*.py, *_test.*, *.test.*, *.spec.*, *_spec.rb.
+# m is files-with-a-red-record, not raw entry count. When axi is unreadable,
+# m is ? and the run is <id|unknown>. Prints nothing only when n is 0 (or the
+# run branch is not the task branch). Never changes the exit code.
+# bin/fm-brief.sh's verifier DoD owns the instruction the test step records;
+# this check only sees the durable tested[] prefix. Not a merge refusal.
 # Usage: fm-pr-check.sh <task-id> <pr-url>
 set -eu
 
@@ -29,98 +32,94 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-pr-lib.sh"
 # shellcheck source=bin/fm-validation-truth-lib.sh
 . "$SCRIPT_DIR/fm-validation-truth-lib.sh"
+# shellcheck source=bin/fm-ff-lib.sh
+. "$SCRIPT_DIR/fm-ff-lib.sh"
 
-# tests/** plus common project test globs. Direct-PR / local-only have no
-# test step; callers skip those modes before listing.
+# Path class owned by this script header. Direct-PR / local-only have no test
+# step; those modes are skipped before listing.
 fm_pr_check_is_test_path() {
-  case "$1" in
-    tests/*|test/*|*/tests/*|*/test/*|*/__tests__/*) return 0 ;;
-    *.test.*|*.spec.*|*_test.*|*/test_*) return 0 ;;
+  local p=$1 base
+  base=${p##*/}
+  case "$p" in
+    tests/*|test/*|spec/*|__tests__/*|*/tests/*|*/test/*|*/spec/*|*/__tests__/*) return 0 ;;
+  esac
+  case "$base" in
+    test_*.py|*_test.*|*.test.*|*.spec.*|*_spec.rb) return 0 ;;
   esac
   return 1
 }
 
-fm_pr_check_diff_base() {  # <worktree>
-  local wt=$1 ref
-  ref=$(git -C "$wt" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) || true
-  if [ -n "$ref" ]; then
-    printf '%s' "$ref"
-    return 0
-  fi
-  for ref in origin/main origin/master main master; do
-    if git -C "$wt" rev-parse --verify -q "$ref" >/dev/null 2>&1; then
-      printf '%s' "$ref"
-      return 0
-    fi
-  done
-  return 1
-}
-
-# Newest run id for PR URL $1. Prefers axi status in the meta worktree/project
-# when that run's pr field matches, else the global sqlite PR-URL index.
-fm_pr_check_run_id_for_pr() {  # <pr-url> <meta-file>
-  local url dir timeout out id pr db esc row
-  url=$(fm_vt_canon_url "$1")
-  [ -n "$url" ] || return 1
-  dir=$(fm_vt_meta_runs_dir "$2") || dir=
-  timeout=$(fm_nm_remote_timeout)
-  if [ -n "$dir" ] && command -v no-mistakes >/dev/null 2>&1; then
-    out=$(fm_nm_run_checked "$dir" "$timeout" axi status) || out=
-    id=$(fm_nm_strip_quotes "$(fm_nm_field "$out" id)")
-    pr=$(fm_vt_canon_url "$(fm_nm_strip_quotes "$(fm_nm_field "$out" pr)")")
-    if [ -n "$id" ] && [ "$pr" = "$url" ]; then
-      printf '%s' "$id"
-      return 0
-    fi
-  fi
-  command -v sqlite3 >/dev/null 2>&1 || return 1
-  db=${NO_MISTAKES_HOME:-$HOME/.no-mistakes}/state.sqlite
-  [ -f "$db" ] && [ ! -L "$db" ] || return 1
-  esc=${url//\'/\'\'}
-  row=$(sqlite3 -readonly "$db" \
-    "select id from runs where pr_url is not null and pr_url != '' and rtrim(pr_url, '/') = '$esc' order by updated_at desc, rowid desc limit 1;" \
-    2>/dev/null) || return 1
-  row=$(fm_nm_trim "$row")
-  [ -n "$row" ] || return 1
-  printf '%s' "$row"
-}
-
 # Advisory only. Always returns 0. Prints at most one BREAKAGE line.
-# Optional $3 is a forge head SHA already read by the caller; HEAD is the
-# fallback when that object is missing from the worktree.
-fm_pr_check_breakage_advisory() {  # <meta-file> <pr-url> [pr-head]
-  local meta=$1 url=$2 head=${3:-} kind mode dir timeout run_id base logs n m f list
+# Uses META from the caller scope (set before the PR_HEAD block returns).
+breakage_advisory() {
+  local meta=${META:-} kind mode WT timeout out run_id run_branch task_branch
+  local DEFAULT mb list n m f logs line entry tok test_files covered_paths
+  [ -n "$meta" ] && [ -f "$meta" ] || return 0
   kind=$(grep '^kind=' "$meta" | tail -1 | cut -d= -f2- || true)
   case "$kind" in
     scout|secondmate) return 0 ;;
   esac
   mode=$(grep '^mode=' "$meta" | tail -1 | cut -d= -f2- || true)
   [ "$mode" = no-mistakes ] || return 0
-  url=$(fm_vt_canon_url "$url")
-  [ -n "$url" ] || return 0
-  dir=$(fm_vt_meta_runs_dir "$meta") || return 0
-  run_id=$(fm_pr_check_run_id_for_pr "$url" "$meta") || return 0
-  [ -n "$run_id" ] || return 0
-  base=$(fm_pr_check_diff_base "$dir") || return 0
-  head=$(fm_nm_trim "$head")
-  if ! fm_pr_head_valid "$head" || ! git -C "$dir" cat-file -e "${head}^{commit}" 2>/dev/null; then
-    head=$(git -C "$dir" rev-parse HEAD 2>/dev/null) || return 0
-  fi
-  list=$(git -C "$dir" diff --name-only --diff-filter=ACMR "${base}...${head}" 2>/dev/null) || return 0
+  WT=$(grep '^worktree=' "$meta" | tail -1 | cut -d= -f2- || true)
+  WT=$(fm_nm_trim "$WT")
+  [ -n "$WT" ] && [ -d "$WT" ] || return 0
+
+  DEFAULT=$(default_branch "$WT") || return 0
+  mb=$(git -C "$WT" merge-base "$DEFAULT" HEAD 2>/dev/null) || return 0
+  list=$(git -C "$WT" diff --name-only --diff-filter=AM "${mb}..HEAD" 2>/dev/null) || return 0
   n=0
+  test_files=
   while IFS= read -r f || [ -n "$f" ]; do
     [ -n "$f" ] || continue
     fm_pr_check_is_test_path "$f" || continue
     n=$((n + 1))
+    test_files=${test_files}${f}$'\n'
   done <<EOF
 $list
 EOF
+  [ "$n" -gt 0 ] || return 0
+
   timeout=$(fm_nm_remote_timeout)
-  logs=$(fm_nm_run_checked "$dir" "$timeout" axi logs --step test --run "$run_id" --full) || return 0
-  m=$(printf '%s\n' "$logs" | grep -o 'breakage:' | wc -l | tr -d ' ') || m=0
-  case "$m" in
-    ''|*[!0-9]*) m=0 ;;
-  esac
+  out=$(fm_nm_run "$WT" "$timeout" axi status)
+  run_id=$(fm_nm_strip_quotes "$(fm_nm_field "$out" id)")
+  run_branch=$(fm_nm_strip_quotes "$(fm_nm_field "$out" branch)")
+  task_branch=$(git -C "$WT" symbolic-ref --quiet --short HEAD 2>/dev/null) || task_branch=
+  if [ -n "$run_branch" ] && [ -n "$task_branch" ] && [ "$run_branch" != "$task_branch" ]; then
+    return 0
+  fi
+  if [ -z "$out" ] || [ -z "$run_id" ]; then
+    printf 'BREAKAGE: %s changed test file(s), ? red record(s) - run %s\n' \
+      "$n" "${run_id:-unknown}"
+    return 0
+  fi
+
+  logs=
+  if ! logs=$(fm_nm_run_checked "$WT" "$timeout" axi logs --step test --run "$run_id" --full); then
+    printf 'BREAKAGE: %s changed test file(s), ? red record(s) - run %s\n' "$n" "$run_id"
+    return 0
+  fi
+
+  covered_paths=
+  while IFS= read -r line || [ -n "$line" ]; do
+    [ -n "$line" ] || continue
+    entry=$(printf '%s\n' "$line" | sed -E 's/^[[:space:]]*"[[:space:]]*//')
+    tok=$(printf '%s\n' "$entry" | awk '{print $2}')
+    [ -n "$tok" ] || continue
+    covered_paths=${covered_paths}${tok}$'\n'
+  done <<EOF
+$(printf '%s\n' "$logs" | grep -E '^[[:space:]]*"[[:space:]]*breakage:' || true)
+EOF
+
+  m=0
+  while IFS= read -r f || [ -n "$f" ]; do
+    [ -n "$f" ] || continue
+    if printf '%s\n' "$covered_paths" | grep -Fxq -- "$f"; then
+      m=$((m + 1))
+    fi
+  done <<EOF
+$test_files
+EOF
   [ "$n" -eq "$m" ] && return 0
   printf 'BREAKAGE: %s changed test file(s), %s red record(s) - run %s\n' "$n" "$m" "$run_id"
   return 0
@@ -188,7 +187,7 @@ if [ "$PROVIDER" = github ] && [ -n "$WT" ] && [ -d "$WT" ] && command -v gh >/d
     PR_HEAD=$REMOTE_HEAD
   fi
 fi
-fm_pr_check_breakage_advisory "$META" "$URL" "$PR_HEAD" || true
+breakage_advisory || true
 
 META_TMP=
 pr_check_cleanup() {
