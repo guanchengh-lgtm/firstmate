@@ -194,6 +194,55 @@ test_consistent_command_class_and_own_claims_are_clean() {
   pass "class-too-narrow: consistent command class and own claims are clean"
 }
 
+test_multi_binder_shape_requires_every_token() {
+  local out rc claims
+  claims="$TMP_ROOT/multi-binder-escape.json"
+  write_claims "$claims" '{
+    "shape": "After /stow on 2026-08-22, a reset-safe receipt must list every still-open lock pick.",
+    "instances": [
+      "2026-08-22 stow said reset-safe while Q2 was still open.",
+      "2026-08-18 stow receipt omitted a lock pick"
+    ]
+  }'
+  set +e
+  out=$(run_check \
+    --input "$claims" \
+    --expect-rule R-broader-than-shape --expect-count 1 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "multi-binder exact-count exited $rc: $out"
+  set +e
+  out=$(run_check --input "$claims")
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "multi-binder gate exited $rc: $out"
+  assert_contains "$out" "R-broader-than-shape-escaped" \
+    "partial binder match did not report an escaped instance"
+  assert_contains "$out" "2026-08-22" \
+    "multi-binder finding did not name the missing situation date"
+  pass "class-too-narrow: multi-binder shape refuses when any token is missing"
+}
+
+test_bare_class_id_is_not_a_binder() {
+  local out rc claims
+  claims="$TMP_ROOT/broad-class-id.json"
+  write_claims "$claims" '{
+    "shape": "Live work recorded only in talk is lost when the session ends.",
+    "class_id": "progress-lost-on-session-end",
+    "instances": [
+      "2026-08-18 picks lived in talk and the next session invented replacements.",
+      "A later session-resume clothes omitted the still-open lock picks."
+    ]
+  }'
+  set +e
+  out=$(run_check --input "$claims")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "broad class_id exited $rc: $out"
+  [ -z "$out" ] || fail "broad class_id printed findings: $out"
+  pass "class-too-narrow: bare class_id is not promoted to a binder"
+}
+
 test_new_tracked_claims_are_gated() {
   local out rc path base grandfather
   grandfather="class-repeat-gate-claims.json
@@ -246,6 +295,8 @@ test_derived_historical_naming_fires_exact_count
 test_unrelated_rule_does_not_satisfy_exact_count
 test_property_and_two_clothes_findings
 test_consistent_command_class_and_own_claims_are_clean
+test_multi_binder_shape_requires_every_token
+test_bare_class_id_is_not_a_binder
 test_new_tracked_claims_are_gated
 test_generator_asserts_historical_markers
 

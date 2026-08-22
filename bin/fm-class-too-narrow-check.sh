@@ -180,11 +180,6 @@ findings=$(jq -c \
     [scan("/[A-Za-z][A-Za-z0-9_-]*") | ltrimstr("/") | ascii_downcase];
   def dates_in:
     [scan("20[0-9]{2}-[0-9]{2}-[0-9]{2}")];
-  def ident_binders:
-    select(type == "string")
-    | trim
-    | select(test("^[A-Za-z][A-Za-z0-9_-]*$"))
-    | ascii_downcase;
   def binders_from($text):
     if ($text | type) != "string" then
       []
@@ -194,25 +189,12 @@ findings=$(jq -c \
         + [($text | dates_in)[] | {kind: "situation", token: .}]
       )
     end;
-  def extra_ident:
-    [(.named_as, .class_id, .class) | ident_binders | {kind: "command", token: .}];
-  def extra_first_segment:
-    [
-      (.named_as, .class_id, .class)
-      | ident_binders
-      | select(contains("-"))
-      | split("-")[0]
-      | select(length > 0)
-      | {kind: "command", token: .}
-    ];
   def all_binders:
     (
       binders_from(.shape // "")
       + binders_from(.named_as // "")
       + binders_from(.class_id // "")
       + binders_from(.class // "")
-      + extra_ident
-      + extra_first_segment
     )
     | unique_by(.kind + "\t" + .token);
 
@@ -247,8 +229,7 @@ findings=$(jq -c \
         | select(type == "string")
         | . as $inst
         | select(
-            any($binders[]; . as $b | ($inst | word_has($b.token)))
-            | not
+            any($binders[]; . as $b | ($inst | word_has($b.token) | not))
           )
         | "R-broader-than-shape-escaped: instance \($i + 1) does not share shape token(s): \($binders | map(.token) | unique | join(", "))"
       else empty end
