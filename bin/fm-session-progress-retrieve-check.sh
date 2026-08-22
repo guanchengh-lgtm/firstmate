@@ -12,6 +12,8 @@
 # It runs bin/fm-prior-session-fold.sh on --prior-log (old session talk on disk)
 # and requires --retrieve to contain each extracted bar item.
 # Session-start and Bearings are the retrieve surfaces.
+# JSON retrieve surfaces are matched on decoded string values so JSON escapes
+# inside prior_session (quotes, backslashes) still count as present.
 # Captain picks written to data/decisions/ at answer time stay that store.
 #
 # --prior-log and --retrieve are required. Missing, empty, or non-regular
@@ -46,7 +48,7 @@ expect_count=
 rules="R-retrieve-omitted"
 
 usage() {
-  sed -n '2,34p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,35p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 structural() {
@@ -142,11 +144,13 @@ cleanup_home=
 fold_out=
 bar_items=
 findings=
+retrieve_search=
 # shellcheck disable=SC2329 # Invoked by trap handlers below.
 cleanup() {
   [ -n "$fold_out" ] && rm -f "$fold_out"
   [ -n "$bar_items" ] && rm -f "$bar_items"
   [ -n "$findings" ] && rm -f "$findings"
+  [ -n "$retrieve_search" ] && rm -f "$retrieve_search"
   [ -n "$cleanup_home" ] && rm -rf "$cleanup_home"
 }
 trap cleanup EXIT HUP INT TERM
@@ -196,6 +200,18 @@ findings=$(mktemp "${TMPDIR:-/tmp}/fm-session-progress-findings.XXXXXX") \
   || structural "could not create findings list"
 : > "$findings"
 
+# Plain-text retrieves (session-start fold output) match as raw bytes.
+# JSON retrieves (bearings --json) must match decoded strings, or a bar item
+# containing quotes/backslashes falsely looks omitted inside escaped JSON.
+retrieve_match=$retrieve
+if jq -e . "$retrieve" >/dev/null 2>&1; then
+  retrieve_search=$(mktemp "${TMPDIR:-/tmp}/fm-session-progress-retrieve-search.XXXXXX") \
+    || structural "could not create retrieve search blob"
+  jq -r '.. | strings' "$retrieve" > "$retrieve_search" \
+    || structural "could not decode JSON retrieve strings"
+  retrieve_match=$retrieve_search
+fi
+
 rule_wanted() {
   local want=$1 r
   for r in "${selected[@]}"; do
@@ -207,7 +223,7 @@ rule_wanted() {
 if rule_wanted R-retrieve-omitted; then
   while IFS= read -r item || [ -n "${item:-}" ]; do
     [ -n "$item" ] || continue
-    if ! grep -Fq -- "$item" "$retrieve"; then
+    if ! grep -Fq -- "$item" "$retrieve_match"; then
       printf 'R-retrieve-omitted-bar-item: retrieve omits bar item: %s\n' "$item" >> "$findings"
     fi
   done < "$bar_items"

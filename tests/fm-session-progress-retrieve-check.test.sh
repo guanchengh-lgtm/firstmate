@@ -128,11 +128,45 @@ test_expect_count_zero_and_empty_rules_are_structural() {
   pass "session-progress retrieve: expect-count 0 and empty rules exit 2"
 }
 
+test_json_retrieve_decodes_escaped_lock_words() {
+  local home out rc prior retrieve quoted
+  home=$(fold_home json-escape)
+  prior="$TMP_ROOT/quoted-prior.jsonl"
+  quoted='Go with "Playbook/TV".'
+  {
+    printf '%s\n' '{"type":"session","cwd":"/historical-session-progress-log"}'
+    jq -nc --arg text 'Which Map 2 second-mate path should we lock: Playbook/TV, or skip?' \
+      '{type:"message",message:{role:"assistant",content:[{type:"text",text:$text}]}}'
+    jq -nc --arg text "$quoted" \
+      '{type:"message",message:{role:"user",content:[{type:"text",text:$text}]}}'
+  } > "$prior" || fail "could not build quoted prior log"
+  # Build a bearings-like JSON surface whose prior_session carries the same words.
+  retrieve="$TMP_ROOT/quoted-retrieve.json"
+  FM_HOME="$home" FM_PRIOR_SESSION_LOG="$prior" "$FOLD" > "$TMP_ROOT/quoted-fold.txt" \
+    || fail "fold of quoted prior log failed"
+  assert_contains "$(cat "$TMP_ROOT/quoted-fold.txt")" "$quoted" \
+    "fold did not keep quoted lock words"
+  jq -n --rawfile prior "$TMP_ROOT/quoted-fold.txt" \
+    '{schema:"fm-bearings.v1",prior_session:$prior}' > "$retrieve" \
+    || fail "could not build escaped JSON retrieve"
+  # Raw file bytes escape the quotes; decoded prior_session must still match.
+  assert_contains "$(cat "$retrieve")" 'Go with \"Playbook/TV\".' \
+    "fixture JSON did not escape embedded quotes"
+  set +e
+  out=$(run_check --prior-log "$prior" --retrieve "$retrieve")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "JSON retrieve with escaped quotes exited $rc: $out"
+  [ -z "$out" ] || fail "JSON retrieve with escaped quotes printed findings: $out"
+  pass "session-progress retrieve: JSON retrieve decodes escaped lock words"
+}
+
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
 test_missing_and_empty_inputs_are_structural
 test_historical_answered_pick_without_retrieve_fires_exact_count
 test_fold_retrieve_and_aside_omission_are_clean
 test_expect_count_zero_and_empty_rules_are_structural
+test_json_retrieve_decodes_escaped_lock_words
 
 echo "# all fm-session-progress-retrieve-check tests passed"
