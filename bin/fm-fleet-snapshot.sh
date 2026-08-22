@@ -730,11 +730,11 @@ secondmate_home_summary_json() {  # <backlog-json> <tasks-json>
          | select(.id == $work.id and .current_state.state == "working")
          | {id,kind,state:.current_state.state,source:.current_state.source,
             doing:((.current_state.detail // "") | trunc(120))} ]) as $active_all
-    | ($captain_holds_all
+    | ([ $locks[]
+          | {id,key,verb,summary:(.summary | trunc(160)),reason:null,source} ]
+       + $captain_holds_all
        + ([ $tasks[] as $t | ($t.hints.open_decisions // [])[]
-            | {id:$t.id,key,verb,summary:(.summary | trunc(160)),reason:null,source:"status"} ])
-       + ([ $locks[]
-            | {id,key,verb,summary:(.summary | trunc(160)),reason:null,source} ])) as $decisions_all
+            | {id:$t.id,key,verb,summary:(.summary | trunc(160)),reason:null,source:"status"} ])) as $decisions_all
     | ([ $queued_all[]
          | select((.unresolved_blocker_ids | length) > 0 or (.hold_reason != null and .hold_kind != null))
          | {id:(.id | trunc(120)),title:(.title | trunc(90)),

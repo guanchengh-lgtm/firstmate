@@ -991,9 +991,10 @@ test_open_decision_surfaces_end_to_end() {
 }
 
 test_lock_file_open_pick_surfaces_in_decisions_open() {
-  local home fakebin json canonical
+  local home mate fakebin json canonical i
   home=$(make_home lock-open); write_fixture "$home"
-  mkdir -p "$home/data/decisions"
+  mate=$(fixture_mate_home "$home")
+  mkdir -p "$home/data/decisions" "$mate/data/decisions"
   cat > "$home/data/decisions/secondmate-2026-08-22.md" <<'EOF'
 # Second mate — captain picks 2026-08-22
 
@@ -1001,6 +1002,21 @@ test_lock_file_open_pick_surfaces_in_decisions_open() {
 - **Q3 Count = A.** One, now, once scope is locked.
 - **Q2 Scope.** Still open.
 EOF
+  cat > "$mate/data/decisions/mate-picks.md" <<'EOF'
+# Mate picks
+
+- **Q9 Scope.** Still open.
+EOF
+  # Flood main backlog with captain holds so the default decisions cap would
+  # drop a trailing lock-open row if it were appended after holds.
+  {
+    printf '## Queued\n'
+    i=1
+    while [ "$i" -le 25 ]; do
+      printf -- '- [ ] hold-%s - Hold %s (repo: firstmate) (kind: captain) (hold: captain choice pending) (hold-kind: captain)\n' "$i" "$i"
+      i=$((i + 1))
+    done
+  } >> "$home/data/backlog.md"
   fakebin=$(make_fakebin "$home")
   canonical=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
     "$ROOT/bin/fm-fleet-snapshot.sh" --json)
@@ -1008,11 +1024,20 @@ EOF
     .decision_locks_open | any(.[]; .id == "secondmate-2026-08-22/Q2"
       and .key == "Q2" and .verb == "lock-open")
   ' >/dev/null || fail "canonical snapshot missed lock-file Q2: $canonical"
+  printf '%s' "$canonical" | jq -e '
+    .secondmate_current.records[] | select(.id == "mate")
+    | .decisions_open[0] | .key == "Q9" and .verb == "lock-open"
+  ' >/dev/null || fail "secondmate home summary did not prepend lock-open Q9: $canonical"
   json=$(run "$home" "$fakebin" --json)
   printf '%s' "$json" | jq -e '
-    .decisions_open | any(.[]; .id == "secondmate-2026-08-22/Q2"
-      and .key == "Q2" and .verb == "lock-open" and .owner == "(main)")
-  ' >/dev/null || fail "bearings omitted lock-file Q2: $json"
+    (.decisions_open | length) <= 20
+      and (.decisions_open[0] | .id == "secondmate-2026-08-22/Q2"
+            and .key == "Q2" and .verb == "lock-open" and .owner == "(main)")
+      and (.decisions_open | any(.[]; .id == "mate/mate-picks/Q9"
+            and .key == "Q9" and .verb == "lock-open" and .owner == "mate"))
+      and (.decisions_open[] | select(.verb == "lock-open")
+            | .summary | test("captain decision pending") | not)
+  ' >/dev/null || fail "bearings dropped or mislabeled lock-open under decisions cap: $json"
   cat > "$home/data/decisions/secondmate-2026-08-22.md" <<'EOF'
 # Second mate — captain picks 2026-08-22
 

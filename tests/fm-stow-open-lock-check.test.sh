@@ -157,6 +157,30 @@ test_quoted_still_open_mention_is_not_a_marker() {
   pass "stow open-lock: locked Q-item with quoted Still open is not a marker"
 }
 
+test_summary_substring_remaining_pick_is_not_clean() {
+  local out rc bogus
+  bogus="$TMP_ROOT/substring-remaining.json"
+  printf '%s\n' '{"reset_safe":true,"remaining_session_picks":["still open"]}' > "$bogus"
+  set +e
+  out=$(run_check --input "$bogus" --decisions-dir "$HIST/decisions")
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "summary-substring remaining pick exited $rc: $out"
+  assert_contains "$out" "R-stow-open-lock-unlisted" \
+    "summary-substring remaining pick did not fire unlisted"
+  assert_contains "$out" "Q2" \
+    "summary-substring remaining pick did not name Q2"
+  printf '%s\n' '{"reset_safe":true,"remaining_session_picks":["open"]}' > "$bogus"
+  set +e
+  out=$(run_check --input "$bogus" --decisions-dir "$HIST/decisions")
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "generic 'open' remaining pick exited $rc: $out"
+  assert_contains "$out" "R-stow-open-lock-unlisted" \
+    "generic 'open' remaining pick did not fire unlisted"
+  pass "stow open-lock: summary substring remaining picks are not clean"
+}
+
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
 test_missing_and_empty_input_are_structural
@@ -165,5 +189,6 @@ test_listed_pick_and_locked_file_are_clean
 test_bearings_omit_fires_exact_count
 test_list_open_and_expect_count_zero_are_structural_or_public
 test_quoted_still_open_mention_is_not_a_marker
+test_summary_substring_remaining_pick_is_not_clean
 
 echo "# all fm-stow-open-lock-check tests passed"

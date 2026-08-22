@@ -307,13 +307,9 @@ findings=$(jq -n \
   def norm: tostring | gsub("\\s+"; " ") | ascii_downcase;
   def listed($pick):
     ([ $pick.id, $pick.key, ($pick.file | split("/")[-1] | sub("\\.md$"; ""))] | map(norm)) as $tokens
-    | ($pick.summary | norm) as $summary
     | any($remaining[];
         (norm) as $item
-        | ($item != "")
-          and (($tokens | index($item)) != null
-               or ($summary | contains($item))
-               or ($item | contains($summary))));
+        | ($item != "") and (($tokens | index($item)) != null));
   def snap_lists($pick):
     ([ $pick.id, $pick.key ] | map(norm)) as $want
     | any($snapshot_rows[];
