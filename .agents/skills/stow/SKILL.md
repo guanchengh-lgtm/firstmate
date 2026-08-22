@@ -80,6 +80,16 @@ Report the outcome in plain captain-facing language with all of these facts:
 Do not hide an over-budget result behind a reset-safe claim.
 In a primary home the receipt is written after the cascade below, not instead of it.
 
+## Open lock-file picks
+
+After the captain-facing receipt facts are known, write a machine receipt at `data/stow-receipt.json` with boolean `reset_safe` and list `remaining_session_picks`.
+Run `bin/fm-stow-open-lock-check.sh --list-open` first and put every returned pick `id` or `key` into `remaining_session_picks` while that lock file still marks it open.
+Then run `bin/fm-stow-open-lock-check.sh --input data/stow-receipt.json`.
+Do not call the session reset-safe unless that command exits 0.
+A receipt that says safe while any `data/decisions/*.md` still marks a pick open, and the receipt does not list that pick, is a finding.
+A pick never written to any decision file cannot be seen.
+The checker does not scrape transcripts; do not invent a second reader.
+
 ## Automatic cascade to secondmates
 
 In a primary home, every `/stow` cascades to every registered secondmate after this home's own required pass and knowledge sweep are complete.

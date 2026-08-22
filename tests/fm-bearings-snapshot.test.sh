@@ -990,6 +990,41 @@ test_open_decision_surfaces_end_to_end() {
   pass "an authoritative captain hold surfaces end-to-end"
 }
 
+test_lock_file_open_pick_surfaces_in_decisions_open() {
+  local home fakebin json canonical
+  home=$(make_home lock-open); write_fixture "$home"
+  mkdir -p "$home/data/decisions"
+  cat > "$home/data/decisions/secondmate-2026-08-22.md" <<'EOF'
+# Second mate — captain picks 2026-08-22
+
+- **Q1 Where = A.** This Mac (Studio).
+- **Q3 Count = A.** One, now, once scope is locked.
+- **Q2 Scope.** Still open.
+EOF
+  fakebin=$(make_fakebin "$home")
+  canonical=$(PATH="$fakebin:$PATH" FM_HOME="$home" FM_SNAPSHOT_NOW=2026-07-11T18:00:00Z \
+    "$ROOT/bin/fm-fleet-snapshot.sh" --json)
+  printf '%s' "$canonical" | jq -e '
+    .decision_locks_open | any(.[]; .id == "secondmate-2026-08-22/Q2"
+      and .key == "Q2" and .verb == "lock-open")
+  ' >/dev/null || fail "canonical snapshot missed lock-file Q2: $canonical"
+  json=$(run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e '
+    .decisions_open | any(.[]; .id == "secondmate-2026-08-22/Q2"
+      and .key == "Q2" and .verb == "lock-open" and .owner == "(main)")
+  ' >/dev/null || fail "bearings omitted lock-file Q2: $json"
+  cat > "$home/data/decisions/secondmate-2026-08-22.md" <<'EOF'
+# Second mate — captain picks 2026-08-22
+
+- **Q2 Scope = A.** Playbook / TradingView auto-route. Prior file text that said "Still open" was stale.
+EOF
+  json=$(run "$home" "$fakebin" --json)
+  printf '%s' "$json" | jq -e '
+    .decisions_open | any(.[]; .id == "secondmate-2026-08-22/Q2") | not
+  ' >/dev/null || fail "locked Q2 with quoted Still open still surfaced: $json"
+  pass "lock-file open Q2 surfaces in decisions_open; locked Q2 does not"
+}
+
 test_report_pointers_surface() {
   local home fakebin json
   home=$(make_home reports); write_fixture "$home"
@@ -1973,6 +2008,7 @@ test_mixed_secondmate_roles_partial_state_and_captain_readiness
 test_main_captain_readiness_matches_secondmate_projection
 test_completed_scout_report_not_pending
 test_open_decision_surfaces_end_to_end
+test_lock_file_open_pick_surfaces_in_decisions_open
 test_report_pointers_surface
 test_superseded_queued_item_dropped_by_default
 test_include_prs_is_the_only_fetch_path
