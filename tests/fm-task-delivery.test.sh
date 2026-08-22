@@ -209,6 +209,41 @@ EOF
   out=$(run_spawn "$home" "$fakebin" role-agree-c4 "$proj" claude --mode no-mistakes --yolo off --role builder)
   assert_not_contains "$out" "role mismatch" "an agreeing builder role was reported as a mismatch"
   assert_not_contains "$out" "no verifier brief" "a builder spawn looked for verifier-brief.md"
+
+  # Scaffold Role: sits after # Task (builder DoD). Task-body Role: lines must not
+  # false-refuse an agreeing scaffold, nor false-accept when the scaffold is absent.
+  mkdir -p "$home/data/role-task-body-c5"
+  cat > "$home/data/role-task-body-c5/brief.md" <<'EOF'
+You are a crewmate.
+
+# Task
+Acceptance includes a line Role: admin for the RBAC matrix.
+Also document Role: builder in the ACL table.
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+Role: builder
+EOF
+  out=$(run_spawn "$home" "$fakebin" role-task-body-c5 "$proj" claude --mode no-mistakes --yolo off --role builder)
+  assert_not_contains "$out" "role mismatch" "task-body Role: text poisoned an agreeing scaffold Role: builder"
+  assert_not_contains "$out" "records no Role: line" "task-body Role: hid the scaffold Role: builder"
+
+  mkdir -p "$home/data/role-task-only-c6"
+  cat > "$home/data/role-task-only-c6/brief.md" <<'EOF'
+You are a crewmate.
+
+# Task
+Role: builder
+
+# Definition of done
+Delivery contract: mode=no-mistakes
+EOF
+  out=$(run_spawn "$home" "$fakebin" role-task-only-c6 "$proj" claude --mode no-mistakes --yolo off --role builder)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a Role: line only inside # Task must not satisfy the role gate"
+  assert_contains "$out" "records no Role: line" "task-only Role: builder was accepted as the scaffold marker"
+  assert_absent "$home/state/role-task-only-c6.meta" "task-only Role: spawn wrote task metadata"
+
   pass "fm-spawn: --role selects the role file and refuses a missing or mismatched Role:"
 }
 

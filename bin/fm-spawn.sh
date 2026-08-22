@@ -21,8 +21,9 @@
 #   "Delivery contract: mode=<mode>" line and REFUSES a mismatch, so the worker's
 #   instructions and the recorded task delivery cannot drift apart; a brief
 #   scaffolded before that line existed warns once and launches on the flag. It
-#   also reads the selected file's "Role: builder|verifier" line and REFUSES a
-#   missing or mismatched Role: (no warn-and-launch). --role builder encodes
+#   also reads the selected file's scaffold "Role: builder|verifier" line (outside
+#   the # Task body, so RBAC text there cannot satisfy or poison the gate) and
+#   REFUSES a missing or mismatched Role: (no warn-and-launch). --role builder encodes
 #   data/<id>/brief.md. --role verifier encodes data/<id>/verifier-brief.md and
 #   refuses if that file is missing or if the spawn would encode the builder
 #   brief. Recovery reads recorded role= from meta; it does not infer role from
@@ -1451,7 +1452,19 @@ if [ "$KIND" = ship ]; then
     echo "error: delivery mismatch for $ID: the brief says mode=$BRIEF_MODE but this spawn passed --mode $MODE; correct the flag or re-scaffold the brief so the worker's instructions and the task record agree" >&2
     exit 1
   fi
-  BRIEF_ROLE=$(sed -n 's/^Role: \([^ ]*\).*$/\1/p' "$BRIEF" | head -n 1)
+  # Role: is a scaffold marker (file head for verifier; Definition of done for
+  # builder). Never take the first ^Role: in the whole file - task bodies often
+  # mention Role: lines for RBAC acceptance text.
+  BRIEF_ROLE=$(awk '
+    /^# Task([[:space:]]|$)/ { in_task=1; next }
+    /^# / { in_task=0 }
+    !in_task && /^Role:[[:space:]]+/ {
+      line=$0
+      sub(/^Role:[[:space:]]+/, "", line)
+      sub(/[[:space:]].*$/, "", line)
+      if (line == "builder" || line == "verifier") { print line; exit }
+    }
+  ' "$BRIEF")
   if [ -z "$BRIEF_ROLE" ]; then
     echo "error: $BRIEF records no Role: line; a ship spawn requires Role: builder or Role: verifier so the launch input names the worker's role" >&2
     exit 1
