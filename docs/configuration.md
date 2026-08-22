@@ -305,7 +305,7 @@ The registry is private to the home and is never tracked in firstmate git.
 ## Spec compile-check refuse-hook
 
 A Stop that wrote Map 2 spec, tickets, or keep-list files this turn must not end while [`bin/fm-spec-compile-check.sh`](../bin/fm-spec-compile-check.sh) is red.
-[`bin/fm-spec-compile-turnend.sh`](../bin/fm-spec-compile-turnend.sh)'s header owns write detection, home derivation from the written path, the child-worktree seat, fail-open cases, and residual coverage.
+[`bin/fm-spec-compile-stop-check.sh`](../bin/fm-spec-compile-stop-check.sh)'s header owns write detection, home derivation from the written path, the child-worktree seat, fail-open cases, and residual coverage.
 The matcher header owns ticket-id and keep-row rules, structural empty input, and matcher limits.
 The refuse is not a session-start diagnostic and does not read `FM_HOME` as an implicit compile home.
 

@@ -46,7 +46,7 @@
 # worktrees are exempt. It must therefore scope itself at runtime to a real
 # primary checkout - the main home or a genuinely marked secondmate home - and
 # stay a silent, fast no-op inside child task worktrees.
-# Spec compile is the exception to that skip: bin/fm-spec-compile-turnend.sh
+# Spec compile is the exception to that skip: bin/fm-spec-compile-stop-check.sh
 # runs before primary-scope so a child firstmate worktree that wrote Map 2
 # spec, tickets, or keep-list files cannot end while the matcher is red.
 # That adapter's header owns write detection and home derivation from the
@@ -120,8 +120,12 @@ PAYLOAD=$(cat 2>/dev/null || true)
 # Spec compile refuse is independent of primary-scope: compile scouts run in
 # child worktrees, and defaulting --home to FM_HOME/FM_ROOT would either miss
 # the operating spec or freeze those scouts on empty worktree input.
-if [ -x "$SCRIPT_DIR/fm-spec-compile-turnend.sh" ]; then
-  printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-spec-compile-turnend.sh"
+if [ -x "$SCRIPT_DIR/fm-spec-compile-stop-check.sh" ]; then
+  if [ "$CLAUDE_MODE" -eq 1 ]; then
+    printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-spec-compile-stop-check.sh" --claude
+  else
+    printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-spec-compile-stop-check.sh"
+  fi
   compile_rc=$?
   [ "$compile_rc" -ne 2 ] || exit 2
 fi

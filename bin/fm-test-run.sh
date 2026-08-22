@@ -143,7 +143,7 @@ family_for_basename() {
     fm-stow-open-lock-check.test.sh|\
     fm-class-too-narrow-check.test.sh|\
     fm-spec-compile-check.test.sh|\
-    fm-spec-compile-turnend.test.sh|\
+    fm-spec-compile-stop-check.test.sh|\
     fm-session-progress-retrieve-check.test.sh|\
     fm-kimi-harness.test.sh|fm-muse-harness.test.sh|fm-herdr-lab.test.sh|fm-lint.test.sh|\
     fm-operational-input.test.sh|fm-pi-primary-types.test.sh|\
@@ -887,7 +887,7 @@ families_for_changed_path() {
       ;;
     bin/fm-turnend-guard.sh|bin/fm-turnend-guard-grok.sh)
       printf '%s\n' watcher-wake-lock
-      printf '%s\n' "__script__:fm-spec-compile-turnend.test.sh"
+      printf '%s\n' "__script__:fm-spec-compile-stop-check.test.sh"
       ;;
     bin/fm-watch*|bin/fm-wake*|\
     bin/fm-classify-lib.sh|bin/fm-daemon*|bin/fm-guard.sh)
@@ -961,7 +961,7 @@ families_for_changed_path() {
       printf '%s\n' pure-contract-unit
       printf '%s\n' snapshot-bearings
       ;;
-    bin/fm-class-too-narrow-check.sh|bin/fm-spec-compile-check.sh|bin/fm-spec-compile-turnend.sh)
+    bin/fm-class-too-narrow-check.sh|bin/fm-spec-compile-check.sh|bin/fm-spec-compile-stop-check.sh)
       printf '%s\n' pure-contract-unit
       ;;
     bin/fm-session-progress-retrieve-check.sh)

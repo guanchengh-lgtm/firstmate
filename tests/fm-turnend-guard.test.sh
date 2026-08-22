@@ -118,10 +118,10 @@ install_guard_scripts() {
   cp "$ROOT/bin/fm-classify-lib.sh" "$dir/bin/fm-classify-lib.sh"
   cp "$ROOT/bin/fm-sot-speech-check.sh" "$dir/bin/fm-sot-speech-check.sh"
   cp "$ROOT/bin/fm-spec-compile-check.sh" "$dir/bin/fm-spec-compile-check.sh"
-  cp "$ROOT/bin/fm-spec-compile-turnend.sh" "$dir/bin/fm-spec-compile-turnend.sh"
+  cp "$ROOT/bin/fm-spec-compile-stop-check.sh" "$dir/bin/fm-spec-compile-stop-check.sh"
   mkdir -p "$dir/docs"
   cp -R "$ROOT/docs/supervision-protocols" "$dir/docs/supervision-protocols"
-  chmod +x "$dir/bin/fm-turnend-guard.sh" "$dir/bin/fm-turnend-guard-grok.sh" "$dir/bin/fm-operational-input.sh" "$dir/bin/fm-supervision-instructions.sh" "$dir/bin/fm-harness.sh" "$dir/bin/fm-sot-speech-check.sh" "$dir/bin/fm-spec-compile-check.sh" "$dir/bin/fm-spec-compile-turnend.sh"
+  chmod +x "$dir/bin/fm-turnend-guard.sh" "$dir/bin/fm-turnend-guard-grok.sh" "$dir/bin/fm-operational-input.sh" "$dir/bin/fm-supervision-instructions.sh" "$dir/bin/fm-harness.sh" "$dir/bin/fm-sot-speech-check.sh" "$dir/bin/fm-spec-compile-check.sh" "$dir/bin/fm-spec-compile-stop-check.sh"
 }
 
 mark_codex_hook_root() {

@@ -29,7 +29,7 @@ An unmarked checkout or invalid marker falls through to the git-dir check.
 That check keeps crewmate and scout linked worktrees inert because their git dir differs from their git common dir.
 It also requires `AGENTS.md`, `bin/`, and the effective state directory.
 
-Independently of that skip, the guard runs `bin/fm-spec-compile-turnend.sh` so a child firstmate worktree that wrote Map 2 spec, tickets, or keep-list files cannot end while the matcher is red.
+Independently of that skip, the guard runs `bin/fm-spec-compile-stop-check.sh` so a child firstmate worktree that wrote Map 2 spec, tickets, or keep-list files cannot end while the matcher is red.
 That adapter's header owns the write window and home derivation from the written path.
 
 For an in-scope primary, before the supervision check, the guard runs `bin/fm-sot-speech-check.sh` against registered file-backed SoT identifiers, then refuses an unchecked yen126/TradingView login or session-death block from a `tradingview-tools` task, then refuses a ready queued ticket that still lacks matching `state/<id>.meta` worker ownership.
@@ -119,6 +119,8 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 - If `jq` is removed after installation, the hook remains silent and exits 0, turn-end wakes stop, and Kimi crews fall back to idle detection.
 - Unreadable hook input remains fail-open.
 - No harness adapter uses a shell ampersand to manufacture supervision.
+
+The spec compile-check Stop adapter is inert on Pi, OpenCode, and pi-signed primaries because those adapters feed the guard `{"stop_hook_active":false}` with no transcript path; it also cannot see writes that are not a Stop (an editor save or `git checkout`) or Bash writes through variables or `cd` that leave no literal `data/wf-map2-loops/` or cited `data/<id>/report.md` suffix in the command string.
 
 ## Regression coverage
 
