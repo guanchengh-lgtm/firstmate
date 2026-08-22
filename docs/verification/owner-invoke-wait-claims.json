@@ -3,7 +3,7 @@
   "size_reason": "Wait detector on durable records plus a tight yes-ask marker. Widen the landed go-gate / ready-action owner. Full adversary rounds are a later ship if the light refuse is trusted.",
   "shape": "A node owns a skill or a next act. This seat proceeds without invoking that skill or starting that act.",
   "form": "refuse-hook",
-  "structure": "bin/fm-owner-invoke-wait-check.sh on map_next and date-cleared holds, OWNER_INVOKE_WAIT plus an exact skill token, live fog gather, ships[] ov/ov_report, and ships[] skills. Split transcript windows and live fog gather stay as gather holes. Does not parse brief-body Role or Delivery contract lines.",
+  "structure": "bin/fm-owner-invoke-wait-check.sh on map_next and date-cleared holds, OWNER_INVOKE_WAIT plus an exact skill token, live fog gather, and production ships[] gather from kind=ship meta plus data/<id>/skills and data/<id>/ov-report.md. Split transcript windows and live fog gather stay as gather holes. Does not parse brief-body Role or Delivery contract lines.",
   "rules": [
     "R-held-locked-next",
     "R-owner-invoke-wait",

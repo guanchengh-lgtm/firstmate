@@ -27,10 +27,13 @@
 #                           /token or $token from the owner-invoke list, and
 #                           that skill was not invoked
 #   R-fog-pin-wait          live fog gather plus OWNER_INVOKE_WAIT
-#   R-ov-missing            a ships[] record has no distinct OV report
+#   R-ov-missing            a ships[] record has no distinct OV worker
+#                           (spawn --input with task) or, when ov= is set, no
+#                           OV report file (hook/brief durable gather)
 #   R-skill-unloaded        a ships[] skills array never listed plan-eng-review
-# Default --brief rules: R-ov-missing,R-skill-unloaded (optional sibling
-# skills / ov-report.md records; no brief-body parse)
+# Default --brief rules: R-ov-missing,R-skill-unloaded on sibling durable
+# records only (data/<id>/skills, data/<id>/ov-report.md, state/<id>.meta
+# ov= plus owned worker set). No brief-body parse.
 #
 # Owner-invoke tokens (header-owned; not a skill picker):
 #   recurring-defect, grill-with-docs, wayfinder, vision
@@ -38,6 +41,11 @@
 # plan-eng-review requires a separate OV worker and an OV report file.
 # The builder's own plan note is not OV. Split transcript windows and live
 # fog gather stay as gather holes.
+#
+# Production gather (hook mode, non-PreToolUse): state/*.meta kind=ship rows
+# become ships[] with ov= from meta, optional data/<id>/skills lines, and
+# ov_report from data/<id>/ov-report.md presence. Spawn remains the empty-ov
+# start gate via --input + task + R-ov-missing.
 #
 # Exact-count regression requires both --expect-rule and --expect-count and
 # exits 0 only when that rule count and the total finding count both equal
@@ -47,8 +55,10 @@
 # prose asked a question. Split transcripts can hide a load. Live fog
 # gather does not own the wait. A real captain hold is invisible.
 # Empty or {TASK} task fields skip ship rules (spawn-harness stubs).
-# Builder self-review is not OV. ov= without report.md is not a review.
+# Builder self-review is not OV. ov= without ov-report.md is not a review.
 # In-flight ships already started without ov= are not re-refused at turn end.
+# Invoked-skill credit is the current turn only (after the last user record)
+# and only real skill-load tool shapes, not arbitrary tool-input mentions.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -73,7 +83,7 @@ BRIEF_RULES='R-ov-missing,R-skill-unloaded'
 KNOWN_RULES='R-held-locked-next R-owner-invoke-wait R-fog-pin-wait R-ov-missing R-skill-unloaded'
 
 usage() {
-  sed -n '2,52p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,60p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 structural() {
@@ -281,7 +291,9 @@ evaluate_turn() {  # <json-file>
             | select($id != "")
             | select(($s | has("task") | not) or ($task != "" and $task != "{TASK}"))
             | if $ov == "" then
-                "R-ov-missing-none: \($id) started with no separate OV worker"
+                if ($s | has("task")) then
+                  "R-ov-missing-none: \($id) started with no separate OV worker"
+                else empty end
               elif $ov == $id then
                 "R-ov-missing-self: \($id) named itself as OV; builder self-review is not OV"
               elif (($owned | index($ov)) == null) then
@@ -367,18 +379,43 @@ if [ -n "$brief" ]; then
   brief_dir=$(CDPATH='' cd -- "$(dirname -- "$brief")" && pwd -P) || structural "brief directory unreadable"
   brief_id=$(basename "$brief_dir")
   turn="$TMP_DIR/turn.json"
+  brief_ov=""
+  brief_meta="$STATE/$brief_id.meta"
+  if [ -f "$brief_meta" ] && [ ! -L "$brief_meta" ]; then
+    brief_ov=$(sed -n 's/^ov=//p' "$brief_meta" 2>/dev/null | tail -1)
+  fi
+  brief_owned='[]'
+  for brief_owned_meta in "$STATE"/*.meta; do
+    [ -f "$brief_owned_meta" ] && [ ! -L "$brief_owned_meta" ] || continue
+    brief_owned_id=$(basename "$brief_owned_meta")
+    brief_owned_id=${brief_owned_id%.meta}
+    [ -n "$brief_owned_id" ] || continue
+    brief_owned=$(jq -n -c --arg id "$brief_owned_id" --argjson acc "$brief_owned" '$acc + [$id]')
+  done
+  brief_ov_report=false
+  if [ -f "$brief_dir/ov-report.md" ] && [ ! -L "$brief_dir/ov-report.md" ] && [ -s "$brief_dir/ov-report.md" ]; then
+    brief_ov_report=true
+  fi
+  has_skills=0
+  brief_skills='[]'
   if [ -f "$brief_dir/skills" ] && [ ! -L "$brief_dir/skills" ]; then
+    has_skills=1
     brief_skills=$(read_skill_lines "$brief_dir/skills")
-    brief_ov_report=false
-    if [ -f "$brief_dir/ov-report.md" ] && [ ! -L "$brief_dir/ov-report.md" ] && [ -s "$brief_dir/ov-report.md" ]; then
-      brief_ov_report=true
+  fi
+  if [ "$has_skills" -eq 1 ] || [ -n "$brief_ov" ] || [ "$brief_ov_report" = true ]; then
+    if [ "$has_skills" -eq 1 ]; then
+      jq -n --arg id "$brief_id" --arg ov "$brief_ov" --argjson skills "$brief_skills" \
+        --argjson ov_report "$brief_ov_report" --argjson owned "$brief_owned" \
+        '{ships:[{id:$id, ov:$ov, skills:$skills, ov_report:$ov_report}], owned_meta:$owned}' > "$turn" \
+        || structural "could not encode brief records"
+    else
+      jq -n --arg id "$brief_id" --arg ov "$brief_ov" \
+        --argjson ov_report "$brief_ov_report" --argjson owned "$brief_owned" \
+        '{ships:[{id:$id, ov:$ov, ov_report:$ov_report}], owned_meta:$owned}' > "$turn" \
+        || structural "could not encode brief records"
     fi
-    jq -n --arg id "$brief_id" --argjson skills "$brief_skills" \
-      --argjson ov_report "$brief_ov_report" \
-      '{ships:[{id:$id, ov:"", skills:$skills, ov_report:$ov_report}]}' > "$turn" \
-      || structural "could not encode brief records"
   else
-    printf '%s\n' '{"ships":[]}' > "$turn"
+    printf '%s\n' '{"ships":[],"owned_meta":[]}' > "$turn"
   fi
   findings=$(evaluate_turn "$turn") || structural "could not evaluate brief"
   report_findings "$findings"
@@ -411,6 +448,7 @@ trap cleanup EXIT HUP INT TERM
 held_json='[]'
 map_json='[]'
 owned_json='[]'
+ships_json='[]'
 speech=''
 invoked_json='[]'
 fog_live=false
@@ -463,6 +501,41 @@ gather_meta() {
   map_json=$maps
 }
 
+gather_ships() {
+  local meta id kind ov dir skills_json ov_report has_skills ship
+  local ships='[]'
+  for meta in "$STATE"/*.meta; do
+    [ -f "$meta" ] && [ ! -L "$meta" ] || continue
+    id=$(basename "$meta")
+    id=${id%.meta}
+    [ -n "$id" ] || continue
+    kind=$(sed -n 's/^kind=//p' "$meta" 2>/dev/null | tail -1)
+    [ "$kind" = ship ] || continue
+    ov=$(sed -n 's/^ov=//p' "$meta" 2>/dev/null | tail -1)
+    dir="$DATA/$id"
+    has_skills=0
+    skills_json='[]'
+    if [ -f "$dir/skills" ] && [ ! -L "$dir/skills" ]; then
+      has_skills=1
+      skills_json=$(read_skill_lines "$dir/skills")
+    fi
+    ov_report=false
+    if [ -f "$dir/ov-report.md" ] && [ ! -L "$dir/ov-report.md" ] && [ -s "$dir/ov-report.md" ]; then
+      ov_report=true
+    fi
+    if [ "$has_skills" -eq 1 ]; then
+      ship=$(jq -n -c --arg id "$id" --arg ov "$ov" --argjson skills "$skills_json" \
+        --argjson ov_report "$ov_report" \
+        '{id:$id, ov:$ov, skills:$skills, ov_report:$ov_report}')
+    else
+      ship=$(jq -n -c --arg id "$id" --arg ov "$ov" --argjson ov_report "$ov_report" \
+        '{id:$id, ov:$ov, ov_report:$ov_report}')
+    fi
+    ships=$(jq -n -c --argjson ship "$ship" --argjson acc "$ships" '$acc + [$ship]')
+  done
+  ships_json=$ships
+}
+
 extract_speech() {
   local transcript py
   transcript=$(printf '%s' "$PAYLOAD" | jq -r '(.transcript_path // .transcriptPath // empty)' 2>/dev/null) || return 0
@@ -472,21 +545,31 @@ extract_speech() {
   py="$TMP_DIR/extract.py"
   cat > "$py" <<'PY'
 import json
-import re
 import sys
 
 tokens = ("recurring-defect", "grill-with-docs", "wayfinder", "vision")
+skill_tools = {"skill", "load_skill", "invoke_skill", "skilltool"}
 path = sys.argv[1]
 text = ""
 invoked = []
 
 
-def add_invoked(blob):
-    blob = (blob or "").lower()
-    for token in tokens:
-        if re.search(r'(^|[^a-z0-9_-])[/$]?' + re.escape(token) + r'([^a-z0-9_-]|$)', blob):
-            if token not in invoked:
-                invoked.append(token)
+def add_token(token):
+    token = (token or "").strip().lower().lstrip("//$")
+    if token in tokens and token not in invoked:
+        invoked.append(token)
+
+
+def skill_from_input(inp):
+    if isinstance(inp, str):
+        return inp
+    if not isinstance(inp, dict):
+        return ""
+    for key in ("skill", "skill_name", "name", "command"):
+        val = inp.get(key)
+        if isinstance(val, str) and val.strip():
+            return val
+    return ""
 
 
 def walk_tools(value):
@@ -498,10 +581,14 @@ def walk_tools(value):
         return
     kind = str(value.get("type") or "")
     name = str(value.get("name") or value.get("tool_name") or "")
-    if kind in ("tool_use", "toolUse", "toolCall") or name:
-        add_invoked(name)
-        blob = json.dumps(value.get("input") or value.get("arguments") or {})
-        add_invoked(blob)
+    name_l = name.lower()
+    is_tool = kind in ("tool_use", "toolUse", "toolCall") or bool(name)
+    if is_tool:
+        for token in tokens:
+            if name_l == token or name_l.endswith("/" + token) or name_l.endswith("__" + token):
+                add_token(token)
+        if name_l in skill_tools or name_l.endswith("/skill") or name_l.endswith("__skill"):
+            add_token(skill_from_input(value.get("input") or value.get("arguments") or {}))
     for item in value.values():
         if isinstance(item, (list, dict)):
             walk_tools(item)
@@ -527,6 +614,16 @@ def text_parts(content):
     return "\n".join(parts)
 
 
+def role_of(record, msg):
+    if isinstance(msg, dict):
+        role = str(msg.get("role") or "")
+        if role:
+            return role
+    if isinstance(record, dict):
+        return str(record.get("type") or record.get("role") or "")
+    return ""
+
+
 try:
     with open(path, encoding="utf-8") as handle:
         for raw in handle:
@@ -538,11 +635,12 @@ try:
             except json.JSONDecodeError:
                 continue
             msg = message(record)
-            role = ""
-            content = None
-            if isinstance(msg, dict):
-                role = str(msg.get("role") or record.get("type") or "")
-                content = msg.get("content")
+            role = role_of(record, msg)
+            content = msg.get("content") if isinstance(msg, dict) else None
+            if role in ("user", "human"):
+                text = ""
+                invoked = []
+                continue
             if role == "assistant":
                 walk_tools(content)
                 chunk = text_parts(content).strip()
@@ -574,6 +672,7 @@ else
   extract_speech || true
   gather_held || true
   gather_meta || true
+  gather_ships || true
   if [ -x "$SCRIPT_DIR/fm-map-fog-check.sh" ]; then
     fog_out=$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" \
       "$SCRIPT_DIR/fm-map-fog-check.sh" 2>/dev/null || true)
@@ -587,12 +686,14 @@ turn="$TMP_DIR/turn.json"
 [ -n "$held_json" ] || held_json='[]'
 [ -n "$map_json" ] || map_json='[]'
 [ -n "$owned_json" ] || owned_json='[]'
+[ -n "$ships_json" ] || ships_json='[]'
 [ -n "$invoked_json" ] || invoked_json='[]'
 case "$fog_live" in true|false) ;; *) fog_live=false ;; esac
 jq -n \
   --argjson held "$held_json" \
   --argjson map_next "$map_json" \
   --argjson owned "$owned_json" \
+  --argjson ships "$ships_json" \
   --arg speech "$speech" \
   --argjson invoked "$invoked_json" \
   --argjson fog "$fog_live" \
@@ -600,6 +701,7 @@ jq -n \
     held: $held,
     map_next: $map_next,
     owned_meta: $owned,
+    ships: $ships,
     assistant_text: $speech,
     invoked_skills: $invoked,
     fog_live: $fog
