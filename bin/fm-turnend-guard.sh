@@ -51,16 +51,21 @@
 # spec, tickets, or keep-list files cannot end while the matcher is red.
 # That adapter's header owns write detection and home derivation from the
 # written path; it never uses FM_HOME as an implicit compile home.
+# The compile call is also before the Codex/Grok stop_hook_active allow below,
+# so a still-red this-turn write can exit 2 again on the bounded continuation;
+# docs/turnend-guard.md Known residual gap owns that seat.
 #
-# Loop-guard, codex/Grok (default) mode: never block twice in the same turn.
-# Codex uses stop_hook_active and Grok uses stopHookActive; typed camel-case
-# takes precedence when both spellings are present. A true value means the
-# current stop attempt already follows a block, so this guard always allows it.
+# Loop-guard, codex/Grok (default) mode: never block twice in the same turn for
+# every predicate after the allow (SoT speech, ready-action, session-diagnosis,
+# supervision). Codex uses stop_hook_active and Grok uses stopHookActive; typed
+# camel-case takes precedence when both spellings are present. A true value
+# means the current stop attempt already follows a block, so those later
+# predicates always allow it. Spec compile is the seated exception above.
 # Passive harness adapters provide their own one-follow-up guard before calling
 # this script.
-# That bounds those harnesses to at most one forced continuation per turn -
-# never a wedged, un-endable session - while still nagging again on a later turn
-# if the problem persists.
+# That bounds those harnesses to at most one forced continuation per turn for
+# the post-allow predicates - never a wedged, un-endable session from those
+# checks - while still nagging again on a later turn if the problem persists.
 #
 # Loop-guard, --claude mode (Stop-owned auto-arm cooperation): Claude Code
 # marks EVERY stop after ANY stop-hook-driven continuation stop_hook_active=true,

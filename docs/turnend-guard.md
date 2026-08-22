@@ -23,7 +23,7 @@ The guard remains a backstop; [`watcher-continuity.md`](watcher-continuity.md) o
 
 ## Guard predicates
 
-Before primary scope, the guard runs `bin/fm-spec-compile-stop-check.sh` so a child firstmate worktree that wrote Map 2 spec, tickets, or keep-list files cannot end while the matcher is red.
+Before primary scope and before the Codex/Grok `stop_hook_active` allow, the guard runs `bin/fm-spec-compile-stop-check.sh` so a child firstmate worktree that wrote Map 2 spec, tickets, or keep-list files cannot end while the matcher is red.
 That adapter's header owns the write window and home derivation from the written path; it never uses `FM_HOME` as an implicit compile home.
 
 The guard then calls the shared primary scope.
@@ -71,7 +71,8 @@ If `jq` is missing after the spec compile adapter, the remaining predicates exit
 
 Claude and Codex can block a Stop directly with exit status 2 and stderr.
 Both payloads carry `stop_hook_active`.
-In the default Codex mode, a true value lets the second stop finish after one forced continuation.
+In the default Codex mode, a true value lets the second stop finish after one forced continuation for every predicate that runs after that allow, including SoT speech, ready-action, session-diagnosis, and supervision.
+The spec compile-check adapter is seated before that allow; see Known residual gap.
 
 Claude runs the guard with `--claude`, which ignores `stop_hook_active` and cooperates with the Stop-owned auto-arm.
 Claude Code sets `stop_hook_active=true` on every stop after any stop-hook continuation, including `asyncRewake` rewakes, which re-opened the 2026-07-21 blind window under the default one-shot behavior.
@@ -126,7 +127,8 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 
 The spec compile-check Stop adapter is inert on Pi, OpenCode, and pi-signed primaries because those adapters feed the guard `{"stop_hook_active":false}` with no transcript path.
 It also cannot see writes that are not a Stop (an editor save or `git checkout`) or Bash writes through variables or `cd` that leave no literal `data/wf-map2-loops/` or cited `data/<id>/report.md` suffix in the command string.
-`bin/fm-spec-compile-stop-check.sh`'s header owns that residual.
+On Codex and Grok default mode it also runs before the `stop_hook_active` / `stopHookActive` allow, so a still-red this-turn write can exit 2 again on the bounded continuation and break that harness's never-block-twice loop contract until the matcher is green or the write leaves the this-turn window.
+`bin/fm-spec-compile-stop-check.sh`'s header owns the write-window residual; `bin/fm-turnend-guard.sh`'s header owns the pre-loop-guard seat.
 
 ## Regression coverage
 
