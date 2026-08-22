@@ -17,8 +17,9 @@
 # tests/fm-validation-truth.test.sh strips it to verify real refusal.
 #
 # Residual: speech that a ship is fine without running this helper, ci-step
-# override inherited from fm-crew-state.sh, time-of-check to time-of-use, and
-# direct-PR ships. No completeness claim.
+# override inherited from fm-crew-state.sh, time-of-check to time-of-use,
+# direct-PR ships, and validated-code identity (owned by
+# bin/fm-nm-run-lib.sh). No completeness claim.
 #
 # Sourced by bin/fm-pr-check.sh, bin/fm-pr-merge.sh, and bin/fm-teardown.sh.
 # No side effects on source. set -u / set -e safe.
