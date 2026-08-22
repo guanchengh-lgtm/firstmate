@@ -141,6 +141,7 @@ family_for_basename() {
     fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-grok-harness.test.sh|\
     fm-pi-midline-slash-patch.test.sh|\
     fm-stow-open-lock-check.test.sh|\
+    fm-answer-lock-check.test.sh|\
     fm-class-too-narrow-check.test.sh|\
     fm-spec-compile-check.test.sh|\
     fm-spec-compile-stop-check.test.sh|\
@@ -962,6 +963,10 @@ families_for_changed_path() {
     bin/fm-stow-open-lock-check.sh)
       printf '%s\n' pure-contract-unit
       printf '%s\n' snapshot-bearings
+      ;;
+    bin/fm-answer-lock-check.sh)
+      printf '%s\n' pure-contract-unit
+      printf '%s\n' watcher-wake-lock
       ;;
     bin/fm-class-too-narrow-check.sh|bin/fm-spec-compile-check.sh|bin/fm-spec-compile-stop-check.sh|\
     bin/fm-reduce-check.sh|bin/fm-keep-rows.py)

@@ -1,0 +1,14 @@
+# N18 — Arbitration
+
+type: task
+status: OPEN
+blocked-by: (none)
+blocks: (none)
+
+## Question
+
+Who decides the counter-metric?
+
+## Answer
+
+**D.** Lock `data/decisions/map2-counter-metric-2026-08-22.md`.
