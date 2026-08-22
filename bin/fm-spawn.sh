@@ -1474,40 +1474,6 @@ if [ "$KIND" != secondmate ]; then
   "$FM_ROOT/bin/fm-brief.sh" --check-worker "$KIND" "$BRIEF" || exit $?
 fi
 
-if [ "$KIND" = ship ] && [ "${ROLE:-}" != verifier ] && [ -x "$FM_ROOT/bin/fm-owner-invoke-wait-check.sh" ]; then
-  ov_task=$(awk '
-    /^# Task[[:space:]]*$/ { in_task = 1; next }
-    in_task && /^# / { exit }
-    in_task { print }
-  ' "$BRIEF")
-  ov_owned='[]'
-  for ov_meta in "$STATE"/*.meta; do
-    [ -f "$ov_meta" ] && [ ! -L "$ov_meta" ] || continue
-    ov_id=$(basename "$ov_meta")
-    ov_id=${ov_id%.meta}
-    [ -n "$ov_id" ] || continue
-    ov_owned=$(jq -n -c --arg id "$ov_id" --argjson acc "$ov_owned" '$acc + [$id]')
-  done
-  ov_turn=$(mktemp "${TMPDIR:-/tmp}/fm-ov-wait.XXXXXX") || exit 2
-  jq -n --arg id "$ID" --arg ov "${OV:-}" --arg task "$ov_task" --argjson owned "$ov_owned" \
-    '{ships:[{id:$id, ov:$ov, task:$task}], owned_meta:$owned}' > "$ov_turn" || {
-    rm -f "$ov_turn"
-    echo "error: could not encode OV spawn check" >&2
-    exit 2
-  }
-  if ! "$FM_ROOT/bin/fm-owner-invoke-wait-check.sh" --input "$ov_turn" \
-    --rules R-ov-missing >/dev/null; then
-    rm -f "$ov_turn"
-    echo "REFUSED: ship $ID has no separate OV worker; builder self-review is not OV. Spawn the OV worker first and pass --ov <id>." >&2
-    exit 1
-  fi
-  rm -f "$ov_turn"
-  mkdir -p "$DATA/$ID" || {
-    echo "error: could not create data directory for $ID" >&2
-    exit 2
-  }
-fi
-
 delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task mode
   case "$1" in
     no-mistakes) echo 3 ;;
@@ -1567,6 +1533,42 @@ if [ "$KIND" = ship ]; then
   if [ -n "$STANDING_MODE" ] && [ "$STANDING_MODE" != no-mistakes-prod-only ] \
      && [ "$(delivery_rigor_rank "$MODE")" -lt "$(delivery_rigor_rank "$STANDING_MODE")" ]; then
     echo "notice: $ID ships mode=$MODE while the standing posture for $PROJ_NAME is $STANDING_MODE - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state" >&2
+  fi
+
+  # After role/mode markers agree: a filled ship Task needs a distinct OV worker.
+  # Role-marker refusals must win first so prose Role: lines never look accepted.
+  if [ "${ROLE:-}" != verifier ] && [ -x "$FM_ROOT/bin/fm-owner-invoke-wait-check.sh" ]; then
+    ov_task=$(awk '
+      /^# Task[[:space:]]*$/ { in_task = 1; next }
+      in_task && /^# / { exit }
+      in_task { print }
+    ' "$BRIEF")
+    ov_owned='[]'
+    for ov_meta in "$STATE"/*.meta; do
+      [ -f "$ov_meta" ] && [ ! -L "$ov_meta" ] || continue
+      ov_id=$(basename "$ov_meta")
+      ov_id=${ov_id%.meta}
+      [ -n "$ov_id" ] || continue
+      ov_owned=$(jq -n -c --arg id "$ov_id" --argjson acc "$ov_owned" '$acc + [$id]')
+    done
+    ov_turn=$(mktemp "${TMPDIR:-/tmp}/fm-ov-wait.XXXXXX") || exit 2
+    jq -n --arg id "$ID" --arg ov "${OV:-}" --arg task "$ov_task" --argjson owned "$ov_owned" \
+      '{ships:[{id:$id, ov:$ov, task:$task}], owned_meta:$owned}' > "$ov_turn" || {
+      rm -f "$ov_turn"
+      echo "error: could not encode OV spawn check" >&2
+      exit 2
+    }
+    if ! "$FM_ROOT/bin/fm-owner-invoke-wait-check.sh" --input "$ov_turn" \
+      --rules R-ov-missing >/dev/null; then
+      rm -f "$ov_turn"
+      echo "REFUSED: ship $ID has no separate OV worker; builder self-review is not OV. Spawn the OV worker first and pass --ov <id>." >&2
+      exit 1
+    fi
+    rm -f "$ov_turn"
+    mkdir -p "$DATA/$ID" || {
+      echo "error: could not create data directory for $ID" >&2
+      exit 2
+    }
   fi
 fi
 
@@ -2499,18 +2501,8 @@ fi
 # process (go build, go test, ...) inherit it. Sent before the launch command so
 # the env is set when the agent starts; the brief sleep lets the export land.
 spawn_send_text_line "$T" "export GOTMPDIR=$TASK_TMP/gotmp"
-# Same channel: FM_TASK_ID + FM_HOME so Claude PostToolUse Skill recording can
-# append real loads into data/<id>/skills (bin/fm-skill-load-record.sh).
-if [ "$KIND" = secondmate ]; then
-  SKILL_RECORD_HOME=$PROJ_ABS
-else
-  SKILL_RECORD_HOME=$FM_HOME
-fi
-spawn_send_text_line "$T" "export FM_TASK_ID=$(shell_quote "$ID")"
-spawn_send_text_line "$T" "export FM_HOME=$(shell_quote "$SKILL_RECORD_HOME")"
-# Send through the exact channel that already ships GOTMPDIR, so every backend
-# and harness - ship, scout, and secondmate - gets it before launch. Skipped
-# entirely when trace context is off.
+# TRACEPARENT rides the same pre-launch channel/site as GOTMPDIR (ship/scout/
+# secondmate). Skipped when trace context is off. Keep adjacent to GOTMPDIR.
 if [ -n "$SPAWN_TRACEPARENT" ]; then
   if spawn_send_text_line "$T" "export TRACEPARENT=$SPAWN_TRACEPARENT"; then
     if ! echo "traceparent=$SPAWN_TRACEPARENT" >> "$STATE/$ID.meta"; then
@@ -2524,6 +2516,16 @@ if [ -n "$SPAWN_TRACEPARENT" ]; then
     fi
   fi
 fi
+# Same channel after the GOTMPDIR/TRACEPARENT pair: FM_TASK_ID + FM_HOME so
+# Claude PostToolUse Skill recording can append real loads into data/<id>/skills
+# (bin/fm-skill-load-record.sh).
+if [ "$KIND" = secondmate ]; then
+  SKILL_RECORD_HOME=$PROJ_ABS
+else
+  SKILL_RECORD_HOME=$FM_HOME
+fi
+spawn_send_text_line "$T" "export FM_TASK_ID=$(shell_quote "$ID")"
+spawn_send_text_line "$T" "export FM_HOME=$(shell_quote "$SKILL_RECORD_HOME")"
 sleep 0.3
 spawn_send_literal "$T" "$LAUNCH"
 sleep 0.3
