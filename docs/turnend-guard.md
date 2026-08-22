@@ -16,7 +16,8 @@ Do not infer this guard's scope, loop safety, or compatibility tradeoffs for tho
 The turn-end guard closes the remaining gap at the primary's own turn boundary.
 When work, a process-event source, or Relay polling needs supervision at that boundary and no identity-matched watcher has a fresh beacon, the harness integration must either block the turn end or force one bounded follow-up that uses the recovery instruction from the emitted session-start protocol.
 Separately, the same script refuses ending a turn as prose-only waiting when a ready queued ticket has no worker owner; `bin/fm-turnend-guard.sh`'s header owns that ready-action contract.
-The same family refuses a held locked next act with no worker, a yes-ask on an owner-invoke skill, and a filled ship Task that omits `plan-eng-review`; `bin/fm-owner-invoke-wait-check.sh` owns those rules.
+The same family refuses a held locked next act with no worker, a yes-ask on an owner-invoke skill, and a filled ship start with no distinct OV worker; `bin/fm-owner-invoke-wait-check.sh` owns those rules.
+`plan-eng-review` requires a separate OV worker; the builder's own plan note is not OV.
 It also refuses ending a turn on an unchecked yen126/TradingView login or session-death block from a `tradingview-tools` task; that same header owns the session-diagnosis contract.
 Before primary scope, it also refuses a Stop that wrote Map 2 spec, tickets, or keep-list files this turn while `bin/fm-spec-compile-check.sh` is red; `bin/fm-spec-compile-stop-check.sh`'s header owns that adapter.
 The mid-turn pull warning uses the model-aware supervision verdict described below, while the turn-end guard keeps the PID-strict watcher predicate.
@@ -36,7 +37,8 @@ It also requires `AGENTS.md`, `bin/`, and the effective state directory.
 
 For an in-scope primary, before the supervision check, the guard runs `bin/fm-sot-speech-check.sh` against registered file-backed SoT identifiers, then refuses an unchecked yen126/TradingView login or session-death block from a `tradingview-tools` task, then refuses a ready queued ticket that still lacks matching `state/<id>.meta` worker ownership, then runs `bin/fm-owner-invoke-wait-check.sh`.
 The speech helper's header owns the registry, read window, declared-unread escape, fail-open cases, and residual coverage.
-The owner-invoke helper's header owns held locked-next, owner-invoke yes-ask, fog-pin wait, required-skill omission, fail-closed CLI input, and residual coverage.
+The owner-invoke helper's header owns held locked-next, owner-invoke yes-ask, fog-pin wait, missing OV worker, fail-closed CLI input, and residual coverage.
+A filled ship spawn records `ov=` through `fm-spawn.sh --ov` and refuses when that worker is missing, is the builder, or has no meta.
 `bin/fm-turnend-guard.sh`'s header owns the yen126 session-diagnosis contract and still blocks under Claude `--claude` when `stop_hook_active` is true.
 A spawn or steer leaves that metadata; recording a concrete backlog blocker removes the ticket from `tasks-axi ready`.
 The ready-action and owner-invoke checks fail open when the tasks-axi backend cannot be read, honor `config/backlog-backend=manual`, have no skip flag, and still block under Claude `--claude` when `stop_hook_active` is true.

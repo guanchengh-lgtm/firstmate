@@ -1,0 +1,10 @@
+{
+  "ships": [
+    {
+      "id": "spec-compile-check",
+      "ov": "",
+      "task": "Start Spec compile-check. The next act is obvious."
+    }
+  ],
+  "owned_meta": ["spec-compile-check"]
+}

@@ -755,6 +755,48 @@ test_spawn_records_map_next_and_rejects_invalid_ids() {
   pass "fm-spawn: --map-next records a valid id and refuses unsafe ids"
 }
 
+test_spawn_refuses_filled_ship_without_ov() {
+  local rec id out status brief meta
+  id=profile-ship-no-ov-z21
+  rec=$(make_spawn_case profile-ship-no-ov claude "$id")
+  read_case_record "$rec"
+  brief="$HOME_DIR/data/$id/brief.md"
+  printf '# Task\nStart Spec compile-check. The next act is obvious.\n\n# Setup\nfixture\nDelivery contract: mode=no-mistakes\n' > "$brief"
+
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn accepted a filled ship with no OV worker"
+  assert_contains "$out" 'no separate OV worker' \
+    "missing OV refusal did not name the OV requirement"
+  assert_absent "$HOME_DIR/state/$id.meta" \
+    "missing OV refusal wrote task metadata"
+
+  id=profile-ship-ov-z22
+  rec=$(make_spawn_case profile-ship-ov claude "$id")
+  read_case_record "$rec"
+  brief="$HOME_DIR/data/$id/brief.md"
+  printf '# Task\nStart Spec compile-check. The next act is obvious.\n\n# Setup\nfixture\nDelivery contract: mode=no-mistakes\n' > "$brief"
+  printf '%s\n' 'kind=scout' > "$HOME_DIR/state/spec-compile-check-ov.meta"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --ov spec-compile-check-ov)
+  status=$?
+  expect_code 0 "$status" "spawn with a distinct spawned OV worker should succeed"
+  meta="$HOME_DIR/state/$id.meta"
+  assert_grep 'ov=spec-compile-check-ov' "$meta" \
+    "spawn did not record ov= for the distinct OV worker"
+
+  id=profile-ship-self-ov-z23
+  rec=$(make_spawn_case profile-ship-self-ov claude "$id")
+  read_case_record "$rec"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --ov "$id")
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn accepted --ov naming the ship itself"
+  assert_contains "$out" 'builder self-review is not OV' \
+    "self OV refusal did not reject builder self-review"
+  pass "fm-spawn: filled ships require a distinct spawned OV worker"
+}
+
 test_spawn_refuses_fake_worker_slash_before_endpoint() {
   local rec id out status brief
   id=profile-fake-slash-z13
@@ -891,6 +933,7 @@ test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata
 test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity
 test_batch_forwards_shared_profile_flags
 test_spawn_records_map_next_and_rejects_invalid_ids
+test_spawn_refuses_filled_ship_without_ov
 test_spawn_records_map_and_refuses_live_fog
 test_spawn_refuses_fake_worker_slash_before_endpoint
 test_claude_forwards_firstmate_config_dir_when_set

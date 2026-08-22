@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> --role <builder|verifier> [--map <map-file>] [--map-next <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> --role <builder|verifier> [--map <map-file>] [--map-next <task-id>] [--ov <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
 #        fm-spawn.sh <task-id> <project-dir> --scout [--map <map-file>] [--map-next <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--map-next <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --map names one build map relative to FM_HOME and records map= in task meta.
@@ -11,6 +11,9 @@
 #   --map-next records one already-locked successor as map_next= in task meta.
 #   fm-teardown.sh refuses completion until that id exists in the active backlog
 #   as queued, in flight, or done, so a landed blocker cannot invent a new go gate.
+#   --ov records a distinct already-spawned outside-voice worker as ov= in
+#   ship meta. A filled ship Task requires it; builder self-review is not OV.
+#   bin/fm-owner-invoke-wait-check.sh owns the rule. --ov is ship-only.
 #   --mode and --yolo are this task's delivery contract, REQUIRED for every ship
 #   spawn and refused on --scout and --secondmate spawns. Firstmate resolves both
 #   per task at intake (AGENTS.md section 7); data/projects.md holds the captain's
@@ -254,6 +257,7 @@ ROLE=
 TRACEPARENT_ARG=
 MAP_NEXT=
 MAP=
+OV=
 HARNESS_SET=0
 MODEL_SET=0
 EFFORT_SET=0
@@ -264,6 +268,7 @@ ROLE_SET=0
 TRACEPARENT_SET=0
 MAP_NEXT_SET=0
 MAP_SET=0
+OV_SET=0
 POS=()
 want_value=
 for a in "$@"; do
@@ -282,6 +287,7 @@ for a in "$@"; do
       traceparent) TRACEPARENT_ARG=$a; TRACEPARENT_SET=1 ;;
       map-next) MAP_NEXT=$a; MAP_NEXT_SET=1 ;;
       map) MAP=$a; MAP_SET=1 ;;
+      ov) OV=$a; OV_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
     want_value=
@@ -310,6 +316,8 @@ for a in "$@"; do
     --map-next=*) MAP_NEXT=${a#--map-next=}; MAP_NEXT_SET=1 ;;
     --map) want_value=map ;;
     --map=*) MAP=${a#--map=}; MAP_SET=1 ;;
+    --ov) want_value=ov ;;
+    --ov=*) OV=${a#--ov=}; OV_SET=1 ;;
     *) POS+=("$a") ;;
   esac
 done
@@ -325,6 +333,8 @@ done
 [ "$MAP_NEXT_SET" -eq 0 ] || [ -n "$MAP_NEXT" ] || { echo "error: --map-next requires a non-empty value" >&2; exit 1; }
 [ "$MAP_NEXT_SET" -eq 0 ] || fm_task_id_creation_valid "$MAP_NEXT" || { echo "error: invalid --map-next task id" >&2; exit 2; }
 [ "$MAP_SET" -eq 0 ] || [ -n "$MAP" ] || { echo "error: --map requires a non-empty value" >&2; exit 1; }
+[ "$OV_SET" -eq 0 ] || [ -n "$OV" ] || { echo "error: --ov requires a non-empty value" >&2; exit 1; }
+[ "$OV_SET" -eq 0 ] || fm_task_id_creation_valid "$OV" || { echo "error: invalid --ov task id" >&2; exit 2; }
 # A parent-delivered carrier replaces this home's own resolution, so it is
 # refused unless it is a secondmate spawn carrying a strictly valid W3C value.
 # Nothing else may reach the pane's TRACEPARENT export.
@@ -775,6 +785,7 @@ spawn_abort_cleanup() {
             [ -z "${YOLO:-}" ] || echo "yolo=$YOLO"
             [ -z "${MAP_NEXT:-}" ] || echo "map_next=$MAP_NEXT"
             [ -z "${MAP:-}" ] || echo "map=$MAP"
+            [ -z "${OV:-}" ] || echo "ov=$OV"
             echo "tasktmp=${TASK_TMP:-}"
             echo "model=${MODEL:-default}"
             echo "effort=${EFFORT:-default}"
@@ -851,6 +862,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   [ "$ROLE_SET" -eq 0 ] || shared_args+=(--role "$ROLE")
   [ "$MAP_NEXT_SET" -eq 0 ] || shared_args+=(--map-next "$MAP_NEXT")
   [ "$MAP_SET" -eq 0 ] || shared_args+=(--map "$MAP")
+  [ "$OV_SET" -eq 0 ] || shared_args+=(--ov "$OV")
   for pair in ${POS[@]+"${POS[@]}"}; do
     case "$pair" in
       *=*) : ;;
@@ -871,6 +883,14 @@ fi
 ID=${POS[0]}
 fm_task_id_creation_valid "$ID" || { echo "error: invalid task id" >&2; exit 2; }
 [ "$MAP_NEXT_SET" -eq 0 ] || [ "$MAP_NEXT" != "$ID" ] || { echo "error: --map-next must name a different task id" >&2; exit 2; }
+[ "$OV_SET" -eq 0 ] || [ "$KIND" = ship ] || {
+  echo "error: --ov applies only to ship spawns" >&2
+  exit 1
+}
+[ "$OV_SET" -eq 0 ] || [ "$OV" != "$ID" ] || {
+  echo "error: --ov must name a different task id; builder self-review is not OV" >&2
+  exit 2
+}
 SPAWN_TASK_LOCK="$STATE/.spawn-$ID.lock"
 if ! fm_lock_try_acquire "$SPAWN_TASK_LOCK"; then
   echo "error: another spawn is already creating task $ID" >&2
@@ -1446,6 +1466,36 @@ fi
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
 if [ "$KIND" != secondmate ]; then
   "$FM_ROOT/bin/fm-brief.sh" --check-worker "$KIND" "$BRIEF" || exit $?
+fi
+
+if [ "$KIND" = ship ] && [ -x "$FM_ROOT/bin/fm-owner-invoke-wait-check.sh" ]; then
+  ov_task=$(awk '
+    /^# Task[[:space:]]*$/ { in_task = 1; next }
+    in_task && /^# / { exit }
+    in_task { print }
+  ' "$BRIEF")
+  ov_owned='[]'
+  for ov_meta in "$STATE"/*.meta; do
+    [ -f "$ov_meta" ] && [ ! -L "$ov_meta" ] || continue
+    ov_id=$(basename "$ov_meta")
+    ov_id=${ov_id%.meta}
+    [ -n "$ov_id" ] || continue
+    ov_owned=$(jq -n -c --arg id "$ov_id" --argjson acc "$ov_owned" '$acc + [$id]')
+  done
+  ov_turn=$(mktemp "${TMPDIR:-/tmp}/fm-ov-wait.XXXXXX") || exit 2
+  jq -n --arg id "$ID" --arg ov "${OV:-}" --arg task "$ov_task" --argjson owned "$ov_owned" \
+    '{ships:[{id:$id, ov:$ov, task:$task}], owned_meta:$owned}' > "$ov_turn" || {
+    rm -f "$ov_turn"
+    echo "error: could not encode OV spawn check" >&2
+    exit 2
+  }
+  if ! "$FM_ROOT/bin/fm-owner-invoke-wait-check.sh" --input "$ov_turn" \
+    --rules R-ov-missing >/dev/null; then
+    rm -f "$ov_turn"
+    echo "REFUSED: ship $ID has no separate OV worker; builder self-review is not OV. Spawn the OV worker first and pass --ov <id>." >&2
+    exit 1
+  fi
+  rm -f "$ov_turn"
 fi
 
 delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task mode
@@ -2344,6 +2394,7 @@ META_WINDOW=$T
   [ -z "${ROLE:-}" ] || echo "role=$ROLE"
   [ -z "$MAP_NEXT" ] || echo "map_next=$MAP_NEXT"
   [ -z "${MAP:-}" ] || echo "map=$MAP"
+  [ -z "${OV:-}" ] || echo "ov=$OV"
   echo "tasktmp=$TASK_TMP"
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"

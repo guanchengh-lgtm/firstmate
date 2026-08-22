@@ -20,9 +20,7 @@
 #   scout task contract and captain corrections remain its residual measure.
 #   --check-worker is the spawn-time brief lint. It refuses slash invocation of
 #   firstmate-only skills, /grill-with-docs, /last30days, /wiki, and
-#   /design-sync while allowing the same words as plain names. For ship tasks
-#   with a filled Task section it also refuses omission of plan-eng-review
-#   (bin/fm-owner-invoke-wait-check.sh owns that rule). For scout tasks
+#   /design-sync while allowing the same words as plain names. For scout tasks
 #   it also refuses an obvious named-source research ask with no manifest.
 #   --secondmate writes a persistent secondmate charter. The project list
 #   is cloned into the secondmate home, while the natural-language scope
@@ -141,15 +139,6 @@ check_worker_brief() {  # <ship|scout> <brief>
       return 1
     fi
   done
-
-  if [ "$kind" = ship ]; then
-    if ! "$SCRIPT_DIR/fm-owner-invoke-wait-check.sh" --brief "$brief" \
-      --rules R-required-skill-omitted >/dev/null; then
-      echo "REFUSED: ship brief omits plan-eng-review; that node owns the skill. Invoke it. A yes-ask is not done." >&2
-      rm -f "$task_tmp"
-      return 1
-    fi
-  fi
 
   if [ "$kind" = scout ]; then
     manifest_count=$(awk '
@@ -657,8 +646,6 @@ cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
 
 # Task
-Before any implementation: run \`/plan-eng-review\` on this ship plan. Take obvious recs. Escalate only a real fork. Then implement.
-
 {TASK}
 
 $HERDR_SECTION

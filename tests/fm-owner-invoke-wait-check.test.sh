@@ -98,22 +98,31 @@ test_historical_fog_pin_fires_exact_count() {
 }
 
 test_historical_ship_omission_fires_exact_count() {
-  local out rc
+  local out rc brief
   set +e
   out=$(run_check \
-    --brief "$FIXTURES/historical-ship-without-eng-review.md" \
-    --expect-rule R-required-skill-omitted --expect-count 1 2>&1)
+    --input "$FIXTURES/historical-ship-without-ov.json" \
+    --expect-rule R-ov-missing --expect-count 1 2>&1)
   rc=$?
   set -e
-  [ "$rc" -eq 0 ] || fail "historical ship omission exact-count exited $rc: $out"
+  [ "$rc" -eq 0 ] || fail "historical ship without OV exact-count exited $rc: $out"
   set +e
-  out=$(run_check --brief "$FIXTURES/historical-ship-without-eng-review.md")
+  out=$(run_check --input "$FIXTURES/historical-ship-without-ov.json")
   rc=$?
   set -e
-  [ "$rc" -eq 1 ] || fail "historical ship omission gate exited $rc: $out"
-  assert_contains "$out" "R-required-skill-omitted-brief" \
-    "historical ship omission did not report the missing skill"
-  pass "owner-invoke-wait: 2026-08-22 reconstructed ship omission fires exact count 1"
+  [ "$rc" -eq 1 ] || fail "historical ship without OV gate exited $rc: $out"
+  assert_contains "$out" "R-ov-missing-none" \
+    "historical compile-check ship did not report missing OV"
+  brief="$TMP_ROOT/filled-no-ov.md"
+  printf '# Task\nStart Spec compile-check. The next act is obvious.\n\n# Setup\nfixture\n' > "$brief"
+  set +e
+  out=$(run_check --brief "$brief")
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "filled brief without OV exited $rc: $out"
+  assert_contains "$out" "R-ov-missing-none" \
+    "filled brief without OV did not report missing OV"
+  pass "owner-invoke-wait: 2026-08-22 compile-check with no OV fires exact count 1"
 }
 
 test_held_locked_next_and_date_cleared() {
@@ -219,7 +228,7 @@ test_invoked_and_freeze_are_clean() {
   pass "owner-invoke-wait: invoked skill and name-and-wait freeze are clean"
 }
 
-test_placeholder_and_named_brief_are_clean() {
+test_placeholder_and_stub_briefs_are_clean() {
   local out rc brief
   brief="$TMP_ROOT/placeholder.md"
   printf '# Task\n{TASK}\n\n# Setup\nfixture\n' > "$brief"
@@ -229,14 +238,6 @@ test_placeholder_and_named_brief_are_clean() {
   set -e
   [ "$rc" -eq 0 ] || fail "placeholder brief exited $rc: $out"
   [ -z "$out" ] || fail "placeholder brief printed findings: $out"
-  brief="$TMP_ROOT/named.md"
-  printf '# Task\nBefore any implementation: run /plan-eng-review on this ship plan.\n\n# Setup\nfixture\n' > "$brief"
-  set +e
-  out=$(run_check --brief "$brief")
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "named brief exited $rc: $out"
-  [ -z "$out" ] || fail "named brief printed findings: $out"
   brief="$TMP_ROOT/no-task.md"
   printf 'brief for stub\n' > "$brief"
   set +e
@@ -244,7 +245,60 @@ test_placeholder_and_named_brief_are_clean() {
   rc=$?
   set -e
   [ "$rc" -eq 0 ] || fail "no-task stub exited $rc: $out"
-  pass "owner-invoke-wait: placeholder, named, and no-task briefs are clean"
+  pass "owner-invoke-wait: placeholder and no-task briefs are clean"
+}
+
+test_builder_self_review_is_not_ov() {
+  local out rc turn
+  turn="$TMP_ROOT/self-review.json"
+  write_turn "$turn" '{
+    "ships": [{"id":"spec-compile-check","ov":"","task":"Run /plan-eng-review on this ship plan then implement."}],
+    "owned_meta": ["spec-compile-check"]
+  }'
+  set +e
+  out=$(run_check --input "$turn" --expect-rule R-ov-missing --expect-count 1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "builder self-review exact-count exited $rc: $out"
+  turn="$TMP_ROOT/ov-self.json"
+  write_turn "$turn" '{
+    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check","task":"Implement the compile-check."}],
+    "owned_meta": ["spec-compile-check"]
+  }'
+  set +e
+  out=$(run_check --input "$turn")
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "self OV id exited $rc: $out"
+  assert_contains "$out" "R-ov-missing-self" "self OV id did not report self-review"
+  pass "owner-invoke-wait: builder self-review is not OV"
+}
+
+test_distinct_ov_worker_is_clean() {
+  local out rc turn
+  turn="$TMP_ROOT/ov-ok.json"
+  write_turn "$turn" '{
+    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","task":"Implement the compile-check."}],
+    "owned_meta": ["spec-compile-check", "spec-compile-check-ov"]
+  }'
+  set +e
+  out=$(run_check --input "$turn")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "distinct OV worker exited $rc: $out"
+  [ -z "$out" ] || fail "distinct OV worker printed findings: $out"
+  turn="$TMP_ROOT/ov-missing-worker.json"
+  write_turn "$turn" '{
+    "ships": [{"id":"spec-compile-check","ov":"spec-compile-check-ov","task":"Implement the compile-check."}],
+    "owned_meta": ["spec-compile-check"]
+  }'
+  set +e
+  out=$(run_check --input "$turn")
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "missing OV worker exited $rc: $out"
+  assert_contains "$out" "R-ov-missing-worker" "missing OV worker did not report unspawned OV"
+  pass "owner-invoke-wait: distinct spawned OV worker is required"
 }
 
 test_unrelated_rule_does_not_satisfy_exact_count() {
@@ -303,7 +357,9 @@ test_historical_fog_pin_fires_exact_count
 test_historical_ship_omission_fires_exact_count
 test_held_locked_next_and_date_cleared
 test_invoked_and_freeze_are_clean
-test_placeholder_and_named_brief_are_clean
+test_placeholder_and_stub_briefs_are_clean
+test_builder_self_review_is_not_ov
+test_distinct_ov_worker_is_clean
 test_unrelated_rule_does_not_satisfy_exact_count
 test_own_claims_pass_class_too_narrow
 test_pretool_yes_ask_is_denied
