@@ -399,6 +399,72 @@ test_quoted_prefix_and_unrelated_rule_count() {
   pass "spec compile-check: quoted keep prefix is a tag; extra rule breaks exact-count"
 }
 
+test_placeholder_citation_is_skipped() {
+  local home out rc
+  home=$(clean_home "$TMP_ROOT/placeholder-cite")
+  write_spec "$home/data/wf-map2-loops/spec.md" \
+    "# Spec" \
+    "Cite \`data/<id>/report.md\` and \`data/synth/report.md\`." \
+    "D1 is the lock." \
+    "XG-keep \"Node contract\"."
+  set +e
+  out=$(run_check --home "$home")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "placeholder plus real citation exited $rc: $out"
+  [ -z "$out" ] || fail "placeholder plus real citation printed findings: $out"
+  pass "spec compile-check: placeholder citation with a real report is clean"
+}
+
+test_multiline_quoted_better_prefix_is_a_tag() {
+  local home out rc
+  home=$(clean_home "$TMP_ROOT/better-prefix")
+  write_keep "$home/data/synth/report.md" \
+    "\"Better\" is chosen outside the graph, by people, from real failures"
+  write_spec "$home/data/wf-map2-loops/spec.md" \
+    "# Spec" \
+    "Cite \`data/synth/report.md\`." \
+    "D1 is the lock." \
+    "SP2-keep \"'Better' is" \
+    "chosen outside the graph\"."
+  set +e
+  out=$(run_check --home "$home")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "multiline quoted Better prefix exited $rc: $out"
+  [ -z "$out" ] || fail "multiline quoted Better prefix printed findings: $out"
+  pass "spec compile-check: multiline quoted Better prefix with inner single quotes is a tag"
+}
+
+test_explicit_keep_source_ignores_cited_reports() {
+  local home out rc explicit
+  home=$(clean_home "$TMP_ROOT/explicit-keep")
+  write_keep "$home/data/synth/report.md" \
+    "Node contract: bounded job, defined input" \
+    "Outer hill-climbing loop: traces from ships"
+  write_spec "$home/data/wf-map2-loops/spec.md" \
+    "# Spec" \
+    "Cite \`data/synth/report.md\`." \
+    "D1 is the lock." \
+    "XG-keep \"Node contract\"."
+  set +e
+  out=$(run_check --home "$home")
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "cited extra keep-row exited $rc: $out"
+  assert_contains "$out" "R-keep-lock-missing: Outer hill-climbing loop" \
+    "cited extra keep-row did not report R-keep-lock-missing"
+  explicit="$TMP_ROOT/explicit-only.md"
+  write_keep "$explicit" "Node contract: bounded job, defined input"
+  set +e
+  out=$(run_check --home "$home" --keep-source "$explicit")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "--home plus explicit --keep-source exited $rc: $out"
+  [ -z "$out" ] || fail "--home plus explicit --keep-source printed findings: $out"
+  pass "spec compile-check: explicit --keep-source ignores cited reports"
+}
+
 command -v python3 >/dev/null 2>&1 || { echo "skip: python3 not found"; exit 0; }
 
 test_missing_and_empty_input_are_structural
@@ -413,5 +479,8 @@ test_env_home_is_not_scanned
 test_duplicate_ticket_files_do_not_double_findings
 test_closed_research_ticket_is_required
 test_quoted_prefix_and_unrelated_rule_count
+test_placeholder_citation_is_skipped
+test_multiline_quoted_better_prefix_is_a_tag
+test_explicit_keep_source_ignores_cited_reports
 
 echo "# all fm-spec-compile-check tests passed"

@@ -55,7 +55,8 @@
 # LIMITS: ticket ids, not lock clauses (D4 late-rec prose is invisible).
 # Keep-items outside ### Keep tables are invisible. Paraphrase without
 # the title key or a two-word quoted prefix is invisible. Drop-table
-# rows are not keep-rows.
+# rows are not keep-rows. A citation containing < or > is a placeholder,
+# never a file.
 set -euo pipefail
 
 home=
@@ -67,7 +68,7 @@ rules="R-ticket-lock,R-keep-lock"
 keep_sources=()
 
 usage() {
-  sed -n '2,58p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,59p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 structural() {
@@ -236,7 +237,7 @@ def strip_md(text):
 def compact(text):
     text = strip_md(text)
     text = text.replace("…", " ").replace("...", " ")
-    text = re.sub(r'["“”]+', "", text)
+    text = re.sub(r'["“”\'‘’]+', "", text)
     text = re.sub(r"[,;:()~]+", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
@@ -349,7 +350,7 @@ def is_closed(text):
 
 def cited_reports(spec):
     found = re.findall(r"`(data/[^`]*report\.md)`", spec)
-    return sorted(set(found))
+    return sorted(set(path for path in found if "<" not in path and ">" not in path))
 
 
 spec_text = read_text(spec_path, "spec")
