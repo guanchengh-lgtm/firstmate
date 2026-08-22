@@ -6,6 +6,10 @@ function escapeCharacterClass(value) {
             if (char === "/" && this.isAtStartOfMessage()) {
                 this.tryTriggerAutocomplete();
             }
+    // Slash menu only allowed on the first line of the editor
+    isSlashMenuAllowed() {
+        return this.state.cursorLine === 0;
+    }
     // Helper method to check if cursor is at start of message (for slash command detection)
     isAtStartOfMessage() {
         if (!this.isSlashMenuAllowed())
