@@ -19,7 +19,7 @@
 #   literal. This proves naming, not reading fullness; fullness remains in the
 #   scout task contract and captain corrections remain its residual measure.
 #   --check-worker is the spawn-time brief lint. It refuses slash invocation of
-#   firstmate-only skills, /grill-with-docs, /last30days, /wiki, and
+#   firstmate-only skills, /wayfinder, /last30days, /wiki, and
 #   /design-sync while allowing the same words as plain names. For scout tasks
 #   it also refuses an obvious named-source research ask with no manifest.
 #   --secondmate writes a persistent secondmate charter. The project list
@@ -132,7 +132,7 @@ check_worker_brief() {  # <ship|scout> <brief>
       return 1
     fi
   done
-  for skill in grill-with-docs last30days wiki design-sync; do
+  for skill in wayfinder last30days wiki design-sync; do
     if task_invokes_slash "$task_tmp" "$skill"; then
       echo "REFUSED: worker brief invokes forbidden /$skill; name is not invocation." >&2
       rm -f "$task_tmp"
