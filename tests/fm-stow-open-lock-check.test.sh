@@ -11,6 +11,13 @@ CHECK="$ROOT/bin/fm-stow-open-lock-check.sh"
 HIST="$ROOT/tests/fixtures/fm-stow-open-lock-check/historical-q2-open"
 LOCKED="$ROOT/tests/fixtures/fm-stow-open-lock-check/locked-q2"
 TMP_ROOT=$(fm_test_tmproot fm-stow-open-lock-check)
+# Decision prose is stored as .fixture so it is not a maintained-doc surface;
+# materialize the public *.md names under a temp decisions dir for the checker.
+HIST_DECISIONS="$TMP_ROOT/historical-q2-open/decisions"
+LOCKED_DECISIONS="$TMP_ROOT/locked-q2/decisions"
+mkdir -p "$HIST_DECISIONS" "$LOCKED_DECISIONS"
+cp "$HIST/secondmate-2026-08-22.fixture" "$HIST_DECISIONS/secondmate-2026-08-22.md"
+cp "$LOCKED/secondmate-2026-08-22.fixture" "$LOCKED_DECISIONS/secondmate-2026-08-22.md"
 
 run_check() {
   "$CHECK" "$@" 2>&1
@@ -46,7 +53,7 @@ test_historical_q2_open_fires_exact_count() {
   set +e
   out=$(run_check \
     --input "$HIST/receipt.json" \
-    --decisions-dir "$HIST/decisions" \
+    --decisions-dir "$HIST_DECISIONS" \
     --expect-rule R-stow-open-lock --expect-count 1 2>&1)
   rc=$?
   set -e
@@ -54,7 +61,7 @@ test_historical_q2_open_fires_exact_count() {
   set +e
   out=$(run_check \
     --input "$HIST/receipt.json" \
-    --decisions-dir "$HIST/decisions")
+    --decisions-dir "$HIST_DECISIONS")
   rc=$?
   set -e
   [ "$rc" -eq 1 ] || fail "historical fixture gate exited $rc"
@@ -69,13 +76,13 @@ test_listed_pick_and_locked_file_are_clean() {
   listed="$TMP_ROOT/listed.json"
   printf '%s\n' '{"reset_safe":true,"remaining_session_picks":["Q2"]}' > "$listed"
   set +e
-  out=$(run_check --input "$listed" --decisions-dir "$HIST/decisions")
+  out=$(run_check --input "$listed" --decisions-dir "$HIST_DECISIONS")
   rc=$?
   set -e
   [ "$rc" -eq 0 ] || fail "listed Q2 still exited $rc: $out"
   [ -z "$out" ] || fail "listed Q2 printed findings: $out"
   set +e
-  out=$(run_check --input "$LOCKED/receipt.json" --decisions-dir "$LOCKED/decisions")
+  out=$(run_check --input "$LOCKED/receipt.json" --decisions-dir "$LOCKED_DECISIONS")
   rc=$?
   set -e
   [ "$rc" -eq 0 ] || fail "locked Q2 still exited $rc: $out"
@@ -90,7 +97,7 @@ test_bearings_omit_fires_exact_count() {
   set +e
   out=$(run_check \
     --input "$receipt" \
-    --decisions-dir "$HIST/decisions" \
+    --decisions-dir "$HIST_DECISIONS" \
     --snapshot "$HIST/snapshot-omit.json" \
     --expect-rule R-bearings-lists-open-locks --expect-count 1 2>&1)
   rc=$?
@@ -99,7 +106,7 @@ test_bearings_omit_fires_exact_count() {
   set +e
   out=$(run_check \
     --input "$receipt" \
-    --decisions-dir "$HIST/decisions" \
+    --decisions-dir "$HIST_DECISIONS" \
     --snapshot "$HIST/snapshot-list.json")
   rc=$?
   set -e
@@ -110,7 +117,7 @@ test_bearings_omit_fires_exact_count() {
 test_list_open_and_expect_count_zero_are_structural_or_public() {
   local out rc
   set +e
-  out=$(run_check --list-open --decisions-dir "$HIST/decisions")
+  out=$(run_check --list-open --decisions-dir "$HIST_DECISIONS")
   rc=$?
   set -e
   [ "$rc" -eq 0 ] || fail "--list-open exited $rc: $out"
@@ -122,7 +129,7 @@ test_list_open_and_expect_count_zero_are_structural_or_public() {
       and .[0].source == "decision-lock"
   ' >/dev/null || fail "--list-open JSON missed Q2: $out"
   set +e
-  out=$(run_check --list-open --decisions-dir "$LOCKED/decisions")
+  out=$(run_check --list-open --decisions-dir "$LOCKED_DECISIONS")
   rc=$?
   set -e
   [ "$rc" -eq 0 ] || fail "locked --list-open exited $rc"
@@ -131,14 +138,14 @@ test_list_open_and_expect_count_zero_are_structural_or_public() {
   set +e
   out=$(run_check \
     --input "$HIST/receipt.json" \
-    --decisions-dir "$HIST/decisions" \
+    --decisions-dir "$HIST_DECISIONS" \
     --expect-rule R-stow-open-lock --expect-count 0 2>&1)
   rc=$?
   set -e
   [ "$rc" -eq 2 ] || fail "expect-count 0 exited $rc"
   assert_contains "$out" "expect-count must be > 0" "zero count was not structural"
   set +e
-  out=$(run_check --input "$HIST/receipt.json" --decisions-dir "$HIST/decisions" --rules '')
+  out=$(run_check --input "$HIST/receipt.json" --decisions-dir "$HIST_DECISIONS" --rules '')
   rc=$?
   set -e
   [ "$rc" -eq 2 ] || fail "empty --rules exited $rc"
@@ -148,7 +155,7 @@ test_list_open_and_expect_count_zero_are_structural_or_public() {
 test_quoted_still_open_mention_is_not_a_marker() {
   local out rc
   set +e
-  out=$(run_check --list-open --decisions-dir "$LOCKED/decisions")
+  out=$(run_check --list-open --decisions-dir "$LOCKED_DECISIONS")
   rc=$?
   set -e
   [ "$rc" -eq 0 ] || fail "mention check --list-open exited $rc"
@@ -162,7 +169,7 @@ test_summary_substring_remaining_pick_is_not_clean() {
   bogus="$TMP_ROOT/substring-remaining.json"
   printf '%s\n' '{"reset_safe":true,"remaining_session_picks":["still open"]}' > "$bogus"
   set +e
-  out=$(run_check --input "$bogus" --decisions-dir "$HIST/decisions")
+  out=$(run_check --input "$bogus" --decisions-dir "$HIST_DECISIONS")
   rc=$?
   set -e
   [ "$rc" -eq 1 ] || fail "summary-substring remaining pick exited $rc: $out"
@@ -172,7 +179,7 @@ test_summary_substring_remaining_pick_is_not_clean() {
     "summary-substring remaining pick did not name Q2"
   printf '%s\n' '{"reset_safe":true,"remaining_session_picks":["open"]}' > "$bogus"
   set +e
-  out=$(run_check --input "$bogus" --decisions-dir "$HIST/decisions")
+  out=$(run_check --input "$bogus" --decisions-dir "$HIST_DECISIONS")
   rc=$?
   set -e
   [ "$rc" -eq 1 ] || fail "generic 'open' remaining pick exited $rc: $out"
@@ -204,7 +211,7 @@ EOF
   assert_contains "$out" "Q2" "session stem remaining pick did not name Q2"
   printf '%s\n' '{"reset_safe":true,"remaining_session_picks":["secondmate-2026-08-22"]}' > "$bogus"
   set +e
-  out=$(run_check --input "$bogus" --decisions-dir "$HIST/decisions")
+  out=$(run_check --input "$bogus" --decisions-dir "$HIST_DECISIONS")
   rc=$?
   set -e
   [ "$rc" -eq 1 ] || fail "historical file-stem remaining pick exited $rc: $out"
