@@ -12,9 +12,11 @@
 #
 # It runs before primary-scope so child firstmate worktrees are not skipped.
 # This-turn writes are taken from the Stop transcript after the last
-# captain/user turn text (skip isMeta, tool_result-only, empty-text, and
-# operational FIRSTMATE_OP follow-ups): Write / Edit / MultiEdit /
-# NotebookEdit file_path values, and Bash command strings. A write counts when the string
+# captain/user turn text (skip isMeta, tool_result-only, empty-text,
+# operational FIRSTMATE_OP follow-ups, and harness-injected synthetic user
+# rows: task-notification including Stop hook feedback, Request interrupted,
+# local-command-stdout): Write / Edit / MultiEdit / NotebookEdit file_path
+# values, and Bash command strings. A write counts when the string
 # contains a suffix data/wf-map2-loops/spec.md, data/wf-map2-loops/tickets/<name>.md,
 # or a data/<id>/report.md the spec cites in backticks. Home is the absolute
 # prefix before /data/ in that path. A relative data/... path resolves against
@@ -165,6 +167,17 @@ def is_tool_result_only(content):
     return True
 
 
+def is_synthetic_user_text(text):
+    t = text.lstrip()
+    if t.startswith("<task-notification"):
+        return True
+    if t.startswith("<local-command-stdout"):
+        return True
+    if t.startswith("[Request interrupted by user"):
+        return True
+    return False
+
+
 def is_captain_turn(record, content):
     if isinstance(record, dict) and record.get("isMeta") is True:
         return False
@@ -174,6 +187,8 @@ def is_captain_turn(record, content):
     if not text.strip():
         return False
     if is_operational(text):
+        return False
+    if is_synthetic_user_text(text):
         return False
     return True
 

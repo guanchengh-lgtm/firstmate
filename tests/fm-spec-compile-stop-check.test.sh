@@ -76,6 +76,11 @@ meta_user_line() {
   python3 -c 'import json,sys; print(json.dumps({"type":"user","isMeta":True,"message":{"role":"user","content":[{"type":"text","text":sys.argv[1]}]}}))' "$text"
 }
 
+user_text_line() {
+  local text=$1
+  python3 -c 'import json,sys; print(json.dumps({"type":"message","message":{"role":"user","content":[{"type":"text","text":sys.argv[1]}]}}))' "$text"
+}
+
 bash_tool_line() {
   local cmd=$1
   python3 -c 'import json,sys; print(json.dumps({"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":sys.argv[1]}}]}}))' "$cmd"
@@ -150,6 +155,34 @@ test_write_then_tool_result_still_refuses() {
   expect_code 2 "$rc" "Write followed by tool_result/isMeta must still refuse"
   assert_contains "$out" "R-ticket-lock-missing: D8" "tool_result after Write cleared the this-turn window"
   pass "spec compile stop: Write then tool_result/isMeta still exits 2"
+}
+
+test_write_then_stop_hook_feedback_still_refuses() {
+  local home spec transcript payload out rc
+  home=$(write_green_home "$TMP_ROOT/write-stop-feedback")
+  spec="$home/data/wf-map2-loops/spec.md"
+  write_spec "$spec" \
+    "# Spec" \
+    "Cite \`data/synth/report.md\`." \
+    "D1 is the lock." \
+    "DX is the lock." \
+    "XG-keep \"Node contract\"."
+  transcript="$home/transcript.jsonl"
+  write_transcript "$transcript" \
+    "$(write_tool_line Write "$spec")" \
+    "$(tool_result_line "Wrote contents")" \
+    "$(user_text_line "<task-notification><summary>Stop hook feedback</summary><detail>R-ticket-lock-missing: D8</detail></task-notification>")" \
+    "$(user_text_line "<task-notification><summary>background agent finished</summary></task-notification>")" \
+    "$(user_text_line "[Request interrupted by user for tool use]")" \
+    "$(user_text_line "<local-command-stdout>ok</local-command-stdout>")"
+  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  set +e
+  out=$(run_adapter "$payload")
+  rc=$?
+  set -e
+  expect_code 2 "$rc" "Write followed by Stop-hook feedback must still refuse"
+  assert_contains "$out" "R-ticket-lock-missing: D8" "Stop-hook feedback after Write cleared the this-turn window"
+  pass "spec compile stop: Write then Stop-hook feedback still exits 2"
 }
 
 test_bash_sed_closed_ticket_without_tag_refuses() {
@@ -309,6 +342,7 @@ command -v python3 >/dev/null 2>&1 || { echo "skip: python3 not found"; exit 0; 
 
 test_write_renames_d8_and_refuses
 test_write_then_tool_result_still_refuses
+test_write_then_stop_hook_feedback_still_refuses
 test_bash_sed_closed_ticket_without_tag_refuses
 test_no_write_this_turn_is_inert_while_spec_red
 test_child_worktree_write_checks_that_tree
