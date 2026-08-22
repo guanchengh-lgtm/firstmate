@@ -172,6 +172,7 @@ test_lock_still_open_uses_list_open_reader() {
   local home out rc
   home="$TMP_ROOT/lock-still-open"
   mkdir -p "$home/data/wf-map2-v2/tickets" "$home/data/decisions"
+  # shellcheck disable=SC2016 # Backticks are literal Markdown lock tokens.
   write_ticket "$home/data/wf-map2-v2/tickets/closed-open-lock.md" \
     "$(printf '%s\n' 'status: CLOSED 2026-08-22' '' '## Answer' \
       '**A.** Lock `data/decisions/still-open-2026-08-22.md`.')"
@@ -198,6 +199,7 @@ test_lock_without_pick_fires() {
   local home out rc
   home="$TMP_ROOT/lock-no-pick"
   mkdir -p "$home/data/wf-map2-v2/tickets" "$home/data/decisions"
+  # shellcheck disable=SC2016 # Backticks are literal Markdown lock tokens.
   write_ticket "$home/data/wf-map2-v2/tickets/closed-no-pick.md" \
     "$(printf '%s\n' 'status: CLOSED 2026-08-22' '' '## Answer' \
       '**A.** Lock `data/decisions/no-pick-2026-08-22.md`.')"
@@ -220,6 +222,7 @@ test_gather_skips_loops_and_other_data() {
     "$home/data/wf-map2-loops/tickets" \
     "$home/data/wf-other/tickets" \
     "$home/data/decisions"
+  # shellcheck disable=SC2016 # Backticks are literal Markdown lock tokens.
   write_ticket "$home/data/wf-map2-v2/tickets/clean.md" \
     "$(printf '%s\n' 'status: CLOSED 2026-08-22' '' '## Answer' \
       '**A.** Lock `data/decisions/clean-2026-08-22.md`.')"
@@ -242,6 +245,7 @@ test_clean_closed_dated_lock_is_silent() {
   local home out rc
   home="$TMP_ROOT/clean"
   mkdir -p "$home/data/wf-map2-v2/tickets" "$home/data/decisions"
+  # shellcheck disable=SC2016 # Backticks are literal Markdown lock tokens.
   write_ticket "$home/data/wf-map2-v2/tickets/clean.md" \
     "$(printf '%s\n' 'status: CLOSED 2026-08-22' '' '## Answer' \
       '**A.** Lock `data/decisions/clean-2026-08-22.md`.')"
@@ -264,6 +268,7 @@ test_lock_token_only_inside_answer_ignores_prose_paths() {
     "$(printf '%s\n' '**Pick:** A. real.')"
   write_lock "$home/data/decisions/prose-only-2026-08-22.md" \
     "$(printf '%s\n' '# prose only' 'No pick line.')"
+  # shellcheck disable=SC2016 # Backticks are literal Markdown lock tokens.
   write_ticket "$home/data/wf-map2-v2/tickets/prose-before-lock.md" \
     "$(printf '%s\n' 'status: CLOSED 2026-08-22' '' \
       '## Question' \
@@ -299,6 +304,7 @@ test_s1_style_pick_phrase_still_open_fires() {
   local home out rc
   home="$TMP_ROOT/s1-style-pick"
   mkdir -p "$home/data/wf-map2-v2/tickets" "$home/data/decisions"
+  # shellcheck disable=SC2016 # Backticks are literal Markdown lock tokens.
   write_ticket "$home/data/wf-map2-v2/tickets/s1-style-open.md" \
     "$(printf '%s\n' 'status: OPEN' '' '## Answer' \
       '**A. No ship.** Cursor is not a worker. Lock `data/decisions/s1-style-2026-08-22.md`.')"
