@@ -394,6 +394,28 @@ test_hook_claude_owner_invoke_ignores_stop_hook_active() {
   pass "fm-turnend-guard --claude: stop_hook_active cannot skip owner-invoke wait"
 }
 
+test_hook_refuses_open_owner_node_after_later_captain() {
+  local dir out status transcript payload
+  dir=$(make_primary_dir "$TMP_ROOT/hook-owner-node")
+  mkdir -p "$dir/data"
+  printf '%s\t%s\n' 'wayfinder' 'data/*/map.md' > "$dir/data/owner-invoke-nodes.tsv"
+  transcript="$dir/transcript.jsonl"
+  cat > "$transcript" <<'JSONL'
+{"timestamp":"2026-08-23T10:00:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"<command-name>/wayfinder</command-name>"}]}}
+{"timestamp":"2026-08-23T10:00:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Where is this map going?"}]}}
+{"timestamp":"2026-08-23T10:05:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"keep going"}]}}
+{"timestamp":"2026-08-23T10:05:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Still mapping."}]}}
+JSONL
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$dir")
+  out=$(printf '%s' "$payload" | CLAUDECODE=1 FM_HOME="$(cd "$dir" && pwd)" \
+    bash "$dir/bin/fm-turnend-guard.sh" 2>&1); status=$?
+  expect_code 2 "$status" "turn end must refuse an open wayfinder node after the next captain message"
+  assert_contains "$out" 'R-owner-node-open-waiting' \
+    "owner-node refusal did not name the waiting node"
+  pass "fm-turnend-guard: open owner-invoke node after the next captain message is not done"
+}
+
 install_session_diagnosis_checker() {
   local dir=$1 checker_dir="$1/data/recurring-defect/yen126-session-false-negative"
   mkdir -p "$checker_dir"
@@ -2023,6 +2045,7 @@ test_hook_ready_action_accepts_matching_worker_owner
 test_hook_refuses_held_map_next_without_worker
 test_hook_refuses_owner_invoke_yes_ask
 test_hook_claude_owner_invoke_ignores_stop_hook_active
+test_hook_refuses_open_owner_node_after_later_captain
 test_hook_refuses_tradingview_login_block_without_evidence
 test_hook_refuses_latest_same_key_tradingview_json_block
 test_hook_surfaces_session_checker_r5_and_r3_findings

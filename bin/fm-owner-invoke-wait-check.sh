@@ -34,6 +34,13 @@
 #   R-skill-unloaded        report present, ov_harness is claude/claude*, and
 #                           data/<ov>/skills never listed plan-eng-review
 #                           (completion-time; gated by report; Claude-only)
+#   R-owner-node-open       a harness <command-name> token from
+#                           data/owner-invoke-nodes.tsv opened a node, a later
+#                           real captain turn arrived, and no ordinary file
+#                           matching that row's artifact_glob has mtime at or
+#                           after the trigger. Does not refuse on the trigger
+#                           turn. Does not hunt free English. Does not warn
+#                           without blocking. --input reads turn.owner_nodes.
 # Default --brief rules: R-ov-missing,R-skill-unloaded on durable OV records
 # (state/<ship>.meta ov=/ov_harness=, data/<ov>/report.md, data/<ov>/skills,
 # live endpoint). No brief-body parse.
@@ -41,6 +48,17 @@
 # Owner-invoke tokens (header-owned; not a skill picker):
 #   recurring-defect, grill-with-docs, wayfinder, vision
 # Spoken yes-ask is the tight marker OWNER_INVOKE_WAIT only, not a prose net.
+# Owner-node completion is a separate rule. The home-local registry is
+# $FM_HOME/data/owner-invoke-nodes.tsv (FM_OWNER_INVOKE_NODES_REGISTRY
+# overrides). Each row is token <TAB> artifact_glob, relative to FM_HOME or
+# FM_ROOT, with no .. and no absolute path. Missing registry skips this rule.
+# A present malformed registry is structural. The trigger is a non-meta user
+# record containing <command-name>/token</command-name> or
+# <command-name>token</command-name>. The transcript record is the arm; this
+# helper does not write a second state file. A later captain turn is
+# is_captain_turn after that record. Same-turn Stop is clean. Blocking, not
+# advisory. Artifact credit needs trigger timestamp or state/.lock mtime;
+# without either, leftover files do not clear the node.
 # plan-eng-review requires a separate OV worker. The builder's own plan note
 # is not OV. Split transcript windows and live fog gather stay as gather holes.
 #
@@ -88,7 +106,11 @@
 # synthetic/meta user shapes do not reset the turn) and only real skill-load
 # tool shapes, not arbitrary tool-input mentions. PreToolUse keeps
 # AskUserQuestion tool_input as speech and still credits current-turn skill
-# loads from transcript_path.
+# loads from transcript_path. R-owner-node-open sees only harness command-name
+# records, not slash text and not Skill tool loads. Non-Claude primaries emit
+# no command-name record (disclosed gap). Assistant or isMeta text that quotes
+# the tag does not arm a node. A glob that matches any this-trigger-or-later
+# file, including an unrelated data/decisions/*.md, can clear grill-with-docs.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -108,12 +130,13 @@ CLAUDE_MODE=0
 PRETOOL_MODE=0
 HOOK_MODE=0
 
-INPUT_RULES='R-held-locked-next,R-owner-invoke-wait,R-fog-pin-wait,R-ov-missing,R-skill-unloaded'
+INPUT_RULES='R-held-locked-next,R-owner-invoke-wait,R-fog-pin-wait,R-ov-missing,R-skill-unloaded,R-owner-node-open'
 BRIEF_RULES='R-ov-missing,R-skill-unloaded'
-KNOWN_RULES='R-held-locked-next R-owner-invoke-wait R-fog-pin-wait R-ov-missing R-skill-unloaded'
+KNOWN_RULES='R-held-locked-next R-owner-invoke-wait R-fog-pin-wait R-ov-missing R-skill-unloaded R-owner-node-open'
+NODE_REGISTRY="${FM_OWNER_INVOKE_NODES_REGISTRY:-$DATA/owner-invoke-nodes.tsv}"
 
 usage() {
-  sed -n '2,80p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,113p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 structural() {
@@ -229,6 +252,7 @@ run_wait=0
 run_fog=0
 run_ov=0
 run_skill=0
+run_node=0
 for r in "${selected[@]+"${selected[@]}"}"; do
   case "$r" in
     R-held-locked-next) run_held=1 ;;
@@ -236,6 +260,7 @@ for r in "${selected[@]+"${selected[@]}"}"; do
     R-fog-pin-wait) run_fog=1 ;;
     R-ov-missing) run_ov=1 ;;
     R-skill-unloaded) run_skill=1 ;;
+    R-owner-node-open) run_node=1 ;;
   esac
 done
 
@@ -254,6 +279,14 @@ read_skill_lines() {  # <path> -> JSON array
   printf '%s\n' "$json"
 }
 
+path_mtime() {
+  if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
+    stat -f %m "$1" 2>/dev/null || true
+  else
+    stat -c %Y "$1" 2>/dev/null || true
+  fi
+}
+
 evaluate_turn() {  # <json-file>
   local json=$1
   jq -c \
@@ -262,6 +295,7 @@ evaluate_turn() {  # <json-file>
     --argjson run_fog "$run_fog" \
     --argjson run_ov "$run_ov" \
     --argjson run_skill "$run_skill" \
+    --argjson run_node "$run_node" \
     --arg today "$today" \
     --arg marker "$YES_ASK_MARKER" '
     def trim:
@@ -290,6 +324,7 @@ evaluate_turn() {  # <json-file>
     | (as_arr($t.invoked_skills) | map(ascii_downcase)) as $invoked
     | (if ($t.fog_live == true) then true else false end) as $fog
     | (as_arr($t.ships)) as $ships
+    | (as_arr($t.owner_nodes)) as $nodes
     | [
         if $run_held == 1 then
           ($held[]? | select(type == "object") | . as $h
@@ -353,6 +388,15 @@ evaluate_turn() {  # <json-file>
             | (if ($s.skills | type) == "array" then $s.skills else [] end) as $sk
             | select(($sk | map(ascii_downcase) | index("plan-eng-review")) == null)
             | "R-skill-unloaded-plan-eng-review: \($id) instructions never loaded plan-eng-review"
+          )
+        else empty end,
+        if $run_node == 1 then
+          ($nodes[]? | select(type == "object") | . as $n
+            | as_str($n.token) as $tok
+            | select($tok != "")
+            | select($n.later_captain == true)
+            | select($n.artifact != true)
+            | "R-owner-node-open-waiting: /\($tok) node still open after the next captain message with no matching artifact"
           )
         else empty end
       ]
@@ -511,6 +555,7 @@ owned_json='[]'
 ships_json='[]'
 speech=''
 invoked_json='[]'
+owner_nodes_json='[]'
 fog_live=false
 
 backend=
@@ -606,6 +651,240 @@ gather_ships() {
     ships=$(jq -n -c --argjson ship "$ship" --argjson acc "$ships" '$acc + [$ship]')
   done
   ships_json=$ships
+}
+
+gather_owner_nodes() {
+  local line_no=0 tabs token glob rows='[]' line trimmed lock_mtime py extracted transcript
+  owner_nodes_json='[]'
+  [ "$run_node" -eq 1 ] || return 0
+  [ -e "$NODE_REGISTRY" ] || return 0
+  [ -f "$NODE_REGISTRY" ] && [ ! -L "$NODE_REGISTRY" ] && [ -r "$NODE_REGISTRY" ] \
+    || structural "owner-invoke nodes registry is not a readable ordinary file: $NODE_REGISTRY"
+  [ -s "$NODE_REGISTRY" ] || structural "empty owner-invoke nodes registry $NODE_REGISTRY"
+  while IFS= read -r line || [ -n "$line" ]; do
+    line_no=$((line_no + 1))
+    trimmed=${line#"${line%%[![:space:]]*}"}
+    trimmed=${trimmed%"${trimmed##*[![:space:]]}"}
+    case "$trimmed" in ''|\#*) continue ;; esac
+    tabs=$(awk -F '\t' '{ print NF - 1 }' <<< "$line")
+    [ "$tabs" -eq 1 ] || structural "owner-invoke nodes registry line $line_no must contain exactly two tab-separated fields"
+    token=${line%%$'\t'*}
+    glob=${line#*$'\t'}
+    [ -n "$token" ] && [ -n "$glob" ] || structural "owner-invoke nodes registry line $line_no has an empty field"
+    [ "$token" = "$(printf '%s' "$token" | tr -d '[:space:]')" ] \
+      || structural "owner-invoke nodes registry line $line_no token has whitespace"
+    case "$token" in
+      *[!A-Za-z0-9_-]*) structural "owner-invoke nodes registry line $line_no has an unsafe token: $token" ;;
+    esac
+    case "$glob" in
+      /*|../*|*/../*|*/..|.. ) structural "owner-invoke nodes registry line $line_no has an unsafe glob: $glob" ;;
+    esac
+    rows=$(jq -n -c --arg token "$token" --arg glob "$glob" --argjson acc "$rows" \
+      '$acc + [{token: ($token | ascii_downcase), glob: $glob}]')
+  done < "$NODE_REGISTRY"
+  [ "$(jq 'length' <<<"$rows")" -gt 0 ] || return 0
+  command -v python3 >/dev/null 2>&1 || return 0
+  transcript=$(printf '%s' "$PAYLOAD" | jq -r '(.transcript_path // .transcriptPath // empty)' 2>/dev/null) || return 0
+  [ -n "$transcript" ] || return 0
+  [ -f "$transcript" ] && [ ! -L "$transcript" ] && [ -r "$transcript" ] || return 0
+  lock_mtime=
+  if [ -f "$STATE/.lock" ] && [ ! -L "$STATE/.lock" ]; then
+    lock_mtime=$(path_mtime "$STATE/.lock")
+  fi
+  py="$TMP_DIR/owner-nodes.py"
+  cat > "$py" <<'PY'
+import glob
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+
+rows = json.loads(sys.argv[1])
+transcript = sys.argv[2]
+home = sys.argv[3]
+root = sys.argv[4]
+lock_raw = sys.argv[5]
+token_set = {row["token"] for row in rows if row.get("token")}
+globs = {row["token"]: row.get("glob") or "" for row in rows}
+tag_re = re.compile(
+    r"<command-name>\s*/?([A-Za-z][A-Za-z0-9_-]*)\s*</command-name>",
+    re.IGNORECASE,
+)
+
+def message(record):
+    if not isinstance(record, dict):
+        return None
+    if isinstance(record.get("message"), dict):
+        return record["message"]
+    return record
+
+def role_of(record, msg):
+    if isinstance(msg, dict):
+        role = str(msg.get("role") or "")
+        if role:
+            return role
+    if isinstance(record, dict):
+        return str(record.get("type") or record.get("role") or "")
+    return ""
+
+def texts_of(content):
+    if isinstance(content, str):
+        return [content] if content.strip() else []
+    if not isinstance(content, list):
+        return []
+    out = []
+    for part in content:
+        if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str):
+            if part["text"].strip():
+                out.append(part["text"])
+    return out
+
+def is_tool_result_only(content):
+    if not isinstance(content, list) or not content:
+        return False
+    for part in content:
+        if not isinstance(part, dict):
+            return False
+        typ = str(part.get("type") or "")
+        if typ not in ("tool_result", "toolResult"):
+            return False
+    return True
+
+def is_synthetic_user_text(text):
+    t = text.lstrip()
+    if t.startswith("<task-notification"):
+        return True
+    if t.startswith("<local-command-stdout"):
+        return True
+    if t.startswith("[Request interrupted by user"):
+        return True
+    if "FIRSTMATE_OP:" in text or "turn-end-guard" in text:
+        return True
+    return False
+
+def is_captain_turn(record, content):
+    if isinstance(record, dict) and record.get("isMeta") is True:
+        return False
+    if is_tool_result_only(content):
+        return False
+    text_blob = "\n".join(texts_of(content))
+    if not text_blob.strip():
+        return False
+    if is_synthetic_user_text(text_blob):
+        return False
+    return True
+
+def parse_ts(record, msg):
+    raw = None
+    if isinstance(record, dict):
+        raw = record.get("timestamp") or record.get("ts")
+    if raw is None and isinstance(msg, dict):
+        raw = msg.get("timestamp") or msg.get("ts")
+    if isinstance(raw, (int, float)):
+        value = float(raw)
+        if value > 1e12:
+            value = value / 1000.0
+        return value
+    if isinstance(raw, str) and raw.strip():
+        text = raw.strip()
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            return datetime.fromisoformat(text).timestamp()
+        except ValueError:
+            return None
+    return None
+
+def ordinary_nonempty(path):
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    if not os.path.isfile(path) or os.path.islink(path) or st.st_size <= 0:
+        return False
+    return True
+
+def artifact_hit(pattern, since):
+    if not pattern or since is None:
+        return False
+    for base in (home, root):
+        full = os.path.join(base, pattern)
+        for path in glob.glob(full):
+            if not ordinary_nonempty(path):
+                continue
+            try:
+                if os.path.getmtime(path) >= since:
+                    return True
+            except OSError:
+                continue
+    return False
+
+lock_mtime = None
+if lock_raw:
+    try:
+        lock_mtime = float(lock_raw)
+    except ValueError:
+        lock_mtime = None
+
+opens = {}
+seq = 0
+try:
+    with open(transcript, encoding="utf-8") as handle:
+        for raw in handle:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                record = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            seq += 1
+            msg = message(record)
+            role = role_of(record, msg)
+            content = msg.get("content") if isinstance(msg, dict) else None
+            blob = "\n".join(texts_of(content))
+            ts = parse_ts(record, msg)
+            if role in ("user", "human") and not (
+                isinstance(record, dict) and record.get("isMeta") is True
+            ):
+                found = []
+                for match in tag_re.finditer(blob):
+                    tok = match.group(1).strip().lstrip("/").lower()
+                    if tok in token_set and tok not in found:
+                        found.append(tok)
+                if found:
+                    for tok in found:
+                        opens[tok] = {"seq": seq, "ts": ts}
+            if role in ("user", "human") and is_captain_turn(record, content):
+                for tok, info in opens.items():
+                    if seq > info["seq"]:
+                        info["later"] = True
+except OSError:
+    print("[]")
+    raise SystemExit(0)
+
+out = []
+for tok, info in opens.items():
+    since = info.get("ts")
+    if since is None:
+        since = lock_mtime
+    out.append({
+        "token": tok,
+        "later_captain": bool(info.get("later")),
+        "artifact": artifact_hit(globs.get(tok, ""), since),
+    })
+print(json.dumps(out))
+PY
+  extracted=$(python3 "$py" "$rows" "$transcript" "$FM_HOME" "$FM_ROOT" "${lock_mtime:-}" 2>/dev/null) || {
+    owner_nodes_json='[]'
+    return 0
+  }
+  jq -e 'type == "array"' <<<"$extracted" >/dev/null 2>&1 || {
+    owner_nodes_json='[]'
+    return 0
+  }
+  owner_nodes_json=$extracted
 }
 
 extract_speech() {
@@ -798,6 +1077,7 @@ else
   gather_held || true
   gather_meta || true
   gather_ships || true
+  gather_owner_nodes
   if [ -x "$SCRIPT_DIR/fm-map-fog-check.sh" ]; then
     fog_out=$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" \
       "$SCRIPT_DIR/fm-map-fog-check.sh" 2>/dev/null || true)
@@ -813,6 +1093,7 @@ turn="$TMP_DIR/turn.json"
 [ -n "$owned_json" ] || owned_json='[]'
 [ -n "$ships_json" ] || ships_json='[]'
 [ -n "$invoked_json" ] || invoked_json='[]'
+[ -n "$owner_nodes_json" ] || owner_nodes_json='[]'
 case "$fog_live" in true|false) ;; *) fog_live=false ;; esac
 jq -n \
   --argjson held "$held_json" \
@@ -822,6 +1103,7 @@ jq -n \
   --arg speech "$speech" \
   --argjson invoked "$invoked_json" \
   --argjson fog "$fog_live" \
+  --argjson nodes "$owner_nodes_json" \
   '{
     held: $held,
     map_next: $map_next,
@@ -829,7 +1111,8 @@ jq -n \
     ships: $ships,
     assistant_text: $speech,
     invoked_skills: $invoked,
-    fog_live: $fog
+    fog_live: $fog,
+    owner_nodes: $nodes
   }' > "$turn" || exit 0
 
 findings=$(evaluate_turn "$turn") || exit 0

@@ -1,0 +1,16 @@
+{
+  "owner_nodes": [
+    {
+      "token": "wayfinder",
+      "later_captain": true,
+      "artifact": false
+    }
+  ],
+  "assistant_text": "",
+  "invoked_skills": [],
+  "held": [],
+  "map_next": [],
+  "owned_meta": [],
+  "fog_live": false,
+  "ships": []
+}

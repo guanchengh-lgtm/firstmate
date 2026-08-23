@@ -304,6 +304,14 @@ See [`sot-speech.example.tsv`](sot-speech.example.tsv) for a non-live copyable s
 [`bin/fm-sot-speech-check.sh`](../bin/fm-sot-speech-check.sh)'s header owns the row format, the digest-file refusal, turn-end and AskUserQuestion PreToolUse refuse paths, declared-unread escape, fail-open cases, and residual coverage.
 `AGENTS.md` section 9 carries the always-loaded declared-unread sentence.
 
+## Owner-invoke node refuse-hook (data/owner-invoke-nodes.tsv)
+
+An optional home-local registry names owner-invoke skills whose harness `<command-name>` record opens a node that must produce a matching artifact before the captain's next message is answered with a Stop.
+Lookup uses `$FM_HOME/data/owner-invoke-nodes.tsv` by default (`FM_OWNER_INVOKE_NODES_REGISTRY` overrides for tests).
+The registry is private to the home and is never tracked in firstmate git.
+See [`owner-invoke-nodes.example.tsv`](owner-invoke-nodes.example.tsv) for a non-live copyable shape.
+[`bin/fm-owner-invoke-wait-check.sh`](../bin/fm-owner-invoke-wait-check.sh)'s header owns the row format, the one-message-late refuse, same-turn cleanliness, and residual coverage.
+
 ## Spec compile-check refuse-hook
 
 A Stop that wrote Map 2 spec, tickets, or keep-list files this turn must not end while [`bin/fm-spec-compile-check.sh`](../bin/fm-spec-compile-check.sh) is red.

@@ -1,0 +1,9 @@
+# Optional home-local registry example for bin/fm-owner-invoke-wait-check.sh R-owner-node-open.
+# Copy this shape to data/owner-invoke-nodes.tsv; do not make this example live.
+# Each row is token <TAB> artifact_glob relative to FM_HOME or FM_ROOT.
+# The helper refuses only after a later captain message, never on the trigger turn.
+# token	artifact_glob
+wayfinder	data/*/map.md
+vision	VISION.md
+recurring-defect	bin/fm-*-check.sh
+grill-with-docs	data/decisions/*.md
