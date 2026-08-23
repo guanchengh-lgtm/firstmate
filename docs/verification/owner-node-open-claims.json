@@ -1,0 +1,42 @@
+{
+  "size": "light",
+  "size_reason": "Turn-end refuse-hook on a harness command-name node that stayed open across the next captain message with no matching artifact. Captain locked block-one-message-late. Full adversary rounds are a later ship if the light refuse is trusted.",
+  "shape": "An owner-invoke node stayed open across the captain's next message without a matching artifact.",
+  "form": "refuse-hook",
+  "structure": "bin/fm-owner-invoke-wait-check.sh R-owner-node-open on turn.owner_nodes gathered from a non-meta user <command-name> record plus a later is_captain_turn record and any of that token's OR-merged artifact_glob rows (recursive **) matching an ordinary file with mtime at or after the trigger timestamp or state/.lock mtime. Same-turn Stop is clean. Blocking, not advisory. Registry is data/owner-invoke-nodes.tsv.",
+  "rules": [
+    "R-owner-node-open"
+  ],
+  "instances": [
+    "Captain invoked wayfinder then sent another message with no map.md written since the invoke.",
+    "Captain invoked vision then sent another message with no VISION.md written since the invoke."
+  ],
+  "fixture": "reconstructed-historical",
+  "fixture_artifact": "tests/fixtures/fm-owner-invoke-wait-check/historical-owner-node-open.json",
+  "fixture_source": {
+    "date": "2026-08-23",
+    "derivation": "reconstruct the wait as a command-name node plus a later captain turn and no artifact, not as OWNER_INVOKE_WAIT and not as a same-turn Stop"
+  },
+  "regression": {
+    "test": "tests/fm-owner-invoke-wait-check.test.sh",
+    "exact_counts": [1]
+  },
+  "ci_gate": ".github/workflows/ci.yml runs bin/fm-test-run.sh --check-coverage and all portable lanes; the test inventory includes tests/fm-owner-invoke-wait-check.test.sh and tests/fm-turnend-guard.test.sh",
+  "structural_failure_exit": 2,
+  "findings_exit": 1,
+  "adversary_rounds": 0,
+  "adversary_verdict": "skipped-light-size",
+  "limits": [
+    "Only harness command-name user records arm a node, not slash text and not Skill tool loads.",
+    "Non-Claude primaries emit no command-name record.",
+    "Without a trigger timestamp or session lock mtime, leftover files do not clear the node.",
+    "A glob that matches any this-trigger-or-later file can clear the node, including an unrelated decisions file for grill-with-docs.",
+    "Split transcripts can hide the trigger or the later captain turn."
+  ],
+  "skipped": [
+    "Adversarial rounds because size is light: one fresh reader via the test suite is enough.",
+    "Same-turn blocking.",
+    "Warn-only output.",
+    "Merging this class into R-owner-invoke-wait."
+  ]
+}

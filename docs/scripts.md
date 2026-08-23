@@ -14,14 +14,14 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-operational-input.sh` | Construct and parse the canonical cross-language operational-input protocol |
 | `fm-bootstrap.sh`        | Detect toolchain and fleet problems, run the locked session-start sweeps, and install approved tools |
 | `fm-sot-pointer-check.sh` | Detect completed multi-task programs that lack a standing durable SoT pointer or leave a named hold unbound after later authority |
-| `fm-sot-speech-check.sh` | Refuse captain-facing registered SoT content claims that lack same-session file-open evidence |
+| `fm-sot-speech-check.sh` | Refuse captain-facing registered SoT content claims that lack same-session file-open evidence; session-start digest files cannot be registered |
 | `fm-answer-lock-check.sh` | Refuse a Map 2 ticket close with no dated lock, or a ticket left OPEN after an Answer pick |
 | `fm-map-fog-check.sh`    | Detect live `## Not yet specified` fog on map files; `--strict` refuses, missing section is structural |
 | `fm-stow-open-lock-check.sh` | Refuse a reset-safe stow receipt that omits a still-open lock-file pick; `--list-open` feeds the fleet snapshot |
 | `fm-class-too-narrow-check.sh` | Refuse a class claims file named as one command or situation while its instances are a broader mechanism |
 | `fm-spec-compile-check.sh` | Assert every closed ticket id and every keep-row title appears in a spec as a tag or an explicit refusal, not grounding |
 | `fm-spec-compile-stop-check.sh` | Refuse a Stop that wrote Map 2 spec, tickets, or keep-list files while compile is red, or wrote `expected-reports:` while reduce is red; path-derived home, before primary-scope |
-| `fm-owner-invoke-wait-check.sh` | Refuse a locked next act, an OWNER_INVOKE_WAIT marker, or this session's ships whose OV review is gone without a report or (Claude ov_harness only) never loaded plan-eng-review |
+| `fm-owner-invoke-wait-check.sh` | Refuse a locked next act, an OWNER_INVOKE_WAIT marker, an owner-invoke node still open after the captain's next message with no matching artifact, or this session's ships whose OV review is gone without a report or (Claude ov_harness only) never loaded plan-eng-review |
 | `fm-skill-load-record.sh` | Claude PostToolUse Skill recorder (crewmate settings.local.json absolute path + tracked settings.json): append normalized skill loads into data/<task>/skills when FM_TASK_ID/FM_HOME are set |
 | `fm-reduce-check.sh` | Assert every expected wide-work report exists, is non-empty, and is cited; code writes the keep-list |
 | `fm-session-progress-retrieve-check.sh` | Refuse a session-start or Bearings retrieve surface that omits live jobs, open picks, or captain lock words the prior-session fold already extracted |
@@ -52,7 +52,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-test-isolation-proof.sh` | Concurrent isolation proof and proven-isolated candidate set owner |
 | `fm-ensure-agents-md.sh` | Ensure a project's real `AGENTS.md`, its `CLAUDE.md` symlink, and the canonical self-governance section |
 | `fm-guard.sh`            | Warn on primary-checkout tangles, pending queued wakes, and unhealthy supervision    |
-| `fm-primary-scope-lib.sh` | Shared marker-or-plain-checkout primary-home predicate for tracked hooks             |
+| `fm-primary-scope-lib.sh` | Shared marker-or-plain-checkout primary-home predicate for tracked hooks; a valid secondmate marker force-includes treehouse-leased linked homes |
 | `fm-session-lock-lib.sh` | Shared session-lock harness identity (ancestry walk and holder liveness) for fm-lock.sh and the Claude Stop auto-arm |
 | `fm-claude-stop-autoarm.sh` | Claude Stop `asyncRewake` hook owning tokenless watcher continuity with single-flight exit-2 rewake (docs/watcher-continuity.md) |
 | `fm-turnend-guard.sh`    | Shared primary turn-end guard: no blind end, no prose-only ready-action idle, no owner-invoke wait, registered SoT speech without open evidence, Map 2 answer-time lock mismatch, and no unchecked TradingView session login block (docs/turnend-guard.md; script header owns the session-diagnosis contract) |

@@ -10,6 +10,7 @@ set -u
 CHECK="$ROOT/bin/fm-owner-invoke-wait-check.sh"
 FIXTURES="$ROOT/tests/fixtures/fm-owner-invoke-wait-check"
 OWN_CLAIMS="$ROOT/docs/verification/owner-invoke-wait-claims.json"
+NODE_CLAIMS="$ROOT/docs/verification/owner-node-open-claims.json"
 TMP_ROOT=$(fm_test_tmproot fm-owner-invoke-wait-check)
 fm_git_identity fmtest fmtest@example.invalid
 
@@ -407,6 +408,76 @@ test_own_claims_pass_class_too_narrow() {
   [ "$rc" -eq 0 ] || fail "own claims exited $rc: $out"
   [ -z "$out" ] || fail "own claims printed findings: $out"
   pass "owner-invoke-wait: tracked claims pass class-too-narrow"
+}
+
+test_historical_owner_node_open_fires_exact_count() {
+  local out rc
+  set +e
+  out=$(run_check \
+    --input "$FIXTURES/historical-owner-node-open.json" \
+    --expect-rule R-owner-node-open --expect-count 1 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "historical owner-node-open exact-count exited $rc: $out"
+  set +e
+  out=$(run_check --input "$FIXTURES/historical-owner-node-open.json")
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "historical owner-node-open gate exited $rc: $out"
+  assert_contains "$out" "R-owner-node-open-waiting" \
+    "historical owner-node-open did not report a waiting node"
+  assert_contains "$out" "/wayfinder" \
+    "historical owner-node-open did not name wayfinder"
+  set +e
+  out=$(run_check \
+    --input "$FIXTURES/historical-owner-node-open.json" \
+    --expect-rule R-owner-invoke-wait --expect-count 1 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "owner-node-open must not count as OWNER_INVOKE_WAIT: $out"
+  pass "owner-invoke-wait: 2026-08-23 reconstructed owner-node-open fires exact count 1"
+}
+
+test_owner_node_same_turn_and_artifact_are_clean() {
+  local out rc turn
+  turn="$TMP_ROOT/node-same-turn.json"
+  write_turn "$turn" '{
+    "owner_nodes": [{"token":"wayfinder","later_captain":false,"artifact":false}],
+    "assistant_text": "",
+    "held": [],
+    "map_next": [],
+    "owned_meta": [],
+    "fog_live": false
+  }'
+  set +e
+  out=$(run_check --input "$turn")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "same-turn owner node exited $rc: $out"
+  [ -z "$out" ] || fail "same-turn owner node printed findings: $out"
+  turn="$TMP_ROOT/node-artifact.json"
+  write_turn "$turn" '{
+    "owner_nodes": [{"token":"wayfinder","later_captain":true,"artifact":true}],
+    "assistant_text": ""
+  }'
+  set +e
+  out=$(run_check --input "$turn")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "owner node with artifact exited $rc: $out"
+  [ -z "$out" ] || fail "owner node with artifact printed findings: $out"
+  pass "owner-invoke-wait: same-turn Stop and matching artifact are clean"
+}
+
+test_owner_node_claims_pass_class_too_narrow() {
+  local out rc
+  set +e
+  out=$("$ROOT/bin/fm-class-too-narrow-check.sh" --input "$NODE_CLAIMS")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "owner-node-open claims exited $rc: $out"
+  [ -z "$out" ] || fail "owner-node-open claims printed findings: $out"
+  pass "owner-invoke-wait: owner-node-open claims pass class-too-narrow"
 }
 
 make_primary_home() {
@@ -912,12 +983,196 @@ SH
   pass "owner-invoke-wait: crewmate settings wire Skill load recorder"
 }
 
+write_nodes_registry() {
+  local home=$1
+  mkdir -p "$home/data"
+  printf '%s\t%s\n' 'wayfinder' 'data/*/map.md' > "$home/data/owner-invoke-nodes.tsv"
+}
+
+test_hook_owner_node_same_turn_is_clean() {
+  local home out rc payload transcript
+  home=$(make_primary_home "$TMP_ROOT/hook-node-same")
+  write_nodes_registry "$home"
+  printf '9001\n' > "$home/state/.lock"
+  transcript="$home/transcript.jsonl"
+  cat > "$transcript" <<'JSONL'
+{"timestamp":"2026-08-23T10:00:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"<command-name>/wayfinder</command-name>"}]}}
+{"timestamp":"2026-08-23T10:00:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Where is this map going?"}]}}
+JSONL
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$home")
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "hook same-turn wayfinder node exited $rc with: $out"
+  [ -z "$out" ] || fail "hook same-turn wayfinder node printed: $out"
+  pass "owner-invoke-wait: hook does not refuse a wayfinder node on the trigger turn"
+}
+
+test_hook_owner_node_later_captain_without_artifact_refuses() {
+  local home out rc payload transcript
+  home=$(make_primary_home "$TMP_ROOT/hook-node-later")
+  write_nodes_registry "$home"
+  printf '9002\n' > "$home/state/.lock"
+  transcript="$home/transcript.jsonl"
+  cat > "$transcript" <<'JSONL'
+{"timestamp":"2026-08-23T10:00:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"<command-name>/wayfinder</command-name>"}]}}
+{"timestamp":"2026-08-23T10:00:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Where is this map going?"}]}}
+{"timestamp":"2026-08-23T10:05:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"keep going"}]}}
+{"timestamp":"2026-08-23T10:05:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Still mapping."}]}}
+JSONL
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$home")
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "hook later captain without map exited $rc with: $out"
+  assert_contains "$out" 'R-owner-node-open-waiting' \
+    "hook later captain did not refuse an open wayfinder node"
+  mkdir -p "$home/data/wf-map"
+  printf 'map\n' > "$home/data/wf-map/map.md"
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "hook later captain with map.md exited $rc with: $out"
+  [ -z "$out" ] || fail "hook later captain with map.md printed: $out"
+  pass "owner-invoke-wait: hook refuses an open node after the next captain message"
+}
+
+test_hook_owner_node_ignores_slash_without_command_name() {
+  local home out rc payload transcript
+  home=$(make_primary_home "$TMP_ROOT/hook-node-slash")
+  write_nodes_registry "$home"
+  printf '9003\n' > "$home/state/.lock"
+  transcript="$home/transcript.jsonl"
+  cat > "$transcript" <<'JSONL'
+{"timestamp":"2026-08-23T10:00:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"/wayfinder please chart this"}]}}
+{"timestamp":"2026-08-23T10:05:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"keep going"}]}}
+JSONL
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$home")
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "hook slash without command-name exited $rc with: $out"
+  [ -z "$out" ] || fail "hook slash without command-name printed: $out"
+  pass "owner-invoke-wait: slash text without command-name does not arm a node"
+}
+
+test_hook_owner_node_malformed_registry_is_structural() {
+  local home out rc payload transcript
+  home=$(make_primary_home "$TMP_ROOT/hook-node-badreg")
+  printf 'wayfinder only\n' > "$home/data/owner-invoke-nodes.tsv"
+  printf '9004\n' > "$home/state/.lock"
+  transcript="$home/transcript.jsonl"
+  : > "$transcript"
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s"}' "$transcript")
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "malformed owner-node registry exited $rc with: $out"
+  assert_contains "$out" 'structural:' "malformed owner-node registry was not structural"
+  pass "owner-invoke-wait: malformed owner-invoke nodes registry is structural"
+}
+
+test_hook_owner_node_or_merges_duplicate_token_globs() {
+  local home out rc payload transcript
+  home=$(make_primary_home "$TMP_ROOT/hook-node-vision-or")
+  {
+    printf '%s\t%s\n' 'vision' 'data/tv-vision/VISION.draft.md'
+    printf '%s\t%s\n' 'vision' 'data/tv-vision/answers-*.md'
+    printf '%s\t%s\n' 'vision' 'VISION.md'
+  } > "$home/data/owner-invoke-nodes.tsv"
+  printf '9005\n' > "$home/state/.lock"
+  transcript="$home/transcript.jsonl"
+  cat > "$transcript" <<'JSONL'
+{"timestamp":"2026-08-23T10:00:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"<command-name>/vision</command-name>"}]}}
+{"timestamp":"2026-08-23T10:00:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Drafting."}]}}
+{"timestamp":"2026-08-23T10:05:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"keep going"}]}}
+{"timestamp":"2026-08-23T10:05:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Still drafting."}]}}
+JSONL
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$home")
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "vision without any deliverable exited $rc with: $out"
+  assert_contains "$out" 'R-owner-node-open-waiting' \
+    "vision without deliverable did not refuse"
+  mkdir -p "$home/data/tv-vision"
+  printf 'draft\n' > "$home/data/tv-vision/VISION.draft.md"
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "vision draft OR-glob exited $rc with: $out"
+  [ -z "$out" ] || fail "vision draft OR-glob printed: $out"
+  pass "owner-invoke-wait: duplicate token globs OR-merge so any hit clears the node"
+}
+
+test_hook_owner_node_recursive_glob_credits_nested_artifact() {
+  local home out rc payload transcript
+  home=$(make_primary_home "$TMP_ROOT/hook-node-recursive")
+  printf '%s\t%s\n' 'wayfinder' 'data/**/map.md' > "$home/data/owner-invoke-nodes.tsv"
+  printf '9006\n' > "$home/state/.lock"
+  transcript="$home/transcript.jsonl"
+  cat > "$transcript" <<'JSONL'
+{"timestamp":"2026-08-23T10:00:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"<command-name>/wayfinder</command-name>"}]}}
+{"timestamp":"2026-08-23T10:00:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Where is this map going?"}]}}
+{"timestamp":"2026-08-23T10:05:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"keep going"}]}}
+{"timestamp":"2026-08-23T10:05:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Still mapping."}]}}
+JSONL
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$home")
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "recursive glob without map exited $rc with: $out"
+  mkdir -p "$home/data/deep/nested/wayfinder"
+  printf 'map\n' > "$home/data/deep/nested/wayfinder/map.md"
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "recursive ** map.md exited $rc with: $out"
+  [ -z "$out" ] || fail "recursive ** map.md printed: $out"
+  pass "owner-invoke-wait: ** globs credit nested artifacts recursively"
+}
+
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
 test_missing_and_empty_input_are_structural
 test_historical_yes_ask_fires_exact_count
 test_historical_fog_pin_fires_exact_count
 test_historical_ship_omission_fires_exact_count
+test_historical_owner_node_open_fires_exact_count
+test_owner_node_same_turn_and_artifact_are_clean
+test_owner_node_claims_pass_class_too_narrow
 test_held_locked_next_and_date_cleared
 test_invoked_and_english_without_marker_are_clean
 test_placeholder_and_stub_briefs_are_clean
@@ -942,5 +1197,11 @@ test_hook_refuses_husk_ov_worker_without_report
 test_hook_live_ov_agent_without_report_passes
 test_crewmate_settings_carry_skill_recorder
 test_brief_reads_ov_worker_report_and_skills
+test_hook_owner_node_same_turn_is_clean
+test_hook_owner_node_later_captain_without_artifact_refuses
+test_hook_owner_node_ignores_slash_without_command_name
+test_hook_owner_node_malformed_registry_is_structural
+test_hook_owner_node_or_merges_duplicate_token_globs
+test_hook_owner_node_recursive_glob_credits_nested_artifact
 
 echo "# all fm-owner-invoke-wait-check tests passed"

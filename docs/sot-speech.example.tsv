@@ -1,0 +1,7 @@
+# Optional home-local registry example for bin/fm-sot-speech-check.sh.
+# Copy this shape to data/sot-speech.tsv; do not make this example live.
+# Each row is sot_file <TAB> content_claim_ERE.
+# Product-lock and north-star rows name a data/decisions/ lock, never data/captain.md.
+# Session-start digest files (captain.md, captain-shared.md, learnings.md, projects.md, secondmates.md) are refused as structural.
+# sot_file	content_claim_ERE
+data/decisions/example-product-lock.md	example-north-star|example-0DTE
