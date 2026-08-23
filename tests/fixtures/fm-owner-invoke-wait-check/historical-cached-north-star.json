@@ -1,0 +1,18 @@
+{
+  "captain_text": "What about 0DTE walls?",
+  "captain_invoked_skills": [],
+  "deliverables": {
+    "vision": false,
+    "grill-with-docs": false,
+    "wayfinder": false,
+    "recurring-defect": false
+  },
+  "assistant_text": "The north star in captain.md still says 0DTE is planning-map only, so it stays deferred.",
+  "invoked_skills": [],
+  "held": [],
+  "map_next": [],
+  "owned_meta": [],
+  "fog_live": false,
+  "amended_receipt": "",
+  "ships": []
+}

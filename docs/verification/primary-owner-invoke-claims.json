@@ -1,0 +1,41 @@
+{
+  "size": "light",
+  "size_reason": "Turn-end refuse-hook on session captain slash or skill tokens plus a deliverable map. Widen the landed owner-invoke helper. Full adversary rounds are a later ship if the light refuse is trusted.",
+  "shape": "A captain named an owner-invoke skill and this seat ended the turn without that skill's durable deliverable.",
+  "form": "refuse-hook",
+  "structure": "bin/fm-owner-invoke-wait-check.sh R-owner-invoke-deliverable on session captain_text /token $token or captain-turn skill load, plus turn.deliverables gathered from data/tv-vision, data/**/SESSION.md mtime versus state/.lock, data/**/map.md, and claims.json paths. Does not require OWNER_INVOKE_WAIT. Does not hunt free English.",
+  "rules": [
+    "R-owner-invoke-deliverable"
+  ],
+  "instances": [
+    "Captain named vision and the turn ended with no VISION.draft.md, answers file, or repo VISION.md.",
+    "Captain named wayfinder and the turn ended with no map.md."
+  ],
+  "fixture": "reconstructed-historical",
+  "fixture_artifact": "tests/fixtures/fm-owner-invoke-wait-check/historical-primary-vision.json",
+  "fixture_source": {
+    "date": "2026-08-23",
+    "derivation": "reconstruct the primary-chat owner-invoke sitting as captain slash tokens plus missing deliverable booleans, not as OWNER_INVOKE_WAIT and not as English-prose regex"
+  },
+  "regression": {
+    "test": "tests/fm-owner-invoke-wait-check.test.sh",
+    "exact_counts": [1]
+  },
+  "ci_gate": ".github/workflows/ci.yml runs bin/fm-test-run.sh --check-coverage and all portable lanes; the test inventory includes tests/fm-owner-invoke-wait-check.test.sh and tests/fm-turnend-guard.test.sh",
+  "structural_failure_exit": 2,
+  "findings_exit": 1,
+  "adversary_rounds": 0,
+  "adversary_verdict": "skipped-light-size",
+  "limits": [
+    "Free English skill names without / or $ are invisible.",
+    "A leftover map.md, claims.json, or SESSION.md older than this session lock does not satisfy.",
+    "An unrelated SESSION.md under data/ with this-session mtime can satisfy grill.",
+    "A pre-existing tv-vision draft or repo VISION.md can satisfy vision.",
+    "Split transcripts can hide a captain invoke."
+  ],
+  "skipped": [
+    "Adversarial rounds because size is light: one fresh reader via the test suite is enough.",
+    "Merging this class into R-owner-invoke-wait.",
+    "A skill-picker product."
+  ]
+}

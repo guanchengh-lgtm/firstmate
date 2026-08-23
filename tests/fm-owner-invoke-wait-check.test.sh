@@ -10,6 +10,8 @@ set -u
 CHECK="$ROOT/bin/fm-owner-invoke-wait-check.sh"
 FIXTURES="$ROOT/tests/fixtures/fm-owner-invoke-wait-check"
 OWN_CLAIMS="$ROOT/docs/verification/owner-invoke-wait-claims.json"
+PRIMARY_CLAIMS="$ROOT/docs/verification/primary-owner-invoke-claims.json"
+NORTH_CLAIMS="$ROOT/docs/verification/cached-north-star-claims.json"
 TMP_ROOT=$(fm_test_tmproot fm-owner-invoke-wait-check)
 fm_git_identity fmtest fmtest@example.invalid
 
@@ -848,6 +850,287 @@ test_hook_live_ov_agent_without_report_passes() {
   pass "owner-invoke-wait: live OV agent without report passes"
 }
 
+test_historical_primary_vision_fires_exact_count() {
+  local out rc
+  set +e
+  out=$(run_check \
+    --input "$FIXTURES/historical-primary-vision.json" \
+    --expect-rule R-owner-invoke-deliverable --expect-count 1 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "historical primary vision exact-count exited $rc: $out"
+  set +e
+  out=$(run_check --input "$FIXTURES/historical-primary-vision.json")
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "historical primary vision gate exited $rc: $out"
+  assert_contains "$out" "R-owner-invoke-deliverable-missing" \
+    "historical primary vision did not report missing deliverable"
+  assert_contains "$out" "/vision" \
+    "historical primary vision did not name /vision"
+  assert_contains "$out" "no matching deliverable" \
+    "historical primary vision did not say the deliverable is missing"
+  set +e
+  out=$(run_check \
+    --input "$FIXTURES/historical-primary-vision.json" \
+    --expect-rule R-owner-invoke-wait --expect-count 1 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "primary vision must not count as OWNER_INVOKE_WAIT: $out"
+  pass "owner-invoke-wait: 2026-08-23 reconstructed /vision fires exact count 1"
+}
+
+test_historical_cached_north_star_fires_exact_count() {
+  local out rc
+  set +e
+  out=$(run_check \
+    --input "$FIXTURES/historical-cached-north-star.json" \
+    --expect-rule R-cached-north-star --expect-count 1 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "historical cached north star exact-count exited $rc: $out"
+  set +e
+  out=$(run_check --input "$FIXTURES/historical-cached-north-star.json")
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "historical cached north star gate exited $rc: $out"
+  assert_contains "$out" "R-cached-north-star-missing" \
+    "historical cached north star did not report missing receipt"
+  set +e
+  out=$(run_check \
+    --input "$FIXTURES/historical-cached-north-star.json" \
+    --expect-rule R-owner-invoke-deliverable --expect-count 1 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "cached north star must not count as owner-invoke deliverable: $out"
+  pass "owner-invoke-wait: 2026-08-23 reconstructed north-star rec fires exact count 1"
+}
+
+test_primary_owner_invoke_english_and_present_deliverable_are_clean() {
+  local out rc turn
+  turn="$TMP_ROOT/english-vision.json"
+  write_turn "$turn" '{
+    "captain_text": "please write a vision for the desk",
+    "deliverables": {"vision": false},
+    "assistant_text": "",
+    "held": [],
+    "map_next": [],
+    "owned_meta": [],
+    "fog_live": false
+  }'
+  set +e
+  out=$(run_check --input "$turn")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "English vision without slash exited $rc: $out"
+  [ -z "$out" ] || fail "English vision without slash printed findings: $out"
+  turn="$TMP_ROOT/vision-present.json"
+  write_turn "$turn" '{
+    "captain_text": "/vision for the desk",
+    "deliverables": {"vision": true},
+    "assistant_text": "",
+    "held": [],
+    "map_next": [],
+    "owned_meta": [],
+    "fog_live": false
+  }'
+  set +e
+  out=$(run_check --input "$turn")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "vision with deliverable exited $rc: $out"
+  [ -z "$out" ] || fail "vision with deliverable printed findings: $out"
+  turn="$TMP_ROOT/codex-dollar-vision.json"
+  write_turn "$turn" '{
+    "captain_text": "$vision for the desk",
+    "deliverables": {"vision": false},
+    "assistant_text": ""
+  }'
+  set +e
+  out=$(run_check --input "$turn" --expect-rule R-owner-invoke-deliverable --expect-count 1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "dollar vision exact-count exited $rc: $out"
+  pass "owner-invoke-wait: English vision is clean; present deliverable is clean; dollar vision counts"
+}
+
+test_cached_north_star_receipt_and_non_cite_are_clean() {
+  local out rc turn
+  turn="$TMP_ROOT/north-star-receipt.json"
+  write_turn "$turn" '{
+    "assistant_text": "The north star in captain.md still says 0DTE is deferred.",
+    "amended_receipt": "data/decisions/tv-em-cycle-anchor-captain-2026-08-14.md",
+    "captain_text": "",
+    "held": [],
+    "map_next": [],
+    "owned_meta": [],
+    "fog_live": false
+  }'
+  set +e
+  out=$(run_check --input "$turn")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "north star with receipt exited $rc: $out"
+  [ -z "$out" ] || fail "north star with receipt printed findings: $out"
+  turn="$TMP_ROOT/product-rec-no-pointer.json"
+  write_turn "$turn" '{
+    "assistant_text": "Keep 0DTE deferred until the live overlay ships.",
+    "amended_receipt": "",
+    "captain_text": ""
+  }'
+  set +e
+  out=$(run_check --input "$turn")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "product rec without pointer tokens exited $rc: $out"
+  [ -z "$out" ] || fail "product rec without pointer tokens printed findings: $out"
+  pass "owner-invoke-wait: north-star receipt and non-cite recs are clean"
+}
+
+test_new_class_claims_pass_class_too_narrow() {
+  local out rc
+  set +e
+  out=$("$ROOT/bin/fm-class-too-narrow-check.sh" --input "$PRIMARY_CLAIMS")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "primary-owner-invoke claims exited $rc: $out"
+  [ -z "$out" ] || fail "primary-owner-invoke claims printed findings: $out"
+  set +e
+  out=$("$ROOT/bin/fm-class-too-narrow-check.sh" --input "$NORTH_CLAIMS")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "cached-north-star claims exited $rc: $out"
+  [ -z "$out" ] || fail "cached-north-star claims printed findings: $out"
+  pass "owner-invoke-wait: new class claims pass class-too-narrow"
+}
+
+test_hook_refuses_captain_vision_without_deliverable() {
+  local home out rc payload transcript
+  home=$(make_primary_home "$TMP_ROOT/hook-vision")
+  printf '8181\n' > "$home/state/.lock"
+  transcript="$home/transcript.jsonl"
+  cat > "$transcript" <<'JSONL'
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"/vision for tradingview-tools"}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Starting vision."}]}}
+JSONL
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$home")
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "hook /vision without deliverable exited $rc with: $out"
+  assert_contains "$out" 'R-owner-invoke-deliverable-missing' \
+    "hook /vision did not refuse missing deliverable"
+  mkdir -p "$home/data/tv-vision"
+  printf 'draft\n' > "$home/data/tv-vision/VISION.draft.md"
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "hook /vision with draft exited $rc with: $out"
+  [ -z "$out" ] || fail "hook /vision with draft printed: $out"
+  pass "owner-invoke-wait: hook captain /vision requires a vision deliverable"
+}
+
+test_hook_refuses_north_star_without_receipt() {
+  local home out rc payload transcript
+  home=$(make_primary_home "$TMP_ROOT/hook-north")
+  printf '8282\n' > "$home/state/.lock"
+  transcript="$home/transcript.jsonl"
+  cat > "$transcript" <<'JSONL'
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"What about 0DTE?"}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"The north star in captain.md still says planning map only."}]}}
+JSONL
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$home")
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "hook north star without receipt exited $rc with: $out"
+  assert_contains "$out" 'R-cached-north-star-missing' \
+    "hook north star did not refuse missing receipt"
+  printf '%s\n' 'path=data/decisions/tv-em-cycle-anchor-captain-2026-08-14.md' \
+    'session=111' > "$home/state/.amended-opened"
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "hook mismatched receipt session exited $rc with: $out"
+  printf '%s\n' 'path=data/decisions/tv-em-cycle-anchor-captain-2026-08-14.md' \
+    'session=8282' > "$home/state/.amended-opened"
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "hook north star with matching receipt exited $rc with: $out"
+  [ -z "$out" ] || fail "hook north star with matching receipt printed: $out"
+  pass "owner-invoke-wait: hook north-star rec requires this-session amended receipt"
+}
+
+test_hook_grill_session_log_must_be_this_session() {
+  local home out rc payload transcript
+  home=$(make_primary_home "$TMP_ROOT/hook-grill")
+  mkdir -p "$home/data/gamma-method-grill"
+  printf 'old grill\n' > "$home/data/gamma-method-grill/SESSION.md"
+  touch -t 202001010000 "$home/data/gamma-method-grill/SESSION.md"
+  printf '8383\n' > "$home/state/.lock"
+  transcript="$home/transcript.jsonl"
+  cat > "$transcript" <<'JSONL'
+{"type":"message","message":{"role":"user","content":[{"type":"text","text":"/grill-with-docs on the live gamma map"}]}}
+{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Grilling."}]}}
+JSONL
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$home")
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "hook stale grill log exited $rc with: $out"
+  assert_contains "$out" 'R-owner-invoke-deliverable-missing' \
+    "stale SESSION.md incorrectly satisfied grill-with-docs"
+  printf 'fresh grill\n' > "$home/data/gamma-method-grill/SESSION.md"
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "hook this-session grill log exited $rc with: $out"
+  [ -z "$out" ] || fail "hook this-session grill log printed: $out"
+  pass "owner-invoke-wait: grill SESSION.md must be updated this session"
+}
+
+test_brief_body_vision_slash_is_not_primary_owner_invoke() {
+  local home out rc brief
+  home=$(make_primary_home "$TMP_ROOT/brief-vision")
+  mkdir -p "$home/data/spec-compile-check"
+  brief="$home/data/spec-compile-check/brief.md"
+  printf '# Task\nInvoke /vision before coding.\n\n# Setup\nfixture\n' > "$brief"
+  set +e
+  out=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" --brief "$brief" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "brief with /vision body exited $rc with: $out"
+  [ -z "$out" ] || fail "brief with /vision body printed: $out"
+  pass "owner-invoke-wait: brief mode does not parse captain owner-invoke tokens"
+}
+
 test_crewmate_settings_carry_skill_recorder() {
   local case_dir home proj wt fakebin id=ov-scout-skill out settings cmd skills
   case_dir="$TMP_ROOT/crewmate-skill-settings"
@@ -918,6 +1201,11 @@ test_missing_and_empty_input_are_structural
 test_historical_yes_ask_fires_exact_count
 test_historical_fog_pin_fires_exact_count
 test_historical_ship_omission_fires_exact_count
+test_historical_primary_vision_fires_exact_count
+test_historical_cached_north_star_fires_exact_count
+test_primary_owner_invoke_english_and_present_deliverable_are_clean
+test_cached_north_star_receipt_and_non_cite_are_clean
+test_new_class_claims_pass_class_too_narrow
 test_held_locked_next_and_date_cleared
 test_invoked_and_english_without_marker_are_clean
 test_placeholder_and_stub_briefs_are_clean
@@ -942,5 +1230,9 @@ test_hook_refuses_husk_ov_worker_without_report
 test_hook_live_ov_agent_without_report_passes
 test_crewmate_settings_carry_skill_recorder
 test_brief_reads_ov_worker_report_and_skills
+test_hook_refuses_captain_vision_without_deliverable
+test_hook_refuses_north_star_without_receipt
+test_hook_grill_session_log_must_be_this_session
+test_brief_body_vision_slash_is_not_primary_owner_invoke
 
 echo "# all fm-owner-invoke-wait-check tests passed"

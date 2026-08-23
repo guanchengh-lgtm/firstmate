@@ -397,6 +397,42 @@ test_hook_claude_owner_invoke_ignores_stop_hook_active() {
   pass "fm-turnend-guard --claude: stop_hook_active cannot skip owner-invoke wait"
 }
 
+test_hook_refuses_captain_vision_without_deliverable() {
+  local dir out status transcript payload
+  dir=$(make_primary_dir "$TMP_ROOT/hook-owner-vision")
+  mkdir -p "$dir/data" "$dir/state"
+  transcript="$dir/transcript.jsonl"
+  printf '%s\n' '{"type":"message","message":{"role":"user","content":[{"type":"text","text":"/vision for tradingview-tools"}]}}' \
+    '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Starting vision."}]}}' \
+    > "$transcript"
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$dir")
+  out=$(printf '%s' "$payload" | CLAUDECODE=1 FM_HOME="$(cd "$dir" && pwd)" \
+    bash "$dir/bin/fm-turnend-guard.sh" 2>&1); status=$?
+  expect_code 2 "$status" "turn end must refuse /vision without a deliverable"
+  assert_contains "$out" 'R-owner-invoke-deliverable-missing' \
+    "vision refusal did not name the missing deliverable"
+  pass "fm-turnend-guard: captain /vision without a deliverable is not done"
+}
+
+test_hook_refuses_north_star_without_receipt() {
+  local dir out status transcript payload
+  dir=$(make_primary_dir "$TMP_ROOT/hook-owner-north")
+  mkdir -p "$dir/data" "$dir/state"
+  transcript="$dir/transcript.jsonl"
+  printf '%s\n' '{"type":"message","message":{"role":"user","content":[{"type":"text","text":"What about 0DTE?"}]}}' \
+    '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"The north star in captain.md still says planning map only."}]}}' \
+    > "$transcript"
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$dir")
+  out=$(printf '%s' "$payload" | CLAUDECODE=1 FM_HOME="$(cd "$dir" && pwd)" \
+    bash "$dir/bin/fm-turnend-guard.sh" 2>&1); status=$?
+  expect_code 2 "$status" "turn end must refuse a north-star rec without a receipt"
+  assert_contains "$out" 'R-cached-north-star-missing' \
+    "north-star refusal did not name the missing receipt"
+  pass "fm-turnend-guard: north-star rec without last-AMENDED receipt is not done"
+}
+
 install_session_diagnosis_checker() {
   local dir=$1 checker_dir="$1/data/recurring-defect/yen126-session-false-negative"
   mkdir -p "$checker_dir"
@@ -2028,6 +2064,8 @@ test_hook_ready_action_accepts_matching_worker_owner
 test_hook_refuses_held_map_next_without_worker
 test_hook_refuses_owner_invoke_yes_ask
 test_hook_claude_owner_invoke_ignores_stop_hook_active
+test_hook_refuses_captain_vision_without_deliverable
+test_hook_refuses_north_star_without_receipt
 test_hook_refuses_tradingview_login_block_without_evidence
 test_hook_refuses_latest_same_key_tradingview_json_block
 test_hook_surfaces_session_checker_r5_and_r3_findings
