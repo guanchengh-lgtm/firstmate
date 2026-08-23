@@ -53,7 +53,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-primary-scope-lib.sh` | Shared marker-or-plain-checkout primary-home predicate for tracked hooks; a valid secondmate marker force-includes treehouse-leased linked homes |
 | `fm-session-lock-lib.sh` | Shared session-lock harness identity (ancestry walk and holder liveness) for fm-lock.sh and the Claude Stop auto-arm |
 | `fm-claude-stop-autoarm.sh` | Claude Stop `asyncRewake` hook owning tokenless watcher continuity with single-flight exit-2 rewake (docs/watcher-continuity.md) |
-| `fm-turnend-guard.sh`    | Shared primary turn-end guard: no blind end, no prose-only ready-action idle, no owner-invoke wait, registered SoT speech without open evidence, Map 2 answer-time lock mismatch, and no unchecked TradingView session login block (docs/turnend-guard.md; script header owns the session-diagnosis contract) |
+| `fm-turnend-guard.sh`    | Shared primary turn-end guard: no blind end, no prose-only ready-action idle, no owner-invoke wait, `speech-claim:` SoT content without open evidence, Map 2 answer-time lock mismatch, and no unchecked TradingView session login block (docs/turnend-guard.md; script header owns the session-diagnosis contract) |
 | `fm-turnend-guard-grok.sh` | Grok Stop-hook adapter for the primary turn-end guard                              |
 | `fm-kimi-turnend-hook.sh` | Surgically install or remove Kimi's guarded global crew turn-end hook                |
 | `fm-arm-pretool-check.sh` | Stable PreToolUse transport for the watcher-arm command policy (docs/arm-pretool-check.md) |
