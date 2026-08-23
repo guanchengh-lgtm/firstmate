@@ -3,7 +3,7 @@
   "size_reason": "Turn-end refuse-hook on a harness command-name node that stayed open across the next captain message with no matching artifact. Captain locked block-one-message-late. Full adversary rounds are a later ship if the light refuse is trusted.",
   "shape": "An owner-invoke node stayed open across the captain's next message without a matching artifact.",
   "form": "refuse-hook",
-  "structure": "bin/fm-owner-invoke-wait-check.sh R-owner-node-open on turn.owner_nodes gathered from a non-meta user <command-name> record plus a later is_captain_turn record and artifact_glob mtime at or after the trigger timestamp or state/.lock mtime. Same-turn Stop is clean. Blocking, not advisory. Registry is data/owner-invoke-nodes.tsv.",
+  "structure": "bin/fm-owner-invoke-wait-check.sh R-owner-node-open on turn.owner_nodes gathered from a non-meta user <command-name> record plus a later is_captain_turn record and any of that token's OR-merged artifact_glob rows (recursive **) matching an ordinary file with mtime at or after the trigger timestamp or state/.lock mtime. Same-turn Stop is clean. Blocking, not advisory. Registry is data/owner-invoke-nodes.tsv.",
   "rules": [
     "R-owner-node-open"
   ],

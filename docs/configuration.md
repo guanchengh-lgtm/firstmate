@@ -312,6 +312,7 @@ Each row is `token <TAB> artifact_glob`; duplicate tokens OR-merge so any matchi
 The registry is private to the home and is never tracked in firstmate git.
 See [`owner-invoke-nodes.example.tsv`](owner-invoke-nodes.example.tsv) for a non-live copyable shape aligned to the deliverable map.
 [`bin/fm-owner-invoke-wait-check.sh`](../bin/fm-owner-invoke-wait-check.sh)'s header owns the row format, the one-message-late refuse, same-turn cleanliness, and residual coverage.
+Claims live in [`verification/owner-node-open-claims.json`](verification/owner-node-open-claims.json).
 
 ## Spec compile-check refuse-hook
 
