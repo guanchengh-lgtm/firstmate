@@ -15,12 +15,11 @@
 # steer has matching metadata; a concrete backlog blocker removes the ticket
 # from `tasks-axi ready`. The same family refuses a held locked next act
 # (map_next, a passed until date, or an invented captain go-hold) with no
-# worker, a yes-ask on an owner-invoke skill, an owner-invoke node still
-# open after the captain's next message, and session-scoped ship OV
-# waits; bin/fm-owner-invoke-wait-check.sh owns those rules. Ready-action and
-# the owner-invoke held-locked-next gather fail open when the tasks-axi
-# backend cannot be read, honor the existing manual-backlog backend, and have
-# no skip flag.
+# worker, an owner-invoke node still open after the captain's next message,
+# and session-scoped ship OV waits; bin/fm-owner-invoke-wait-check.sh owns
+# those rules. Ready-action and the owner-invoke held-locked-next gather fail
+# open when the tasks-axi backend cannot be read, honor the existing
+# manual-backlog backend, and have no skip flag.
 # Before accepting an open `blocked:` event from a task whose metadata project
 # basename is `tradingview-tools`, this guard also validates any summary that
 # claims a yen126/TradingView login or dead session, says the user is Guest, or
@@ -174,10 +173,11 @@ fi
 # so this exempts them while guarding every real secondmate home.
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
 
-# Speech about registered file-backed sources must carry same-session open
-# evidence. This refusal runs before the independent supervision predicates so
-# an otherwise healthy watcher cannot hide unsupported captain-facing claims.
-# The helper is inert when absent so incomplete test fixtures stay silent.
+# Speech matching a speech-claim: ERE on a data/decisions lock must carry
+# same-session open evidence. This refusal runs before the independent
+# supervision predicates so an otherwise healthy watcher cannot hide
+# unsupported captain-facing claims. The helper is inert when absent so
+# incomplete test fixtures stay silent.
 if [ -x "$SCRIPT_DIR/fm-sot-speech-check.sh" ]; then
   if [ "$CLAUDE_MODE" -eq 1 ]; then
     printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-sot-speech-check.sh" --claude

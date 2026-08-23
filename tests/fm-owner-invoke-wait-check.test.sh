@@ -9,8 +9,6 @@ set -u
 
 CHECK="$ROOT/bin/fm-owner-invoke-wait-check.sh"
 FIXTURES="$ROOT/tests/fixtures/fm-owner-invoke-wait-check"
-OWN_CLAIMS="$ROOT/docs/verification/owner-invoke-wait-claims.json"
-NODE_CLAIMS="$ROOT/docs/verification/owner-node-open-claims.json"
 TMP_ROOT=$(fm_test_tmproot fm-owner-invoke-wait-check)
 fm_git_identity fmtest fmtest@example.invalid
 
@@ -52,50 +50,17 @@ test_missing_and_empty_input_are_structural() {
   [ "$rc" -eq 2 ] || fail "empty brief exited $rc"
   assert_contains "$out" "empty brief" "empty brief was not structural"
   set +e
-  out=$(run_check --input "$empty" --expect-rule R-owner-invoke-wait --expect-count 0)
+  out=$(run_check --input "$empty" --expect-rule R-held-locked-next --expect-count 0)
   rc=$?
   set -e
   [ "$rc" -eq 2 ] || fail "expect-count 0 exited $rc"
   assert_contains "$out" "expect-count must be > 0" "zero count was not structural"
   set +e
-  out=$(run_check --input "$FIXTURES/historical-yes-ask.json" --rules '')
+  out=$(run_check --input "$FIXTURES/historical-owner-node-open.json" --rules '')
   rc=$?
   set -e
   [ "$rc" -eq 2 ] || fail "empty --rules exited $rc"
   pass "owner-invoke-wait: missing and empty input, expect-count 0, empty rules exit 2"
-}
-
-test_historical_yes_ask_fires_exact_count() {
-  local out rc
-  set +e
-  out=$(run_check \
-    --input "$FIXTURES/historical-yes-ask.json" \
-    --expect-rule R-owner-invoke-wait --expect-count 1 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "historical yes-ask exact-count exited $rc: $out"
-  set +e
-  out=$(run_check --input "$FIXTURES/historical-yes-ask.json")
-  rc=$?
-  set -e
-  [ "$rc" -eq 1 ] || fail "historical yes-ask gate exited $rc: $out"
-  assert_contains "$out" "R-owner-invoke-wait-yes-ask" \
-    "historical yes-ask did not report owner-invoke wait"
-  assert_contains "$out" "recurring-defect" \
-    "historical yes-ask did not name /recurring-defect"
-  pass "owner-invoke-wait: 2026-08-22 reconstructed yes-ask fires exact count 1"
-}
-
-test_historical_fog_pin_fires_exact_count() {
-  local out rc
-  set +e
-  out=$(run_check \
-    --input "$FIXTURES/historical-fog-pin.json" \
-    --expect-rule R-fog-pin-wait --expect-count 1 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "historical fog-pin exact-count exited $rc: $out"
-  pass "owner-invoke-wait: 2026-08-22 reconstructed fog pin fires exact count 1"
 }
 
 test_historical_ship_omission_fires_exact_count() {
@@ -196,41 +161,6 @@ test_held_locked_next_and_date_cleared() {
   [ "$rc" -eq 0 ] || fail "English hold reason without map_next exited $rc: $out"
   [ -z "$out" ] || fail "English hold reason printed findings: $out"
   pass "owner-invoke-wait: held map_next, date-cleared, future, and real captain holds"
-}
-
-test_invoked_and_english_without_marker_are_clean() {
-  local out rc turn
-  turn="$TMP_ROOT/invoked.json"
-  write_turn "$turn" '{
-    "assistant_text": "OWNER_INVOKE_WAIT /recurring-defect",
-    "invoked_skills": ["recurring-defect"],
-    "held": [],
-    "map_next": [],
-    "owned_meta": [],
-    "fog_live": false
-  }'
-  set +e
-  out=$(run_check --input "$turn")
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "invoked skill with marker exited $rc: $out"
-  [ -z "$out" ] || fail "invoked skill printed findings: $out"
-  turn="$TMP_ROOT/english.json"
-  write_turn "$turn" '{
-    "assistant_text": "Want me to run /recurring-defect?",
-    "invoked_skills": [],
-    "held": [],
-    "map_next": [],
-    "owned_meta": [],
-    "fog_live": false
-  }'
-  set +e
-  out=$(run_check --input "$turn")
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "English yes-ask without marker exited $rc: $out"
-  [ -z "$out" ] || fail "English yes-ask printed findings: $out"
-  pass "owner-invoke-wait: invoked skill and English without marker are clean"
 }
 
 test_placeholder_and_stub_briefs_are_clean() {
@@ -390,24 +320,13 @@ test_unrelated_rule_does_not_satisfy_exact_count() {
   local out rc
   set +e
   out=$(run_check \
-    --input "$FIXTURES/historical-yes-ask.json" \
+    --input "$FIXTURES/historical-ship-without-ov.json" \
     --expect-rule R-held-locked-next --expect-count 1 2>&1)
   rc=$?
   set -e
   [ "$rc" -eq 1 ] || fail "unrelated held exact-count exited $rc: $out"
   assert_contains "$out" "regression:" "unrelated-rule miss was not a count mismatch"
   pass "owner-invoke-wait: unrelated rule fire is not exact-count success"
-}
-
-test_own_claims_pass_class_too_narrow() {
-  local out rc
-  set +e
-  out=$("$ROOT/bin/fm-class-too-narrow-check.sh" --input "$OWN_CLAIMS")
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "own claims exited $rc: $out"
-  [ -z "$out" ] || fail "own claims printed findings: $out"
-  pass "owner-invoke-wait: tracked claims pass class-too-narrow"
 }
 
 test_historical_owner_node_open_fires_exact_count() {
@@ -428,13 +347,6 @@ test_historical_owner_node_open_fires_exact_count() {
     "historical owner-node-open did not report a waiting node"
   assert_contains "$out" "/wayfinder" \
     "historical owner-node-open did not name wayfinder"
-  set +e
-  out=$(run_check \
-    --input "$FIXTURES/historical-owner-node-open.json" \
-    --expect-rule R-owner-invoke-wait --expect-count 1 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 1 ] || fail "owner-node-open must not count as OWNER_INVOKE_WAIT: $out"
   pass "owner-invoke-wait: 2026-08-23 reconstructed owner-node-open fires exact count 1"
 }
 
@@ -469,17 +381,6 @@ test_owner_node_same_turn_and_artifact_are_clean() {
   pass "owner-invoke-wait: same-turn Stop and matching artifact are clean"
 }
 
-test_owner_node_claims_pass_class_too_narrow() {
-  local out rc
-  set +e
-  out=$("$ROOT/bin/fm-class-too-narrow-check.sh" --input "$NODE_CLAIMS")
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "owner-node-open claims exited $rc: $out"
-  [ -z "$out" ] || fail "owner-node-open claims printed findings: $out"
-  pass "owner-invoke-wait: owner-node-open claims pass class-too-narrow"
-}
-
 make_primary_home() {
   local dir=$1
   mkdir -p "$dir/bin" "$dir/state" "$dir/data"
@@ -487,21 +388,6 @@ make_primary_home() {
   git -C "$dir" commit -q --allow-empty -m init
   : > "$dir/AGENTS.md"
   printf '%s\n' "$dir"
-}
-
-test_pretool_yes_ask_is_denied() {
-  local home out rc payload
-  home=$(make_primary_home "$TMP_ROOT/pretool")
-  payload=$(printf '{"tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"OWNER_INVOKE_WAIT /recurring-defect"}]}}')
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" --pretool --claude 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 2 ] || fail "pretool yes-ask exited $rc with: $out"
-  assert_contains "$out" 'permissionDecision":"deny' "pretool refusal was not a deny object"
-  pass "owner-invoke-wait: AskUserQuestion PreToolUse denies an owner-invoke yes-ask"
 }
 
 test_hook_gathers_session_ship_ov_ladder() {
@@ -573,48 +459,6 @@ test_hook_does_not_rerefuse_inflight_ship_without_ov() {
   pass "owner-invoke-wait: turn-end does not re-refuse in-flight ships without ov="
 }
 
-test_prior_turn_tool_mention_is_not_invoke_credit() {
-  local home out rc payload transcript
-  home=$(make_primary_home "$TMP_ROOT/hook-prior-turn")
-  transcript="$home/transcript.jsonl"
-  cat > "$transcript" <<'JSONL'
-{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"echo wayfinder docs"}}]}}
-{"type":"message","message":{"role":"user","content":[{"type":"text","text":"ok"}]}}
-{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"OWNER_INVOKE_WAIT /wayfinder"}]}}
-JSONL
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s"}' "$transcript")
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 2 ] || fail "prior-turn tool mention exited $rc with: $out"
-  assert_contains "$out" 'R-owner-invoke-wait-yes-ask' \
-    "prior-turn tool-input mention incorrectly credited an invoke"
-  assert_contains "$out" 'wayfinder' "prior-turn miss did not name wayfinder"
-  pass "owner-invoke-wait: prior-turn tool-input mention is not invoke credit"
-}
-
-test_same_turn_skill_tool_load_is_invoke_credit() {
-  local home out rc payload transcript
-  home=$(make_primary_home "$TMP_ROOT/hook-skill-load")
-  transcript="$home/transcript.jsonl"
-  cat > "$transcript" <<'JSONL'
-{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"wayfinder"}},{"type":"text","text":"OWNER_INVOKE_WAIT /wayfinder"}]}}
-JSONL
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s"}' "$transcript")
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "same-turn Skill load exited $rc with: $out"
-  [ -z "$out" ] || fail "same-turn Skill load printed: $out"
-  pass "owner-invoke-wait: same-turn Skill tool load credits the invoke"
-}
-
 test_brief_reads_ov_worker_report_and_skills() {
   local home out rc brief
   home=$(make_primary_home "$TMP_ROOT/brief-ov")
@@ -652,47 +496,6 @@ test_brief_reads_ov_worker_report_and_skills() {
   [ "$rc" -eq 0 ] || fail "brief with OV report+skill exited $rc with: $out"
   [ -z "$out" ] || fail "brief with OV report+skill printed: $out"
   pass "owner-invoke-wait: brief mode reads OV worker report and skills"
-}
-
-test_tool_result_user_message_keeps_same_turn_invoke_credit() {
-  local home out rc payload transcript
-  home=$(make_primary_home "$TMP_ROOT/hook-tool-result")
-  transcript="$home/transcript.jsonl"
-  cat > "$transcript" <<'JSONL'
-{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"wayfinder"}}]}}
-{"type":"message","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"1","content":"loaded"}]}}
-{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"OWNER_INVOKE_WAIT /wayfinder"}]}}
-JSONL
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s"}' "$transcript")
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "tool_result same-turn Skill load exited $rc with: $out"
-  [ -z "$out" ] || fail "tool_result same-turn Skill load printed: $out"
-  pass "owner-invoke-wait: tool_result user message keeps same-turn invoke credit"
-}
-
-test_pretool_credits_transcript_skill_load() {
-  local home out rc payload transcript
-  home=$(make_primary_home "$TMP_ROOT/pretool-skill")
-  transcript="$home/transcript.jsonl"
-  cat > "$transcript" <<'JSONL'
-{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"wayfinder"}}]}}
-{"type":"message","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"1","content":"ok"}]}}
-JSONL
-  payload=$(printf '{"tool_name":"AskUserQuestion","transcript_path":"%s","tool_input":{"questions":[{"question":"OWNER_INVOKE_WAIT /wayfinder"}]}}' "$transcript")
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" --pretool --claude 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "pretool with same-turn Skill load exited $rc with: $out"
-  [ -z "$out" ] || fail "pretool with same-turn Skill load printed: $out"
-  pass "owner-invoke-wait: PreToolUse credits transcript skill-load invokes"
 }
 
 test_hook_ignores_prior_session_ships() {
@@ -983,16 +786,9 @@ SH
   pass "owner-invoke-wait: crewmate settings wire Skill load recorder"
 }
 
-write_nodes_registry() {
-  local home=$1
-  mkdir -p "$home/data"
-  printf '%s\t%s\n' 'wayfinder' 'data/*/map.md' > "$home/data/owner-invoke-nodes.tsv"
-}
-
 test_hook_owner_node_same_turn_is_clean() {
   local home out rc payload transcript
   home=$(make_primary_home "$TMP_ROOT/hook-node-same")
-  write_nodes_registry "$home"
   printf '9001\n' > "$home/state/.lock"
   transcript="$home/transcript.jsonl"
   cat > "$transcript" <<'JSONL'
@@ -1015,7 +811,6 @@ JSONL
 test_hook_owner_node_later_captain_without_artifact_refuses() {
   local home out rc payload transcript
   home=$(make_primary_home "$TMP_ROOT/hook-node-later")
-  write_nodes_registry "$home"
   printf '9002\n' > "$home/state/.lock"
   transcript="$home/transcript.jsonl"
   cat > "$transcript" <<'JSONL'
@@ -1045,13 +840,12 @@ JSONL
   set -e
   [ "$rc" -eq 0 ] || fail "hook later captain with map.md exited $rc with: $out"
   [ -z "$out" ] || fail "hook later captain with map.md printed: $out"
-  pass "owner-invoke-wait: hook refuses an open node after the next captain message"
+  pass "owner-invoke-wait: header table refuses an open node with no home file"
 }
 
 test_hook_owner_node_ignores_slash_without_command_name() {
   local home out rc payload transcript
   home=$(make_primary_home "$TMP_ROOT/hook-node-slash")
-  write_nodes_registry "$home"
   printf '9003\n' > "$home/state/.lock"
   transcript="$home/transcript.jsonl"
   cat > "$transcript" <<'JSONL'
@@ -1074,7 +868,7 @@ JSONL
 test_hook_owner_node_malformed_registry_is_structural() {
   local home out rc payload transcript
   home=$(make_primary_home "$TMP_ROOT/hook-node-badreg")
-  printf 'wayfinder only\n' > "$home/data/owner-invoke-nodes.tsv"
+  printf 'wayfinder only\n' > "$home/nodes.tsv"
   printf '9004\n' > "$home/state/.lock"
   transcript="$home/transcript.jsonl"
   : > "$transcript"
@@ -1082,6 +876,7 @@ test_hook_owner_node_malformed_registry_is_structural() {
   set +e
   out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_OWNER_INVOKE_NODES_REGISTRY="$home/nodes.tsv" \
     "$CHECK" 2>&1)
   rc=$?
   set -e
@@ -1097,7 +892,7 @@ test_hook_owner_node_or_merges_duplicate_token_globs() {
     printf '%s\t%s\n' 'vision' 'data/tv-vision/VISION.draft.md'
     printf '%s\t%s\n' 'vision' 'data/tv-vision/answers-*.md'
     printf '%s\t%s\n' 'vision' 'VISION.md'
-  } > "$home/data/owner-invoke-nodes.tsv"
+  } > "$home/nodes.tsv"
   printf '9005\n' > "$home/state/.lock"
   transcript="$home/transcript.jsonl"
   cat > "$transcript" <<'JSONL'
@@ -1111,6 +906,7 @@ JSONL
   set +e
   out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_OWNER_INVOKE_NODES_REGISTRY="$home/nodes.tsv" \
     "$CHECK" 2>&1)
   rc=$?
   set -e
@@ -1122,6 +918,7 @@ JSONL
   set +e
   out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_OWNER_INVOKE_NODES_REGISTRY="$home/nodes.tsv" \
     "$CHECK" 2>&1)
   rc=$?
   set -e
@@ -1133,7 +930,6 @@ JSONL
 test_hook_owner_node_recursive_glob_credits_nested_artifact() {
   local home out rc payload transcript
   home=$(make_primary_home "$TMP_ROOT/hook-node-recursive")
-  printf '%s\t%s\n' 'wayfinder' 'data/**/map.md' > "$home/data/owner-invoke-nodes.tsv"
   printf '9006\n' > "$home/state/.lock"
   transcript="$home/transcript.jsonl"
   cat > "$transcript" <<'JSONL'
@@ -1167,27 +963,17 @@ JSONL
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
 test_missing_and_empty_input_are_structural
-test_historical_yes_ask_fires_exact_count
-test_historical_fog_pin_fires_exact_count
 test_historical_ship_omission_fires_exact_count
 test_historical_owner_node_open_fires_exact_count
 test_owner_node_same_turn_and_artifact_are_clean
-test_owner_node_claims_pass_class_too_narrow
 test_held_locked_next_and_date_cleared
-test_invoked_and_english_without_marker_are_clean
 test_placeholder_and_stub_briefs_are_clean
 test_builder_self_review_is_not_ov
 test_distinct_ov_worker_is_clean
 test_ov_report_and_skill_records
 test_unrelated_rule_does_not_satisfy_exact_count
-test_own_claims_pass_class_too_narrow
-test_pretool_yes_ask_is_denied
 test_hook_gathers_session_ship_ov_ladder
 test_hook_does_not_rerefuse_inflight_ship_without_ov
-test_prior_turn_tool_mention_is_not_invoke_credit
-test_same_turn_skill_tool_load_is_invoke_credit
-test_tool_result_user_message_keeps_same_turn_invoke_credit
-test_pretool_credits_transcript_skill_load
 test_hook_ignores_prior_session_ships
 test_missing_skills_record_counts_as_unloaded
 test_finished_non_claude_review_without_skills_passes

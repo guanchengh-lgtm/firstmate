@@ -294,26 +294,6 @@ It does not infer supersession from chat, report prose, or arbitrary project com
 The current full recurring-defect claims and adversary outcome are recorded in [`verification/durable-sot-recurring-defect-claims.json`](verification/durable-sot-recurring-defect-claims.json).
 See [`sot-programs.example.tsv`](sot-programs.example.tsv) for a non-live copyable shape.
 
-## SoT speech refuse-hook (data/sot-speech.tsv)
-
-An optional home-local registry can refuse captain-facing content claims about named file-backed sources unless the same session opened those files.
-Lookup uses `$FM_HOME/data/sot-speech.tsv` by default (`FM_SOT_SPEECH_REGISTRY` overrides for tests).
-The registry is private to the home and is never tracked in firstmate git.
-Product-lock and north-star rows name a file under `data/decisions/`; a pointer in `data/captain.md` is not the lock, and session-start digest files cannot be registered.
-See [`sot-speech.example.tsv`](sot-speech.example.tsv) for a non-live copyable shape.
-[`bin/fm-sot-speech-check.sh`](../bin/fm-sot-speech-check.sh)'s header owns the row format, the digest-file refusal, turn-end and AskUserQuestion PreToolUse refuse paths, declared-unread escape, fail-open cases, and residual coverage.
-`AGENTS.md` section 9 carries the always-loaded declared-unread sentence.
-
-## Owner-invoke node refuse-hook (data/owner-invoke-nodes.tsv)
-
-An optional home-local registry names owner-invoke skills whose harness `<command-name>` record opens a node that must produce a matching artifact before the captain's next message is answered with a Stop.
-Lookup uses `$FM_HOME/data/owner-invoke-nodes.tsv` by default (`FM_OWNER_INVOKE_NODES_REGISTRY` overrides for tests).
-Each row is `token <TAB> artifact_glob`; duplicate tokens OR-merge so any matching glob clears the node, and `**` in a glob is recursive.
-The registry is private to the home and is never tracked in firstmate git.
-See [`owner-invoke-nodes.example.tsv`](owner-invoke-nodes.example.tsv) for a non-live copyable shape aligned to the deliverable map.
-[`bin/fm-owner-invoke-wait-check.sh`](../bin/fm-owner-invoke-wait-check.sh)'s header owns the row format, the one-message-late refuse, same-turn cleanliness, and residual coverage.
-Claims live in [`verification/owner-node-open-claims.json`](verification/owner-node-open-claims.json).
-
 ## Spec compile-check refuse-hook
 
 A Stop that wrote Map 2 spec, tickets, or keep-list files this turn must not end while [`bin/fm-spec-compile-check.sh`](../bin/fm-spec-compile-check.sh) is red.
@@ -339,16 +319,6 @@ A pick never written to any decision file cannot be seen.
 The script header owns the marker grammar, rule ids, structural exit 2, exact-count regression flags, and residual coverage.
 Claims live in [`verification/stow-open-lock-recurring-defect-claims.json`](verification/stow-open-lock-recurring-defect-claims.json).
 
-## Session-progress retrieve check
-
-Session-start and Bearings must retrieve the prior-session fold after an accidental end.
-They use captain picks already written to `data/decisions/` at answer time and old session talk already on disk.
-They do not wait for `/stow` and do not write a second progress file.
-[`bin/fm-session-progress-retrieve-check.sh`](../bin/fm-session-progress-retrieve-check.sh) refuses a retrieve surface that omits live jobs, open picks, or captain lock words the fold already extracted.
-Asides outside that bar are not covered.
-The script header owns the rule id, structural exit 2, exact-count regression flags, and residual coverage.
-Claims live in [`verification/session-progress-retrieve-claims.json`](verification/session-progress-retrieve-claims.json).
-
 ## Defect-class name list (data/defect-classes.tsv)
 
 An optional home-local registry binds miss-line phrasings to one class id so cleanup can refuse a second-occurrence ship that did not touch an enforcing file.
@@ -357,15 +327,6 @@ Lookup uses `$FM_HOME/data/defect-classes.tsv` only.
 Each non-comment row is tab-separated: `class_id <TAB> miss_regex`.
 `bin/fm-teardown.sh`'s header owns the match, scout exemption, enforcing-file set, and the refusal that a queued next slice does not discharge.
 See [`class-repeat-gate.md`](class-repeat-gate.md) for what the check covers and what it does not, and [`defect-classes.example.tsv`](defect-classes.example.tsv) for a non-live copyable shape.
-
-## Class-too-narrow claims check
-
-A new class claims file under `docs/verification/` must state a property, name two or more instances in different clothes, and must not name the class as one command or situation while those instances are a broader mechanism.
-[`bin/fm-class-too-narrow-check.sh`](../bin/fm-class-too-narrow-check.sh)'s header owns the claims JSON fields, rule ids, structural exit 2, exact-count regression flags, and residual coverage.
-See [`class-too-narrow-check.md`](class-too-narrow-check.md) for what the check covers and what it does not.
-Claims live in [`verification/class-too-narrow-check-claims.json`](verification/class-too-narrow-check-claims.json).
-English "broader than" cannot be 100%.
-That limit is stated next to the check.
 
 ## Crew dispatch profiles (config/crew-dispatch.json)
 

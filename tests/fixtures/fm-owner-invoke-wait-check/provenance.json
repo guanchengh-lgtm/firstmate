@@ -1,4 +1,4 @@
 {
   "date": "2026-08-23",
-  "derivation": "2026-08-22 fixtures reconstruct OWNER_INVOKE_WAIT plus durable ship and hold records. 2026-08-23 adds a command-name owner-node that stayed open across the next captain message with no artifact, not as a same-turn Stop and not as English-prose regex."
+  "derivation": "2026-08-22 fixtures reconstruct durable ship and hold records. 2026-08-23 adds a command-name owner-node that stayed open across the next captain message with no artifact, not as a same-turn Stop and not as English-prose regex."
 }
