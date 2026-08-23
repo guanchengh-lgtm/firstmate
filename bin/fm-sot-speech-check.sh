@@ -5,9 +5,9 @@
 # Usage: fm-sot-speech-check.sh [--claude] [--pretool]
 #
 # Rows come from ordinary files directly under $FM_HOME/data/decisions/.
-# A lock that carries one line `speech-claim: <ERE>` is a row
+# A lock line matching ^speech-claim:[[:space:]]+(.+)$ is a row
 #   data/decisions/<that-file>.md <TAB> <ERE>
-# There is no data/sot-speech.tsv. Digest files cannot be rows by
+# Mid-line mentions are not rows. Digest files cannot be rows by
 # construction. content_claim_ERE is a JavaScript regex matched against
 # captain-facing text. Name-only mentions and a declared-unread sentence
 # stay outside the refusal when they do not also state registered content.
@@ -19,10 +19,10 @@
 # that digest actually prints, and only when those files exist. Digest credit
 # cannot satisfy a product-lock row.
 #
-# Missing decisions directory, no speech-claim lines, unreadable transcript,
-# missing jq/node, or malformed JSONL stay inert (exit 0). A speech-claim line
-# with an empty ERE is a structural failure and exits 2 before any finding.
-# There is no skip flag.
+# Missing decisions directory, no matching speech-claim lines, unreadable
+# transcript, missing jq/node, or malformed JSONL stay inert (exit 0). A
+# matching line whose ERE is not a usable JavaScript regex is structural and
+# exits 2 before any finding. There is no skip flag.
 #
 # This check proves only that the registered file was opened in the session. It
 # cannot prove a full or correct read, unregistered paraphrase, mixed unread-
@@ -78,18 +78,7 @@ PAYLOAD_FILE="$TMP_DIR/payload.json"
 : > "$NORMALIZED"
 printf '%s' "$PAYLOAD" > "$PAYLOAD_FILE" || exit 0
 
-trim_space() {
-  local value=$1
-  value=${value#"${value%%[![:space:]]*}"}
-  value=${value%"${value##*[![:space:]]}"}
-  printf '%s' "$value"
-}
-
-registry_error() {
-  echo "SOT_SPEECH_REFUSED: registry invalid - $*" >&2
-  exit 2
-}
-
+claim_re='^speech-claim:[[:space:]]+(.+)$'
 rows=0
 for path in "$DECISIONS"/*.md; do
   [ -f "$path" ] && [ ! -L "$path" ] && [ -r "$path" ] || continue
@@ -97,15 +86,10 @@ for path in "$DECISIONS"/*.md; do
   file=data/decisions/$base
   ere=
   while IFS= read -r row || [ -n "$row" ]; do
-    trimmed=$(trim_space "$row")
-    case "$trimmed" in
-      speech-claim:*)
-        ere=${trimmed#speech-claim:}
-        ere=$(trim_space "$ere")
-        [ -n "$ere" ] || registry_error "$file speech-claim ERE is empty"
-        break
-        ;;
-    esac
+    if [[ "$row" =~ $claim_re ]]; then
+      ere=${BASH_REMATCH[1]}
+      break
+    fi
   done < "$path"
   [ -n "$ere" ] || continue
   rows=$((rows + 1))

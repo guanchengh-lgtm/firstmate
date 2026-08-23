@@ -294,13 +294,6 @@ It does not infer supersession from chat, report prose, or arbitrary project com
 The current full recurring-defect claims and adversary outcome are recorded in [`verification/durable-sot-recurring-defect-claims.json`](verification/durable-sot-recurring-defect-claims.json).
 See [`sot-programs.example.tsv`](sot-programs.example.tsv) for a non-live copyable shape.
 
-## SoT speech refuse-hook
-
-Locks under `data/decisions/` that carry one `speech-claim: <ERE>` line are the registry.
-There is no `data/sot-speech.tsv`.
-[`bin/fm-sot-speech-check.sh`](../bin/fm-sot-speech-check.sh)'s header owns the line format, turn-end and AskUserQuestion PreToolUse refuse paths, declared-unread escape, fail-open cases, and residual coverage.
-`AGENTS.md` section 9 carries the always-loaded declared-unread sentence.
-
 ## Spec compile-check refuse-hook
 
 A Stop that wrote Map 2 spec, tickets, or keep-list files this turn must not end while [`bin/fm-spec-compile-check.sh`](../bin/fm-spec-compile-check.sh) is red.

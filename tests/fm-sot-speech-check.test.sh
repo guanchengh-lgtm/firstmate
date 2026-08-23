@@ -24,6 +24,7 @@ write_lock() {
   printf '%s\n' \
     'F1 is locked in this fixture.' \
     'AMENDED: 0DTE walls are in scope. A pointer in captain.md is not the lock.' \
+    'Do not treat this speech-claim: decoy-token as a row.' \
     'speech-claim: F1|Map 2 spec|0DTE|north star' \
     > "$home/data/decisions/example-product-lock.md"
 }
@@ -109,11 +110,33 @@ test_declared_unread_allows_naming() {
   pass "sot-speech: declared-unread statement is not refused"
 }
 
+test_midline_decoy_and_empty_prefix_are_inert() {
+  local home transcript payload out rc
+  home=$(make_primary_home "$TMP_ROOT/decoy")
+  mkdir -p "$home/data/decisions"
+  printf '%s\n' \
+    'Do not treat this speech-claim: decoy-token as a row.' \
+    'speech-claim:' \
+    '  speech-claim: indented-token' \
+    > "$home/data/decisions/decoy-lock.md"
+  transcript="$home/transcript.jsonl"
+  write_transcript "$transcript" \
+    '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"decoy-token and indented-token still hold."}]}}'
+  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  set +e
+  out=$(run_check "$home" "$payload")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "mid-line decoy exited $rc with: $out"
+  [ -z "$out" ] || fail "mid-line decoy should be silent, got: $out"
+  pass "sot-speech: mid-line and empty speech-claim lines are not rows"
+}
+
 test_malformed_registry_is_structural() {
   local home transcript payload out rc
   home=$(make_primary_home "$TMP_ROOT/badreg")
   mkdir -p "$home/data/decisions"
-  printf '%s\n' 'speech-claim:' > "$home/data/decisions/empty-claim.md"
+  printf '%s\n' 'speech-claim: (' > "$home/data/decisions/bad-ere.md"
   transcript="$home/transcript.jsonl"
   write_transcript "$transcript" \
     '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"hello"}]}}'
@@ -124,7 +147,7 @@ test_malformed_registry_is_structural() {
   set -e
   [ "$rc" -eq 2 ] || fail "malformed registry exited $rc"
   assert_contains "$out" 'registry invalid' "structural failure did not name the registry"
-  pass "sot-speech: empty speech-claim ERE is a structural failure"
+  pass "sot-speech: unusable speech-claim ERE is a structural failure"
 }
 
 test_pretool_askuser_is_refused() {
@@ -221,6 +244,7 @@ test_absent_locks_are_inert
 test_claim_without_read_is_refused
 test_read_evidence_allows_claim
 test_declared_unread_allows_naming
+test_midline_decoy_and_empty_prefix_are_inert
 test_malformed_registry_is_structural
 test_pretool_askuser_is_refused
 test_decision_lock_claim_without_read_is_refused
