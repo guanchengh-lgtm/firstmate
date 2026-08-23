@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Refuse ending a turn, asking for a yes, or starting a ship when this seat
-# already owns the next act and does not start it.
+# Refuse ending a turn or starting a ship when this seat already owns the
+# next act and does not start it.
 #
 # Usage: fm-owner-invoke-wait-check.sh --input <turn.json>
 #          [--expect-rule <rule-id> --expect-count <count>]
@@ -17,16 +17,11 @@
 # Hook/payload mode (no --input/--brief) reads the turn-end or PreToolUse
 # payload on stdin. Empty stdin is inert exit 0 so a missing hook payload
 # cannot wedge the session. Findings in hook mode print a refusal banner
-# and exit 2. PreToolUse denies AskUserQuestion yes-asks the same way
-# bin/fm-sot-speech-check.sh does.
+# and exit 2. PreToolUse has no remaining owner-invoke rule and is inert.
 #
 # Default --input / payload rules:
 #   R-held-locked-next      a held ticket is a map_next target or its until
 #                           date has passed, and it has no worker meta
-#   R-owner-invoke-wait     speech carries OWNER_INVOKE_WAIT plus an exact
-#                           /token or $token from the owner-invoke list, and
-#                           that skill was not invoked
-#   R-fog-pin-wait          live fog gather plus OWNER_INVOKE_WAIT
 #   R-ov-missing            spawn --input with task: no distinct OV worker;
 #                           hook/brief ladder: review worker gone with no
 #                           data/<ov>/report.md (live worker without report
@@ -34,35 +29,37 @@
 #   R-skill-unloaded        report present, ov_harness is claude/claude*, and
 #                           data/<ov>/skills never listed plan-eng-review
 #                           (completion-time; gated by report; Claude-only)
-#   R-owner-node-open       a harness <command-name> token from
-#                           data/owner-invoke-nodes.tsv opened a node, a later
-#                           real captain turn arrived, and no ordinary file
-#                           matching any of that token's artifact_glob rows
-#                           has mtime at or after the trigger. Does not refuse
-#                           on the trigger turn. Does not hunt free English.
-#                           Does not warn without blocking. --input reads
+#   R-owner-node-open       a harness <command-name> token from the header
+#                           node table opened a node, a later real captain
+#                           turn arrived, and no ordinary file matching any
+#                           of that token's artifact_glob rows has mtime at
+#                           or after the trigger. Does not refuse on the
+#                           trigger turn. Does not hunt free English. Does
+#                           not warn without blocking. --input reads
 #                           turn.owner_nodes.
 # Default --brief rules: R-ov-missing,R-skill-unloaded on durable OV records
 # (state/<ship>.meta ov=/ov_harness=, data/<ov>/report.md, data/<ov>/skills,
 # live endpoint). No brief-body parse.
 #
-# Owner-invoke tokens (header-owned; not a skill picker):
-#   recurring-defect, grill-with-docs, wayfinder, vision
-# Spoken yes-ask is the tight marker OWNER_INVOKE_WAIT only, not a prose net.
-# Owner-node completion is a separate rule. The home-local registry is
-# $FM_HOME/data/owner-invoke-nodes.tsv (FM_OWNER_INVOKE_NODES_REGISTRY
-# overrides). Each row is token <TAB> artifact_glob, relative to FM_HOME or
-# FM_ROOT, with no .. and no absolute path. Duplicate tokens OR-merge: any
-# matching glob clears the node. ** in a glob is recursive. Missing registry
-# skips this rule. A present malformed registry is structural. The trigger is
-# a non-meta user record containing <command-name>/token</command-name> or
-# <command-name>token</command-name>. The transcript record is the arm; this
-# helper does not write a second state file. A later captain turn is
-# is_captain_turn after that record. Same-turn Stop is clean. Blocking, not
-# advisory. Artifact credit needs trigger timestamp or state/.lock mtime;
-# without either, leftover files do not clear the node.
+# Owner-invoke node rows (header-owned; not a skill picker; not a home file).
+# Each row is token<TAB>artifact_glob relative to FM_HOME or FM_ROOT, with
+# no .. and no absolute path:
+#   recurring-defect	docs/verification/**/*claims.json
+#   grill-with-docs	data/decisions/*.md
+#   wayfinder	data/**/map.md
+#   vision	VISION.md
+# Duplicate tokens OR-merge: any matching glob clears the node. ** in a glob
+# is recursive. FM_OWNER_INVOKE_NODES_REGISTRY overrides this table for tests
+# only. The header table fires with no home file. A present malformed
+# override is structural. The trigger is a non-meta user record containing
+# <command-name>/token</command-name> or <command-name>token</command-name>.
+# The transcript record is the arm; this helper does not write a second
+# state file. A later captain turn is is_captain_turn after that record.
+# Same-turn Stop is clean. Blocking, not advisory. Artifact credit needs
+# trigger timestamp or state/.lock mtime; without either, leftover files
+# do not clear the node.
 # plan-eng-review requires a separate OV worker. The builder's own plan note
-# is not OV. Split transcript windows and live fog gather stay as gather holes.
+# is not OV. Split transcript windows stay as gather holes.
 #
 # Production gather (hook mode, non-PreToolUse): every state/*.meta with
 # kind=ship whose session= equals the current state/.lock contents (ships
@@ -93,26 +90,20 @@
 # exits 0 only when that rule count and the total finding count both equal
 # the expected count. There is no "the fixture must fail" inversion.
 #
-# LIMITS: a missing OWNER_INVOKE_WAIT marker is invisible even if the
-# prose asked a question. Split transcripts can hide a load. Live fog
-# gather does not own the wait. A real captain hold is invisible.
+# LIMITS: Split transcripts can hide a load. A real captain hold is
+# invisible.
 # Empty or {TASK} task fields skip ship rules (spawn-harness stubs).
 # Builder self-review is not OV. In-flight ships already started without ov=
 # are not re-refused at turn end. A non-Claude review worker (grok, codex,
 # pi, kimi, opencode, muse) fires no PostToolUse hook, so its skills record
 # is never written; R-skill-unloaded runs only when durable ov_harness is
 # claude or claude*, and skips for any other harness or a missing/unreadable
-# ov_harness on older records - a disclosed gap, not a refusal. Invoked-skill
-# credit is the current
-# turn only (after the last captain/human user record; tool_result-only and
-# synthetic/meta user shapes do not reset the turn) and only real skill-load
-# tool shapes, not arbitrary tool-input mentions. PreToolUse keeps
-# AskUserQuestion tool_input as speech and still credits current-turn skill
-# loads from transcript_path. R-owner-node-open sees only harness command-name
-# records, not slash text and not Skill tool loads. Non-Claude primaries emit
-# no command-name record (disclosed gap). Assistant or isMeta text that quotes
-# the tag does not arm a node. A glob that matches any this-trigger-or-later
-# file, including an unrelated data/decisions/*.md, can clear grill-with-docs.
+# ov_harness on older records - a disclosed gap, not a refusal.
+# R-owner-node-open sees only harness command-name records, not slash text
+# and not Skill tool loads. Non-Claude primaries emit no command-name
+# record (disclosed gap). Assistant or isMeta text that quotes the tag does
+# not arm a node. A glob that matches any this-trigger-or-later file,
+# including an unrelated data/decisions/*.md, can clear grill-with-docs.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -132,13 +123,15 @@ CLAUDE_MODE=0
 PRETOOL_MODE=0
 HOOK_MODE=0
 
-INPUT_RULES='R-held-locked-next,R-owner-invoke-wait,R-fog-pin-wait,R-ov-missing,R-skill-unloaded,R-owner-node-open'
+INPUT_RULES='R-held-locked-next,R-ov-missing,R-skill-unloaded,R-owner-node-open'
 BRIEF_RULES='R-ov-missing,R-skill-unloaded'
-KNOWN_RULES='R-held-locked-next R-owner-invoke-wait R-fog-pin-wait R-ov-missing R-skill-unloaded R-owner-node-open'
-NODE_REGISTRY="${FM_OWNER_INVOKE_NODES_REGISTRY:-$DATA/owner-invoke-nodes.tsv}"
+KNOWN_RULES='R-held-locked-next R-ov-missing R-skill-unloaded R-owner-node-open'
+# Header-owned default node table. Home file is not consulted.
+# FM_OWNER_INVOKE_NODES_REGISTRY is a test override only.
+DEFAULT_OWNER_INVOKE_NODES=$'recurring-defect\tdocs/verification/**/*claims.json\ngrill-with-docs\tdata/decisions/*.md\nwayfinder\tdata/**/map.md\nvision\tVISION.md'
 
 usage() {
-  sed -n '2,113p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,106p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 structural() {
@@ -250,16 +243,12 @@ if [ -n "$expect_rule" ] || [ -n "$expect_count" ]; then
 fi
 
 run_held=0
-run_wait=0
-run_fog=0
 run_ov=0
 run_skill=0
 run_node=0
 for r in "${selected[@]+"${selected[@]}"}"; do
   case "$r" in
     R-held-locked-next) run_held=1 ;;
-    R-owner-invoke-wait) run_wait=1 ;;
-    R-fog-pin-wait) run_fog=1 ;;
     R-ov-missing) run_ov=1 ;;
     R-skill-unloaded) run_skill=1 ;;
     R-owner-node-open) run_node=1 ;;
@@ -267,7 +256,6 @@ for r in "${selected[@]+"${selected[@]}"}"; do
 done
 
 today=$(date +%F)
-YES_ASK_MARKER='OWNER_INVOKE_WAIT'
 
 read_skill_lines() {  # <path> -> JSON array
   local path=$1 json='[]' line
@@ -293,26 +281,17 @@ evaluate_turn() {  # <json-file>
   local json=$1
   jq -c \
     --argjson run_held "$run_held" \
-    --argjson run_wait "$run_wait" \
-    --argjson run_fog "$run_fog" \
     --argjson run_ov "$run_ov" \
     --argjson run_skill "$run_skill" \
     --argjson run_node "$run_node" \
-    --arg today "$today" \
-    --arg marker "$YES_ASK_MARKER" '
+    --arg today "$today" '
     def trim:
       gsub("^[[:space:]]+"; "") | gsub("[[:space:]]+$"; "");
-    def has_marker($m):
-      ($m != "") and (index($m) != null);
-    def has_skill_token($tok):
-      (index("/" + $tok) != null) or (index("$" + $tok) != null);
     def date_cleared($today):
       (.hold_until // "") as $u
       | ($u | type) == "string"
         and ($u | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}$"))
         and ($u <= $today);
-    def tokens:
-      ["recurring-defect", "grill-with-docs", "wayfinder", "vision"];
     def as_str($v):
       if ($v | type) == "string" then $v else "" end;
     def as_arr($v):
@@ -322,9 +301,6 @@ evaluate_turn() {  # <json-file>
     | (as_arr($t.held)) as $held
     | (as_arr($t.map_next) | map(select(type == "string" and . != ""))) as $map_next
     | (as_arr($t.owned_meta) | map(select(type == "string" and . != ""))) as $owned
-    | (as_str($t.assistant_text) | trim) as $speech
-    | (as_arr($t.invoked_skills) | map(ascii_downcase)) as $invoked
-    | (if ($t.fog_live == true) then true else false end) as $fog
     | (as_arr($t.ships)) as $ships
     | (as_arr($t.owner_nodes)) as $nodes
     | [
@@ -339,16 +315,6 @@ evaluate_turn() {  # <json-file>
               )
             | "R-held-locked-next-unowned: \($id) is a locked next act still held without a worker"
           )
-        else empty end,
-        if $run_wait == 1 and ($speech | has_marker($marker)) then
-          (tokens[] | . as $tok
-            | select($speech | has_skill_token($tok))
-            | select(($invoked | index($tok)) == null)
-            | "R-owner-invoke-wait-yes-ask: named /\($tok) and asked for a yes"
-          )
-        else empty end,
-        if $run_fog == 1 and $fog and ($speech | has_marker($marker)) then
-          "R-fog-pin-wait-asked: live fog with OWNER_INVOKE_WAIT"
         else empty end,
         if $run_ov == 1 then
           ($ships[]? | select(type == "object") | . as $s
@@ -546,6 +512,10 @@ PAYLOAD=$(cat 2>/dev/null || true)
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
 
+if [ "$PRETOOL_MODE" -eq 1 ]; then
+  exit 0
+fi
+
 TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/fm-owner-invoke-wait.XXXXXX") || exit 0
 # shellcheck disable=SC2329 # Invoked by trap handlers below.
 cleanup() { rm -rf -- "$TMP_DIR"; }
@@ -555,10 +525,7 @@ held_json='[]'
 map_json='[]'
 owned_json='[]'
 ships_json='[]'
-speech=''
-invoked_json='[]'
 owner_nodes_json='[]'
-fog_live=false
 
 backend=
 if [ -f "$CONFIG/backlog-backend" ]; then
@@ -657,12 +624,20 @@ gather_ships() {
 
 gather_owner_nodes() {
   local line_no=0 tabs token glob rows='[]' line trimmed lock_mtime py extracted transcript
+  local registry_file=
   owner_nodes_json='[]'
   [ "$run_node" -eq 1 ] || return 0
-  [ -e "$NODE_REGISTRY" ] || return 0
-  [ -f "$NODE_REGISTRY" ] && [ ! -L "$NODE_REGISTRY" ] && [ -r "$NODE_REGISTRY" ] \
-    || structural "owner-invoke nodes registry is not a readable ordinary file: $NODE_REGISTRY"
-  [ -s "$NODE_REGISTRY" ] || structural "empty owner-invoke nodes registry $NODE_REGISTRY"
+  if [ -n "${FM_OWNER_INVOKE_NODES_REGISTRY:-}" ]; then
+    registry_file=$FM_OWNER_INVOKE_NODES_REGISTRY
+    [ -e "$registry_file" ] || structural "owner-invoke nodes registry is missing: $registry_file"
+    [ -f "$registry_file" ] && [ ! -L "$registry_file" ] && [ -r "$registry_file" ] \
+      || structural "owner-invoke nodes registry is not a readable ordinary file: $registry_file"
+    [ -s "$registry_file" ] || structural "empty owner-invoke nodes registry $registry_file"
+  else
+    registry_file=$TMP_DIR/default-owner-invoke-nodes.tsv
+    printf '%s\n' "$DEFAULT_OWNER_INVOKE_NODES" > "$registry_file" \
+      || structural "could not write default owner-invoke nodes table"
+  fi
   while IFS= read -r line || [ -n "$line" ]; do
     line_no=$((line_no + 1))
     trimmed=${line#"${line%%[![:space:]]*}"}
@@ -683,7 +658,7 @@ gather_owner_nodes() {
     esac
     rows=$(jq -n -c --arg token "$token" --arg glob "$glob" --argjson acc "$rows" \
       '$acc + [{token: ($token | ascii_downcase), glob: $glob}]')
-  done < "$NODE_REGISTRY"
+  done < "$registry_file"
   [ "$(jq 'length' <<<"$rows")" -gt 0 ] || return 0
   command -v python3 >/dev/null 2>&1 || return 0
   transcript=$(printf '%s' "$PAYLOAD" | jq -r '(.transcript_path // .transcriptPath // empty)' 2>/dev/null) || return 0
@@ -900,231 +875,28 @@ PY
   owner_nodes_json=$extracted
 }
 
-extract_speech() {
-  local transcript py
-  transcript=$(printf '%s' "$PAYLOAD" | jq -r '(.transcript_path // .transcriptPath // empty)' 2>/dev/null) || return 0
-  [ -n "$transcript" ] || return 0
-  [ -f "$transcript" ] && [ ! -L "$transcript" ] && [ -r "$transcript" ] || return 0
-  command -v python3 >/dev/null 2>&1 || return 0
-  py="$TMP_DIR/extract.py"
-  cat > "$py" <<'PY'
-import json
-import sys
-
-tokens = ("recurring-defect", "grill-with-docs", "wayfinder", "vision")
-skill_tools = {"skill", "load_skill", "invoke_skill", "skilltool"}
-path = sys.argv[1]
-text = ""
-invoked = []
-
-
-def add_token(token):
-    token = (token or "").strip().lower().lstrip("//$")
-    if token in tokens and token not in invoked:
-        invoked.append(token)
-
-
-def skill_from_input(inp):
-    if isinstance(inp, str):
-        return inp
-    if not isinstance(inp, dict):
-        return ""
-    for key in ("skill", "skill_name", "name", "command"):
-        val = inp.get(key)
-        if isinstance(val, str) and val.strip():
-            return val
-    return ""
-
-
-def walk_tools(value):
-    if isinstance(value, list):
-        for item in value:
-            walk_tools(item)
-        return
-    if not isinstance(value, dict):
-        return
-    kind = str(value.get("type") or "")
-    name = str(value.get("name") or value.get("tool_name") or "")
-    name_l = name.lower()
-    is_tool = kind in ("tool_use", "toolUse", "toolCall") or bool(name)
-    if is_tool:
-        for token in tokens:
-            if name_l == token or name_l.endswith("/" + token) or name_l.endswith("__" + token):
-                add_token(token)
-        if name_l in skill_tools or name_l.endswith("/skill") or name_l.endswith("__skill"):
-            add_token(skill_from_input(value.get("input") or value.get("arguments") or {}))
-    for item in value.values():
-        if isinstance(item, (list, dict)):
-            walk_tools(item)
-
-
-def message(record):
-    if not isinstance(record, dict):
-        return None
-    if isinstance(record.get("message"), dict):
-        return record["message"]
-    return record
-
-
-def text_parts(content):
-    if isinstance(content, str):
-        return content
-    if not isinstance(content, list):
-        return ""
-    parts = []
-    for part in content:
-        if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str):
-            parts.append(part["text"])
-    return "\n".join(parts)
-
-
-def role_of(record, msg):
-    if isinstance(msg, dict):
-        role = str(msg.get("role") or "")
-        if role:
-            return role
-    if isinstance(record, dict):
-        return str(record.get("type") or record.get("role") or "")
-    return ""
-
-
-def texts_of(content):
-    if isinstance(content, str):
-        return [content] if content.strip() else []
-    if not isinstance(content, list):
-        return []
-    out = []
-    for part in content:
-        if isinstance(part, dict) and part.get("type") == "text" and isinstance(part.get("text"), str):
-            if part["text"].strip():
-                out.append(part["text"])
-    return out
-
-
-def is_tool_result_only(content):
-    if not isinstance(content, list) or not content:
-        return False
-    for part in content:
-        if not isinstance(part, dict):
-            return False
-        typ = str(part.get("type") or "")
-        if typ not in ("tool_result", "toolResult"):
-            return False
-    return True
-
-
-def is_synthetic_user_text(text):
-    t = text.lstrip()
-    if t.startswith("<task-notification"):
-        return True
-    if t.startswith("<local-command-stdout"):
-        return True
-    if t.startswith("[Request interrupted by user"):
-        return True
-    if "FIRSTMATE_OP:" in text or "turn-end-guard" in text:
-        return True
-    return False
-
-
-def is_captain_turn(record, content):
-    if isinstance(record, dict) and record.get("isMeta") is True:
-        return False
-    if is_tool_result_only(content):
-        return False
-    text_blob = "\n".join(texts_of(content))
-    if not text_blob.strip():
-        return False
-    if is_synthetic_user_text(text_blob):
-        return False
-    return True
-
-
-try:
-    with open(path, encoding="utf-8") as handle:
-        for raw in handle:
-            raw = raw.strip()
-            if not raw:
-                continue
-            try:
-                record = json.loads(raw)
-            except json.JSONDecodeError:
-                continue
-            msg = message(record)
-            role = role_of(record, msg)
-            content = msg.get("content") if isinstance(msg, dict) else None
-            if role in ("user", "human"):
-                if is_captain_turn(record, content):
-                    text = ""
-                    invoked = []
-                continue
-            if role == "assistant":
-                walk_tools(content)
-                chunk = text_parts(content).strip()
-                if chunk:
-                    text = chunk
-except OSError:
-    print(json.dumps({"assistant_text": "", "invoked_skills": []}))
-    raise SystemExit(0)
-
-print(json.dumps({"assistant_text": text, "invoked_skills": invoked}))
-PY
-  extracted=$(python3 "$py" "$transcript" 2>/dev/null) || return 0
-  speech=$(printf '%s' "$extracted" | jq -r '.assistant_text // empty')
-  invoked_json=$(printf '%s' "$extracted" | jq -c '.invoked_skills // []')
-}
-
-if [ "$PRETOOL_MODE" -eq 1 ]; then
-  tool=$(printf '%s' "$PAYLOAD" | jq -r '.tool_name // .toolName // empty' 2>/dev/null) || exit 0
-  [ "$tool" = AskUserQuestion ] || exit 0
-  extract_speech || true
-  speech=$(printf '%s' "$PAYLOAD" | jq -r '
-    def strings:
-      if type == "string" then .
-      elif type == "array" then map(strings) | join("\n")
-      elif type == "object" then [.[]] | map(strings) | join("\n")
-      else empty end;
-    (.tool_input // .toolInput // {}) | strings
-  ' 2>/dev/null) || exit 0
-else
-  extract_speech || true
-  gather_held || true
-  gather_meta || true
-  gather_ships || true
-  gather_owner_nodes
-  if [ -x "$SCRIPT_DIR/fm-map-fog-check.sh" ]; then
-    fog_out=$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" \
-      "$SCRIPT_DIR/fm-map-fog-check.sh" 2>/dev/null || true)
-    case "$fog_out" in
-      *MAP_FOG*) fog_live=true ;;
-    esac
-  fi
-fi
+gather_held || true
+gather_meta || true
+gather_ships || true
+gather_owner_nodes
 
 turn="$TMP_DIR/turn.json"
 [ -n "$held_json" ] || held_json='[]'
 [ -n "$map_json" ] || map_json='[]'
 [ -n "$owned_json" ] || owned_json='[]'
 [ -n "$ships_json" ] || ships_json='[]'
-[ -n "$invoked_json" ] || invoked_json='[]'
 [ -n "$owner_nodes_json" ] || owner_nodes_json='[]'
-case "$fog_live" in true|false) ;; *) fog_live=false ;; esac
 jq -n \
   --argjson held "$held_json" \
   --argjson map_next "$map_json" \
   --argjson owned "$owned_json" \
   --argjson ships "$ships_json" \
-  --arg speech "$speech" \
-  --argjson invoked "$invoked_json" \
-  --argjson fog "$fog_live" \
   --argjson nodes "$owner_nodes_json" \
   '{
     held: $held,
     map_next: $map_next,
     owned_meta: $owned,
     ships: $ships,
-    assistant_text: $speech,
-    invoked_skills: $invoked,
-    fog_live: $fog,
     owner_nodes: $nodes
   }' > "$turn" || exit 0
 

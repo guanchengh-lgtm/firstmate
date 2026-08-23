@@ -4,30 +4,25 @@
 #
 # Usage: fm-sot-speech-check.sh [--claude] [--pretool]
 #
-# The private registry is $FM_HOME/data/sot-speech.tsv (override with
-# FM_SOT_SPEECH_REGISTRY). Each effective row is:
-#   sot_file <TAB> content_claim_ERE
-# sot_file is relative to FM_HOME and must name an ordinary readable file.
-# Product-lock and north-star rows name a file under data/decisions/, never a
-# session-start digest file. content_claim_ERE is a JavaScript regex matched
-# against captain-facing text. Name-only mentions and a declared-unread
-# sentence stay outside the refusal when they do not also state registered
-# content.
+# Rows come from ordinary files directly under $FM_HOME/data/decisions/.
+# A lock that carries one line `speech-claim: <ERE>` is a row
+#   data/decisions/<that-file>.md <TAB> <ERE>
+# There is no data/sot-speech.tsv. Digest files cannot be rows by
+# construction. content_claim_ERE is a JavaScript regex matched against
+# captain-facing text. Name-only mentions and a declared-unread sentence
+# stay outside the refusal when they do not also state registered content.
 #
 # Stop mode reads the latest assistant text from transcript_path. PreToolUse
 # mode reads every string under tool_input for an AskUserQuestion call. Both
 # modes scan the whole session transcript for Read or shell-tool evidence that
-# names the exact registered path. A session-start command credits only the
-# files that digest actually prints, and only when those files exist.
-# Those digest files cannot be registered, so digest credit cannot satisfy a
-# product-lock row.
+# names the exact lock path. A session-start command credits only the files
+# that digest actually prints, and only when those files exist. Digest credit
+# cannot satisfy a product-lock row.
 #
-# Missing registry, empty registry, unreadable transcript, missing jq/node, or
-# malformed JSONL stay inert (exit 0). Malformed registry rows are structural
-# failures and exit 2 before any finding. A row whose sot_file is
-# data/captain.md, data/captain-shared.md, data/learnings.md, data/projects.md,
-# or data/secondmates.md is structural: the digest auto-credits those paths,
-# and a pointer in captain.md is not the lock. There is no skip flag.
+# Missing decisions directory, no speech-claim lines, unreadable transcript,
+# missing jq/node, or malformed JSONL stay inert (exit 0). A speech-claim line
+# with an empty ERE is a structural failure and exits 2 before any finding.
+# There is no skip flag.
 #
 # This check proves only that the registered file was opened in the session. It
 # cannot prove a full or correct read, unregistered paraphrase, mixed unread-
@@ -43,7 +38,7 @@ FM_ROOT=${FM_ROOT_OVERRIDE:-$(CDPATH='' cd -- "$SCRIPT_DIR/.." 2>/dev/null && pw
 FM_HOME=${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}
 DATA=${FM_DATA_OVERRIDE:-$FM_HOME/data}
 STATE=${FM_STATE_OVERRIDE:-$FM_HOME/state}
-REGISTRY=${FM_SOT_SPEECH_REGISTRY:-$DATA/sot-speech.tsv}
+DECISIONS=$DATA/decisions
 NODE_BIN=${FM_SOT_SPEECH_NODE:-node}
 CLAUDE_MODE=0
 PRETOOL_MODE=0
@@ -52,7 +47,7 @@ while [ "$#" -gt 0 ]; do
   case "$1" in
     --claude) CLAUDE_MODE=1 ;;
     --pretool) PRETOOL_MODE=1 ;;
-    -h|--help) sed -n '2,38p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,33p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "usage: $(basename "$0") [--claude] [--pretool]" >&2; exit 2 ;;
   esac
   shift
@@ -68,11 +63,7 @@ command -v "$NODE_BIN" >/dev/null 2>&1 || exit 0
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
 
-[ -e "$REGISTRY" ] || exit 0
-[ -f "$REGISTRY" ] && [ ! -L "$REGISTRY" ] && [ -r "$REGISTRY" ] || {
-  echo "SOT_SPEECH_REFUSED: registry is not a readable ordinary file: $REGISTRY" >&2
-  exit 2
-}
+[ -d "$DECISIONS" ] && [ ! -L "$DECISIONS" ] || exit 0
 
 TRANSCRIPT=$(printf '%s' "$PAYLOAD" | jq -r '(.transcript_path // .transcriptPath // empty)' 2>/dev/null) || exit 0
 [ -n "$TRANSCRIPT" ] || exit 0
@@ -99,40 +90,27 @@ registry_error() {
   exit 2
 }
 
-is_startup_file() {
-  case "$1" in
-    data/captain.md|data/captain-shared.md|data/learnings.md|data/projects.md|data/secondmates.md)
-      return 0
-      ;;
-  esac
-  return 1
-}
-
-line_no=0
 rows=0
-while IFS= read -r row || [ -n "$row" ]; do
-  line_no=$((line_no + 1))
-  trimmed=$(trim_space "$row")
-  case "$trimmed" in ''|\#*) continue ;; esac
-  tabs=$(awk -F '\t' '{ print NF - 1 }' <<< "$row")
-  [ "$tabs" -eq 1 ] || registry_error "line $line_no must contain exactly two tab-separated fields"
-  file=${row%%$'\t'*}
-  ere=${row#*$'\t'}
-  [ -n "$file" ] && [ -n "$ere" ] || registry_error "line $line_no has an empty field"
-  [ "$file" = "$(trim_space "$file")" ] && [ "$ere" = "$(trim_space "$ere")" ] \
-    || registry_error "line $line_no has surrounding whitespace"
-  case "$file" in
-    /*|../*|*/../*|*/..) registry_error "line $line_no has an unsafe path: $file" ;;
-  esac
-  if is_startup_file "$file"; then
-    registry_error "line $line_no names a session-start digest file; use a data/decisions/ lock, not $file"
-  fi
-  source_path="$FM_HOME/$file"
-  [ -f "$source_path" ] && [ ! -L "$source_path" ] && [ -r "$source_path" ] \
-    || registry_error "line $line_no source is not a readable ordinary file: $file"
+for path in "$DECISIONS"/*.md; do
+  [ -f "$path" ] && [ ! -L "$path" ] && [ -r "$path" ] || continue
+  base=$(basename -- "$path")
+  file=data/decisions/$base
+  ere=
+  while IFS= read -r row || [ -n "$row" ]; do
+    trimmed=$(trim_space "$row")
+    case "$trimmed" in
+      speech-claim:*)
+        ere=${trimmed#speech-claim:}
+        ere=$(trim_space "$ere")
+        [ -n "$ere" ] || registry_error "$file speech-claim ERE is empty"
+        break
+        ;;
+    esac
+  done < "$path"
+  [ -n "$ere" ] || continue
   rows=$((rows + 1))
   printf '%s\t%s\n' "$file" "$ere" >> "$NORMALIZED"
-done < "$REGISTRY"
+done
 [ "$rows" -gt 0 ] || exit 0
 
 MODE=stop

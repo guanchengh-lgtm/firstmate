@@ -993,12 +993,12 @@ test_open_decision_surfaces_end_to_end() {
 }
 
 test_prior_session_retrieve_includes_lock_words() {
-  local home fakebin json log retrieve
+  local home fakebin json log
   home=$(make_home prior-session-retrieve)
   write_fixture "$home"
   printf '7500\n' > "$home/config/startup-memory-budget"
   log="$home/prior.jsonl"
-  cat "$ROOT/tests/fixtures/fm-session-progress-retrieve-check/historical-answered-pick/prior.jsonl" > "$log"
+  cat "$ROOT/tests/fixtures/fm-bearings-snapshot/historical-answered-pick.jsonl" > "$log"
   fakebin=$(make_fakebin "$home")
   json=$(FM_PRIOR_SESSION_LOG="$log" run "$home" "$fakebin" --json)
   printf '%s' "$json" | jq -e --arg words "Go with Playbook/TV." \
@@ -1007,11 +1007,6 @@ test_prior_session_retrieve_includes_lock_words() {
   printf '%s' "$json" | jq -e --arg aside "The weather is pleasant today." \
     '.prior_session | contains($aside) | not' >/dev/null \
     || fail "bearings snapshot retrieved an aside: $json"
-  retrieve="$home/retrieve.json"
-  printf '%s\n' "$json" > "$retrieve"
-  "$ROOT/bin/fm-session-progress-retrieve-check.sh" \
-    --prior-log "$log" --retrieve "$retrieve" \
-    || fail "bearings snapshot retrieve failed the progress check"
   pass "bearings snapshot required retrieve keeps lock words and drops asides"
 }
 

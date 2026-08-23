@@ -18,11 +18,14 @@ make_primary_home() {
   printf '%s\n' "$dir"
 }
 
-write_registry() {
+write_lock() {
   local home=$1
-  mkdir -p "$home/data"
-  printf 'F1 is locked in this fixture.\n' > "$home/data/spec.md"
-  printf '%s\t%s\n' 'data/spec.md' 'F1|Map 2 spec' > "$home/data/sot-speech.tsv"
+  mkdir -p "$home/data/decisions"
+  printf '%s\n' \
+    'F1 is locked in this fixture.' \
+    'AMENDED: 0DTE walls are in scope. A pointer in captain.md is not the lock.' \
+    'speech-claim: F1|Map 2 spec|0DTE|north star' \
+    > "$home/data/decisions/example-product-lock.md"
 }
 
 write_transcript() {
@@ -42,22 +45,22 @@ run_check() {
     "$CHECK" "$@" 2>&1
 }
 
-test_absent_registry_is_inert() {
+test_absent_locks_are_inert() {
   local home out rc
   home=$(make_primary_home "$TMP_ROOT/absent")
   set +e
   out=$(run_check "$home" '{"transcript_path":"/tmp/missing.jsonl"}')
   rc=$?
   set -e
-  [ "$rc" -eq 0 ] || fail "absent registry exited $rc"
-  [ -z "$out" ] || fail "absent registry should be silent, got: $out"
-  pass "sot-speech: absent registry is inert"
+  [ "$rc" -eq 0 ] || fail "absent locks exited $rc"
+  [ -z "$out" ] || fail "absent locks should be silent, got: $out"
+  pass "sot-speech: absent speech-claim locks are inert"
 }
 
 test_claim_without_read_is_refused() {
   local home transcript payload out rc
   home=$(make_primary_home "$TMP_ROOT/refuse")
-  write_registry "$home"
+  write_lock "$home"
   transcript="$home/transcript.jsonl"
   write_transcript "$transcript" \
     '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"F1 is the locked north star."}]}}'
@@ -67,15 +70,15 @@ test_claim_without_read_is_refused() {
   rc=$?
   set -e
   [ "$rc" -eq 2 ] || fail "claim without read exited $rc"
-  assert_contains "$out" 'open data/spec.md' "refusal did not name the file to open"
+  assert_contains "$out" 'open data/decisions/example-product-lock.md' "refusal did not name the file to open"
   pass "sot-speech: content claim without a session open is refused"
 }
 
 test_read_evidence_allows_claim() {
   local home transcript payload out rc abs
   home=$(make_primary_home "$TMP_ROOT/read")
-  write_registry "$home"
-  abs="$home/data/spec.md"
+  write_lock "$home"
+  abs="$home/data/decisions/example-product-lock.md"
   transcript="$home/transcript.jsonl"
   write_transcript "$transcript" \
     "$(printf '{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Read","input":{"file_path":"%s"}}]}}' "$abs")" \
@@ -93,7 +96,7 @@ test_read_evidence_allows_claim() {
 test_declared_unread_allows_naming() {
   local home transcript payload out rc
   home=$(make_primary_home "$TMP_ROOT/unread")
-  write_registry "$home"
+  write_lock "$home"
   transcript="$home/transcript.jsonl"
   write_transcript "$transcript" \
     '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"I have not opened the Map 2 spec this session."}]}}'
@@ -109,8 +112,8 @@ test_declared_unread_allows_naming() {
 test_malformed_registry_is_structural() {
   local home transcript payload out rc
   home=$(make_primary_home "$TMP_ROOT/badreg")
-  mkdir -p "$home/data"
-  printf 'only-one-field\n' > "$home/data/sot-speech.tsv"
+  mkdir -p "$home/data/decisions"
+  printf '%s\n' 'speech-claim:' > "$home/data/decisions/empty-claim.md"
   transcript="$home/transcript.jsonl"
   write_transcript "$transcript" \
     '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"hello"}]}}'
@@ -121,13 +124,13 @@ test_malformed_registry_is_structural() {
   set -e
   [ "$rc" -eq 2 ] || fail "malformed registry exited $rc"
   assert_contains "$out" 'registry invalid' "structural failure did not name the registry"
-  pass "sot-speech: malformed registry is a structural failure"
+  pass "sot-speech: empty speech-claim ERE is a structural failure"
 }
 
 test_pretool_askuser_is_refused() {
   local home transcript payload out rc
   home=$(make_primary_home "$TMP_ROOT/pretool")
-  write_registry "$home"
+  write_lock "$home"
   transcript="$home/transcript.jsonl"
   write_transcript "$transcript" \
     '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"planning"}]}}'
@@ -141,47 +144,10 @@ test_pretool_askuser_is_refused() {
   pass "sot-speech: AskUserQuestion PreToolUse denies an unread content claim"
 }
 
-write_decision_registry() {
-  local home=$1
-  mkdir -p "$home/data/decisions"
-  printf 'AMENDED: 0DTE walls are in scope. A pointer in captain.md is not the lock.\n' \
-    > "$home/data/decisions/example-product-lock.md"
-  printf '%s\t%s\n' 'data/decisions/example-product-lock.md' '0DTE|north star' \
-    > "$home/data/sot-speech.tsv"
-}
-
-test_startup_file_row_is_structural() {
-  local home transcript payload out rc
-  home=$(make_primary_home "$TMP_ROOT/startup-row")
-  mkdir -p "$home/data"
-  printf 'pointer only\n' > "$home/data/captain.md"
-  printf '%s\t%s\n' 'data/captain.md' 'north star' > "$home/data/sot-speech.tsv"
-  transcript="$home/transcript.jsonl"
-  write_transcript "$transcript" \
-    '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"hello"}]}}'
-  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
-  set +e
-  out=$(run_check "$home" "$payload")
-  rc=$?
-  set -e
-  [ "$rc" -eq 2 ] || fail "captain.md registry row exited $rc"
-  assert_contains "$out" 'session-start digest file' "captain.md row was not a digest-file refuse"
-  assert_contains "$out" 'data/captain.md' "captain.md row did not name the file"
-  printf 'Project Alpha owns the north star.\n' > "$home/data/projects.md"
-  printf '%s\t%s\n' 'data/projects.md' 'north star' > "$home/data/sot-speech.tsv"
-  set +e
-  out=$(run_check "$home" "$payload")
-  rc=$?
-  set -e
-  [ "$rc" -eq 2 ] || fail "projects.md registry row exited $rc"
-  assert_contains "$out" 'data/projects.md' "projects.md row did not name the file"
-  pass "sot-speech: session-start digest files cannot be registered"
-}
-
 test_decision_lock_claim_without_read_is_refused() {
   local home transcript payload out rc
   home=$(make_primary_home "$TMP_ROOT/lock-refuse")
-  write_decision_registry "$home"
+  write_lock "$home"
   transcript="$home/transcript.jsonl"
   write_transcript "$transcript" \
     '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"The north star still says 0DTE is deferred."}]}}'
@@ -199,7 +165,7 @@ test_decision_lock_claim_without_read_is_refused() {
 test_decision_lock_read_allows_claim() {
   local home transcript payload out rc abs
   home=$(make_primary_home "$TMP_ROOT/lock-read")
-  write_decision_registry "$home"
+  write_lock "$home"
   abs="$home/data/decisions/example-product-lock.md"
   transcript="$home/transcript.jsonl"
   write_transcript "$transcript" \
@@ -218,7 +184,7 @@ test_decision_lock_read_allows_claim() {
 test_session_start_digest_does_not_credit_decision_lock() {
   local home transcript payload out rc digest
   home=$(make_primary_home "$TMP_ROOT/ss-lock")
-  write_decision_registry "$home"
+  write_lock "$home"
   mkdir -p "$home/data"
   printf 'Gamma north star pointer; last AMENDED in a decisions file.\n' \
     > "$home/data/captain.md"
@@ -251,13 +217,12 @@ test_session_start_digest_does_not_credit_decision_lock() {
   pass "sot-speech: session-start digest does not credit a data/decisions lock"
 }
 
-test_absent_registry_is_inert
+test_absent_locks_are_inert
 test_claim_without_read_is_refused
 test_read_evidence_allows_claim
 test_declared_unread_allows_naming
 test_malformed_registry_is_structural
 test_pretool_askuser_is_refused
-test_startup_file_row_is_structural
 test_decision_lock_claim_without_read_is_refused
 test_decision_lock_read_allows_claim
 test_session_start_digest_does_not_credit_decision_lock

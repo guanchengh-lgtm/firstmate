@@ -366,42 +366,10 @@ test_hook_refuses_held_map_next_without_worker() {
   pass "fm-turnend-guard: a held map_next ticket cannot end as a yes-ask"
 }
 
-test_hook_refuses_owner_invoke_yes_ask() {
-  local dir out status transcript payload
-  dir=$(make_primary_dir "$TMP_ROOT/hook-owner-yes-ask")
-  transcript="$dir/transcript.jsonl"
-  printf '%s\n' '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"OWNER_INVOKE_WAIT /recurring-defect"}]}}' \
-    > "$transcript"
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s"}' "$transcript")
-  out=$(printf '%s' "$payload" | CLAUDECODE=1 FM_HOME="$(cd "$dir" && pwd)" \
-    bash "$dir/bin/fm-turnend-guard.sh" 2>&1); status=$?
-  expect_code 2 "$status" "turn end must refuse an owner-invoke yes-ask"
-  assert_contains "$out" 'named /recurring-defect and asked for a yes' \
-    "owner-invoke refusal did not name the skill"
-  pass "fm-turnend-guard: naming /recurring-defect and waiting is not done"
-}
-
-test_hook_claude_owner_invoke_ignores_stop_hook_active() {
-  local dir out status transcript payload
-  dir=$(make_primary_dir "$TMP_ROOT/hook-claude-owner-yes")
-  transcript="$dir/transcript.jsonl"
-  printf '%s\n' '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"OWNER_INVOKE_WAIT /recurring-defect"}]}}' \
-    > "$transcript"
-  payload=$(printf '{"stop_hook_active":true,"transcript_path":"%s"}' "$transcript")
-  out=$(printf '%s' "$payload" | CLAUDECODE=1 FM_HOME="$(cd "$dir" && pwd)" \
-    FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 \
-    bash "$dir/bin/fm-turnend-guard.sh" --claude 2>&1); status=$?
-  expect_code 2 "$status" "--claude mode must still refuse owner-invoke wait when stop_hook_active=true"
-  assert_contains "$out" 'named /recurring-defect and asked for a yes' \
-    "claude owner-invoke refusal did not name the skill under stop_hook_active"
-  pass "fm-turnend-guard --claude: stop_hook_active cannot skip owner-invoke wait"
-}
-
 test_hook_refuses_open_owner_node_after_later_captain() {
   local dir out status transcript payload
   dir=$(make_primary_dir "$TMP_ROOT/hook-owner-node")
   mkdir -p "$dir/data"
-  printf '%s\t%s\n' 'wayfinder' 'data/*/map.md' > "$dir/data/owner-invoke-nodes.tsv"
   transcript="$dir/transcript.jsonl"
   cat > "$transcript" <<'JSONL'
 {"timestamp":"2026-08-23T10:00:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"<command-name>/wayfinder</command-name>"}]}}
@@ -2048,8 +2016,6 @@ test_hook_refuses_prose_only_ready_action
 test_hook_ready_action_checks_every_ready_ticket
 test_hook_ready_action_accepts_matching_worker_owner
 test_hook_refuses_held_map_next_without_worker
-test_hook_refuses_owner_invoke_yes_ask
-test_hook_claude_owner_invoke_ignores_stop_hook_active
 test_hook_refuses_open_owner_node_after_later_captain
 test_hook_refuses_tradingview_login_block_without_evidence
 test_hook_refuses_latest_same_key_tradingview_json_block
