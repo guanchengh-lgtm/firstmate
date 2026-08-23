@@ -299,7 +299,9 @@ See [`sot-programs.example.tsv`](sot-programs.example.tsv) for a non-live copyab
 An optional home-local registry can refuse captain-facing content claims about named file-backed sources unless the same session opened those files.
 Lookup uses `$FM_HOME/data/sot-speech.tsv` by default (`FM_SOT_SPEECH_REGISTRY` overrides for tests).
 The registry is private to the home and is never tracked in firstmate git.
-[`bin/fm-sot-speech-check.sh`](../bin/fm-sot-speech-check.sh)'s header owns the row format, turn-end and AskUserQuestion PreToolUse refuse paths, declared-unread escape, fail-open cases, and residual coverage.
+Product-lock and north-star rows name a file under `data/decisions/`; a pointer in `data/captain.md` is not the lock, and session-start digest files cannot be registered.
+See [`sot-speech.example.tsv`](sot-speech.example.tsv) for a non-live copyable shape.
+[`bin/fm-sot-speech-check.sh`](../bin/fm-sot-speech-check.sh)'s header owns the row format, the digest-file refusal, turn-end and AskUserQuestion PreToolUse refuse paths, declared-unread escape, fail-open cases, and residual coverage.
 `AGENTS.md` section 9 carries the always-loaded declared-unread sentence.
 
 ## Spec compile-check refuse-hook

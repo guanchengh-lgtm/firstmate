@@ -141,36 +141,87 @@ test_pretool_askuser_is_refused() {
   pass "sot-speech: AskUserQuestion PreToolUse denies an unread content claim"
 }
 
-write_projects_registry() {
+write_decision_registry() {
   local home=$1
-  mkdir -p "$home/data"
-  printf 'Project Alpha owns the north star.
-' > "$home/data/projects.md"
-  printf '%s\t%s\n' 'data/projects.md' 'Project Alpha|north star' > "$home/data/sot-speech.tsv"
+  mkdir -p "$home/data/decisions"
+  printf 'AMENDED: 0DTE walls are in scope. A pointer in captain.md is not the lock.\n' \
+    > "$home/data/decisions/example-product-lock.md"
+  printf '%s\t%s\n' 'data/decisions/example-product-lock.md' '0DTE|north star' \
+    > "$home/data/sot-speech.tsv"
 }
 
-test_session_start_command_alone_does_not_credit() {
+test_startup_file_row_is_structural() {
   local home transcript payload out rc
-  home=$(make_primary_home "$TMP_ROOT/ss-cmd-only")
-  write_projects_registry "$home"
+  home=$(make_primary_home "$TMP_ROOT/startup-row")
+  mkdir -p "$home/data"
+  printf 'pointer only\n' > "$home/data/captain.md"
+  printf '%s\t%s\n' 'data/captain.md' 'north star' > "$home/data/sot-speech.tsv"
   transcript="$home/transcript.jsonl"
   write_transcript "$transcript" \
-    '{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"bin/fm-session-start.sh"}}]}}' \
-    '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Project Alpha owns the north star."}]}}'
+    '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"hello"}]}}'
   payload=$(printf '{"transcript_path":"%s"}' "$transcript")
   set +e
   out=$(run_check "$home" "$payload")
   rc=$?
   set -e
-  [ "$rc" -eq 2 ] || fail "session-start command alone exited $rc with: $out"
-  assert_contains "$out" 'open data/projects.md' "command-only session-start should still refuse"
-  pass "sot-speech: session-start command without digest output does not credit startup files"
+  [ "$rc" -eq 2 ] || fail "captain.md registry row exited $rc"
+  assert_contains "$out" 'session-start digest file' "captain.md row was not a digest-file refuse"
+  assert_contains "$out" 'data/captain.md' "captain.md row did not name the file"
+  printf 'Project Alpha owns the north star.\n' > "$home/data/projects.md"
+  printf '%s\t%s\n' 'data/projects.md' 'north star' > "$home/data/sot-speech.tsv"
+  set +e
+  out=$(run_check "$home" "$payload")
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "projects.md registry row exited $rc"
+  assert_contains "$out" 'data/projects.md' "projects.md row did not name the file"
+  pass "sot-speech: session-start digest files cannot be registered"
 }
 
-test_session_start_digest_credits_printed_files() {
+test_decision_lock_claim_without_read_is_refused() {
+  local home transcript payload out rc
+  home=$(make_primary_home "$TMP_ROOT/lock-refuse")
+  write_decision_registry "$home"
+  transcript="$home/transcript.jsonl"
+  write_transcript "$transcript" \
+    '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"The north star still says 0DTE is deferred."}]}}'
+  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  set +e
+  out=$(run_check "$home" "$payload")
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "decision-lock claim without read exited $rc"
+  assert_contains "$out" 'open data/decisions/example-product-lock.md' \
+    "refusal did not name the decision lock"
+  pass "sot-speech: decision-lock content claim without a session open is refused"
+}
+
+test_decision_lock_read_allows_claim() {
+  local home transcript payload out rc abs
+  home=$(make_primary_home "$TMP_ROOT/lock-read")
+  write_decision_registry "$home"
+  abs="$home/data/decisions/example-product-lock.md"
+  transcript="$home/transcript.jsonl"
+  write_transcript "$transcript" \
+    "$(printf '{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Read","input":{"file_path":"%s"}}]}}' "$abs")" \
+    '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"The north star still says 0DTE is deferred."}]}}'
+  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  set +e
+  out=$(run_check "$home" "$payload")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "decision-lock Read exited $rc with: $out"
+  [ -z "$out" ] || fail "decision-lock Read should be silent, got: $out"
+  pass "sot-speech: same-session Read of the decision lock allows the claim"
+}
+
+test_session_start_digest_does_not_credit_decision_lock() {
   local home transcript payload out rc digest
-  home=$(make_primary_home "$TMP_ROOT/ss-digest")
-  write_projects_registry "$home"
+  home=$(make_primary_home "$TMP_ROOT/ss-lock")
+  write_decision_registry "$home"
+  mkdir -p "$home/data"
+  printf 'Gamma north star pointer; last AMENDED in a decisions file.\n' \
+    > "$home/data/captain.md"
   transcript="$home/transcript.jsonl"
   digest=$(printf '%s\n' \
     'SESSION START - fixture' \
@@ -178,34 +229,9 @@ test_session_start_digest_credits_printed_files() {
     'CONTEXT' \
     '================================================================================' \
     '' \
-    'data/projects.md' \
+    'data/captain.md' \
     '--------------------------------------------------------------------------------' \
-    'Project Alpha owns the north star.' \
-    '' \
-    'data/secondmates.md' \
-    '--------------------------------------------------------------------------------' \
-    'ABSENT')
-  write_transcript "$transcript" \
-    '{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"bin/fm-session-start.sh"}}]}}' \
-    "$(printf '{"type":"message","message":{"role":"user","content":[{"type":"tool_result","content":%s}]}}' "$(printf '%s' "$digest" | jq -Rs .)")" \
-    '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Project Alpha owns the north star."}]}}'
-  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
-  set +e
-  out=$(run_check "$home" "$payload")
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "digest-printed projects.md exited $rc with: $out"
-  [ -z "$out" ] || fail "digest credit should be silent, got: $out"
-  pass "sot-speech: session-start digest credits non-ABSENT printed startup files"
-}
-
-test_session_start_absent_body_does_not_credit() {
-  local home transcript payload out rc digest
-  home=$(make_primary_home "$TMP_ROOT/ss-absent")
-  write_projects_registry "$home"
-  transcript="$home/transcript.jsonl"
-  digest=$(printf '%s\n' \
-    'SESSION START - fixture' \
+    'Gamma north star pointer; last AMENDED in a decisions file.' \
     '' \
     'data/projects.md' \
     '--------------------------------------------------------------------------------' \
@@ -213,15 +239,16 @@ test_session_start_absent_body_does_not_credit() {
   write_transcript "$transcript" \
     '{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"bin/fm-session-start.sh"}}]}}' \
     "$(printf '{"type":"message","message":{"role":"user","content":[{"type":"tool_result","content":%s}]}}' "$(printf '%s' "$digest" | jq -Rs .)")" \
-    '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Project Alpha owns the north star."}]}}'
+    '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"The north star still says 0DTE is deferred."}]}}'
   payload=$(printf '{"transcript_path":"%s"}' "$transcript")
   set +e
   out=$(run_check "$home" "$payload")
   rc=$?
   set -e
-  [ "$rc" -eq 2 ] || fail "ABSENT digest body exited $rc with: $out"
-  assert_contains "$out" 'open data/projects.md' "ABSENT digest body should not credit the file"
-  pass "sot-speech: ABSENT session-start section does not credit the file"
+  [ "$rc" -eq 2 ] || fail "digest-printed captain.md credited a decision lock: $out"
+  assert_contains "$out" 'open data/decisions/example-product-lock.md' \
+    "digest credit of captain.md should not satisfy the lock row"
+  pass "sot-speech: session-start digest does not credit a data/decisions lock"
 }
 
 test_absent_registry_is_inert
@@ -230,8 +257,9 @@ test_read_evidence_allows_claim
 test_declared_unread_allows_naming
 test_malformed_registry_is_structural
 test_pretool_askuser_is_refused
-test_session_start_command_alone_does_not_credit
-test_session_start_digest_credits_printed_files
-test_session_start_absent_body_does_not_credit
+test_startup_file_row_is_structural
+test_decision_lock_claim_without_read_is_refused
+test_decision_lock_read_allows_claim
+test_session_start_digest_does_not_credit_decision_lock
 
 echo "# all fm-sot-speech-check tests passed"

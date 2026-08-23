@@ -14,7 +14,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-operational-input.sh` | Construct and parse the canonical cross-language operational-input protocol |
 | `fm-bootstrap.sh`        | Detect toolchain and fleet problems, run the locked session-start sweeps, and install approved tools |
 | `fm-sot-pointer-check.sh` | Detect completed multi-task programs that lack a standing durable SoT pointer or leave a named hold unbound after later authority |
-| `fm-sot-speech-check.sh` | Refuse captain-facing registered SoT content claims that lack same-session file-open evidence |
+| `fm-sot-speech-check.sh` | Refuse captain-facing registered SoT content claims that lack same-session file-open evidence; session-start digest files cannot be registered |
 | `fm-answer-lock-check.sh` | Refuse a Map 2 ticket close with no dated lock, or a ticket left OPEN after an Answer pick |
 | `fm-map-fog-check.sh`    | Detect live `## Not yet specified` fog on map files; `--strict` refuses, missing section is structural |
 | `fm-stow-open-lock-check.sh` | Refuse a reset-safe stow receipt that omits a still-open lock-file pick; `--list-open` feeds the fleet snapshot |
