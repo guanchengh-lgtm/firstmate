@@ -34,44 +34,13 @@
 #   R-skill-unloaded        report present, ov_harness is claude/claude*, and
 #                           data/<ov>/skills never listed plan-eng-review
 #                           (completion-time; gated by report; Claude-only)
-#   R-owner-invoke-deliverable
-#                           this session's captain text contains an owner-invoke
-#                           token as /token, $token, or a captain-turn skill
-#                           load, and the matching durable deliverable is
-#                           missing. Does not require OWNER_INVOKE_WAIT. Does
-#                           not hunt free English beyond those tokens.
-#   R-cached-north-star     current-turn captain-facing text cites a north star
-#                           or captain.md pointer, and there is no this-session
-#                           last-AMENDED read receipt. Does not judge whether
-#                           the rec is wise.
 # Default --brief rules: R-ov-missing,R-skill-unloaded on durable OV records
 # (state/<ship>.meta ov=/ov_harness=, data/<ov>/report.md, data/<ov>/skills,
 # live endpoint). No brief-body parse.
-# The two primary-chat rules above are not brief rules and are not merged
-# with R-owner-invoke-wait.
 #
 # Owner-invoke tokens (header-owned; not a skill picker):
 #   recurring-defect, grill-with-docs, wayfinder, vision
 # Spoken yes-ask is the tight marker OWNER_INVOKE_WAIT only, not a prose net.
-# Primary owner-invoke completion is a separate rule on session captain text
-# plus a deliverable map, not that marker:
-#   vision             data/tv-vision/VISION.draft.md, or
-#                      data/tv-vision/answers-*.md, or a repo VISION.md at
-#                      FM_ROOT or the payload cwd
-#   grill-with-docs    an ordinary data/**/SESSION.md whose mtime is at or
-#                      after state/.lock mtime (this session). No lock → missing
-#   wayfinder          an ordinary data/**/map.md whose mtime is at or after
-#                      state/.lock mtime. No lock → missing
-#   recurring-defect   an ordinary data/recurring-defect/*/claims.json or
-#                      docs/verification/*claims.json whose mtime is at or
-#                      after state/.lock mtime. No lock → missing
-# --input reads turn.deliverables booleans and does not gather from disk.
-# Cached north star is a third class: citing "north star", "north-star", or
-# "captain.md" in current-turn speech requires state/.amended-opened (ordinary
-# file, path=<decision path>, session=<current state/.lock contents>). Empty,
-# symlink, session mismatch, or missing path is no receipt. --input reads
-# turn.amended_receipt as that path string. The path is not checked against
-# captain.md and the rec is not judged.
 # plan-eng-review requires a separate OV worker. The builder's own plan note
 # is not OV. Split transcript windows and live fog gather stay as gather holes.
 #
@@ -119,14 +88,7 @@
 # synthetic/meta user shapes do not reset the turn) and only real skill-load
 # tool shapes, not arbitrary tool-input mentions. PreToolUse keeps
 # AskUserQuestion tool_input as speech and still credits current-turn skill
-# loads from transcript_path. Free English skill names without / or $ are
-# invisible to R-owner-invoke-deliverable. A leftover map.md, claims.json, or
-# SESSION.md with mtime before this session's lock does not satisfy. An
-# unrelated SESSION.md under data/ with this-session mtime can satisfy grill.
-# A pre-existing tv-vision draft or repo VISION.md can satisfy vision. A
-# name-only captain.md mention still requires a receipt. Opening an AMENDED
-# file without writing state/.amended-opened is no receipt. The receipt path
-# is not proven to be the last AMENDED lock.
+# loads from transcript_path.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -146,12 +108,12 @@ CLAUDE_MODE=0
 PRETOOL_MODE=0
 HOOK_MODE=0
 
-INPUT_RULES='R-held-locked-next,R-owner-invoke-wait,R-fog-pin-wait,R-ov-missing,R-skill-unloaded,R-owner-invoke-deliverable,R-cached-north-star'
+INPUT_RULES='R-held-locked-next,R-owner-invoke-wait,R-fog-pin-wait,R-ov-missing,R-skill-unloaded'
 BRIEF_RULES='R-ov-missing,R-skill-unloaded'
-KNOWN_RULES='R-held-locked-next R-owner-invoke-wait R-fog-pin-wait R-ov-missing R-skill-unloaded R-owner-invoke-deliverable R-cached-north-star'
+KNOWN_RULES='R-held-locked-next R-owner-invoke-wait R-fog-pin-wait R-ov-missing R-skill-unloaded'
 
 usage() {
-  sed -n '2,129p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,80p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 structural() {
@@ -267,8 +229,6 @@ run_wait=0
 run_fog=0
 run_ov=0
 run_skill=0
-run_deliverable=0
-run_north=0
 for r in "${selected[@]+"${selected[@]}"}"; do
   case "$r" in
     R-held-locked-next) run_held=1 ;;
@@ -276,8 +236,6 @@ for r in "${selected[@]+"${selected[@]}"}"; do
     R-fog-pin-wait) run_fog=1 ;;
     R-ov-missing) run_ov=1 ;;
     R-skill-unloaded) run_skill=1 ;;
-    R-owner-invoke-deliverable) run_deliverable=1 ;;
-    R-cached-north-star) run_north=1 ;;
   esac
 done
 
@@ -296,18 +254,6 @@ read_skill_lines() {  # <path> -> JSON array
   printf '%s\n' "$json"
 }
 
-ordinary_nonempty() {
-  [ -f "$1" ] && [ ! -L "$1" ] && [ -s "$1" ]
-}
-
-path_mtime() {
-  if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
-    stat -f %m "$1" 2>/dev/null || true
-  else
-    stat -c %Y "$1" 2>/dev/null || true
-  fi
-}
-
 evaluate_turn() {  # <json-file>
   local json=$1
   jq -c \
@@ -316,8 +262,6 @@ evaluate_turn() {  # <json-file>
     --argjson run_fog "$run_fog" \
     --argjson run_ov "$run_ov" \
     --argjson run_skill "$run_skill" \
-    --argjson run_deliverable "$run_deliverable" \
-    --argjson run_north "$run_north" \
     --arg today "$today" \
     --arg marker "$YES_ASK_MARKER" '
     def trim:
@@ -337,26 +281,13 @@ evaluate_turn() {  # <json-file>
       if ($v | type) == "string" then $v else "" end;
     def as_arr($v):
       if ($v | type) == "array" then $v else [] end;
-    def as_obj($v):
-      if ($v | type) == "object" then $v else {} end;
-    def deliverable_present($d; $tok):
-      ($d[$tok] == true);
-    def cites_pointer:
-      (ascii_downcase) as $low
-      | ($low | index("north star") != null)
-        or ($low | index("north-star") != null)
-        or ($low | index("captain.md") != null);
 
     . as $t
     | (as_arr($t.held)) as $held
     | (as_arr($t.map_next) | map(select(type == "string" and . != ""))) as $map_next
     | (as_arr($t.owned_meta) | map(select(type == "string" and . != ""))) as $owned
     | (as_str($t.assistant_text) | trim) as $speech
-    | (as_str($t.captain_text) | trim) as $captain
     | (as_arr($t.invoked_skills) | map(ascii_downcase)) as $invoked
-    | (as_arr($t.captain_invoked_skills) | map(ascii_downcase)) as $captain_invoked
-    | (as_obj($t.deliverables)) as $deliverables
-    | (as_str($t.amended_receipt) | trim) as $receipt
     | (if ($t.fog_live == true) then true else false end) as $fog
     | (as_arr($t.ships)) as $ships
     | [
@@ -423,19 +354,6 @@ evaluate_turn() {  # <json-file>
             | select(($sk | map(ascii_downcase) | index("plan-eng-review")) == null)
             | "R-skill-unloaded-plan-eng-review: \($id) instructions never loaded plan-eng-review"
           )
-        else empty end,
-        if $run_deliverable == 1 then
-          (tokens[] | . as $tok
-            | select(
-                ($captain | has_skill_token($tok))
-                or (($captain_invoked | index($tok)) != null)
-              )
-            | select(deliverable_present($deliverables; $tok) | not)
-            | "R-owner-invoke-deliverable-missing: captain named /\($tok) with no matching deliverable"
-          )
-        else empty end,
-        if $run_north == 1 and ($speech | cites_pointer) and ($receipt == "") then
-          "R-cached-north-star-missing: cited a north star or captain.md pointer with no last-AMENDED read receipt"
         else empty end
       ]
   ' "$json"
@@ -593,12 +511,7 @@ owned_json='[]'
 ships_json='[]'
 speech=''
 invoked_json='[]'
-captain_text=''
-captain_invoked_json='[]'
-deliverables_json='{"vision":false,"grill-with-docs":false,"wayfinder":false,"recurring-defect":false}'
-amended_receipt=''
 fog_live=false
-hook_cwd=''
 
 backend=
 if [ -f "$CONFIG/backlog-backend" ]; then
@@ -695,113 +608,6 @@ gather_ships() {
   ships_json=$ships
 }
 
-this_session_file() {
-  local path=$1 lock_mtime=$2 mtime
-  ordinary_nonempty "$path" || return 1
-  [ -n "$lock_mtime" ] || return 1
-  mtime=$(path_mtime "$path")
-  case "$mtime" in
-    ''|*[!0-9]*) return 1 ;;
-  esac
-  [ "$mtime" -ge "$lock_mtime" ]
-}
-
-gather_deliverables() {
-  local vision=false grill=false wayfinder=false defect=false
-  local found lock_mtime cwd
-
-  if ordinary_nonempty "$DATA/tv-vision/VISION.draft.md" \
-    || ordinary_nonempty "$FM_ROOT/VISION.md"; then
-    vision=true
-  fi
-  if [ "$vision" != true ] && [ -d "$DATA/tv-vision" ] && [ ! -L "$DATA/tv-vision" ]; then
-    while IFS= read -r found; do
-      [ -n "$found" ] || continue
-      ordinary_nonempty "$found" || continue
-      vision=true
-      break
-    done < <(find "$DATA/tv-vision" -maxdepth 1 -name 'answers-*.md' -type f 2>/dev/null || true)
-  fi
-  cwd=$hook_cwd
-  if [ "$vision" != true ] && [ -n "$cwd" ]; then
-    ordinary_nonempty "$cwd/VISION.md" && vision=true
-  fi
-
-  lock_mtime=
-  if [ -f "$STATE/.lock" ] && [ ! -L "$STATE/.lock" ]; then
-    lock_mtime=$(path_mtime "$STATE/.lock")
-  fi
-  case "$lock_mtime" in
-    ''|*[!0-9]*) lock_mtime= ;;
-  esac
-  if [ -d "$DATA" ] && [ ! -L "$DATA" ]; then
-    while IFS= read -r found; do
-      [ -n "$found" ] || continue
-      if this_session_file "$found" "$lock_mtime"; then
-        grill=true
-        break
-      fi
-    done < <(find "$DATA" -name SESSION.md -type f 2>/dev/null || true)
-    while IFS= read -r found; do
-      [ -n "$found" ] || continue
-      if this_session_file "$found" "$lock_mtime"; then
-        wayfinder=true
-        break
-      fi
-    done < <(find "$DATA" -name map.md -type f 2>/dev/null || true)
-  fi
-  if [ -d "$DATA/recurring-defect" ] && [ ! -L "$DATA/recurring-defect" ]; then
-    while IFS= read -r found; do
-      [ -n "$found" ] || continue
-      if this_session_file "$found" "$lock_mtime"; then
-        defect=true
-        break
-      fi
-    done < <(find "$DATA/recurring-defect" -name claims.json -type f 2>/dev/null || true)
-  fi
-  if [ "$defect" != true ] && [ -d "$FM_ROOT/docs/verification" ] \
-    && [ ! -L "$FM_ROOT/docs/verification" ]; then
-    while IFS= read -r found; do
-      [ -n "$found" ] || continue
-      if this_session_file "$found" "$lock_mtime"; then
-        defect=true
-        break
-      fi
-    done < <(find "$FM_ROOT/docs/verification" -name '*claims.json' -type f 2>/dev/null || true)
-  fi
-
-  deliverables_json=$(jq -n -c \
-    --argjson vision "$vision" \
-    --argjson grill "$grill" \
-    --argjson wayfinder "$wayfinder" \
-    --argjson defect "$defect" \
-    '{
-      vision: $vision,
-      "grill-with-docs": $grill,
-      wayfinder: $wayfinder,
-      "recurring-defect": $defect
-    }')
-}
-
-gather_amended_receipt() {
-  local receipt="$STATE/.amended-opened" path session_want session_got
-  amended_receipt=
-  ordinary_nonempty "$receipt" || return 0
-  path=$(sed -n 's/^path=//p' "$receipt" 2>/dev/null | tail -1)
-  path=${path#"${path%%[![:space:]]*}"}
-  path=${path%"${path##*[![:space:]]}"}
-  [ -n "$path" ] || return 0
-  session_want=
-  if [ -f "$STATE/.lock" ] && [ ! -L "$STATE/.lock" ]; then
-    session_want=$(tr -d '[:space:]' < "$STATE/.lock" 2>/dev/null || true)
-  fi
-  [ -n "$session_want" ] || return 0
-  session_got=$(sed -n 's/^session=//p' "$receipt" 2>/dev/null | tail -1)
-  session_got=$(printf '%s' "$session_got" | tr -d '[:space:]')
-  [ "$session_got" = "$session_want" ] || return 0
-  amended_receipt=$path
-}
-
 extract_speech() {
   local transcript py
   transcript=$(printf '%s' "$PAYLOAD" | jq -r '(.transcript_path // .transcriptPath // empty)' 2>/dev/null) || return 0
@@ -818,20 +624,12 @@ skill_tools = {"skill", "load_skill", "invoke_skill", "skilltool"}
 path = sys.argv[1]
 text = ""
 invoked = []
-captain_parts = []
-captain_invoked = []
 
 
 def add_token(token):
     token = (token or "").strip().lower().lstrip("//$")
     if token in tokens and token not in invoked:
         invoked.append(token)
-
-
-def add_captain_token(token):
-    token = (token or "").strip().lower().lstrip("//$")
-    if token in tokens and token not in captain_invoked:
-        captain_invoked.append(token)
 
 
 def skill_from_input(inp):
@@ -846,10 +644,10 @@ def skill_from_input(inp):
     return ""
 
 
-def walk_tools(value, adder=add_token):
+def walk_tools(value):
     if isinstance(value, list):
         for item in value:
-            walk_tools(item, adder)
+            walk_tools(item)
         return
     if not isinstance(value, dict):
         return
@@ -860,12 +658,12 @@ def walk_tools(value, adder=add_token):
     if is_tool:
         for token in tokens:
             if name_l == token or name_l.endswith("/" + token) or name_l.endswith("__" + token):
-                adder(token)
+                add_token(token)
         if name_l in skill_tools or name_l.endswith("/skill") or name_l.endswith("__skill"):
-            adder(skill_from_input(value.get("input") or value.get("arguments") or {}))
+            add_token(skill_from_input(value.get("input") or value.get("arguments") or {}))
     for item in value.values():
         if isinstance(item, (list, dict)):
-            walk_tools(item, adder)
+            walk_tools(item)
 
 
 def message(record):
@@ -964,10 +762,6 @@ try:
             content = msg.get("content") if isinstance(msg, dict) else None
             if role in ("user", "human"):
                 if is_captain_turn(record, content):
-                    walk_tools(content, add_captain_token)
-                    chunk = text_parts(content).strip()
-                    if chunk:
-                        captain_parts.append(chunk)
                     text = ""
                     invoked = []
                 continue
@@ -977,29 +771,15 @@ try:
                 if chunk:
                     text = chunk
 except OSError:
-    print(json.dumps({
-        "assistant_text": "",
-        "invoked_skills": [],
-        "captain_text": "",
-        "captain_invoked_skills": [],
-    }))
+    print(json.dumps({"assistant_text": "", "invoked_skills": []}))
     raise SystemExit(0)
 
-print(json.dumps({
-    "assistant_text": text,
-    "invoked_skills": invoked,
-    "captain_text": "\n".join(captain_parts),
-    "captain_invoked_skills": captain_invoked,
-}))
+print(json.dumps({"assistant_text": text, "invoked_skills": invoked}))
 PY
   extracted=$(python3 "$py" "$transcript" 2>/dev/null) || return 0
   speech=$(printf '%s' "$extracted" | jq -r '.assistant_text // empty')
   invoked_json=$(printf '%s' "$extracted" | jq -c '.invoked_skills // []')
-  captain_text=$(printf '%s' "$extracted" | jq -r '.captain_text // empty')
-  captain_invoked_json=$(printf '%s' "$extracted" | jq -c '.captain_invoked_skills // []')
 }
-
-hook_cwd=$(printf '%s' "$PAYLOAD" | jq -r '(.cwd // empty)' 2>/dev/null) || hook_cwd=
 
 if [ "$PRETOOL_MODE" -eq 1 ]; then
   tool=$(printf '%s' "$PAYLOAD" | jq -r '.tool_name // .toolName // empty' 2>/dev/null) || exit 0
@@ -1026,8 +806,6 @@ else
     esac
   fi
 fi
-gather_deliverables || true
-gather_amended_receipt || true
 
 turn="$TMP_DIR/turn.json"
 [ -n "$held_json" ] || held_json='[]'
@@ -1035,8 +813,6 @@ turn="$TMP_DIR/turn.json"
 [ -n "$owned_json" ] || owned_json='[]'
 [ -n "$ships_json" ] || ships_json='[]'
 [ -n "$invoked_json" ] || invoked_json='[]'
-[ -n "$captain_invoked_json" ] || captain_invoked_json='[]'
-[ -n "$deliverables_json" ] || deliverables_json='{"vision":false,"grill-with-docs":false,"wayfinder":false,"recurring-defect":false}'
 case "$fog_live" in true|false) ;; *) fog_live=false ;; esac
 jq -n \
   --argjson held "$held_json" \
@@ -1046,10 +822,6 @@ jq -n \
   --arg speech "$speech" \
   --argjson invoked "$invoked_json" \
   --argjson fog "$fog_live" \
-  --arg captain "$captain_text" \
-  --argjson captain_invoked "$captain_invoked_json" \
-  --argjson deliverables "$deliverables_json" \
-  --arg receipt "$amended_receipt" \
   '{
     held: $held,
     map_next: $map_next,
@@ -1057,11 +829,7 @@ jq -n \
     ships: $ships,
     assistant_text: $speech,
     invoked_skills: $invoked,
-    fog_live: $fog,
-    captain_text: $captain,
-    captain_invoked_skills: $captain_invoked,
-    deliverables: $deliverables,
-    amended_receipt: $receipt
+    fog_live: $fog
   }' > "$turn" || exit 0
 
 findings=$(evaluate_turn "$turn") || exit 0

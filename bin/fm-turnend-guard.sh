@@ -15,9 +15,7 @@
 # steer has matching metadata; a concrete backlog blocker removes the ticket
 # from `tasks-axi ready`. The same family refuses a held locked next act
 # (map_next, a passed until date, or an invented captain go-hold) with no
-# worker, a yes-ask on an owner-invoke skill, a this-session captain
-# owner-invoke without its deliverable, a north-star or captain.md citation
-# without a last-AMENDED receipt, and session-scoped ship OV
+# worker, a yes-ask on an owner-invoke skill, and session-scoped ship OV
 # waits; bin/fm-owner-invoke-wait-check.sh owns those rules. Ready-action and
 # the owner-invoke held-locked-next gather fail open when the tasks-axi
 # backend cannot be read, honor the existing manual-backlog backend, and have
