@@ -244,14 +244,27 @@ test_task_worktree_and_non_firstmate_repo_are_inert() {
 
 test_secondmate_home_is_in_scope() {
   local second="$TMP_ROOT/second" rc=0
-  git -C "$PRIMARY" worktree add -q -b fixture-second "$second"
+  mkdir -p "$second/bin" "$second/state" "$second/projects/beta"
+  git -C "$second" init -q
+  printf '# fixture\n' > "$second/AGENTS.md"
+  printf 'sm-fixture\n' > "$second/.fm-secondmate-home"
+  FM_ROOT_OVERRIDE="$second" FM_HOME="$second" FM_STATE_OVERRIDE="$second/state" \
+    "$CHECK" --claude --tool Write --path "$second/projects/beta/x.txt" > "$OUT" 2> "$ERR" || rc=$?
+  [ "$rc" -eq 2 ] || fail "a marked secondmate plain checkout owns a fleet and must be guarded, got exit $rc"
+  pass "a marked secondmate plain checkout protects its own clone tree"
+}
+
+test_linked_worktree_with_leftover_marker_is_out_of_scope() {
+  local second="$TMP_ROOT/second-linked" rc=0
+  git -C "$PRIMARY" worktree add -q -b fixture-second-linked "$second"
   mkdir -p "$second/bin" "$second/state" "$second/projects/beta"
   printf '# fixture\n' > "$second/AGENTS.md"
   printf 'sm-fixture\n' > "$second/.fm-secondmate-home"
   FM_ROOT_OVERRIDE="$second" FM_HOME="$second" FM_STATE_OVERRIDE="$second/state" \
     "$CHECK" --claude --tool Write --path "$second/projects/beta/x.txt" > "$OUT" 2> "$ERR" || rc=$?
-  [ "$rc" -eq 2 ] || fail "a marked secondmate home owns a fleet and must be guarded, got exit $rc"
-  pass "a marked secondmate home protects its own clone tree even though it is a linked worktree"
+  [ "$rc" -eq 0 ] || fail "a leftover marker on a linked worktree must be inert, got exit $rc: $(cat "$ERR")"
+  [ ! -s "$OUT" ] && [ ! -s "$ERR" ] || fail "linked leftover-marker no-op wrote output"
+  pass "a leftover secondmate marker on a linked worktree stays inert"
 }
 
 # ---------------------------------------------------------------------------
@@ -440,6 +453,7 @@ test_secondmate_home_worktree_is_protected
 test_recorded_worktree_equal_to_the_home_is_ignored
 test_task_worktree_and_non_firstmate_repo_are_inert
 test_secondmate_home_is_in_scope
+test_linked_worktree_with_leftover_marker_is_out_of_scope
 test_stdin_transports_and_output_shapes
 test_malformed_transport_fails_open
 test_missing_jq_stdin_transport_fails_open

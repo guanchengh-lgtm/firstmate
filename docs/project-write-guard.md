@@ -105,7 +105,7 @@ Every clone write on those paths runs through git or other Bash commands, which 
 The guard fires only in a genuine firstmate primary home, using `fm_primary_scope_matches` from `bin/fm-primary-scope-lib.sh` - the same predicate `bin/fm-subagent-pretool-check.sh`, `bin/fm-sessionstart-nudge.sh`, and `bin/fm-turnend-guard.sh` use, so the primary-scoped hooks cannot drift apart.
 
 A marked secondmate home is in scope: it operates its own fleet and must not write its own `projects/` either.
-A crewmate's disposable task worktree is a linked worktree with no marker, so the guard is inert there - a crewmate editing project files in its own worktree is the entire point of dispatch.
+A crewmate's disposable task worktree is a linked worktree, so the guard is inert there even when a leftover `.fm-secondmate-home` marker is present - a crewmate editing project files in its own worktree is the entire point of dispatch.
 A non-firstmate repo is out of scope.
 Any failure to confirm the home is inert, never a block.
 
