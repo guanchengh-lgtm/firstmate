@@ -1090,6 +1090,80 @@ test_hook_owner_node_malformed_registry_is_structural() {
   pass "owner-invoke-wait: malformed owner-invoke nodes registry is structural"
 }
 
+test_hook_owner_node_or_merges_duplicate_token_globs() {
+  local home out rc payload transcript
+  home=$(make_primary_home "$TMP_ROOT/hook-node-vision-or")
+  {
+    printf '%s\t%s\n' 'vision' 'data/tv-vision/VISION.draft.md'
+    printf '%s\t%s\n' 'vision' 'data/tv-vision/answers-*.md'
+    printf '%s\t%s\n' 'vision' 'VISION.md'
+  } > "$home/data/owner-invoke-nodes.tsv"
+  printf '9005\n' > "$home/state/.lock"
+  transcript="$home/transcript.jsonl"
+  cat > "$transcript" <<'JSONL'
+{"timestamp":"2026-08-23T10:00:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"<command-name>/vision</command-name>"}]}}
+{"timestamp":"2026-08-23T10:00:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Drafting."}]}}
+{"timestamp":"2026-08-23T10:05:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"keep going"}]}}
+{"timestamp":"2026-08-23T10:05:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Still drafting."}]}}
+JSONL
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$home")
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "vision without any deliverable exited $rc with: $out"
+  assert_contains "$out" 'R-owner-node-open-waiting' \
+    "vision without deliverable did not refuse"
+  mkdir -p "$home/data/tv-vision"
+  printf 'draft\n' > "$home/data/tv-vision/VISION.draft.md"
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "vision draft OR-glob exited $rc with: $out"
+  [ -z "$out" ] || fail "vision draft OR-glob printed: $out"
+  pass "owner-invoke-wait: duplicate token globs OR-merge so any hit clears the node"
+}
+
+test_hook_owner_node_recursive_glob_credits_nested_artifact() {
+  local home out rc payload transcript
+  home=$(make_primary_home "$TMP_ROOT/hook-node-recursive")
+  printf '%s\t%s\n' 'wayfinder' 'data/**/map.md' > "$home/data/owner-invoke-nodes.tsv"
+  printf '9006\n' > "$home/state/.lock"
+  transcript="$home/transcript.jsonl"
+  cat > "$transcript" <<'JSONL'
+{"timestamp":"2026-08-23T10:00:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"<command-name>/wayfinder</command-name>"}]}}
+{"timestamp":"2026-08-23T10:00:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Where is this map going?"}]}}
+{"timestamp":"2026-08-23T10:05:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"keep going"}]}}
+{"timestamp":"2026-08-23T10:05:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Still mapping."}]}}
+JSONL
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$transcript" "$home")
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "recursive glob without map exited $rc with: $out"
+  mkdir -p "$home/data/deep/nested/wayfinder"
+  printf 'map\n' > "$home/data/deep/nested/wayfinder/map.md"
+  set +e
+  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    "$CHECK" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "recursive ** map.md exited $rc with: $out"
+  [ -z "$out" ] || fail "recursive ** map.md printed: $out"
+  pass "owner-invoke-wait: ** globs credit nested artifacts recursively"
+}
+
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
 test_missing_and_empty_input_are_structural
@@ -1127,5 +1201,7 @@ test_hook_owner_node_same_turn_is_clean
 test_hook_owner_node_later_captain_without_artifact_refuses
 test_hook_owner_node_ignores_slash_without_command_name
 test_hook_owner_node_malformed_registry_is_structural
+test_hook_owner_node_or_merges_duplicate_token_globs
+test_hook_owner_node_recursive_glob_credits_nested_artifact
 
 echo "# all fm-owner-invoke-wait-check tests passed"

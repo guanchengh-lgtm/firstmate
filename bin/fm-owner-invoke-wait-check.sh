@@ -37,10 +37,11 @@
 #   R-owner-node-open       a harness <command-name> token from
 #                           data/owner-invoke-nodes.tsv opened a node, a later
 #                           real captain turn arrived, and no ordinary file
-#                           matching that row's artifact_glob has mtime at or
-#                           after the trigger. Does not refuse on the trigger
-#                           turn. Does not hunt free English. Does not warn
-#                           without blocking. --input reads turn.owner_nodes.
+#                           matching any of that token's artifact_glob rows
+#                           has mtime at or after the trigger. Does not refuse
+#                           on the trigger turn. Does not hunt free English.
+#                           Does not warn without blocking. --input reads
+#                           turn.owner_nodes.
 # Default --brief rules: R-ov-missing,R-skill-unloaded on durable OV records
 # (state/<ship>.meta ov=/ov_harness=, data/<ov>/report.md, data/<ov>/skills,
 # live endpoint). No brief-body parse.
@@ -51,9 +52,10 @@
 # Owner-node completion is a separate rule. The home-local registry is
 # $FM_HOME/data/owner-invoke-nodes.tsv (FM_OWNER_INVOKE_NODES_REGISTRY
 # overrides). Each row is token <TAB> artifact_glob, relative to FM_HOME or
-# FM_ROOT, with no .. and no absolute path. Missing registry skips this rule.
-# A present malformed registry is structural. The trigger is a non-meta user
-# record containing <command-name>/token</command-name> or
+# FM_ROOT, with no .. and no absolute path. Duplicate tokens OR-merge: any
+# matching glob clears the node. ** in a glob is recursive. Missing registry
+# skips this rule. A present malformed registry is structural. The trigger is
+# a non-meta user record containing <command-name>/token</command-name> or
 # <command-name>token</command-name>. The transcript record is the arm; this
 # helper does not write a second state file. A later captain turn is
 # is_captain_turn after that record. Same-turn Stop is clean. Blocking, not
@@ -706,7 +708,13 @@ home = sys.argv[3]
 root = sys.argv[4]
 lock_raw = sys.argv[5]
 token_set = {row["token"] for row in rows if row.get("token")}
-globs = {row["token"]: row.get("glob") or "" for row in rows}
+globs = {}
+for row in rows:
+    tok = row.get("token") or ""
+    pattern = row.get("glob") or ""
+    if not tok or not pattern:
+        continue
+    globs.setdefault(tok, []).append(pattern)
 tag_re = re.compile(
     r"<command-name>\s*/?([A-Za-z][A-Za-z0-9_-]*)\s*</command-name>",
     re.IGNORECASE,
@@ -805,19 +813,24 @@ def ordinary_nonempty(path):
         return False
     return True
 
-def artifact_hit(pattern, since):
-    if not pattern or since is None:
+def artifact_hit(patterns, since):
+    if not patterns or since is None:
         return False
-    for base in (home, root):
-        full = os.path.join(base, pattern)
-        for path in glob.glob(full):
-            if not ordinary_nonempty(path):
-                continue
-            try:
-                if os.path.getmtime(path) >= since:
-                    return True
-            except OSError:
-                continue
+    if isinstance(patterns, str):
+        patterns = [patterns]
+    for pattern in patterns:
+        if not pattern:
+            continue
+        for base in (home, root):
+            full = os.path.join(base, pattern)
+            for path in glob.glob(full, recursive=True):
+                if not ordinary_nonempty(path):
+                    continue
+                try:
+                    if os.path.getmtime(path) >= since:
+                        return True
+                except OSError:
+                    continue
     return False
 
 lock_mtime = None
@@ -872,7 +885,7 @@ for tok, info in opens.items():
     out.append({
         "token": tok,
         "later_captain": bool(info.get("later")),
-        "artifact": artifact_hit(globs.get(tok, ""), since),
+        "artifact": artifact_hit(globs.get(tok, []), since),
     })
 print(json.dumps(out))
 PY

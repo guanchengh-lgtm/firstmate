@@ -308,8 +308,9 @@ See [`sot-speech.example.tsv`](sot-speech.example.tsv) for a non-live copyable s
 
 An optional home-local registry names owner-invoke skills whose harness `<command-name>` record opens a node that must produce a matching artifact before the captain's next message is answered with a Stop.
 Lookup uses `$FM_HOME/data/owner-invoke-nodes.tsv` by default (`FM_OWNER_INVOKE_NODES_REGISTRY` overrides for tests).
+Each row is `token <TAB> artifact_glob`; duplicate tokens OR-merge so any matching glob clears the node, and `**` in a glob is recursive.
 The registry is private to the home and is never tracked in firstmate git.
-See [`owner-invoke-nodes.example.tsv`](owner-invoke-nodes.example.tsv) for a non-live copyable shape.
+See [`owner-invoke-nodes.example.tsv`](owner-invoke-nodes.example.tsv) for a non-live copyable shape aligned to the deliverable map.
 [`bin/fm-owner-invoke-wait-check.sh`](../bin/fm-owner-invoke-wait-check.sh)'s header owns the row format, the one-message-late refuse, same-turn cleanliness, and residual coverage.
 
 ## Spec compile-check refuse-hook

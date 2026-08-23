@@ -182,12 +182,11 @@ STATE=${FM_STATE_OVERRIDE:-$ACTIVE_HOME/state}
 
 # Scope to a genuine primary home, exactly as the delegation guard, the
 # session-start nudge, and the turn-end guard do, so the primary-scoped hooks
-# cannot drift apart. A crewmate's linked task worktree is out of scope even
-# with a leftover .fm-secondmate-home marker: a crewmate editing project files
-# there is the entire point of dispatch. A marked secondmate plain checkout is
-# in scope, because a secondmate primary owns its own fleet and must not write
-# its own projects/ either. Any failure to confirm the home is inert, never a
-# block.
+# cannot drift apart. A crewmate's linked task worktree is out of scope: a
+# crewmate editing project files there is the entire point of dispatch. A marked
+# secondmate home is in scope, because a secondmate primary owns its own fleet
+# and must not write its own projects/ either. Any failure to confirm the home
+# is inert, never a block.
 # shellcheck source=bin/fm-primary-scope-lib.sh
 . "$SCRIPT_DIR/fm-primary-scope-lib.sh"
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
