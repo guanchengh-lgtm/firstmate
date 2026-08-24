@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2031 # Background PIDs are consumed in the same test-shell context.
 # tests/fm-afk-launch.test.sh - the script-owned, backend-aware away-daemon
 # launch (bin/fm-afk-launch.sh) and the away-mode stale-artifact lifecycle fixes
 # (bin/fm-afk-start.sh). Two layers:

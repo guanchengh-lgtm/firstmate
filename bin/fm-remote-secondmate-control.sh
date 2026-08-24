@@ -162,8 +162,11 @@ cmd_launch() {
       dead)
         fm_backend_kill "$REMOTE_ENDPOINT_BACKEND" "$REMOTE_ENDPOINT_TARGET" 2>/dev/null \
           || die "could not remove the confirmed agent-less endpoint"
+        rm -f -- "$meta" || die "could not retire the confirmed agent-less endpoint metadata"
         ;;
-      missing) ;;
+      missing)
+        rm -f -- "$meta" || die "could not retire the missing endpoint metadata"
+        ;;
       *) die "remote endpoint state is $current; refusing duplicate launch" ;;
     esac
   fi

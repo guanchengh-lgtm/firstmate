@@ -38,7 +38,8 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-backlog-handoff.sh`  | Move queued backlog items into a secondmate home and durably wake its recorded receiver |
 | `fm-backlog-receive.sh`  | Idempotently ingest one confined remote handoff outbox through tasks-axi             |
 | `fm-issue-intake.sh`     | Queue authorized labeled GitHub issues and install their authenticated watcher check |
-| `fm-decision-hold.sh`    | Create, verify, complete, resolve, supersede, and read durable captain-held decisions and product-idea completion attestations |
+| `fm-captain-hold.sh`    | Hold, answer, complete, verify, supersede, and read captain-held tasks plus product-idea completion attestations |
+| `fm-decision-hold.sh`    | One-release compatibility mapping from the retired decision command surface to `fm-captain-hold.sh` |
 | `fm-decision-ledger.sh`  | Render captain-facing decisions from read-only tasks-axi backlog state into a Markdown ledger |
 | `fm-product-idea-lib.sh` | Shared product-idea ledger row and unscheduled-count grammar for completion and Bearings |
 | `fm-brief.sh`            | Scaffold ship (explicit `--mode`), scout, secondmate-charter, Herdr-lab, and no-mistakes verifier briefs; lint worker briefs |

@@ -2243,6 +2243,7 @@ configure_secondmate_with_tmux_children() {  # <case-dir>
       "project=$case_dir/project" \
       "kind=ship" \
       "mode=local-only"
+    fm_write_none_measure "$home" "$child"
     : > "$home/state/$child.status"
   done
 }

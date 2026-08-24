@@ -1173,6 +1173,15 @@ function makePi() {
   return { pi, handlers, getTool: () => tool };
 }
 
+function pidAlive(pid) {
+  try {
+    process.kill(Number(pid), 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function waitFor(pred, label, attempts = 250) {
   for (let i = 0; i < attempts; i += 1) {
     if (pred()) return;

@@ -142,6 +142,7 @@ add_ship_task() {
   fm_git_worktree "$proj" "$wt" "task-$id"
   mkdir -p "$home/data/$id"
   printf '# brief for %s\n\nDo the thing.\n' "$id" > "$home/data/$id/brief.md"
+  printf 'builder\n' > "$home/data/$id/role"
   {
     echo "window=fmses:fm-$id"
     echo "endpoint_task_id=$id"
@@ -151,6 +152,7 @@ add_ship_task() {
     echo "kind=ship"
     echo "mode=no-mistakes"
     echo "yolo=off"
+    echo "role=builder"
     echo "tasktmp=/tmp/fm-$id"
     echo "model=default"
     echo "effort=default"

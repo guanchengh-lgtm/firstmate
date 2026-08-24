@@ -315,7 +315,7 @@ An optional home-local registry can ask session-start bootstrap to notice when a
 Lookup uses the first effective ordinary file in this order: `data/sot-programs.tsv`, then `config/sot-programs.tsv`.
 An empty or comment-only data registry cannot shadow populated config, and both absent or ineffective stays silent.
 The optional fourth registry field names captain-held backlog identities that a later pointer and completed source tasks supersede.
-Each named hold becomes clean only when `fm-decision-hold.sh supersede` binds it to an exact decision file matching the row pointer and an exact already-Done ship task named among the row sources.
+Each named hold becomes clean only when `fm-captain-hold.sh supersede` binds it to an exact decision file matching the row pointer and an exact already-Done ship task named among the row sources.
 This surfaces an older tentative pick that remains live or lacks that exact binding after a later durable lock or shipped task became authoritative.
 [`bin/fm-sot-pointer-check.sh`](../bin/fm-sot-pointer-check.sh)'s header owns the row format, Done-source gate, match surface, rule ids, `SOT_GAP` lines, structural exit 2, default exit-zero detect-only mode, `--strict`, `--registry`, and exact-count regression flags.
 Bootstrap runs that check in detect-only mode so findings surface without blocking session start or auto-editing captain material, while registry structural failures remain loud.

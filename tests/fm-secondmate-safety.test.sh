@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2031 # Background PIDs are consumed in the same test-shell context.
 # tests/fm-secondmate-safety.test.sh - secondmate home safety invariants:
 # the path-boundary matrices (seed/spawn/teardown), registry/charter/origin
 # validation, treehouse lease handling, no-mistakes initialization of new
@@ -1963,6 +1964,7 @@ yolo=off
 home=$subhome
 projects=alpha
 EOF
+  fm_write_none_measure "$home" domain
   printf '%s\n' '- domain - design domain (home: '"$subhome"'; scope: design domain; projects: alpha; added 2026-06-22)' > "$home/data/secondmates.md"
   cat > "$subhome/state/child.meta" <<EOF
 window=firstmate:fm-child
@@ -2143,6 +2145,7 @@ yolo=off
 home=$subhome
 projects=alpha
 EOF
+  fm_write_none_measure "$home" domain
   printf '%s\n' '- domain - design domain (home: '"$subhome"'; scope: design domain; projects: alpha; added 2026-06-22)' > "$home/data/secondmates.md"
   fakebin=$(make_fake_tmux "$TMP_ROOT/symlink-state-teardown-fake")
   log="$TMP_ROOT/symlink-state-teardown-fake/tmux.log"
@@ -2447,6 +2450,7 @@ yolo=off
 home=$subhome
 projects=alpha
 EOF
+  fm_write_none_measure "$home" domain
   printf '%s\n' '- domain - design domain (home: '"$subhome"'; scope: design domain; projects: alpha; added 2026-06-22)' > "$home/data/secondmates.md"
   printf '%s|%s\n' "$home" "$subhome"
 }

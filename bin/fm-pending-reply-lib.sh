@@ -201,7 +201,7 @@ fm_pending_reply_set() {  # <record-path> <key> <value>
   [ -f "$rec" ] || return 1
   dir=$(dirname "$rec")
   base=$(basename "$rec")
-  tmp="$dir/.${base}.tmp.$$"
+  tmp="$dir/.${base}.tmp.${BASHPID:-$$}.$RANDOM"
   : > "$tmp" || return 1
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
@@ -266,7 +266,7 @@ fm_pending_reply_create() {  # <parent-home> <state-dir> <task_id> <request-text
     /*) ;;
     *) parent_home=$(cd "$parent_home" 2>/dev/null && pwd) || parent_home=$1 ;;
   esac
-  tmp="$dir/.${corr}.tmp.$$"
+  tmp="$dir/.${corr}.tmp.${BASHPID:-$$}.$RANDOM"
   cat > "$tmp" <<EOF
 schema=$FM_PENDING_REPLY_SCHEMA
 corr_id=$corr
@@ -330,7 +330,7 @@ fm_pending_reply_write_delivery_confirmation() {  # <state-dir> <corr_id> <state
   marker=$(fm_pending_reply_delivery_confirmation_path "$pending_state" "$corr")
   dir=$(dirname "$marker")
   mkdir -p "$dir" || return 1
-  tmp="$marker.tmp.$$"
+  tmp="$marker.tmp.${BASHPID:-$$}.$RANDOM"
   printf '%s=%s\n' "$delivery_state" "$value" > "$tmp" || return 1
   chmod 600 "$tmp" 2>/dev/null || true
   mv -f "$tmp" "$marker"
@@ -812,7 +812,7 @@ fm_pending_reply_note_remote_channel_caught_up() {  # <state-dir> <task_id> [epo
   mkdir -p "$dir" || return 1
   chmod 700 "$dir" 2>/dev/null || true
   [ ! -L "$path" ] || return 1
-  tmp="$dir/.caught-up.$task_id.$$"
+  tmp="$dir/.caught-up.$task_id.${BASHPID:-$$}.$RANDOM"
   printf 'caught_up_epoch=%s\n' "$epoch" > "$tmp" || { rm -f -- "$tmp"; return 1; }
   chmod 600 "$tmp" 2>/dev/null || true
   mv -f -- "$tmp" "$path"

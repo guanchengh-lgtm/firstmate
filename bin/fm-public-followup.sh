@@ -138,8 +138,42 @@ help() { sed -n '2,/^set -u$/p' "$0" | sed '$d; s/^# \{0,1\}//'; }
 die() { printf 'fm-public-followup: %s\n' "$1" >&2; exit "${2:-2}"; }
 
 PF_TEMP_FILES=()
-pf_cleanup_temp_files() {
-  [ "${#PF_TEMP_FILES[@]}" -eq 0 ] || rm -f -- ${PF_TEMP_FILES[@]+"${PF_TEMP_FILES[@]}"}
+PF_REGISTRY_LOCK_IDS=()
+pf_registry_lock_held() {
+  local wanted=$1 held
+  for held in ${PF_REGISTRY_LOCK_IDS[@]+"${PF_REGISTRY_LOCK_IDS[@]}"}; do
+    [ "$held" = "$wanted" ] && return 0
+  done
+  return 1
+}
+pf_registry_lock_acquire() {
+  local id=$1
+  pf_registry_lock_held "$id" && return 0
+  fm_pf_registry_lock_acquire "$STATE" "$id" || return 1
+  PF_REGISTRY_LOCK_IDS+=("$id")
+}
+pf_registry_lock_release() {
+  local id=$1 held
+  local -a remaining=()
+  pf_registry_lock_held "$id" || return 0
+  fm_pf_registry_lock_release "$STATE" "$id"
+  for held in ${PF_REGISTRY_LOCK_IDS[@]+"${PF_REGISTRY_LOCK_IDS[@]}"}; do
+    [ "$held" = "$id" ] || remaining+=("$held")
+  done
+  PF_REGISTRY_LOCK_IDS=()
+  if [ "${remaining[0]+set}" = set ]; then
+    PF_REGISTRY_LOCK_IDS=("${remaining[@]}")
+  fi
+}
+pf_cleanup() {
+  local i
+  if [ "${PF_REGISTRY_LOCK_IDS[0]+set}" = set ]; then
+    for ((i=${#PF_REGISTRY_LOCK_IDS[@]}-1; i>=0; i--)); do
+      fm_pf_registry_lock_release "$STATE" "${PF_REGISTRY_LOCK_IDS[$i]}" 2>/dev/null || true
+    done
+  fi
+  [ "${PF_TEMP_FILES[0]+set}" = set ] || return 0
+  rm -f -- "${PF_TEMP_FILES[@]}"
 }
 trap pf_cleanup EXIT
 

@@ -18,7 +18,7 @@
 # under data/decisions/. R-SOT-POINTER reports when completed sources lack that
 # pointer. When the optional fourth field is present, R-SOT-SUPERSEDED-HOLD also
 # reports each named captain hold that is not validly bound to the later
-# authority. The binding must be a revalidated `fm-decision-hold.sh state`
+# authority. The binding must be a revalidated `fm-captain-hold.sh state`
 # supersession whose exact decision file matches the pointer and whose exact
 # shipped task is one of the row's source task ids.
 #
@@ -330,7 +330,7 @@ hold_state() {
   local hold_id=$1 output rc
   set +e
   output=$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" \
-    "$SCRIPT_DIR/fm-decision-hold.sh" state "$hold_id" --binding 2>&1)
+    "$SCRIPT_DIR/fm-captain-hold.sh" state "$hold_id" --binding 2>&1)
   rc=$?
   set -e
   [ "$rc" -eq 0 ] || fatal_registry "durable state for $hold_id is invalid: $output"

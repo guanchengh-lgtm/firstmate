@@ -370,7 +370,7 @@ The verifier does not hand-edit, commit, or fix findings while a run is active -
 
 Two firstmate-specific rules layer on top of that guidance:
 - ask-user findings are never the verifier's to answer: escalate to firstmate and stop.
-  Firstmate applies the authority contract in its \`AGENTS.md\` and obtains any required captain decision.
+  Firstmate applies \`ask-user-authority\` and obtains any required captain decision.
   When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
 - Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
 
@@ -655,7 +655,7 @@ The verifier does not hand-edit, commit, or fix findings while a run is active -
 
 Two firstmate-specific rules layer on top of that guidance:
 - ask-user findings are never the verifier's to answer: escalate to firstmate and stop.
-  Firstmate applies the authority contract in its \`AGENTS.md\` and obtains any required captain decision.
+  Firstmate applies \`ask-user-authority\` and obtains any required captain decision.
   When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
 - Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
 

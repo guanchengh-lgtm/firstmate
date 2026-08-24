@@ -41,7 +41,7 @@ Board answers are acted on later under the normal authority rules; this skill's 
    Keep the default local-only read unless the captain asks to include PRs.
    For registered secondmates, use the snapshot's structured-home classification and provenance.
    A parent event or bounded terminal contradiction is fallback evidence, never authority over readable structured home state.
-   Structured captain-held decisions come from `decision-hold-lifecycle` and appear under `decisions_open`.
+   Structured captain-held decisions come from `captain-hold-lifecycle` and appear under `decisions_open`.
    Open lock-file picks from `data/decisions/` also appear under `decisions_open` with verb `lock-open`; render them in Captain's Call so a new session cannot omit them.
    A pick never written to any decision file cannot be seen.
    The snapshot `prior_session` field is required retrieve of live jobs, open picks, and captain lock words from `bin/fm-prior-session-fold.sh`; render those bar items into the four sections and do not drop lock words after an accidental end.

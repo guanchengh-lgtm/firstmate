@@ -741,26 +741,6 @@ spawn_remote_secondmate() {
 }
 
 BACKEND=
-if [ "$RELAUNCH" -eq 0 ]; then
-  if [ "$BACKEND_SET" -eq 1 ]; then
-    BACKEND=$BACKEND_ARG
-  else
-    BACKEND=$(fm_backend_name)
-  fi
-  fm_backend_validate_spawn "$BACKEND" || exit 1
-  fm_backend_source "$BACKEND" || exit 1
-  if [ "$BACKEND" = orca ] && [ "$KIND" = secondmate ]; then
-    echo "error: backend=orca does not support --secondmate spawns yet" >&2
-    exit 1
-  fi
-  if [ "$BACKEND" = cmux ] && [ "$KIND" = secondmate ]; then
-    echo "error: backend=cmux does not support --secondmate spawns yet" >&2
-    exit 1
-  fi
-  if [ "$BACKEND" = orca ]; then
-    fm_backend_orca_runtime_check || exit 1
-  fi
-fi
 ORCA_ABORT_CLEANUP=0
 ORCA_WORKTREE_ID=
 ORCA_TERMINAL=
@@ -1010,6 +990,48 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
 fi
 ID=${POS[0]}
 fm_task_id_creation_valid "$ID" || { echo "error: invalid task id" >&2; exit 2; }
+# Role partition: spawning NEW work is MAIN-owned. A relaunch of an existing
+# task is legitimate branch recovery (fm-control drives it through this same
+# entrypoint), so only a fresh spawn refuses the branch actor (contract:
+# bin/fm-lease-lib.sh; no-op in homes without a branch actor).
+# shellcheck source=bin/fm-lease-lib.sh
+. "$SCRIPT_DIR/fm-lease-lib.sh"
+if [ "$RELAUNCH" -ne 1 ]; then
+  fm_lease_forbid_branch "new-task spawn (fm-spawn)"
+fi
+if [ "$RELAUNCH" -eq 1 ]; then
+  SPAWN_CONTROL_LOCK="$STATE/.control-$ID.lock"
+  control_owner=$(cat "$SPAWN_CONTROL_LOCK/pid" 2>/dev/null || true)
+  if [ "$control_owner" = "$PPID" ] && fm_pid_alive "$control_owner"; then
+    SPAWN_CONTROL_PARENT=1
+  elif [ "$(fm_lease_actor)" = branch ]; then
+    echo "error: relaunch (fm-spawn) refused - the supervision branch must relaunch through fm-control" >&2
+    exit "$FM_LEASE_REFUSE_EXIT"
+  elif fm_lock_try_acquire "$SPAWN_CONTROL_LOCK"; then
+    SPAWN_CONTROL_LOCK_HELD=1
+  else
+    echo "error: another lifecycle action is already running for task $ID" >&2
+    exit 1
+  fi
+fi
+if [ "$RELAUNCH" -eq 0 ]; then
+  mkdir -p "$STATE" || {
+    echo "error: could not create parent state directory" >&2
+    exit 1
+  }
+  # A fresh spawn changes the home's task set. Serialize its publication with
+  # forced teardown, which holds this lock from enumeration through cleanup.
+  # Relaunch is exempt because the existing task's control lock covers it.
+  SPAWN_TASK_SET_LOCK=$(fm_task_set_lock_path "$STATE") || {
+    echo "error: could not resolve the task-set lock for $STATE" >&2
+    exit 1
+  }
+  if ! fm_lock_try_acquire "$SPAWN_TASK_SET_LOCK"; then
+    echo "error: this home's task set is locked by another operation (a forced teardown is enumerating or removing its tasks); refusing to create task $ID rather than racing it" >&2
+    exit 1
+  fi
+  SPAWN_TASK_SET_LOCK_HELD=1
+fi
 [ "$MAP_NEXT_SET" -eq 0 ] || [ "$MAP_NEXT" != "$ID" ] || { echo "error: --map-next must name a different task id" >&2; exit 2; }
 [ "$OV_SET" -eq 0 ] || [ "$KIND" = ship ] || {
   echo "error: --ov applies only to ship spawns" >&2
@@ -1019,6 +1041,36 @@ fm_task_id_creation_valid "$ID" || { echo "error: invalid task id" >&2; exit 2; 
   echo "error: --ov must name a different task id; builder self-review is not OV" >&2
   exit 2
 }
+if [ "$KIND" = secondmate ]; then
+  if spawn_remote_secondmate "$ID"; then
+    exit 0
+  else
+    remote_spawn_rc=$?
+  fi
+  [ "$remote_spawn_rc" -eq 3 ] || exit "$remote_spawn_rc"
+fi
+# Backend selection applies only after a remote secondmate route has had its
+# chance to launch on the remote host's pinned Herdr backend.
+if [ "$RELAUNCH" -eq 0 ]; then
+  if [ "$BACKEND_SET" -eq 1 ]; then
+    BACKEND=$BACKEND_ARG
+  else
+    BACKEND=$(fm_backend_name)
+  fi
+  fm_backend_validate_spawn "$BACKEND" || exit 1
+  fm_backend_source "$BACKEND" || exit 1
+  if [ "$BACKEND" = orca ] && [ "$KIND" = secondmate ]; then
+    echo "error: backend=orca does not support --secondmate spawns yet" >&2
+    exit 1
+  fi
+  if [ "$BACKEND" = cmux ] && [ "$KIND" = secondmate ]; then
+    echo "error: backend=cmux does not support --secondmate spawns yet" >&2
+    exit 1
+  fi
+  if [ "$BACKEND" = orca ]; then
+    fm_backend_orca_runtime_check || exit 1
+  fi
+fi
 SPAWN_TASK_LOCK="$STATE/.spawn-$ID.lock"
 if ! fm_lock_try_acquire "$SPAWN_TASK_LOCK"; then
   echo "error: another spawn is already creating task $ID" >&2
@@ -2782,7 +2834,23 @@ if [ "$RELAUNCH" -eq 1 ]; then
   SPAWN_META_LOCK_HELD=1
   SPAWN_META_TMP="$STATE/.$ID.meta.relaunch.${BASHPID:-$$}"
   SPAWN_META_PATH=$SPAWN_META_TMP
+elif [ -e "$SPAWN_META_PATH" ] || [ -L "$SPAWN_META_PATH" ]; then
+  if [ -d "$SPAWN_META_PATH" ]; then
+    echo "$SPAWN_META_PATH: Is a directory" >&2
+  else
+    echo "error: metadata path '$SPAWN_META_PATH' already exists and is not a safe fresh-spawn target" >&2
+  fi
+  exit 1
 fi
+preserve_relaunch_meta() {
+  awk -F= '
+    BEGIN {
+      split("window endpoint_task_id worktree project harness kind mode yolo role map_next map ov ov_harness session tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      for (i in keys) owned[keys[i]] = 1
+    }
+    !($1 in owned)
+  ' "$RELAUNCH_META"
+}
 SPAWN_SESSION=
 if [ -f "$STATE/.lock" ] && [ ! -L "$STATE/.lock" ]; then
   SPAWN_SESSION=$(tr -d '[:space:]' < "$STATE/.lock" 2>/dev/null || true)
@@ -2791,7 +2859,7 @@ OV_HARNESS=
 if [ -n "${OV:-}" ] && [ -f "$STATE/$OV.meta" ] && [ ! -L "$STATE/$OV.meta" ]; then
   OV_HARNESS=$(sed -n 's/^harness=//p' "$STATE/$OV.meta" 2>/dev/null | tail -1)
 fi
-{
+if ! {
   echo "window=$META_WINDOW"
   echo "endpoint_task_id=$ID"
   echo "worktree=$WT"
@@ -2845,7 +2913,9 @@ fi
   if [ "$SPAWN_CONTROL_PARENT" = 1 ] && [ -n "${FM_CONTROL_RELAUNCH_TX:-}" ]; then
     echo "control_relaunch_tx=$FM_CONTROL_RELAUNCH_TX"
   fi
-} > "$SPAWN_META_PATH"
+} > "$SPAWN_META_PATH"; then
+  exit 1
+fi
 if [ "$RELAUNCH" -eq 1 ]; then
   SPAWN_META_PUBLISH_STARTED=1
   mv -f "$SPAWN_META_TMP" "$STATE/$ID.meta"

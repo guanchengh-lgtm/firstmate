@@ -161,12 +161,12 @@ Two choices remain unresolved: the route and the sample access level.
 A separate recommendation is already resolved and requires no captain action.
 EOF
 
-  if run_captain "$home" complete "$id" --none > "$home/none.out" 2> "$home/none.err"; then
+  if run_captain "$home" complete "$id" --none --no-ideas > "$home/none.out" 2> "$home/none.err"; then
     fail "--none attested while captain calls were still open in the status stream"
   fi
   assert_no_grep "decisions_reviewed=1" "$home/state/$id.meta" \
     "failed completion recorded a false completion attestation"
-  if run_captain "$home" complete "$id" sample-route-call > "$home/absent.out" 2> "$home/absent.err"; then
+  if run_captain "$home" complete "$id" sample-route-call --no-ideas > "$home/absent.out" 2> "$home/absent.err"; then
     fail "completion accepted an inventory entry that names no task"
   fi
 
@@ -191,7 +191,7 @@ EOF
     printf "%s" "$sig" > "$(fm_wake_signal_seen_path "$2" "$3")"
   ' _ "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$home/state/$id.status" \
     || fail "could not prime the announced decision baseline"
-  run_captain "$home" complete "$id" sample-route-call >/dev/null \
+  run_captain "$home" complete "$id" sample-route-call --no-ideas >/dev/null \
     || fail "shared investigation completion gate failed"
   FM_STATE_OVERRIDE="$home/state" bash -c '
     . "$1"; fm_wake_signal_seen_current "$2" "$3"
@@ -214,6 +214,7 @@ EOF
       and (.gates | any(.id == "sample-route-call") | not)
   ' >/dev/null || fail "Bearings did not surface the captain-held task: $json"
 
+  fm_write_none_measure "$home" "$id"
   run_teardown "$home" "$id" >/dev/null 2> "$home/teardown.err" \
     || fail "reviewed investigation teardown failed: $(cat "$home/teardown.err")"
   tasks_in "$home" "done" "$id" --report "data/$id/report.md" --keep 0 >/dev/null \
@@ -243,7 +244,7 @@ test_answer_records_and_closes() {
   run_captain "$home" hold sample-guard-call \
     --title "Choose the guard option" --reason "captain guard choice pending" --repo sample >/dev/null \
     || fail "could not register the captain-held task"
-  run_captain "$home" complete "$id" sample-guard-call >/dev/null \
+  run_captain "$home" complete "$id" sample-guard-call --no-ideas >/dev/null \
     || fail "completion failed for the held inventory"
   tasks_in "$home" add sample-guard-work "Apply the guard option" \
     --kind ship --repo sample --blocked-by sample-guard-call >/dev/null \
@@ -440,7 +441,7 @@ test_out_of_band_close_is_recordable() {
   run_captain "$home" hold sample-submission-call --title "Choose the sample submission" \
     --reason "captain submission choice pending" --repo sample --origin "$id" >/dev/null \
     || fail "could not register the captain-held task"
-  run_captain "$home" complete "$id" sample-submission-call >/dev/null \
+  run_captain "$home" complete "$id" sample-submission-call --no-ideas >/dev/null \
     || fail "completion failed before the out-of-band close"
 
   tasks_in "$home" "done" sample-submission-call >/dev/null \
@@ -470,6 +471,7 @@ test_out_of_band_close_is_recordable() {
     > "$home/drifted.out" 2> "$home/drifted.err"; then
     fail "a drifted retry overwrote the recorded captain decision"
   fi
+  fm_write_none_measure "$home" "$id"
   run_teardown "$home" "$id" >/dev/null 2> "$home/teardown.err" \
     || fail "teardown still refused after the answer was recorded: $(cat "$home/teardown.err")"
 
@@ -498,8 +500,9 @@ test_visual_review_uses_shared_completion_owner() {
   write_origin_meta "$home" "$id"
   printf 'done: investigation complete\n' > "$home/state/$id.status"
   printf '# Sample board investigation\n\nThe initial findings need no captain choice.\n' > "$home/data/$id/report.md"
-  run_captain "$home" complete "$id" --none >/dev/null \
+  run_captain "$home" complete "$id" --none --no-ideas >/dev/null \
     || fail "initial investigation could not pass the shared completion owner"
+  fm_write_none_measure "$home" "$id"
   run_teardown "$home" "$id" >/dev/null 2> "$home/visual-teardown.err" \
     || fail "completed investigation teardown failed: $(cat "$home/visual-teardown.err")"
   tasks_in "$home" "done" "$id" --report "data/$id/report.md" --keep 0 >/dev/null
@@ -509,7 +512,7 @@ test_visual_review_uses_shared_completion_owner() {
   run_captain "$home" hold sample-layout-call --title "Choose the sample layout" \
     --reason "captain layout choice pending" --repo sample --origin "$id" >/dev/null \
     || fail "post-teardown visual review could not use the shared hold owner"
-  run_captain "$home" complete "$id" sample-layout-call >/dev/null \
+  run_captain "$home" complete "$id" sample-layout-call --no-ideas >/dev/null \
     || fail "post-teardown visual review could not use the shared completion owner"
   json=$(run_bearings "$home") || fail "Bearings failed after the ended visual review"
   printf '%s' "$json" | jq -e '
@@ -535,7 +538,7 @@ test_none_inventory_and_resolved_prose_do_not_create_holds() {
 Decision record: the earlier choice is resolved.
 The recommendation is informational and needs no captain action.
 EOF
-  run_captain "$home" complete "$id" --none >/dev/null \
+  run_captain "$home" complete "$id" --none --no-ideas >/dev/null \
     || fail "explicit no-call inventory failed"
   json=$(run_bearings "$home") || fail "Bearings failed for no-call inventory"
   printf '%s' "$json" | jq -e '
@@ -557,10 +560,11 @@ test_terminal_single_owner_status_decision_does_not_block_empty_inventory() {
   open=$(bash -c '. "$1"; status_open_decisions "$2"' _ \
     "$ROOT/bin/fm-classify-lib.sh" "$home/state/$id.status")
   assert_contains "$open" "default" "fixture must retain the raw stale status decision"
-  run_captain "$home" complete "$id" --none >/dev/null \
+  run_captain "$home" complete "$id" --none --no-ideas >/dev/null \
     || fail "terminal single-owner stale status decision blocked empty inventory completion"
   run_captain "$home" verify "$id" >/dev/null \
     || fail "terminal single-owner stale status decision blocked inventory verification"
+  fm_write_none_measure "$home" "$id"
   run_teardown "$home" "$id" >/dev/null 2> "$home/terminal-teardown.err" \
     || fail "terminal single-owner stale status decision blocked teardown: $(cat "$home/terminal-teardown.err")"
 
@@ -568,7 +572,7 @@ test_terminal_single_owner_status_decision_does_not_block_empty_inventory() {
   write_origin_meta "$home" "$secondmate" secondmate
   printf 'needs-decision [key=route]: choose route A or route B\ndone: heartbeat complete\n' \
     > "$home/state/$secondmate.status"
-  if run_captain "$home" complete "$secondmate" --none \
+  if run_captain "$home" complete "$secondmate" --none --no-ideas \
     > "$home/secondmate-terminal.out" 2> "$home/secondmate-terminal.err"; then
     fail "secondmate terminal status decision was incorrectly cleared"
   fi
@@ -601,8 +605,9 @@ EOF
   run_captain "$mate" hold sample-release-call --title "Choose the sample release" \
     --reason "captain release choice pending" --repo sample --origin "$origin" >/dev/null \
     || fail "secondmate-owned hold creation failed"
-  run_captain "$mate" complete "$origin" sample-release-call >/dev/null \
+  run_captain "$mate" complete "$origin" sample-release-call --no-ideas >/dev/null \
     || fail "secondmate-owned completion failed"
+  fm_write_none_measure "$mate" "$origin"
   run_teardown "$mate" "$origin" >/dev/null 2> "$mate/teardown.err" \
     || fail "secondmate investigation teardown failed: $(cat "$mate/teardown.err")"
   tasks_in "$mate" "done" "$origin" --report "data/$origin/report.md" --keep 0 >/dev/null
@@ -648,7 +653,7 @@ test_bound_channel_answers_close_at_answer_time() {
   run_captain "$home" hold sample-gated-work --reason "captain go needed" >/dev/null
   run_captain "$home" complete "$id" \
     sample-membership-call sample-headline-call sample-forged-call sample-invalid-close-call \
-    sample-gated-work >/dev/null \
+    sample-gated-work --no-ideas >/dev/null \
     || fail "completion failed for the deck's inventoried calls"
 
   artifact="$home/data/$id/review.html"
@@ -926,6 +931,116 @@ test_legacy_identities_keep_working() {
   pass "legacy identities, metadata, bindings, and the shim keep working"
 }
 
+test_product_ideas_state_and_supersession_survive_collapse() {
+  local home origin hold released superseded show digest count
+  home=$(make_home collapsed-extensions)
+  origin=sample-collapsed-review
+  mkdir -p "$home/data/$origin" "$home/data/decisions"
+  tasks_in "$home" add "$origin" "Review collapsed extensions" --kind scout --repo sample --start >/dev/null
+  write_origin_meta "$home" "$origin"
+  printf '# Collapsed review\n\n## Ideas\nA sample idea.\n' > "$home/data/$origin/report.md"
+
+  if run_captain "$home" complete "$origin" --none \
+    > "$home/missing-ideas.out" 2> "$home/missing-ideas.err"; then
+    fail "completion accepted no product-idea attestation"
+  fi
+  assert_grep "idea attestation is required" "$home/missing-ideas.err" \
+    "missing product-idea attestation was not explicit"
+  run_captain "$home" complete "$origin" --none --no-ideas >/dev/null \
+    || fail "explicit no-idea attestation failed"
+  run_captain "$home" complete "$origin" --none --no-ideas >/dev/null \
+    || fail "idempotent no-idea retry failed"
+  count=$(grep -c '^ideas_reviewed=1$' "$home/state/$origin.meta")
+  [ "$count" -eq 1 ] || fail "no-idea retry duplicated metadata attestation"
+  cat >> "$home/data/product-ideas.md" <<EOF
+| PI-001 | Add a collapsed sample preview | unscheduled | data/$origin/report.md#Ideas |
+EOF
+  run_captain "$home" complete "$origin" --none --ideas PI-001 >/dev/null \
+    || fail "origin-bound product idea did not complete"
+  assert_grep 'idea_ids=PI-001' "$home/state/$origin.meta" \
+    "idea inventory was not persisted"
+  run_captain "$home" verify "$origin" >/dev/null \
+    || fail "product-idea inventory did not verify"
+
+  tasks_in "$home" add sample-released-work "Release after answer" --kind ship --repo sample >/dev/null
+  run_captain "$home" hold sample-released-work --reason "captain release pending" >/dev/null
+  printf 'Resume this work.\n' > "$home/release.txt"
+  run_captain "$home" answer sample-released-work --decision-file "$home/release.txt" --release >/dev/null
+  released=$(run_captain "$home" state sample-released-work) \
+    || fail "released answer had no durable state"
+  [ "$released" = resolved ] || fail "released answer resolved as $released"
+
+  run_captain "$home" hold sample-old-call --title "Choose old route" \
+    --reason "captain old route pending" --repo sample --origin "$origin" >/dev/null
+  hold=sample-old-call
+  [ "$(run_captain "$home" state "$hold")" = open ] || fail "active hold was not open"
+  tasks_in "$home" add sample-ranked-ship "Ship ranked route" --kind ship --repo sample >/dev/null
+  tasks_in "$home" "done" sample-ranked-ship >/dev/null
+  printf '# Ranked route\n\nLater shipped authority supersedes old route.\n' \
+    > "$home/data/decisions/sample-ranked-route.md"
+  run_captain "$home" supersede "$hold" \
+    --decision-file data/decisions/sample-ranked-route.md --shipped-task sample-ranked-ship >/dev/null \
+    || fail "later shipped authority did not supersede hold"
+  run_captain "$home" supersede "$hold" \
+    --decision-file data/decisions/sample-ranked-route.md --shipped-task sample-ranked-ship >/dev/null \
+    || fail "exact supersession replay was not idempotent"
+  superseded=$(run_captain "$home" state "$hold" --binding) \
+    || fail "superseded hold had no durable state"
+  [ "$superseded" = $'superseded\tdata/decisions/sample-ranked-route.md\tsample-ranked-ship' ] \
+    || fail "supersession binding was unexpected: $superseded"
+  show=$(tasks_in "$home" show "$hold" --full)
+  assert_contains "$show" "Origin: $origin" "supersession did not preserve original body"
+  digest=$(shasum -a 256 "$home/data/decisions/sample-ranked-route.md" | awk '{print $1}')
+  printf '# Drifted authority\n' > "$home/data/decisions/sample-ranked-route.md"
+  if run_captain "$home" state "$hold" > "$home/drift.out" 2> "$home/drift.err"; then
+    fail "state trusted a drifted supersession record"
+  fi
+  assert_grep "digest no longer matches" "$home/drift.err" \
+    "digest drift did not fail closed"
+  : "$digest"
+  pass "product ideas, released state, and shipped supersession survive collapse"
+}
+
+test_legacy_extension_records_verify_after_collapse() {
+  local home origin resolved superseded digest
+  home=$(make_home collapsed-legacy-fixtures)
+  origin=sample-pre-collapse-review
+  mkdir -p "$home/data/$origin" "$home/data/decisions"
+  write_origin_meta "$home" "$origin"
+  printf '# Pre-collapse review\n\nLegacy fixtures.\n' > "$home/data/$origin/report.md"
+
+  tasks_in "$home" add legacy-resolved-call "Legacy resolved call" --kind captain --repo sample >/dev/null
+  printf 'Resolution recorded by fm-decision-hold.\nDecision digest: %064d\nRouted identities: none\nResolution mode: answered\n\nCaptain decision:\nUse legacy route.\n' 0 \
+    > "$home/legacy-resolved-body.txt"
+  tasks_in "$home" update legacy-resolved-call --body-file "$home/legacy-resolved-body.txt" --archive-body >/dev/null
+  tasks_in "$home" "done" legacy-resolved-call >/dev/null
+  resolved=$(run_captain "$home" state legacy-resolved-call) \
+    || fail "legacy resolved body did not parse"
+  [ "$resolved" = resolved ] || fail "legacy resolved body resolved as $resolved"
+
+  tasks_in "$home" add legacy-superseded-call "Legacy superseded call" --kind captain --repo sample >/dev/null
+  printf '# Legacy authority\n' > "$home/data/decisions/legacy-authority.md"
+  digest=$(shasum -a 256 "$home/data/decisions/legacy-authority.md" | awk '{print $1}')
+  printf 'Supersession recorded by fm-decision-hold.\nDecision path: data/decisions/legacy-authority.md\nDecision digest: %s\nShipped task: legacy-shipped-task\n' "$digest" \
+    > "$home/legacy-superseded-body.txt"
+  tasks_in "$home" add legacy-shipped-task "Legacy shipped task" --kind ship --repo sample >/dev/null
+  tasks_in "$home" "done" legacy-shipped-task >/dev/null
+  tasks_in "$home" update legacy-superseded-call --body-file "$home/legacy-superseded-body.txt" --archive-body >/dev/null
+  tasks_in "$home" "done" legacy-superseded-call >/dev/null
+  superseded=$(run_captain "$home" state legacy-superseded-call) \
+    || fail "legacy superseded body did not parse"
+  [ "$superseded" = superseded ] || fail "legacy superseded body resolved as $superseded"
+
+  printf 'decisions_reviewed=1\ndecision_keys=legacy-resolved-call,legacy-superseded-call\n' \
+    >> "$home/state/$origin.meta"
+  run_captain "$home" verify "$origin" >/dev/null \
+    || fail "pre-idea metadata was not grandfathered"
+  printf 'ideas_reviewed=1\nidea_ids=\n' >> "$home/state/$origin.meta"
+  run_captain "$home" verify "$origin" >/dev/null \
+    || fail "legacy idea metadata did not verify"
+  pass "legacy metadata and resolved or superseded bodies remain valid"
+}
+
 # The intake is channel-agnostic, so chat must reach it the same way a captured
 # review does - for a task-id key, and for a legacy composed identity.
 test_chat_channel_feeds_the_same_keyed_answer_intake() {
@@ -944,7 +1059,7 @@ test_chat_channel_feeds_the_same_keyed_answer_intake() {
   run_captain "$home" hold sample-chat-followup --title "Choose the chat follow-up" \
     --reason "captain follow-up choice pending" --repo sample >/dev/null \
     || fail "could not register the task-id chat call"
-  run_captain "$home" complete "$id" "$id-decision-chat-choice" sample-chat-followup >/dev/null \
+  run_captain "$home" complete "$id" "$id-decision-chat-choice" sample-chat-followup --no-ideas >/dev/null \
     || fail "completion failed for the chat calls"
   grep -F 'captain-held [key=chat-choice]' "$home/state/$id.status" >/dev/null \
     || fail "precondition: completion did not transfer the decision to its durable owner"
@@ -1019,7 +1134,7 @@ SH
 test_origin_slug_validation_precedes_path_construction() {
   local home
   home=$(make_home slug-validation)
-  if run_captain "$home" complete "../escape" --none > "$home/escape.out" 2> "$home/escape.err"; then
+  if run_captain "$home" complete "../escape" --none --no-ideas > "$home/escape.out" 2> "$home/escape.err"; then
     fail "complete accepted a path-escaping origin id"
   fi
   assert_grep "privacy-safe slug" "$home/escape.err" "the refusal must name the slug contract"
@@ -1181,6 +1296,8 @@ test_secondmate_hold_stays_in_authoritative_home
 test_bound_channel_answers_close_at_answer_time
 test_unbound_source_closes_no_hold
 test_legacy_identities_keep_working
+test_product_ideas_state_and_supersession_survive_collapse
+test_legacy_extension_records_verify_after_collapse
 test_chat_channel_feeds_the_same_keyed_answer_intake
 test_origin_slug_validation_precedes_path_construction
 test_status_resolution_over_an_open_hold_is_signalled

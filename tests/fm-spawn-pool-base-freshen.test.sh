@@ -47,6 +47,7 @@ make_case() {
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config"
   printf 'codex\n' > "$home/config/crew-harness"
   printf 'brief for %s\n' "$id" > "$home/data/$id/brief.md"
+  printf 'builder\n' > "$home/data/$id/role"
   touch "$home/state/.last-watcher-beat"
 
   git init --quiet -b "$default" "$project"
@@ -76,12 +77,21 @@ EOF
 run_spawn() {
   local id=$1
   shift
-  FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
-    FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
-    FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
-    FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" FM_FAKE_PANE_PATH="$POOL_DIR" \
-    PATH="$FAKEBIN_DIR:$PATH" \
-    "$SPAWN" "$id" "$PROJECT_DIR" "$@" 2>&1
+  if [ "${1:-}" = --scout ]; then
+    FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
+      FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+      FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+      FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" FM_FAKE_PANE_PATH="$POOL_DIR" \
+      PATH="$FAKEBIN_DIR:$PATH" \
+      "$SPAWN" "$id" "$PROJECT_DIR" "$@" 2>&1
+  else
+    FM_ROOT_OVERRIDE='' FM_HOME="$HOME_DIR" \
+      FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
+      FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
+      FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" FM_FAKE_PANE_PATH="$POOL_DIR" \
+      PATH="$FAKEBIN_DIR:$PATH" \
+      "$SPAWN" "$id" "$PROJECT_DIR" --role builder "$@" 2>&1
+  fi
 }
 
 test_stale_pool_base_refreshes_before_branching() {
@@ -107,6 +117,7 @@ test_stale_pool_base_refreshes_before_branching() {
   id='pool-current-base-repeat-r1'
   mkdir -p "$HOME_DIR/data/$id"
   printf 'brief for %s\n' "$id" > "$HOME_DIR/data/$id/brief.md"
+  printf 'builder\n' > "$HOME_DIR/data/$id/role"
   out=$(run_spawn "$id" --mode no-mistakes --yolo off)
   status=$?
   expect_code 0 "$status" "repeating the base refresh should be idempotent"

@@ -26,8 +26,12 @@
 #   fm-captain-hold.sh bind <source-id> [<legacy-origin> | --any-origin]
 #   fm-captain-hold.sh unbind <source-id>
 #   fm-captain-hold.sh binding <source-id>
-#   fm-captain-hold.sh complete <origin-id> (--none | <task-id>...)
+#   fm-captain-hold.sh complete <origin-id> (--none | <task-id>...) \
+#     (--ideas <PI-id>... | --no-ideas)
 #   fm-captain-hold.sh verify <origin-id>
+#   fm-captain-hold.sh state <task-id> [--binding]
+#   fm-captain-hold.sh supersede <task-id> \
+#     --decision-file data/decisions/<file> --shipped-task <done-id>
 #   fm-captain-hold.sh diverged
 #
 # `hold` places an existing task under an active captain hold, or creates the
@@ -104,8 +108,13 @@
 # the inventory is unioned idempotently into the metadata, and every still-open
 # keyed status decision is transferred to its durable owner with a
 # `captain-held [key=...]` status close naming the inventory. Later review
-# passes may add ids. A post-teardown visual review can complete against the
-# surviving report and tasks without recreating task state.
+# passes may add ids. Exactly one product-idea attestation is also required:
+# `--ideas` takes one or more home-local PI-NNN ids, while `--no-ideas` records
+# that this pass found no new ideas. Later passes union both inventories.
+# Named ideas must have well-formed origin-bound rows in the active home's
+# data/product-ideas.md; `--no-ideas` creates that private ledger lazily.
+# A post-teardown visual review can complete against the surviving report and
+# tasks without recreating task state.
 # `verify` is read-only and is called by scout teardown, so teardown cannot
 # erase a source before this gate has succeeded: every recorded inventory
 # entry must still be durable and no keyed status decision may be open.
@@ -114,6 +123,11 @@
 # names no existing task resolves through the legacy `<origin>-decision-<entry>`
 # identity, so pre-collapse metadata written by fm-decision-hold.sh verifies
 # unchanged. An entry that exists as a task id is always that task.
+#
+# `state` is the sole read-only resolver for open, resolved, and superseded
+# captain holds. `supersede` retrospectively closes one active hold only after
+# binding it to one ordinary record under data/decisions/ and one already-Done
+# ship task; the decision digest is revalidated on every state read.
 #
 # `diverged` is the read-only guard over the seam between the two records of
 # one captain call. See "record divergence" beside command_diverged below.
@@ -140,6 +154,9 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 # shellcheck source=bin/fm-wake-lib.sh
 # shellcheck disable=SC1091
 . "$SCRIPT_DIR/fm-wake-lib.sh"
+# shellcheck source=bin/fm-product-idea-lib.sh
+# shellcheck disable=SC1091
+. "$SCRIPT_DIR/fm-product-idea-lib.sh"
 
 CAPTAIN_META_LOCK=
 CAPTAIN_META_LOCK_HELD=0
@@ -184,6 +201,16 @@ sha256_text() {  # <text>
     printf '%s' "$1" | shasum -a 256 | awk '{print $1}'
   elif command -v sha256sum >/dev/null 2>&1; then
     printf '%s' "$1" | sha256sum | awk '{print $1}'
+  else
+    fail "shasum or sha256sum is required"
+  fi
+}
+
+sha256_file() {  # <path>
+  if command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | awk '{print $1}'
+  elif command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | awk '{print $1}'
   else
     fail "shasum or sha256sum is required"
   fi
@@ -282,6 +309,51 @@ meta_value() {  # <meta> <key>
   grep "^$2=" "$1" 2>/dev/null | tail -1 | cut -d= -f2- || true
 }
 
+validate_idea_id() {  # <value>
+  case "$1" in
+    PI-[0-9][0-9][0-9]) : ;;
+    *) fail "product idea id must use the home-local PI-NNN form: $1" ;;
+  esac
+}
+
+create_idea_ledger() {
+  local ledger="$DATA/product-ideas.md"
+  if [ -e "$ledger" ]; then
+    [ -f "$ledger" ] || fail "product idea ledger path is not a regular file: $ledger"
+    return 0
+  fi
+  ( umask 077
+    mkdir -p "$DATA" || exit 1
+    cat > "$ledger" <<'EOF'
+# Product ideas
+
+<!-- Columns: ID | Idea | Status | Source. -->
+<!-- Status: unscheduled | parked (captain <date>) | scheduled -> <task-id> | shipped (was <task-id>) | dropped (<reason>). -->
+<!-- Source: data/<origin-id>/report.md#<section-heading>; use a report path plus section heading, never a line number. -->
+<!-- IDs are home-local PI-NNN values; qualify cross-home displays as <home-id>:PI-NNN, for example sm-tv:PI-003. -->
+
+| ID | Idea | Status | Source |
+| --- | --- | --- | --- |
+EOF
+  ) || fail "cannot create product idea ledger: $ledger"
+}
+
+verify_idea_row() {  # <origin-id> <idea-id>
+  local origin=$1 idea_id=$2 ledger="$DATA/product-ideas.md" rc
+  validate_idea_id "$idea_id"
+  [ -f "$ledger" ] \
+    || fail "product idea ledger is absent: $ledger; append $idea_id with a source citing data/$origin/report.md#<section-heading>"
+  if fm_product_idea_verify_row "$ledger" "$origin" "$idea_id"; then
+    return 0
+  else
+    rc=$?
+  fi
+  if [ "$rc" -eq 4 ]; then
+    fail "product idea $idea_id is missing from $ledger"
+  fi
+  fail "product idea $idea_id must have one well-formed row whose Source cites data/$origin/report.md#<section-heading> without a line number"
+}
+
 origin_open_decisions() {  # <origin-id>
   local origin=$1 meta="$STATE/$1.meta" status_file="$STATE/$1.status" open kind last verb
   open=$(status_open_decisions "$status_file")
@@ -340,6 +412,183 @@ resolution_block() {  # <mode>
     "$DECISION_DIGEST" "$1" "$DECISION_TEXT"
 }
 
+normalize_decision_path() {  # <path>
+  local supplied=$1 relative component prefix old_ifs
+  case "$supplied" in
+    "$FM_HOME"/data/decisions/*) relative=${supplied#"$FM_HOME"/} ;;
+    data/decisions/*) relative=$supplied ;;
+    *) fail "decision file must be home-relative under data/decisions/: $supplied" ;;
+  esac
+  case "$relative" in
+    *//*|*/./*|*/../*|*/.|*/..) fail "decision file path is not canonical: $supplied" ;;
+  esac
+  prefix=$FM_HOME
+  old_ifs=$IFS
+  IFS=/
+  for component in $relative; do
+    IFS=$old_ifs
+    prefix="$prefix/$component"
+    [ ! -L "$prefix" ] || fail "decision file path contains a symlink: $relative"
+    IFS=/
+  done
+  IFS=$old_ifs
+  [ -f "$FM_HOME/$relative" ] || fail "decision file is not a regular file: $relative"
+  [ -r "$FM_HOME/$relative" ] || fail "decision file is not readable: $relative"
+  [ -s "$FM_HOME/$relative" ] || fail "decision file must not be empty: $relative"
+  [ "$(LC_ALL=C wc -c < "$FM_HOME/$relative" | tr -d '[:space:]')" -le 8192 ] \
+    || fail "decision file exceeds 8192 bytes: $relative"
+  printf '%s\n' "$relative"
+}
+
+verify_shipped_task() {  # <task-id>
+  local id=$1 show state kind
+  validate_slug shipped-task "$id"
+  show=$(task_show "$id") || fail "shipped task $id does not exist in the active home"
+  state=$(show_field "$show" state)
+  kind=$(show_field "$show" kind)
+  [ "$state" = "done" ] || fail "shipped task $id is not Done (state=$state)"
+  [ "$kind" = ship ] || fail "shipped task $id is not kind ship (kind=$kind)"
+}
+
+supersession_fields() {  # <hold-id> <shown-body>
+  local id=$1 body=$2 leader fields
+  body=$(decode_shown_value "$body") || fail "could not decode the existing body for $id"
+  case "$body" in
+    'Supersession recorded by fm-captain-hold.'$'\n'*) leader='Supersession recorded by fm-captain-hold.' ;;
+    'Supersession recorded by fm-decision-hold.'$'\n'*) leader='Supersession recorded by fm-decision-hold.' ;;
+    *) return 1 ;;
+  esac
+  fields=${body#"$leader"$'\n'}
+  SUPERSESSION_PATH=$(printf '%s\n' "$fields" | sed -n '1s/^Decision path: //p')
+  SUPERSESSION_DIGEST=$(printf '%s\n' "$fields" | sed -n '2s/^Decision digest: //p')
+  SUPERSESSION_TASK=$(printf '%s\n' "$fields" | sed -n '3s/^Shipped task: //p')
+  [ -n "$SUPERSESSION_PATH" ] && [ -n "$SUPERSESSION_DIGEST" ] && [ -n "$SUPERSESSION_TASK" ] \
+    || fail "captain-held task $id has an invalid supersession identity record"
+}
+
+verify_supersession_binding() {  # <hold-id> <shown-body>
+  local id=$1 body=$2 relative actual_digest
+  supersession_fields "$id" "$body" || return 1
+  relative=$(normalize_decision_path "$SUPERSESSION_PATH")
+  [ "$relative" = "$SUPERSESSION_PATH" ] \
+    || fail "captain-held task $id records a non-canonical decision path"
+  case "$SUPERSESSION_DIGEST" in
+    ''|*[!0-9a-f]*) fail "captain-held task $id records an invalid decision digest" ;;
+  esac
+  [ "${#SUPERSESSION_DIGEST}" -eq 64 ] \
+    || fail "captain-held task $id records an invalid decision digest"
+  actual_digest=$(sha256_file "$FM_HOME/$relative")
+  [ "$actual_digest" = "$SUPERSESSION_DIGEST" ] \
+    || fail "captain-held task $id decision record digest no longer matches"
+  verify_shipped_task "$SUPERSESSION_TASK"
+}
+
+hold_state() {  # <task-id>
+  local id=$1 show state hold_kind body
+  validate_slug task-id "$id"
+  show=$(task_show "$id") || fail "captain-held task $id is absent from $FM_HOME/data/backlog.md"
+  state=$(show_field "$show" state)
+  hold_kind=$(show_field_value "$show" hold_kind)
+  body=$(show_field "$show" body)
+  if [ "$state" != "done" ] && [ "$hold_kind" = captain ]; then
+    printf 'open\n'
+    return 0
+  fi
+  if [ "$state" = "done" ] && supersession_fields "$id" "$body"; then
+    verify_supersession_binding "$id" "$body"
+    printf 'superseded\n'
+    return 0
+  fi
+  if body_has_resolution_record "$body"; then
+    printf 'resolved\n'
+    return 0
+  fi
+  fail "captain-held task $id has no valid durable state"
+}
+
+command_state() {
+  local id=${1:-} with_binding=0 state show body
+  [ "$#" -ge 1 ] && [ "$#" -le 2 ] || { usage >&2; exit 2; }
+  if [ "$#" -eq 2 ]; then
+    [ "$2" = --binding ] || { usage >&2; exit 2; }
+    with_binding=1
+  fi
+  require_tasks_axi
+  state=$(hold_state "$id")
+  if [ "$with_binding" -eq 0 ]; then
+    printf '%s\n' "$state"
+    return 0
+  fi
+  if [ "$state" = superseded ]; then
+    show=$(task_show "$id")
+    body=$(show_field "$show" body)
+    supersession_fields "$id" "$body" \
+      || fail "captain-held task $id has no supersession identity record"
+    printf '%s\t%s\t%s\n' "$state" "$SUPERSESSION_PATH" "$SUPERSESSION_TASK"
+  else
+    printf '%s\t-\t-\n' "$state"
+  fi
+}
+
+command_supersede() {
+  local id=${1:-} decision_file='' shipped_task='' show state body relative digest current_body new_body tmp
+  [ "$#" -ge 1 ] || { usage >&2; exit 2; }
+  shift
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --decision-file) shift; decision_file=${1:-} ;;
+      --shipped-task) shift; shipped_task=${1:-} ;;
+      *) usage >&2; exit 2 ;;
+    esac
+    shift
+  done
+  validate_slug task-id "$id"
+  [ -n "$decision_file" ] || fail "--decision-file is required"
+  [ -n "$shipped_task" ] || fail "--shipped-task is required"
+  require_tasks_axi
+  relative=$(normalize_decision_path "$decision_file")
+  digest=$(sha256_file "$FM_HOME/$relative")
+  verify_shipped_task "$shipped_task"
+  show=$(task_show "$id") || fail "captain-held task $id is absent from $FM_HOME/data/backlog.md"
+  state=$(show_field "$show" state)
+  body=$(show_field "$show" body)
+  if [ "$state" = "done" ] && supersession_fields "$id" "$body"; then
+    verify_supersession_binding "$id" "$body"
+    [ "$SUPERSESSION_PATH" = "$relative" ] \
+      || fail "captain-held task $id records a different decision path"
+    [ "$SUPERSESSION_DIGEST" = "$digest" ] \
+      || fail "captain-held task $id records a different decision record"
+    [ "$SUPERSESSION_TASK" = "$shipped_task" ] \
+      || fail "captain-held task $id records a different shipped task"
+    printf 'superseded: %s -> %s, %s\n' "$id" "$relative" "$shipped_task"
+    return 0
+  fi
+  [ "$state" != "done" ] && [ "$(show_field_value "$show" hold_kind)" = captain ] \
+    || fail "captain-held task $id is not actively held for the captain"
+  current_body=$(decode_shown_value "$body") \
+    || fail "could not decode the existing body for $id"
+  new_body=$(printf 'Supersession recorded by fm-captain-hold.\nDecision path: %s\nDecision digest: %s\nShipped task: %s' \
+    "$relative" "$digest" "$shipped_task")
+  if [ -n "$current_body" ]; then
+    new_body=$(printf '%s\n\n%s' "$new_body" "$current_body")
+  fi
+  tmp=$(umask 077; mktemp "${TMPDIR:-/tmp}/fm-captain-hold-supersede.XXXXXX") \
+    || fail "cannot stage the supersession record"
+  if ! printf '%s\n' "$new_body" > "$tmp"; then
+    rm -f -- "$tmp"
+    fail "cannot stage the supersession record for $id"
+  fi
+  if ! tasks_axi update "$id" --body-file "$tmp" --archive-body >/dev/null; then
+    rm -f -- "$tmp"
+    fail "could not bind later authority to captain-held task $id"
+  fi
+  rm -f -- "$tmp"
+  tasks_axi "done" "$id" >/dev/null || fail "could not close superseded captain-held task $id"
+  [ "$(hold_state "$id")" = superseded ] \
+    || fail "captain-held task $id did not retain its supersession binding"
+  printf 'superseded: %s -> %s, %s\n' "$id" "$relative" "$shipped_task"
+}
+
 # Durable state of one captain call: an active captain hold (annotations
 # surviving even when a date gate has expired) or a recorded captain answer.
 verify_hold_durable() {  # <task-id>
@@ -348,6 +597,10 @@ verify_hold_durable() {  # <task-id>
   state=$(show_field "$show" state)
   hold_kind=$(show_field_value "$show" hold_kind)
   body=$(show_field "$show" body)
+  if [ "$state" = "done" ] && supersession_fields "$id" "$body"; then
+    verify_supersession_binding "$id" "$body"
+    return 0
+  fi
   if body_has_resolution_record "$body"; then
     return 0
   fi
@@ -768,11 +1021,55 @@ command_answers() {
 
 command_complete() {
   local origin=${1:-} meta previous='' supplied='' keys='' entry key status_file open raw_open has_meta=0 transfer_rc
+  local decision_none=0 decision_seen=0 idea_attestation='' idea_supplied='' previous_ideas='' idea_keys='' idea_id
   [ "$#" -ge 2 ] || { usage >&2; exit 2; }
   validate_slug origin-id "$origin"
   shift
   meta="$STATE/$origin.meta"
   [ -f "$meta" ] && has_meta=1
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --none)
+        [ "$decision_none" -eq 0 ] || fail "--none may be supplied only once"
+        [ -z "$supplied" ] || fail "--none cannot be combined with task ids"
+        decision_none=1
+        decision_seen=1
+        shift
+        ;;
+      --no-ideas)
+        [ -z "$idea_attestation" ] || fail "--no-ideas cannot be combined with --ideas or repeated"
+        idea_attestation=none
+        shift
+        [ "$#" -eq 0 ] || fail "--no-ideas must follow the captain-call inventory and cannot take values"
+        ;;
+      --ideas)
+        [ -z "$idea_attestation" ] || fail "--ideas cannot be combined with --no-ideas or repeated"
+        idea_attestation=ideas
+        shift
+        [ "$#" -gt 0 ] || fail "--ideas requires at least one PI-NNN id"
+        while [ "$#" -gt 0 ]; do
+          case "$1" in
+            --ideas|--no-ideas) fail "--ideas cannot be combined with --no-ideas or repeated" ;;
+            --none) fail "--ideas must follow the captain-call inventory" ;;
+          esac
+          validate_idea_id "$1"
+          idea_supplied="${idea_supplied}${idea_supplied:+ }$1"
+          shift
+        done
+        ;;
+      *)
+        [ "$decision_none" -eq 0 ] || fail "--none cannot be combined with task ids"
+        validate_slug task-id "$1"
+        supplied="${supplied}${supplied:+ }$1"
+        decision_seen=1
+        shift
+        ;;
+    esac
+  done
+  [ "$decision_seen" -eq 1 ] \
+    || fail "captain-call attestation is required: use --none or name task ids"
+  [ -n "$idea_attestation" ] \
+    || fail "idea attestation is required: use --ideas <PI-id>... or --no-ideas"
   if [ "$has_meta" = 1 ]; then
     CAPTAIN_META_LOCK=$(fm_meta_lock_path "$meta") || fail "could not resolve task metadata lock"
     fm_lock_acquire_wait "$CAPTAIN_META_LOCK"
@@ -781,18 +1078,9 @@ command_complete() {
   fi
   require_tasks_axi
   origin_exists_here "$origin" || fail "origin $origin is not owned by the active home $FM_HOME"
-  if [ "$#" -eq 1 ] && [ "$1" = --none ]; then
-    supplied=''
-  else
-    while [ "$#" -gt 0 ]; do
-      [ "$1" != --none ] || fail "--none cannot be combined with task ids"
-      validate_slug task-id "$1"
-      supplied="${supplied}${supplied:+ }$1"
-      shift
-    done
-  fi
   if [ "$has_meta" = 1 ]; then
     previous=$(meta_value "$meta" decision_keys)
+    previous_ideas=$(meta_value "$meta" idea_ids)
   fi
   keys=$(sorted_key_union "$previous" "$supplied")
   if [ -n "$keys" ]; then
@@ -801,6 +1089,19 @@ command_complete() {
       verify_hold_durable "$(resolve_entry "$origin" "$entry")"
     done <<EOF
 $(printf '%s\n' "$keys" | tr ',' '\n')
+EOF
+  fi
+
+  idea_keys=$(sorted_key_union "$previous_ideas" "$idea_supplied")
+  if [ "$idea_attestation" = none ]; then
+    create_idea_ledger
+  fi
+  if [ -n "$idea_keys" ]; then
+    while IFS= read -r idea_id; do
+      [ -n "$idea_id" ] || continue
+      verify_idea_row "$origin" "$idea_id"
+    done <<EOF
+$(printf '%s\n' "$idea_keys" | tr ',' '\n')
 EOF
   fi
 
@@ -815,15 +1116,12 @@ EOF
     if [ "$(meta_value "$meta" decisions_reviewed)" != 1 ] || [ "$previous" != "$keys" ]; then
       printf 'decisions_reviewed=1\ndecision_keys=%s\n' "$keys" >> "$meta"
     fi
+    if [ "$(meta_value "$meta" ideas_reviewed)" != 1 ] || [ "$previous_ideas" != "$idea_keys" ]; then
+      printf 'ideas_reviewed=1\nidea_ids=%s\n' "$idea_keys" >> "$meta"
+    fi
     fm_lock_release "$CAPTAIN_META_LOCK"
     CAPTAIN_META_LOCK_HELD=0
 
-    # Transfer every still-open status decision to the durable captain-held
-    # inventory so the live status fold does not duplicate the same Captain's
-    # Call item. The transfer line is this home's own bookkeeping close,
-    # written by the turn that just reviewed the inventory, so it uses the
-    # guarded self-announced append (bin/fm-wake-lib.sh) and does not wake this
-    # same session; an append failure still fails this command loudly.
     if [ -n "$keys" ]; then
       while IFS=$'\t' read -r key _verb _summary; do
         [ -n "$key" ] || continue
@@ -836,11 +1134,12 @@ $raw_open
 EOF
     fi
   fi
-  printf 'complete: %s captain-call inventory reviewed%s\n' "$origin" "${keys:+ ($keys)}"
+  printf 'complete: %s captain-call and product-idea inventories reviewed%s%s\n' \
+    "$origin" "${keys:+; captain-calls=$keys}" "${idea_keys:+; ideas=$idea_keys}"
 }
 
 command_verify() {
-  local origin=${1:-} meta reviewed keys entry key open
+  local origin=${1:-} meta reviewed keys entry key open ideas_reviewed idea_keys idea_id
   [ "$#" -eq 1 ] || { usage >&2; exit 2; }
   validate_slug origin-id "$origin"
   meta="$STATE/$origin.meta"
@@ -864,6 +1163,20 @@ EOF
   done <<EOF
 $open
 EOF
+  ideas_reviewed=$(meta_value "$meta" ideas_reviewed)
+  if [ -n "$ideas_reviewed" ]; then
+    [ "$ideas_reviewed" = 1 ] \
+      || fail "origin $origin has an invalid product-idea inventory attestation"
+    idea_keys=$(meta_value "$meta" idea_ids)
+    if [ -n "$idea_keys" ]; then
+      while IFS= read -r idea_id; do
+        [ -n "$idea_id" ] || continue
+        verify_idea_row "$origin" "$idea_id"
+      done <<EOF
+$(printf '%s\n' "$idea_keys" | tr ',' '\n')
+EOF
+    fi
+  fi
   printf 'verified: %s captain-call inventory\n' "$origin"
 }
 
@@ -995,6 +1308,8 @@ case "${1:-}" in
   binding) shift; command_binding "$@" ;;
   complete) shift; command_complete "$@" ;;
   verify) shift; command_verify "$@" ;;
+  state) shift; command_state "$@" ;;
+  supersede) shift; command_supersede "$@" ;;
   diverged) shift; command_diverged "$@" ;;
   -h|--help) usage ;;
   *) usage >&2; exit 2 ;;

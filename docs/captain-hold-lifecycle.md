@@ -19,14 +19,28 @@ An exact retry is idempotent only when the requested close mode matches the newe
 On a task closed outside the script, `answer` records the missing block only when the captain-hold annotations tasks-axi preserves through a close prove the captain owned it, and it verifies the task stays closed.
 A hold whose `--until` date has passed keeps those annotations while tasks-axi reports it no longer held, so an expired deferral remains answerable.
 
-The `complete` subcommand unions the reviewed captain-held task ids into `decision_keys=` and appends `decisions_reviewed=1` while originating task metadata is live.
+The `complete` subcommand unions the reviewed captain-held task ids into `decision_keys=`, appends `decisions_reviewed=1`, and requires exactly one product-idea attestation while originating task metadata is live.
+A `--no-ideas` attestation creates the home-local ledger lazily when needed, while `--ideas <PI-id>...` unions `idea_ids=` only after every named row is validated against its originating report section.
+The resulting metadata carries `ideas_reviewed=1`; repeated completion is idempotent and never erases an earlier decision or idea inventory.
 A post-teardown visual review can complete against the surviving report and durable tasks without recreating volatile task metadata.
-It accepts `--none` as an explicit semantic inventory result, refused while the origin still has a lifecycle-open keyed status decision, and verifies every listed task against tasks-axi before recording completion.
+It accepts `--none` as an explicit captain-call inventory result, refused while the origin still has a lifecycle-open keyed status decision, and verifies every listed task against tasks-axi before recording completion.
 With a non-empty inventory it appends a `captain-held [key=<key>]: tracked by <inventory>` transfer event for every still-open keyed status decision, which `bin/fm-classify-lib.sh` recognizes as closing the live status copy without claiming that the captain has answered it.
 
 Scout teardown calls the read-only `verify` subcommand after checking for the report and before removing any source state.
-`verify` requires the recorded attestation, requires every recorded inventory entry to still be durable (actively captain-held, or carrying a recorded answer), and fails on any keyed status decision that opened after the last `complete`, which makes re-running `complete` the repair.
+`verify` requires the recorded decision and idea attestations, requires every recorded captain-call inventory entry to still be durable (actively captain-held, or carrying a recorded answer), revalidates every idea id against the ledger, and fails on any keyed status decision that opened after the last `complete`, which makes re-running `complete` the repair.
+Metadata written before product-idea attestation existed remains grandfathered only when it carries the earlier completed decision attestation.
 The `--force` path remains the explicit captain-approved discard escape hatch.
+
+## State and later authority
+
+`state <task-id>` is the canonical read-only resolver for recovery and durable checks.
+It prints `open` for a live captain-held task, `resolved` for a recognized answered or released record, and `superseded` only after revalidating the exact decision-file and shipped-task binding.
+`state --binding` adds the normalized decision path and shipped task for the superseded state and `-` placeholders otherwise.
+
+`supersede <task-id> --decision-file data/decisions/<file> --shipped-task <id>` reconciles an older captain call after later authority already shipped.
+It accepts only an ordinary home-relative decision file and an already-Done ship task, records their exact identities plus the decision digest in the captain-held task body, archives the previous body through tasks-axi, and closes the task only after the binding can be re-read.
+An exact replay is idempotent, while changed file bytes, a changed path, or a changed shipped task fail closed.
+Records written by the retired decision-hold owner remain readable so existing homes need no destructive data rewrite.
 
 ## Answer-time closure
 
@@ -78,16 +92,17 @@ If tasks-axi is unavailable or its listing cannot be parsed, the guard cannot re
 
 Older installs created derived `<origin>-decision-<key>` identities through the retired `bin/fm-decision-hold.sh`.
 Those rows are already plain task ids, so they render, answer, verify, and close through the collapsed surfaces with no data migration.
-Three legacy inputs are resolved in place: a `decision_keys=` metadata entry that names no task resolves through `<origin>-decision-<entry>`; a channel key that names no task resolves the same way when the source's binding carries a concrete legacy origin; and resolution records written by the old script are recognized wherever a record is read.
+Legacy metadata carrying only `decisions_reviewed=1` and `decision_keys=` remains verifiable, and post-upgrade metadata adds the independent `ideas_reviewed=1` and `idea_ids=` attestation.
+Three legacy inputs are resolved in place: a `decision_keys=` metadata entry that names no task resolves through `<origin>-decision-<entry>`; a channel key that names no task resolves the same way when the source's binding carries a concrete legacy origin; and resolution or supersession records written by the old script are recognized wherever a record is read.
 The shim recognizes an exact replay of a pre-collapse routed resolution by its historical answer digest and routed ids, then finishes any still-recorded dependency-edge cleanup without rewriting the old decision text.
 `bin/fm-decision-hold.sh` itself remains for one release as a thin command-mapping shim over `bin/fm-captain-hold.sh`, so in-flight work briefed before the collapse keeps working; its header owns the exact mapping.
 
 ## Verification record
 
-Verification date: 2026-08-21.
+Verification date: 2026-08-24.
 
 The focused end-to-end regression suite is `tests/fm-captain-hold-lifecycle.test.sh`, using only synthetic `sample` identities and decision text.
-It proves: the reconstructed silent-divergence case is signalled - a status resolution over a still-open captain-held task reaches both `diverged` and the drain's `RECORD DIVERGENCE` section, under the collapsed and the legacy identity alike, while the backlog task, its hold, and the status log all survive the report unchanged and the printed hint names both reconciliation directions; the false-signal boundary holds - a captain call with no routed work item, a verified `captain-held` transfer, a still-open status decision, an already answered call, and an ordinary task whose keyed question was answered all stay silent; a report-only unresolved captain call refuses `--none` completion before teardown can erase the source; non-forced scout teardown always requires the durable inventory verification; the recorded-answer guard (a bare `tasks-axi done` close fails `verify` until `answer` records the captain's word, and an ordinary finished task cannot be dressed up as an answered call); answer-time closure through a bound channel with task-id keys, including the `release` close mode, mode-matched replay idempotence, and the refusal of drifted, mode-mismatched, absent, unheld, and already-closed keys; the chat channel reaching the same intake; deferral through `--until` leaving `captain_actionable` false until due; and every legacy path (composed identities through the shim, pre-collapse `decision_keys=` metadata, routed-resolution replay, and a concrete-origin binding).
+It proves: the reconstructed silent-divergence case is signalled - a status resolution over a still-open captain-held task reaches both `diverged` and the drain's `RECORD DIVERGENCE` section, under the collapsed and the legacy identity alike, while the backlog task, its hold, and the status log all survive the report unchanged and the printed hint names both reconciliation directions; the false-signal boundary holds - a captain call with no routed work item, a verified `captain-held` transfer, a still-open status decision, an already answered call, and an ordinary task whose keyed question was answered all stay silent; a report-only unresolved captain call refuses `--none` completion before teardown can erase the source; non-forced scout teardown always requires the durable inventory verification; the recorded-answer guard (a bare `tasks-axi done` close fails `verify` until `answer` records the captain's word, and an ordinary finished task cannot be dressed up as an answered call); answer-time closure through a bound channel with task-id keys, including the `release` close mode, mode-matched replay idempotence, and the refusal of drifted, mode-mismatched, absent, unheld, and already-closed keys; product-idea attestation, union, and idempotent `--no-ideas` retry; canonical `state` for open and released-answer records; later-authority supersession with exact replay and decision-digest drift refusal; the chat channel reaching the same intake; deferral through `--until` leaving `captain_actionable` false until due; and every legacy path (composed identities through the shim, pre-collapse `decision_keys=` and post-collapse `ideas_reviewed=` metadata shapes, old resolution and supersession bodies, routed-resolution replay, and a concrete-origin binding).
 
 `tests/fm-classify-decision-key.test.sh` pins `status_key_closing_verb` itself: it separates a resolution from the durable-transfer close and from a still-open key, reports the last real transition across re-openings and both key positions, and treats a prose mention as no transition.
 

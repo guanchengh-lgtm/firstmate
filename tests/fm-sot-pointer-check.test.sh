@@ -426,7 +426,9 @@ test_historical_checkout_fixture_reverses_clean_to_one_and_back() {
   FM_HOME="$home" "$CHECK" \
     --expect-rule R-SOT-SUPERSEDED-HOLD --expect-count 0 >/dev/null \
     || fail "derived canonical fixture was not clean"
-  clean_hash=$(shasum -a 256 "$home/data/backlog.md" | awk '{print $1}')
+  sed 's/Supersession recorded by fm-decision-hold\./Supersession recorded by fm-captain-hold./' \
+    "$home/data/backlog.md" > "$home/data/backlog.normalized"
+  clean_hash=$(shasum -a 256 "$home/data/backlog.normalized" | awk '{print $1}')
   clean_rows=$(grep -c -- "$hold" "$home/data/backlog.md")
   [ "$clean_rows" -eq 1 ] || fail "canonical fixture has $clean_rows rows for the selected hold"
 
@@ -454,7 +456,9 @@ test_historical_checkout_fixture_reverses_clean_to_one_and_back() {
   sed -E 's/\(done [0-9]{4}-[0-9]{2}-[0-9]{2}\)/(done '"$source_date"')/' \
     "$home/data/backlog.md" > "$home/data/backlog.pinned"
   mv "$home/data/backlog.pinned" "$home/data/backlog.md"
-  roundtrip_hash=$(shasum -a 256 "$home/data/backlog.md" | awk '{print $1}')
+  sed 's/Supersession recorded by fm-decision-hold\./Supersession recorded by fm-captain-hold./' \
+    "$home/data/backlog.md" > "$home/data/backlog.normalized"
+  roundtrip_hash=$(shasum -a 256 "$home/data/backlog.normalized" | awk '{print $1}')
   [ "$roundtrip_hash" = "$clean_hash" ] \
     || fail "derived fixture did not round-trip to its canonical backlog hash"
   jq -e '

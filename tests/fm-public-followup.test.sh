@@ -1470,7 +1470,7 @@ SH
   ')
   assert_contains "$command" "--outcome-text" \
     "the exact rechain command must remain continuous through outcome text"
-  command=${command/"$ROOT/bin/fm-public-followup-emit.sh"/"$parent/fakebin/record-emit"}
+  command="$parent/fakebin/record-emit${command#"$ROOT/bin/fm-public-followup-emit.sh"}"
   command=${command//<value>/https://github.com/example/repo/pull/99}
   RECORD_ARGS="$command_log" bash -c "$command" \
     || fail "the exact rechain command must execute after filling its deliverable value"
@@ -1975,6 +1975,7 @@ test_retention_creates_no_false_teardown_refusal() {
     "harness=codex" \
     "kind=ship" \
     "mode=no-mistakes"
+  fm_write_none_measure "$home" ship-retain
   emit_terminal "$home" "$home" pf-retain main ship-retain >/dev/null || fail "emit failed"
   run_pf "$home" consume >/dev/null || fail "consume failed"
   FAKE_CURL_LOG="$home/curl.log" run_pf "$home" deliver pf-retain >/dev/null || fail "delivery failed"
@@ -2130,6 +2131,7 @@ test_x_request_teardown_warns_when_final_unposted() {
     "kind=ship" \
     "mode=local-only" \
     "x_request=req-legacy-final"
+  fm_write_none_measure "$home" linked-task
   rc=0
   PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
