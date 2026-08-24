@@ -177,12 +177,14 @@ fi
 # pr_head is recorded only when the forge's CLI can supply it. gh exposes the
 # head commit as a selectable field; plain glab exposes it only inside its JSON
 # output, which would need a JSON processor firstmate does not require, so a
-# GitLab task records no pr_head. Both consumers already treat it as optional:
+# GitLab task records no pr_head. Consumers already treat it as optional:
 # bin/fm-teardown.sh reads the head from the forge at teardown rather than from
 # metadata and falls back to its provider-agnostic content check, and
 # bin/fm-review-diff.sh resolves the head from the remote when none is recorded.
-# bin/fm-pr-merge.sh reads a GitLab head live at merge time for the same reason,
-# and treats a recorded value that disagrees as stale rather than authoritative.
+# bin/fm-pr-merge.sh is GitHub-only (see its header invariant): it refuses
+# non-github providers before recording or reading forge state, so a missing
+# GitLab pr_head never reaches the merge path. Restoring a GitLab merge arm
+# requires an equivalent validation-truth proof first, not a recorded pr_head.
 WT=$(grep '^worktree=' "$META" | tail -1 | cut -d= -f2- || true)
 PR_HEAD=
 if [ "$PROVIDER" = github ] && [ -n "$WT" ] && [ -d "$WT" ] && command -v gh >/dev/null 2>&1; then
