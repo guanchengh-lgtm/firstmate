@@ -2903,27 +2903,20 @@ EOF
   esac
   [ ! -e "$state/task-b.check.sh" ] || fail "refused GitLab arming left a poll armed"
 
-  # The merge path addresses the forge the URL names, and never the other one.
-  # This fixture's glab answers with the field output the poll reads, so the
-  # merge's JSON read cannot be parsed, which must refuse rather than merge on a
-  # state it could not read.
+  # The merge path is GitHub-only by standing captain decision (2026-08-24):
+  # a well-formed GitLab merge request URL is followed by the watcher above but
+  # must refuse the merge wrapper before any forge CLI runs or state is read.
   write_task_meta "$dir" task-c
   : > "$dir/glab.log"
-  # The merge path needs jq before it reads anything, so this case supplies it
-  # and the refusal below is the unreadable state rather than a missing tool.
-  ln -sf "$REAL_JQ" "$dir/fakebin/jq"
   set +e
   run_merge_entry "$dir" task-c "$url" >/dev/null 2> "$dir/merge-c.err"
   rc=$?
   set -e
-  [ "$rc" -ne 0 ] || fail "merge wrapper merged a GitLab merge request it could not read"
-  grep -qF 'could not read the GitLab merge request state before merging' "$dir/merge-c.err" \
-    || fail "merge wrapper refused for some reason other than the state it could not read"
+  [ "$rc" -eq 2 ] || fail "merge wrapper did not refuse a GitLab merge request URL"
+  grep -qF 'error: invalid PR merge request' "$dir/merge-c.err" \
+    || fail "merge wrapper refused for some reason other than the GitHub-only provider check"
   [ ! -s "$dir/gh-axi.log" ] || fail "merge wrapper reached the GitHub CLI for a GitLab URL"
-  grep -qF "mr view 7 -R https://gitlab.example/group/subgroup/project" "$dir/glab.log" \
-    || fail "merge wrapper did not read the merge request through glab at its own instance"
-  ! grep -qF ' mr merge ' "$dir/glab.log" \
-    || fail "merge wrapper merged despite an unreadable merge request state"
+  [ ! -s "$dir/glab.log" ] || fail "merge wrapper invoked glab for a refused GitLab URL"
 
   pass "GitLab merge requests are followed on any instance and never wake falsely"
 }
