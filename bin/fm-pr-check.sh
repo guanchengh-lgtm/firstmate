@@ -34,6 +34,8 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-validation-truth-lib.sh"
 # shellcheck source=bin/fm-ff-lib.sh
 . "$SCRIPT_DIR/fm-ff-lib.sh"
+# shellcheck source=bin/fm-wake-lib.sh
+. "$SCRIPT_DIR/fm-wake-lib.sh"
 
 # Path class owned by this script header. Direct-PR / local-only have no test
 # step; those modes are skipped before listing.
@@ -179,6 +181,8 @@ fi
 # bin/fm-teardown.sh reads the head from the forge at teardown rather than from
 # metadata and falls back to its provider-agnostic content check, and
 # bin/fm-review-diff.sh resolves the head from the remote when none is recorded.
+# bin/fm-pr-merge.sh reads a GitLab head live at merge time for the same reason,
+# and treats a recorded value that disagrees as stale rather than authoritative.
 WT=$(grep '^worktree=' "$META" | tail -1 | cut -d= -f2- || true)
 PR_HEAD=
 if [ "$PROVIDER" = github ] && [ -n "$WT" ] && [ -d "$WT" ] && command -v gh >/dev/null 2>&1; then
@@ -190,15 +194,26 @@ fi
 breakage_advisory || true
 
 META_TMP=
+META_LOCK=
+META_LOCK_HELD=0
 pr_check_cleanup() {
   fm_pr_poll_cleanup
   [ -z "$META_TMP" ] || rm -f -- "$META_TMP"
+  if [ "$META_LOCK_HELD" = 1 ]; then
+    fm_lock_release "$META_LOCK" || true
+    META_LOCK_HELD=0
+  fi
 }
 trap pr_check_cleanup EXIT
 trap 'exit 1' HUP INT TERM
 fm_pr_poll_prepare "$STATE" "$ID" "$PROVIDER" "$URL" "$HOST" "$PROJECT_PATH" "$NUMBER" "$SCRIPT_DIR/fm-pr-poll.sh" \
   || { echo "error: could not prepare PR poll" >&2; exit 1; }
 
+META_LOCK=$(fm_meta_lock_path "$META") || exit 1
+fm_lock_acquire_wait "$META_LOCK"
+META_LOCK_HELD=1
+[ -f "$META" ] && [ ! -L "$META" ] && [ "$(fm_pr_file_link_count "$META")" = 1 ] \
+  || { echo "error: task metadata is unavailable" >&2; exit 1; }
 META_DEVICE=$(fm_pr_file_device "$META") || exit 1
 STATE_DEVICE=$(fm_pr_file_device "$STATE") || exit 1
 [ "$META_DEVICE" = "$STATE_DEVICE" ] || { echo "error: task metadata is unavailable" >&2; exit 1; }
@@ -225,6 +240,8 @@ fm_pr_metadata_identity_parse "$META" || exit 1
 [ "$FM_PR_META_PROVIDER" = "$PROVIDER" ] && [ "$FM_PR_META_URL" = "$URL" ] \
   && [ "$FM_PR_META_HOST" = "$HOST" ] && [ "$FM_PR_META_PATH" = "$PROJECT_PATH" ] \
   && [ "$FM_PR_META_NUMBER" = "$NUMBER" ] || exit 1
+fm_lock_release "$META_LOCK"
+META_LOCK_HELD=0
 
 fm_pr_poll_publish_prepared || {
   echo "error: could not publish PR poll" >&2

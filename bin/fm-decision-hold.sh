@@ -31,6 +31,9 @@
 #   fm-decision-hold.sh supersede <origin-id> <decision-key> \
 #     --decision-file data/decisions/<file> --shipped-task <task-id>
 #   fm-decision-hold.sh state <hold-id> [--binding]
+#   fm-decision-hold.sh answer|decline|repair <origin-id> <decision-key> \
+#     --decision-file <path>
+#   fm-decision-hold.sh answers|bind|unbind|binding ...
 #
 # `complete` is the shared investigation and visual-review completion gate.
 # `--none` is an explicit semantic attestation that the just-reviewed surface has
@@ -71,6 +74,7 @@ FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
+CAPTAIN_HOLD="$SCRIPT_DIR/fm-captain-hold.sh"
 
 # shellcheck source=bin/fm-classify-lib.sh
 # shellcheck disable=SC1091
@@ -775,6 +779,26 @@ command_resolve() {
   printf 'resolved: %s -> %s\n' "$id" "$routed"
 }
 
+# Keep the retired short-key intake surface working while the richer origin
+# decision lifecycle remains authoritative. The captain-hold primitive owns
+# answer ingestion and source bindings; only the legacy identity composition
+# belongs here.
+command_close_compat() {  # <origin> <key> --decision-file <path>
+  local origin=${1:-} key=${2:-} id decision_file=''
+  [ "$#" -ge 2 ] || { usage >&2; exit 2; }
+  id=$(hold_id "$origin" "$key")
+  shift 2
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --decision-file) shift; decision_file=${1:-} ;;
+      *) usage >&2; exit 2 ;;
+    esac
+    shift
+  done
+  [ -n "$decision_file" ] || fail "--decision-file is required"
+  exec "$CAPTAIN_HOLD" answer "$id" --decision-file "$decision_file"
+}
+
 case "${1:-}" in
   id) shift; command_id "$@" ;;
   hold) shift; command_hold "$@" ;;
@@ -783,6 +807,11 @@ case "${1:-}" in
   resolve) shift; command_resolve "$@" ;;
   supersede) shift; command_supersede "$@" ;;
   state) shift; command_state "$@" ;;
+  answer|decline|repair) shift; command_close_compat "$@" ;;
+  answers) shift; exec "$CAPTAIN_HOLD" answers "$@" ;;
+  bind) shift; exec "$CAPTAIN_HOLD" bind "$@" ;;
+  unbind) shift; exec "$CAPTAIN_HOLD" unbind "$@" ;;
+  binding) shift; exec "$CAPTAIN_HOLD" binding "$@" ;;
   -h|--help) usage ;;
   *) usage >&2; exit 2 ;;
 esac
