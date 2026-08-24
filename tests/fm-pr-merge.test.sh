@@ -29,7 +29,6 @@ fm_git_identity fmtest fmtest@example.invalid
 
 PR_MERGE="$ROOT/bin/fm-pr-merge.sh"
 TMP_ROOT=$(fm_test_tmproot fm-pr-merge-tests)
-BASE_PATH=$PATH
 
 # The GitLab fixture, used only to prove refusal. A placeholder host that
 # resolves nowhere, and a namespace deeper than one group so the URL parses as
