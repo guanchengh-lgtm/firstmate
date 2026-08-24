@@ -2834,6 +2834,12 @@ if [ "$RELAUNCH" -eq 1 ]; then
   SPAWN_META_LOCK_HELD=1
   SPAWN_META_TMP="$STATE/.$ID.meta.relaunch.${BASHPID:-$$}"
   SPAWN_META_PATH=$SPAWN_META_TMP
+elif [ -d "$SPAWN_META_PATH" ]; then
+  # Bash 3.2 reports a failed redirection onto a directory without failing the
+  # guarded write below, so refuse it explicitly and let the abort trap release
+  # any backend resources already created.
+  echo "$SPAWN_META_PATH: Is a directory" >&2
+  exit 1
 fi
 preserve_relaunch_meta() {
   awk -F= '
