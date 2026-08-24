@@ -2935,7 +2935,6 @@ if [ "$KIND" = secondmate ]; then
   if [ "$FORCE" = "--force" ]; then
     validate_firstmate_home_children_removal "$HOME_PATH" || exit 1
     preflight_descendant_task_locks "$HOME_PATH" || exit 1
-    validate_firstmate_home_children_removal "$HOME_PATH" || exit 1
     validate_measure_at "$DATA" "$ID" || exit 1
     validate_firstmate_home_children_measures "$HOME_PATH" || exit 1
     MEASURE_VALIDATED=1

@@ -143,6 +143,7 @@ test_metadata_lock_serializes_destructive_cleanup() {
   fm_write_meta "$dir/home/state/$id.meta" \
     "window=isolated:fm-$id" "endpoint_task_id=$id" \
     "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+  fm_write_none_measure "$dir/home" "$id"
   lock="$dir/home/state/.meta-$id.lock"
   ready="$dir/meta-lock-ready"
   release="$dir/meta-lock-release"
