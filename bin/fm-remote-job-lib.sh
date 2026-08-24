@@ -263,13 +263,14 @@ fm_remote_job_build_child_path() { # <remote-root>
 
 fm_remote_job_operator_tool() { # <tool>; resolves only outside the checkout bin
   local tool=$1 resolved
+  # bash 3.2 can retain a command hash from the caller's wider PATH even
+  # after a temporary PATH assignment. Clear only this lookup subshell so
+  # resolution is proven against the composed operator path itself. Keep the
+  # PATH binding as a simple-command prefix so it cannot look like a lost
+  # subshell assignment to later readers of PATH in this process.
   resolved=$(
-    PATH="$FM_REMOTE_JOB_OPERATOR_PATH"
-    # bash 3.2 can retain a command hash from the caller's wider PATH even
-    # after a temporary PATH assignment. Clear only this lookup subshell so
-    # resolution is proven against the composed operator path itself.
     hash -r 2>/dev/null || true
-    command -v "$tool" 2>/dev/null || true
+    PATH="$FM_REMOTE_JOB_OPERATOR_PATH" command -v "$tool" 2>/dev/null || true
   )
   case "$resolved" in
     /*)
