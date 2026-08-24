@@ -169,9 +169,6 @@ packed_refs_lock_path() {
 # a session-start refresh (which discards fleet-sync stderr) still surfaces it.
 fetch_with_packed_refs_lock_guard() {
   local rc attempt=0 lock lock_desc
-  if [ -n "${FM_FLEET_SYNC_STARTED_FILE:-}" ]; then
-    : > "$FM_FLEET_SYNC_STARTED_FILE" 2>/dev/null || true
-  fi
   FETCH_OUTPUT=$(git -C "$PROJ" fetch origin --prune --quiet 2>&1); rc=$?
   [ "$rc" -eq 0 ] && return 0
   is_packed_refs_lock_error "$FETCH_OUTPUT" || return "$rc"

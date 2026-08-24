@@ -305,8 +305,7 @@ fleet_sync() {
   monitor_was_on=0
   case $- in *m*) monitor_was_on=1 ;; esac
   set -m 2>/dev/null || true
-  FM_FLEET_SYNC_STARTED_FILE=${FM_BOOTSTRAP_FLEET_SYNC_STARTED_FILE:-} \
-    "$FM_ROOT/bin/fm-fleet-sync.sh" >"$tmp" 2>/dev/null &
+  "$FM_ROOT/bin/fm-fleet-sync.sh" >"$tmp" 2>/dev/null &
   pid=$!
 
   start=$SECONDS
@@ -1326,28 +1325,15 @@ if [ "${FM_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
   # depend on them, so it starts in the background and overlaps their wall clock.
   fleet_sync_pid=
   fleet_sync_out=
-  fleet_sync_started=
   if network_phase && network_sweep_authorized 'project clone refresh'; then
     fleet_sync_out=$(mktemp "${TMPDIR:-/tmp}/fm-bootstrap-fleet.XXXXXX") || fleet_sync_out=
     if [ -n "$fleet_sync_out" ]; then
-      fleet_sync_started="$fleet_sync_out.started"
       (
         __fm_timing_stamp=$(fm_timing_now_ms)
-        FM_BOOTSTRAP_FLEET_SYNC_STARTED_FILE=$fleet_sync_started fleet_sync
+        fleet_sync
         fm_timing_record phase fleet-sync "$__fm_timing_stamp"
       ) >"$fleet_sync_out" 2>&1 &
       fleet_sync_pid=$!
-      # Starting a background shell does not guarantee that its first fetch has
-      # reached the kernel before the remote probe workers are scheduled. Wait
-      # for the fleet owner to cross that boundary (or finish without a fetch)
-      # so the promised overlap is real rather than scheduler-dependent.
-      fleet_sync_start_wait=0
-      while [ ! -f "$fleet_sync_started" ] && kill -0 "$fleet_sync_pid" 2>/dev/null \
-        && [ "$fleet_sync_start_wait" -lt 100 ]; do
-        sleep 0.01
-        fleet_sync_start_wait=$((fleet_sync_start_wait + 1))
-      done
-      [ ! -f "$fleet_sync_started" ] || sleep 0.01
     else
       __fm_timing_stamp=$(fm_timing_now_ms)
       fleet_sync
@@ -1376,7 +1362,7 @@ if [ "${FM_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ]; then
   if [ -n "$fleet_sync_pid" ]; then
     wait "$fleet_sync_pid" || true
     cat "$fleet_sync_out"
-    rm -f "$fleet_sync_out" "$fleet_sync_started"
+    rm -f "$fleet_sync_out"
   fi
 fi
 local_phase && secondmate_handoff_detect

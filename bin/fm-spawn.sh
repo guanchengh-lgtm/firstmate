@@ -2834,13 +2834,6 @@ if [ "$RELAUNCH" -eq 1 ]; then
   SPAWN_META_LOCK_HELD=1
   SPAWN_META_TMP="$STATE/.$ID.meta.relaunch.${BASHPID:-$$}"
   SPAWN_META_PATH=$SPAWN_META_TMP
-elif [ -e "$SPAWN_META_PATH" ] || [ -L "$SPAWN_META_PATH" ]; then
-  if [ -d "$SPAWN_META_PATH" ]; then
-    echo "$SPAWN_META_PATH: Is a directory" >&2
-  else
-    echo "error: metadata path '$SPAWN_META_PATH' already exists and is not a safe fresh-spawn target" >&2
-  fi
-  exit 1
 fi
 preserve_relaunch_meta() {
   awk -F= '
