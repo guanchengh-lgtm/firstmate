@@ -1,0 +1,18 @@
+breakage: tests/fm-afk-launch.test.sh subject bin/fm-afk-launch.sh:75 selector lock-path red /Users/AI/.no-mistakes/evidence/01M0TCXG5RBZXJ1K61MJ6XYKZJ/breakage/fm-afk-launch.test.red.log
+breakage: tests/fm-backlog-handoff.test.sh subject bin/fm-backlog-handoff.sh:113 selector arg-count-ge-2 red /Users/AI/.no-mistakes/evidence/01M0TCXG5RBZXJ1K61MJ6XYKZJ/breakage/fm-backlog-handoff.test.red.log
+breakage: tests/fm-branch-supervision.test.sh subject bin/fm-branch-outcome.sh:93 selector verdict-captain red /Users/AI/.no-mistakes/evidence/01M0TCXG5RBZXJ1K61MJ6XYKZJ/breakage/fm-branch-supervision.test.red.log
+breakage: tests/fm-captain-hold-lifecycle.test.sh subject bin/fm-captain-hold.sh:1303 selector hold-dispatch red /Users/AI/.no-mistakes/evidence/01M0TCXG5RBZXJ1K61MJ6XYKZJ/breakage/fm-captain-hold-lifecycle.test.red.log
+breakage: tests/fm-composer-lib.test.sh subject bin/fm-composer-lib.sh:497 selector agent-glyph-empty-to-pending red /Users/AI/.no-mistakes/evidence/01M0TCXG5RBZXJ1K61MJ6XYKZJ/breakage/fm-composer-lib.test.red.log
+breakage: tests/fm-control-relaunch.test.sh subject bin/fm-control.sh:177 selector verb-allowed red /Users/AI/.no-mistakes/evidence/01M0TCXG5RBZXJ1K61MJ6XYKZJ/breakage/fm-control-relaunch.test.red.log
+breakage: tests/fm-muse-harness.test.sh subject bin/fm-harness.sh:95 selector muse-detect red /Users/AI/.no-mistakes/evidence/01M0TCXG5RBZXJ1K61MJ6XYKZJ/breakage/fm-muse-harness.test.red.log
+breakage: tests/fm-pending-reply.test.sh subject bin/fm-pending-reply-lib.sh:249 selector corr-len-16 red /Users/AI/.no-mistakes/evidence/01M0TCXG5RBZXJ1K61MJ6XYKZJ/breakage/fm-pending-reply.test.red.log
+breakage: tests/fm-pi-watch-extension.test.sh subject .pi/extensions/fm-primary-pi-watch.ts:571 selector tool-name red /Users/AI/.no-mistakes/evidence/01M0TCXG5RBZXJ1K61MJ6XYKZJ/breakage/fm-pi-watch-extension.test.red.log
+breakage: tests/fm-public-followup.test.sh subject bin/fm-public-followup.sh:1326 selector register-dispatch red /Users/AI/.no-mistakes/evidence/01M0TCXG5RBZXJ1K61MJ6XYKZJ/breakage/fm-public-followup.test.red.log
+breakage: tests/fm-secondmate-safety.test.sh subject bin/fm-project-mode.sh:53 selector missing-registry-default red /Users/AI/.no-mistakes/evidence/01M0TCXG5RBZXJ1K61MJ6XYKZJ/breakage/fm-secondmate-safety.test.red.log
+breakage: tests/fm-sot-pointer-check.test.sh subject bin/fm-sot-pointer-check.sh:44 selector default-strict red /Users/AI/.no-mistakes/evidence/01M0TCXG5RBZXJ1K61MJ6XYKZJ/breakage/fm-sot-pointer-check.test.red.log
+breakage: tests/fm-spawn-pool-base-freshen.test.sh subject bin/fm-spawn.sh:1931 selector freshen-always-fail red /Users/AI/.no-mistakes/evidence/01M0TCXG5RBZXJ1K61MJ6XYKZJ/breakage/fm-spawn-pool-base-freshen.test.red.log
+breakage: tests/fm-teardown.test.sh subject bin/fm-teardown.sh:333 selector meta-exists-flipped red /Users/AI/.no-mistakes/evidence/01M0TCXG5RBZXJ1K61MJ6XYKZJ/breakage/fm-teardown.test.red.log
+breakage: tests/fm-pr-check-security.test.sh subject bin/fm-pr-check.sh:136 selector always-invalid-request red /Users/AI/.no-mistakes/evidence/01M0TCXG5RBZXJ1K61MJ6XYKZJ/breakage/fm-pr-check-security.test.red.log
+breakage: tests/fm-pr-merge.test.sh subject bin/fm-pr-merge.sh:51 selector github-only-guard-inverted red /Users/AI/.no-mistakes/evidence/01M0TCXG5RBZXJ1K61MJ6XYKZJ/breakage/fm-pr-merge.test.red.log
+breakage: tests/fm-teardown-endpoint-safety.test.sh subject bin/fm-backend.sh:386 selector validate-always-return-0 red /Users/AI/.no-mistakes/evidence/01M0TCXG5RBZXJ1K61MJ6XYKZJ/breakage/fm-teardown-endpoint-safety.test.red.log
+breakage: final porcelain empty=True status=''

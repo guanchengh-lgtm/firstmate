@@ -1,0 +1,18 @@
+tests/fm-afk-launch.test.sh|bin/fm-afk-launch.sh|FM_AFK_LAUNCH_WS_LABEL="firstmate-afk-daemon"|FM_AFK_LAUNCH_WS_LABEL="firstmate-afk-daemon-BROKEN"|ws-label
+tests/fm-backlog-handoff.test.sh|bin/fm-backlog-handoff.sh|[ "$#" -ge 2 ] || { echo "usage: fm-backlog-handoff.sh <secondmate-id> <item-key>..." >&2; exit 1; }|[ "$#" -ge 99 ] || { echo "usage: fm-backlog-handoff.sh <secondmate-id> <item-key>..." >&2; exit 1; }|arg-count-ge-2
+tests/fm-branch-supervision.test.sh|bin/fm-branch-outcome.sh|select((.summary | type) == "string" and (.verdict == "routine" or .verdict == "captain"))|select((.summary | type) == "string" and (.verdict == "routine" or .verdict == "captainBROKEN"))|verdict-captain
+tests/fm-captain-hold-lifecycle.test.sh|bin/fm-captain-hold.sh|printf 'fm-captain-hold: %s\n' "$*" >&2|printf 'fm-captain-hold-BROKEN: %s\n' "$*" >&2|die-prefix
+tests/fm-composer-lib.test.sh|bin/fm-composer-lib.sh|empty|pending-BROKEN|NEEDS_BETTER
+tests/fm-control-relaunch.test.sh|bin/fm-control.sh|NEEDS_BETTER|NEEDS_BETTER|NEEDS_BETTER
+tests/fm-muse-harness.test.sh|bin/fm-harness.sh|muse\|muse-bin-\*) echo muse; return ;;|muse\|muse-bin-\*) echo NOTMUSE; return ;;|muse-detect
+tests/fm-pending-reply.test.sh|bin/fm-pending-reply-lib.sh|NEEDS_BETTER|NEEDS_BETTER|NEEDS_BETTER
+tests/fm-pi-watch-extension.test.sh|.pi/extensions/fm-primary-pi-watch.ts|const marker = `${state}/.pi-watch-extension-loaded`;|const marker = `${state}/.pi-watch-extension-loaded-BROKEN`;|marker-path
+tests/fm-public-followup.test.sh|bin/fm-public-followup.sh|NEEDS_BETTER|NEEDS_BETTER|NEEDS_BETTER
+tests/fm-secondmate-safety.test.sh|bin/fm-project-mode.sh|echo "no-mistakes off"|echo "direct-PR off"|default-mode
+tests/fm-sot-pointer-check.test.sh|bin/fm-sot-pointer-check.sh|strict=0|strict=1|default-strict
+tests/fm-spawn-pool-base-freshen.test.sh|bin/fm-spawn.sh|NEEDS_BETTER|NEEDS_BETTER|NEEDS_BETTER
+tests/fm-teardown.test.sh|bin/fm-teardown.sh|NEEDS_BETTER|NEEDS_BETTER|NEEDS_BETTER
+tests/fm-pr-check-security.test.sh|bin/fm-pr-check.sh|NEEDS_BETTER|NEEDS_BETTER|NEEDS_BETTER
+tests/fm-pr-merge.test.sh|bin/fm-pr-merge.sh|[ "$FM_PR_PROVIDER" != github ]|[ "$FM_PR_PROVIDER" = github ]|github-only-guard
+tests/fm-teardown-endpoint-safety.test.sh|bin/fm-teardown.sh|NEEDS_BETTER2|NEEDS_BETTER2|NEEDS_BETTER2
+tests/fm-cmux-claude-composer-live-e2e.test.sh|bin/fm-send.sh|NEEDS_BETTER|NEEDS_BETTER|NEEDS_BETTER

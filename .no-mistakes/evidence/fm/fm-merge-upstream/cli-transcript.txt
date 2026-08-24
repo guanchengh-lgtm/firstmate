@@ -1,0 +1,69 @@
+# Local Test evidence transcript
+HEAD=74e5f75d1d243b3691508d64c6077c6366a1608b
+branch=HEAD
+
+## bin/fm-lint.sh
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 3 workflow files valid
+
+## bin/fm-test-run.sh --check-coverage
+FM_TEST_COVERAGE ok total=180 parallel=24 serial=144 serial_shards=4 herdr=12
+
+## Manufactured breakage red observations (first failing line each)
+- fm-afk-launch.test.red.log: not ok - launcher lock: contender removed a lock during initialization
+- fm-backlog-handoff.test.red.log: not ok - handoff to a live receiver failed: usage: fm-backlog-handoff.sh <secondmate-id> <item-key>...
+- fm-branch-supervision.test.red.log: error: refusing append because the outcome store has a malformed final record
+- fm-captain-hold-lifecycle.test.red.log: not ok - could not register the captain-held task
+- fm-cmux-claude-composer-live-e2e.test.red.log: NO RED (skip path) :: skip: set FM_CMUX_CLAUDE_COMPOSER_LIVE=1 to run the real cmux Claude composer drift guard
+- fm-composer-lib.test.red.log: not ok - bare claude '❯' should read empty, got 'pending'
+- fm-control-relaunch.test.red.log: not ok - a same-harness relaunch should succeed
+- fm-muse-harness.test.red.log: not ok - fm-harness.sh under process 'muse-bin-0.1.0-R708.1' reported 'NOTMUSE', expected muse
+- fm-pending-reply.test.red.log: not ok - correlated status should resolve
+- fm-pi-watch-extension.test.red.log: not ok - Pi custom tool must expose first-cycle or repair-only metadata and return Pi's AgentToolResult shape: expected exit 0, got 1
+- fm-pr-check-security.test.red.log: not ok - arming a GitLab watch with glab absent did not report the missing CLI
+- fm-pr-merge.test.red.log: not ok - records-before-merge: fm-pr-merge should succeed: expected exit 0, got 2
+- fm-public-followup.test.red.log: usage: fm-public-followup.sh <active|register|brief|consume|pending|deliver|record-posted|guard-work|rechain|retire> [args]
+- fm-secondmate-safety.test.red.log: not ok - fm-project-mode did not isolate missing registry by home
+- fm-sot-pointer-check.test.red.log: not ok - default gap check exited 1 instead of bootstrap-safe success
+- fm-spawn-pool-base-freshen.test.red.log: not ok - spawn should refresh a stale pooled worktree: expected exit 0, got 1
+- fm-teardown-endpoint-safety.test.red.log: not ok - missing endpoint: teardown unexpectedly succeeded
+- fm-teardown.test.red.log: not ok - fork-allow: teardown should succeed when HEAD is on a fork remote: expected exit 0, got 1
+
+## Green after restore (exit summary)
+- fm-afk-launch.test: PASS (ok lines=46)
+- fm-backlog-handoff.test: PASS (ok lines=24)
+- fm-branch-supervision.test: PASS (ok lines=14)
+- fm-captain-hold-lifecycle.test: PASS (ok lines=19)
+- fm-composer-lib.test: PASS (ok lines=33)
+- fm-control-relaunch.test: PASS (ok lines=46)
+- fm-muse-harness.test: PASS (ok lines=25)
+- fm-pending-reply.test: FAIL not ok - concurrent resolvers did not append exactly one decision close
+- fm-pi-watch-extension.test: PASS (ok lines=36)
+- fm-pr-check-security.test: PASS (ok lines=20)
+- fm-pr-merge.test: PASS (ok lines=14)
+- fm-public-followup.test: PASS (ok lines=52)
+- fm-secondmate-safety.test: PASS (ok lines=77)
+- fm-sot-pointer-check.test: PASS (ok lines=18)
+- fm-spawn-pool-base-freshen.test: PASS (ok lines=6)
+- fm-teardown-endpoint-safety.test: PASS (ok lines=6)
+- fm-teardown.test: PASS (ok lines=79)
+
+## pending-reply via fm-test-run
+not ok - concurrent resolvers did not append exactly one decision close
+FM_TEST_END 2026-08-24T18:37:22Z tests/fm-pending-reply.test.sh exit=1 duration_ms=6373 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=6430
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=6373 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-pending-reply.test.sh duration_ms=6373
+
+## cmux live e2e
+skip: set FM_CMUX_CLAUDE_COMPOSER_LIVE=1 to run the real cmux Claude composer drift guard
+LIVE=1 without cmux:
+not ok - FM_CMUX_CLAUDE_COMPOSER_LIVE=1 but cmux is not installed
+
+## deleted port test
+tests/fm-decision-hold-lifecycle.test.sh deleted
+
+## final porcelain
+dirty_lines=0

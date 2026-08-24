@@ -1,0 +1,2 @@
+ok - Pi extension reports external healthy watcher output
+not ok - Pi custom tool must expose first-cycle or repair-only metadata and return Pi's AgentToolResult shape: expected exit 0, got 1

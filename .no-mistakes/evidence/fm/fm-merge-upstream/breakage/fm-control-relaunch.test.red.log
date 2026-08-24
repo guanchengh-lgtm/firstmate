@@ -1,0 +1,6 @@
+not ok - a same-harness relaunch should succeed
+error: 'relaunch' is not a control verb
+allowed verbs:
+  interrupt
+  exit
+  relaunch: expected exit 0, got 2

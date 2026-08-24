@@ -1,0 +1,18 @@
+ok - sot pointer check: absent and empty registries are silent success
+ok - sot pointer check: completed sources accept matching captain and decision pointers
+ok - sot pointer check: missing pointers report exactly and fail only in strict mode
+ok - sot pointer check: incomplete source sets are skipped
+ok - sot pointer check: later ground truth reports one exact stale-hold finding
+ok - sot pointer check: an exact later-authority binding is clean
+ok - sot pointer check: malformed structure exits 2 before any findings
+ok - sot pointer check: invalid, duplicate, and empty CSV elements fail closed
+ok - sot pointer check: empty and comment-only data registries do not shadow populated config
+ok - sot pointer check: pointer gap cannot suppress its stale-hold rule
+ok - sot pointer check: exact-count two rejects any unexpected extra rule
+ok - sot pointer check: unknown source and rule identities fail closed
+ok - sot pointer check: indented body checkboxes cannot impersonate tasks
+ok - sot pointer check: registry and decisions symlinks fail closed
+ok - sot pointer check: checked-out PR 98 fixture reverses 0 to 1 and round-trips clean
+ok - bootstrap: detect-only local startup surfaces SOT_GAP diagnostics
+ok - bootstrap: structural SoT failure stays loud without aborting startup detection
+ok - bootstrap: invalid, duplicate, and empty CSV elements stay loud

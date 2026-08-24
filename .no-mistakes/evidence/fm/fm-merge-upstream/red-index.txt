@@ -1,0 +1,18 @@
+fm-afk-launch.test.red.log: ok - clear-stale: removes escalations buffer, sidecar, and wedge marker | ok - clear-stale: leaves the durable wake-queue intact (no pending work dropped)
+fm-backlog-handoff.test.red.log: not ok - handoff to a live receiver failed: usage: fm-backlog-handoff.sh <secondmate-id> <item-key>...
+fm-branch-supervision.test.red.log: ok - branch prompt is byte-stable across homes, cwd, timezone, and time, above the cache floor | error: refusing append because the outcome store has a malformed final record
+fm-captain-hold-lifecycle.test.red.log: ok - report-only unresolved captain call is reproduced and completion refuses before loss | fm-captain-hold.sh - deterministic mechanics for tasks held for the captain.
+fm-cmux-claude-composer-live-e2e.test.red.log: skip: set FM_CMUX_CLAUDE_COMPOSER_LIVE=1 to run the real cmux Claude composer drift guard
+fm-composer-lib.test.red.log: ok - fm_composer_classify_content: a bare shell prompt glyph (>/$/%/#) reads unknown, never empty | ok - fm_composer_classify_content: stripped unbordered content is unknown except verified agent glyp
+fm-control-relaunch.test.red.log: not ok - a same-harness relaunch should succeed | error: 'relaunch' is not a control verb
+fm-muse-harness.test.red.log: not ok - fm-harness.sh under process 'muse-bin-0.1.0-R708.1' reported 'NOTMUSE', expected muse
+fm-pending-reply.test.red.log: not ok - correlated status should resolve
+fm-pi-watch-extension.test.red.log: ok - Pi extension reports external healthy watcher output | not ok - Pi custom tool must expose first-cycle or repair-only metadata and return Pi's AgentToolResult shape: expected exit 0, got 1
+fm-pr-check-security.test.red.log: ok - raw-byte parser accepts canonical URLs and rejects the complete adversarial matrix | not ok - arming a GitLab watch with glab absent did not report the missing CLI
+fm-pr-merge.test.red.log: not ok - records-before-merge: fm-pr-merge should succeed: expected exit 0, got 2
+fm-public-followup.test.red.log: usage: fm-public-followup.sh <active|register|brief|consume|pending|deliver|record-posted|guard-work|rechain|retire> [args] | not ok - could not register the public commitment
+fm-secondmate-safety.test.red.log: not ok - fm-project-mode did not isolate missing registry by home
+fm-sot-pointer-check.test.red.log: ok - sot pointer check: absent and empty registries are silent success | ok - sot pointer check: completed sources accept matching captain and decision pointers
+fm-spawn-pool-base-freshen.test.red.log: not ok - spawn should refresh a stale pooled worktree: expected exit 0, got 1
+fm-teardown-endpoint-safety.test.red.log: not ok - missing endpoint: teardown unexpectedly succeeded
+fm-teardown.test.red.log: not ok - fork-allow: teardown should succeed when HEAD is on a fork remote: expected exit 0, got 1

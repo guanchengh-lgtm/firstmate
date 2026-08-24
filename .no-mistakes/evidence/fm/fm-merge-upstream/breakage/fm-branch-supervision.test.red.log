@@ -1,0 +1,3 @@
+ok - branch prompt is byte-stable across homes, cwd, timezone, and time, above the cache floor
+error: refusing append because the outcome store has a malformed final record
+not ok - third append failed

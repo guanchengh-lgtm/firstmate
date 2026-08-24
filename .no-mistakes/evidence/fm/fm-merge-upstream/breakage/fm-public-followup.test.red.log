@@ -1,0 +1,2 @@
+usage: fm-public-followup.sh <active|register|brief|consume|pending|deliver|record-posted|guard-work|rechain|retire> [args]
+not ok - could not register the public commitment

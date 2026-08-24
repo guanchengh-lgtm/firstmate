@@ -1,0 +1,3 @@
+ok - sot pointer check: absent and empty registries are silent success
+ok - sot pointer check: completed sources accept matching captain and decision pointers
+not ok - default gap check exited 1 instead of bootstrap-safe success
