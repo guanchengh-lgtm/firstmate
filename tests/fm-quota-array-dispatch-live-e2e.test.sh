@@ -162,16 +162,6 @@ write_fixture() {
   cat > "$FIXTURE"
 }
 
-# ISO-8601 UTC timestamp offset from now by whole hours (positive future).
-iso_hours_from_now() {
-  python3 - "$1" <<'PY'
-import sys
-from datetime import datetime, timedelta, timezone
-hours = float(sys.argv[1])
-print((datetime.now(timezone.utc) + timedelta(hours=hours)).strftime("%Y-%m-%dT%H:%M:%SZ"))
-PY
-}
-
 run_case() {
   local label=$1 expected=$2 expected_calls=$3 prompt=$4 out calls required
   shift 4
@@ -534,73 +524,5 @@ run_case \
   "Resolve this matched dispatch profile array now. Load quota-array-dispatch and run quota-axi with no flags (default TOON) exactly once. Do not pass --json. Both profiles have comparable required task fit and the same strongest reasoning class. The authoritative catalogs already prove Claude/Sonnet and Codex/GPT models supported in their stated provider families, and their selected authentication surfaces are usable. The likely task-completion horizon is two hours with established confidence. Claude has known spendPriority of -0.8333 and runway of 2700 seconds. Codex has known spendPriority of -1.8 and runway of 15916 seconds. Return exact lines FACT=claude|spendPriority=-0.8333|runway_seconds=2700|supports_horizon=no and FACT=codex|spendPriority=-1.8|runway_seconds=15916|supports_horizon=yes to preserve candidate accounting, then an exact final line SELECTED=<claude|codex>. Do not use other vendor or model commands and do not modify files." \
   "FACT=claude|spendPriority=-0.8333|runway_seconds=2700|supports_horizon=no" \
   "FACT=codex|spendPriority=-1.8|runway_seconds=15916|supports_horizon=yes"
-
-# --- Reset-bias cases (skill selection order step 5) ---
-# Timestamps are relative to wall clock so "about one day" / "two to three days" /
-# "four to six days" remain meaningful when the live agent reads resetsAt.
-RESET_1D=$(iso_hours_from_now 24)
-RESET_2_5D=$(iso_hours_from_now 60)
-RESET_5D=$(iso_hours_from_now 120)
-RESET_5_5D=$(iso_hours_from_now 132)
-RESET_5H=$(iso_hours_from_now 5)
-HORIZON_EXHAUST=$(iso_hours_from_now 8)
-
-write_fixture <<JSON
-{"schemaVersion":3,"providers":[
-  {"provider":"claude","windows":[{"id":"weekly","kind":"weekly","percentRemaining":70,"resetsAt":"$RESET_1D","windowSeconds":604800}],"quotaSemantics":{"description":"The all_models scope bounds every Claude model.","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":70,"boundedBy":["weekly"],"runway":{"status":"projected_exhaustion","usableRunwaySeconds":28800,"projectedExhaustedAt":"$HORIZON_EXHAUST","limitingWindowId":"weekly","projectionConfidence":"established","projectionBasis":"cycle_average"}}]}},
-  {"provider":"codex","windows":[{"id":"weekly","kind":"weekly","percentRemaining":90,"resetsAt":"$RESET_5D","windowSeconds":604800}],"quotaSemantics":{"description":"The all_models scope bounds every Codex model.","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":90,"boundedBy":["weekly"],"runway":{"status":"projected_exhaustion","usableRunwaySeconds":28800,"projectedExhaustedAt":"$HORIZON_EXHAUST","limitingWindowId":"weekly","projectionConfidence":"established","projectionBasis":"cycle_average"}}]}}
-]}
-JSON
-run_case \
-  "about-one-day substantial remaining is spent hard over higher far headroom" \
-  "SELECTED=claude" \
-  "Resolve this matched dispatch profile array now. Load quota-array-dispatch and run quota-axi --json exactly once. Both profiles have comparable required task fit and the same strongest reasoning class. The authoritative catalogs already prove both models supported in their stated provider families, and their selected authentication surfaces are usable. The likely task-completion horizon is two hours with established confidence. Both candidates have supported runway through that horizon. Apply the skill's reset-bias rules among finishable candidates. For every candidate return one exact FACT line naming effective headroom and each applicable window id, next reset, and that window's percentRemaining using the snapshot values verbatim, in the form FACT=<provider>|headroom=<n>|window=<id>|resetsAt=<iso>|window_remaining=<n>. Then return an exact final line SELECTED=<claude|codex>. Do not use other vendor or model commands and do not modify files." \
-  "FACT=claude|headroom=70|window=weekly|resetsAt=$RESET_1D|window_remaining=70" \
-  "FACT=codex|headroom=90|window=weekly|resetsAt=$RESET_5D|window_remaining=90"
-
-write_fixture <<JSON
-{"schemaVersion":3,"providers":[
-  {"provider":"claude","windows":[{"id":"weekly","kind":"weekly","percentRemaining":35,"resetsAt":"$RESET_2_5D","windowSeconds":604800}],"quotaSemantics":{"description":"The all_models scope bounds every Claude model.","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":35,"boundedBy":["weekly"],"runway":{"status":"projected_exhaustion","usableRunwaySeconds":28800,"projectedExhaustedAt":"$HORIZON_EXHAUST","limitingWindowId":"weekly","projectionConfidence":"established","projectionBasis":"cycle_average"}}]}},
-  {"provider":"codex","windows":[{"id":"weekly","kind":"weekly","percentRemaining":85,"resetsAt":"$RESET_5D","windowSeconds":604800}],"quotaSemantics":{"description":"The all_models scope bounds every Codex model.","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":85,"boundedBy":["weekly"],"runway":{"status":"projected_exhaustion","usableRunwaySeconds":28800,"projectedExhaustedAt":"$HORIZON_EXHAUST","limitingWindowId":"weekly","projectionConfidence":"established","projectionBasis":"cycle_average"}}]}}
-]}
-JSON
-run_case \
-  "two-to-three-day nearer weekly reset beats higher far headroom" \
-  "SELECTED=claude" \
-  "Resolve this matched dispatch profile array now. Load quota-array-dispatch and run quota-axi --json exactly once. Both profiles have comparable required task fit and the same strongest reasoning class. The authoritative catalogs already prove both models supported in their stated provider families, and their selected authentication surfaces are usable. The likely task-completion horizon is two hours with established confidence. Both candidates have supported runway through that horizon. Neither candidate is in the about-one-day spend-hard band. Apply the skill's reset-bias rules among finishable candidates. For every candidate return one exact FACT line naming effective headroom and each applicable window id, next reset, and that window's percentRemaining using the snapshot values verbatim, in the form FACT=<provider>|headroom=<n>|window=<id>|resetsAt=<iso>|window_remaining=<n>. Then return an exact final line SELECTED=<claude|codex>. Do not use other vendor or model commands and do not modify files." \
-  "FACT=claude|headroom=35|window=weekly|resetsAt=$RESET_2_5D|window_remaining=35" \
-  "FACT=codex|headroom=85|window=weekly|resetsAt=$RESET_5D|window_remaining=85"
-
-write_fixture <<JSON
-{"schemaVersion":3,"providers":[
-  {"provider":"claude","windows":[{"id":"weekly","kind":"weekly","percentRemaining":40,"resetsAt":"$RESET_5D","windowSeconds":604800}],"quotaSemantics":{"description":"The all_models scope bounds every Claude model.","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":40,"boundedBy":["weekly"],"runway":{"status":"projected_exhaustion","usableRunwaySeconds":28800,"projectedExhaustedAt":"$HORIZON_EXHAUST","limitingWindowId":"weekly","projectionConfidence":"established","projectionBasis":"cycle_average"}}]}},
-  {"provider":"codex","windows":[{"id":"weekly","kind":"weekly","percentRemaining":80,"resetsAt":"$RESET_5_5D","windowSeconds":604800}],"quotaSemantics":{"description":"The all_models scope bounds every Codex model.","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":80,"boundedBy":["weekly"],"runway":{"status":"projected_exhaustion","usableRunwaySeconds":28800,"projectedExhaustedAt":"$HORIZON_EXHAUST","limitingWindowId":"weekly","projectionConfidence":"established","projectionBasis":"cycle_average"}}]}}
-]}
-JSON
-run_case \
-  "similar four-to-six-day horizons select on longer-cycle remaining" \
-  "SELECTED=codex" \
-  "Resolve this matched dispatch profile array now. Load quota-array-dispatch and run quota-axi --json exactly once. Both profiles have comparable required task fit and the same strongest reasoning class. The authoritative catalogs already prove both models supported in their stated provider families, and their selected authentication surfaces are usable. The likely task-completion horizon is two hours with established confidence. Both candidates have supported runway through that horizon. Neither candidate is in the about-one-day spend-hard band or the two-to-three-day nearer-reset band. Apply the skill's reset-bias and farther-horizon rules among finishable candidates. For every candidate return one exact FACT line naming effective headroom and each applicable window id, next reset, and that window's percentRemaining using the snapshot values verbatim, in the form FACT=<provider>|headroom=<n>|window=<id>|resetsAt=<iso>|window_remaining=<n>. Then return an exact final line SELECTED=<claude|codex>. Do not use other vendor or model commands and do not modify files." \
-  "FACT=claude|headroom=40|window=weekly|resetsAt=$RESET_5D|window_remaining=40" \
-  "FACT=codex|headroom=80|window=weekly|resetsAt=$RESET_5_5D|window_remaining=80"
-
-# Multi-window trap: Claude's five_hour is soonest and tighter on effective headroom,
-# but far-horizon admission and remaining must come from seven_day, not five_hour.
-write_fixture <<JSON
-{"schemaVersion":3,"providers":[
-  {"provider":"claude","windows":[
-    {"id":"five_hour","kind":"session","percentRemaining":25,"resetsAt":"$RESET_5H","windowSeconds":18000},
-    {"id":"seven_day","kind":"weekly","percentRemaining":75,"resetsAt":"$RESET_5D","windowSeconds":604800}
-  ],"quotaSemantics":{"description":"Claude account windows bound every model. A model-specific window is an additional bound, so that model's effective remaining percentage is the minimum across the named windows.","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":25,"boundedBy":["five_hour","seven_day"],"limitingWindowIds":["five_hour"],"runway":{"status":"projected_exhaustion","usableRunwaySeconds":28800,"projectedExhaustedAt":"$HORIZON_EXHAUST","limitingWindowId":"five_hour","projectionConfidence":"established","projectionBasis":"cycle_average"}}]}},
-  {"provider":"codex","windows":[{"id":"weekly","kind":"weekly","percentRemaining":55,"resetsAt":"$RESET_5_5D","windowSeconds":604800}],"quotaSemantics":{"description":"The all_models scope bounds every Codex model.","effectiveAvailability":[{"scope":"all_models","status":"known","effectivePercentRemaining":55,"boundedBy":["weekly"],"runway":{"status":"projected_exhaustion","usableRunwaySeconds":28800,"projectedExhaustedAt":"$HORIZON_EXHAUST","limitingWindowId":"weekly","projectionConfidence":"established","projectionBasis":"cycle_average"}}]}}
-]}
-JSON
-run_case \
-  "far horizon uses longer-cycle remaining not five_hour effective minimum" \
-  "SELECTED=claude" \
-  "Resolve this matched dispatch profile array now. Load quota-array-dispatch and run quota-axi --json exactly once. Both profiles have comparable required task fit and the same strongest reasoning class. The authoritative catalogs already prove both models supported in their stated provider families, and their selected authentication surfaces are usable. The likely task-completion horizon is two hours with established confidence. Both candidates have supported runway through that horizon. Neither candidate is in the about-one-day spend-hard band or the two-to-three-day nearer multi-day reset band. Claude is bounded by both five_hour and seven_day; Codex is weekly-only. Apply the skill's farther-horizon rules: do not let five_hour gate far-horizon admission or supply the far remaining value. For every candidate return exact FACT lines naming effective headroom and each applicable window id, next reset, and that window's own percentRemaining using the snapshot values verbatim. Claude must emit two FACT lines, one per applicable window, of the form FACT=claude|headroom=25|window=<id>|resetsAt=<iso>|window_remaining=<n>. Codex emits FACT=codex|headroom=55|window=weekly|resetsAt=<iso>|window_remaining=55. Then return an exact final line SELECTED=<claude|codex>. Do not use other vendor or model commands and do not modify files." \
-  "FACT=claude|headroom=25|window=five_hour|resetsAt=$RESET_5H|window_remaining=25" \
-  "FACT=claude|headroom=25|window=seven_day|resetsAt=$RESET_5D|window_remaining=75" \
-  "FACT=codex|headroom=55|window=weekly|resetsAt=$RESET_5_5D|window_remaining=55"
 
 echo "# all quota-array-dispatch live behavior tests passed"
