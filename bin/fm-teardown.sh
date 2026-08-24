@@ -48,7 +48,7 @@
 # not full reading; fullness remains the scout brief contract. A failed report
 # gate appends one working: event so an earlier done: is mechanically taken back.
 # Teardown proceeds only once the report exists, its named sources pass, and the shared
-# decision-hold completion gate verifies its captain-held and product-idea inventory.
+# captain-hold completion gate verifies its captain-held and product-idea inventory.
 # When this task is ov= for a ship, a present scout report is also copied to
 # data/<ship>/ov-report.md. The owner-invoke Stop ladder reads
 # data/<ov>/report.md, not that ship-side copy.
