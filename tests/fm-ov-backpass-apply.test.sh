@@ -248,7 +248,7 @@ test_agents_contract_keeps_locked_always_on_facts() {
     "e1 restoration missing: internal skills metadata convention"
 
   # e2 restorations in section 3
-  body=$(ls "$idx"/3._Session_start* 2>/dev/null | head -1)
+  body=$(find "$idx" -maxdepth 1 -name '3._Session_start*' -print -quit 2>/dev/null)
   [ -n "$body" ] || fail "AGENTS.md missing section 3 Session start"
   assert_section_has "$body" "If the harness shows only a preview and persists the full output to a file, read that file before acting." \
     "e2 restoration missing: read full digest file when harness previews"
@@ -258,7 +258,7 @@ test_agents_contract_keeps_locked_always_on_facts() {
     "e2 restoration missing: registry rebuild before dispatch"
 
   # e3: section 4 keeps load trigger; safety rules must have an owner (skill).
-  body=$(ls "$idx"/4._* 2>/dev/null | head -1)
+  body=$(find "$idx" -maxdepth 1 -name '4._*' -print -quit 2>/dev/null)
   [ -n "$body" ] || fail "AGENTS.md missing section 4"
   assert_section_has "$body" "load \`quota-array-dispatch\`" \
     "section 4 missing quota-array-dispatch load trigger"
@@ -276,7 +276,7 @@ test_agents_contract_keeps_locked_always_on_facts() {
     "quota-array-dispatch missing tie-break body"
 
   # e6/e7 inline stubs
-  body=$(ls "$idx"/7._* 2>/dev/null | head -1)
+  body=$(find "$idx" -maxdepth 1 -name '7._*' -print -quit 2>/dev/null)
   [ -n "$body" ] || fail "AGENTS.md missing section 7"
   assert_section_has "$body" "Load \`worker-control\` before steering" \
     "missing worker-control inline trigger"
@@ -286,7 +286,7 @@ test_agents_contract_keeps_locked_always_on_facts() {
     "e7 restoration missing: isolation / never-drive-worker-run inline line"
 
   # e8 rewrites in section 8
-  body=$(ls "$idx"/8._* 2>/dev/null | head -1)
+  body=$(find "$idx" -maxdepth 1 -name '8._*' -print -quit 2>/dev/null)
   [ -n "$body" ] || fail "AGENTS.md missing section 8"
   assert_section_has "$body" "FM_OPERATIONAL_PREFIX" \
     "e8 rewrite missing away-mode marker name"
@@ -302,7 +302,7 @@ test_agents_contract_keeps_locked_always_on_facts() {
     "e8 rewrite missing paused vs blocked reaction"
 
   # e9 restorations
-  body=$(ls "$idx"/9._* 2>/dev/null | head -1)
+  body=$(find "$idx" -maxdepth 1 -name '9._*' -print -quit 2>/dev/null)
   [ -n "$body" ] || fail "AGENTS.md missing section 9"
   assert_section_has "$body" "Private evidence reports may retain exact identifiers" \
     "e9 restoration missing private-report carve-out"
@@ -310,13 +310,13 @@ test_agents_contract_keeps_locked_always_on_facts() {
     "e9 restoration missing evidence-first objections clause"
 
   # e10 restoration
-  body=$(ls "$idx"/10._* 2>/dev/null | head -1)
+  body=$(find "$idx" -maxdepth 1 -name '10._*' -print -quit 2>/dev/null)
   [ -n "$body" ] || fail "AGENTS.md missing section 10"
   assert_section_has "$body" "Inspect the current note before replacing it" \
     "e10 restoration missing inspect-before-replace note hygiene"
 
   # e12 residual always-on trigger list (do not delete section 13 wholesale)
-  body=$(ls "$idx"/13._* 2>/dev/null | head -1)
+  body=$(find "$idx" -maxdepth 1 -name '13._*' -print -quit 2>/dev/null)
   [ -n "$body" ] || fail "e12 rewrite failed: section 13 residual catalog missing entirely"
   assert_section_has "$body" "firstmate-orca" "section 13 residual list missing firstmate-orca"
   assert_section_has "$body" "process-event-sources" "section 13 residual list missing process-event-sources"
@@ -327,7 +327,7 @@ test_agents_contract_keeps_locked_always_on_facts() {
     "section 13 residual list missing firstmate-coding-guidelines"
 
   # e13 captain instruction precedence
-  body=$(ls "$idx"/Captain_instruction_precedence 2>/dev/null | head -1)
+  body=$(find "$idx" -maxdepth 1 -name 'Captain_instruction_precedence' -print -quit 2>/dev/null)
   [ -n "$body" ] || fail "AGENTS.md missing Captain instruction precedence section"
   assert_section_has "$body" "clarify ambiguous scope before acting" \
     "e13 rewrite missing before-acting clarification"
