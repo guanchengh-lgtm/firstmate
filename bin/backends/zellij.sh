@@ -440,7 +440,7 @@ fm_backend_zellij_send_literal() {  # <target> <text> [expected-label]
 }
 
 # fm_backend_zellij_normalize_key: map firstmate's key vocabulary (Enter,
-# Escape, C-c, as used by fm-send.sh --key and stuck-crewmate-recovery) onto
+# Escape, C-c, as used by fm-send.sh and fm-control.sh) onto
 # zellij's verified `action send-keys` names. Verified empirically: "Enter"
 # and "Esc" work; "Escape" and "escape" are REJECTED ("Invalid key"); Ctrl-C
 # must be the single argument "Ctrl c" (a space-separated two-word key
@@ -451,8 +451,7 @@ fm_backend_zellij_normalize_key() {  # <key>
     Enter|enter) printf 'Enter' ;;
     Escape|escape|Esc|esc) printf 'Esc' ;;
     C-c|c-c|ctrl+c|Ctrl+c|Ctrl+C|'Ctrl c'|'ctrl c') printf 'Ctrl c' ;;
-    # C-u clears a composer line. fm-send.sh's muse interrupt path needs it to
-    # drop the prompt muse restores into the composer after Escape.
+    # C-u clears the prompt muse restores after Escape during fm-control.
     C-u|c-u|ctrl+u|Ctrl+u|Ctrl+U|'Ctrl u'|'ctrl u') printf 'Ctrl u' ;;
     *) printf '%s' "$1" ;;
   esac
@@ -460,7 +459,7 @@ fm_backend_zellij_normalize_key() {  # <key>
 
 # fm_backend_zellij_send_key: one named special key, targeted at the pane by
 # its EXPLICIT --pane-id (never the ambient "focused pane" default - verified
-# unreliable, see file header). Mirrors fm-send.sh's --key path.
+# unreliable, see file header). Used by both data and control planes.
 fm_backend_zellij_send_key() {  # <target> <key> [expected-label]
   fm_backend_zellij_target_ready "$1" "${3:-}" || return 1
   local key

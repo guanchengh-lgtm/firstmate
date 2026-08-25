@@ -102,6 +102,7 @@ case "${1:-}" in
       esac
     else
       printf '%s\n' "$payload" >> "$D/keys"
+      [ "${FM_FAKE_KEY_FAIL:-}" != "$payload" ] || exit 1
       if [ -n "${FM_FAKE_INTERRUPT_STOPS_AGENT:-}" ] \
          && { [ "$payload" = Escape ] || [ "$payload" = C-c ]; }; then
         printf 'zsh' > "$D/command"
@@ -194,6 +195,7 @@ run_control() {
   env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
     FM_CONTROL_POLL=0.01 FM_CONTROL_SETTLE_WAIT=0.05 \
     FM_CONTROL_EXIT_WAIT=0.05 FM_CONTROL_LAUNCH_WAIT=0.05 \
+    FM_FAKE_KEY_FAIL="${FM_FAKE_KEY_FAIL:-}" \
     FM_FAKE_MUSE_LOG="${FM_FAKE_MUSE_LOG:-}" \
     FM_FAKE_MUSE_DISAPPEAR_BEFORE_ACK="${FM_FAKE_MUSE_DISAPPEAR_BEFORE_ACK:-}" \
     FM_FAKE_INTERRUPT_STOPS_AGENT="${FM_FAKE_INTERRUPT_STOPS_AGENT:-}" \
@@ -258,6 +260,20 @@ test_interrupt_sends_each_harness_verified_key() {
       || fail "interrupt on $harness must type no text, got: $(literals "$dir")"
   done
   pass "fm-control interrupt: every verified harness gets its own verified key and repeat count"
+}
+
+test_muse_interrupt_refuses_failed_composer_clear() {
+  local dir out rc
+  dir=$(new_case muse-clear-failure)
+  add_task "$dir" t1 muse
+  alive_as "$dir" muse
+  out=$(FM_FAKE_KEY_FAIL=C-u run_control "$dir" t1 interrupt); rc=$?
+  expect_code 1 "$rc" "muse interrupt should fail when its composer clear is not delivered"
+  assert_contains "$out" "C-u did not" \
+    "muse clear failure should explain that the cancelled prompt remains"
+  [ "$(keys_sent "$dir")" = $'Escape\nC-u' ] \
+    || fail "muse clear failure should attempt Escape then C-u"
+  pass "fm-control interrupt: failed muse composer clear refuses loudly"
 }
 
 # A recorded harness can carry a raw launch command's basename, so the tables
@@ -875,6 +891,7 @@ test_fm_send_still_marks_the_same_secondmate_task() {
 
 test_exit_types_each_harness_verified_command
 test_interrupt_sends_each_harness_verified_key
+test_muse_interrupt_refuses_failed_composer_clear
 test_opencode_interrupts_twice_and_others_once
 test_unverified_harness_is_refused
 test_harness_family_resolution

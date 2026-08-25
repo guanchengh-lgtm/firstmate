@@ -1243,11 +1243,11 @@ SH
   : > "$dir/log"
   PATH="$fb:$PATH" FM_ROOT_OVERRIDE="$neutral" FM_HOME="$neutral" FM_STATE_OVERRIDE="$state" \
     FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" FM_ZELLIJ_SESSION_LIST="firstmate" \
-    "$ROOT/bin/fm-send.sh" firstmate:7 --key Escape >/dev/null 2>&1
+    "$ROOT/bin/fm-send.sh" firstmate:7 --key Enter >/dev/null 2>&1
   expect_code 0 $? "fm-send --key should route an explicit metadata-matched target through zellij"
   zellij_assert_call_order "$dir/log" $'\x1f''list-panes'$'\x1f''--json' $'\x1f''send-keys' \
     "fm-send did not verify the pane before send-key"
-  assert_contains "$(cat "$dir/log")" $'\x1f''send-keys'$'\x1f''--pane-id'$'\x1f''7'$'\x1f''Esc' \
+  assert_contains "$(cat "$dir/log")" $'\x1f''send-keys'$'\x1f''--pane-id'$'\x1f''7'$'\x1f''Enter' \
     "fm-send did not route the explicit metadata-matched target through zellij send-key"
 
   pass "fm-peek/fm-send: explicit metadata-matched targets use the recorded zellij backend"
@@ -1286,7 +1286,7 @@ test_scripts_reject_fm_target_label_mismatch() {
 
   PATH="$fb:$PATH" FM_ROOT_OVERRIDE="$neutral" FM_HOME="$neutral" FM_STATE_OVERRIDE="$state" \
     FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" FM_ZELLIJ_SESSION_LIST="firstmate" \
-    "$ROOT/bin/fm-send.sh" fm-zreuse --key Escape >/dev/null 2>&1
+    "$ROOT/bin/fm-send.sh" fm-zreuse --key Enter >/dev/null 2>&1
   status=$?
   [ "$status" -ne 0 ] || fail "fm-send --key should reject an fm-id zellij target whose pane belongs to a differently named tab"
   assert_not_contains "$(cat "$dir/log")" $'\x1f''send-keys' \

@@ -226,7 +226,7 @@ test_key_path_never_touches_inbox() {
   dir=$(setup_case keypath); err="$dir/send.err"
   run_send "$dir" "$err" -- t1 --key Enter || fail "a --key send should succeed"
   [ ! -d "$dir/home/state/t1.inbox" ] || fail "the --key path must never write an inbox record"
-  pass "fm-send planes: the --key lifecycle path never touches the inbox"
+  pass "fm-send planes: the --key data path never touches the inbox"
 }
 
 test_secondmate_marker_and_enqueue_delivery() {

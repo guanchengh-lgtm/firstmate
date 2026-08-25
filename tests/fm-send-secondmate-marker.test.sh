@@ -206,7 +206,7 @@ test_key_path_is_not_marked() {
   fb=$(make_stubs "$dir"); log="$dir/send.log"
   home=$(setup_home key)
   fm_write_secondmate_meta "$home/state/domain.meta" "$home" "sess:fm-domain"
-  run_send "$fb" "$home" "$log" "fm-domain" --key Escape; rc=$?
+  run_send "$fb" "$home" "$log" "fm-domain" --key Enter; rc=$?
   expect_code 0 "$rc" "--key send to a secondmate should succeed"
   [ ! -s "$log" ] \
     || fail "--key path logged a literal send (marker leaked into a keypress)"$'\n'"--- bytes ---"$'\n'"$(od -An -c "$log")"

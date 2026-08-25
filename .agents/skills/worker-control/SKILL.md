@@ -17,7 +17,7 @@ Multi-line text is valid locally and remotely.
 After an unconfirmed remote delivery, retry only with the exact `FM_PENDING_REPLY_EXISTING_CORR=<id>` command printed by `fm-send`; it preserves the request body for remote deduplication.
 When answering an open keyed decision or blocker, pass `--resolve-key` so the answer closes that record at delivery time.
 
-Never use `fm-send`'s key or text paths for interrupt, exit, or other lifecycle control; routing-marked lifecycle text becomes chat the worker reasons about instead of executing.
+Never use `fm-send`'s key or text paths for interrupt, exit, or other lifecycle control; it refuses recorded-task lifecycle payloads and points to `fm-control`, preventing routing-marked lifecycle text from becoming chat the worker reasons about instead of executing.
 Use `bin/fm-control.sh <task-id> interrupt|exit|relaunch`, which owns and verifies the runtime-specific action without discarding work; [`docs/agent-control.md`](../../../docs/agent-control.md) owns the operator contract.
 
 A secondmate's routed reply returns through status or a referenced document, not by reading its chat.

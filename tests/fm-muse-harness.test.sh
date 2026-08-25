@@ -430,101 +430,6 @@ EOF
   pass "muse spawn writes a session binding that teardown removes"
 }
 
-# --- interrupt --------------------------------------------------------------
-
-# muse RESTORES the interrupted prompt into the composer after Escape, as real
-# bright text. Left there, the next steer types onto the end of it and submits
-# both as one garbled message, so the interrupt is not complete until the
-# composer is cleared.
-make_send_case() {  # <name> <harness>
-  local name=$1 harness=$2 case_dir home fakebin id
-  case_dir="$TMP_ROOT/send-$name"
-  home="$case_dir/home"
-  fakebin=$(fm_fakebin "$case_dir/fake")
-  id="send-$name"
-  mkdir -p "$home/state"
-  cat > "$fakebin/tmux" <<'SH'
-#!/usr/bin/env bash
-set -u
-case "${1:-}" in
-  display-message) printf 'fakepane\n'; exit 0 ;;
-  has-session) exit 0 ;;
-  list-panes|list-windows) printf 'fm-send:0\n'; exit 0 ;;
-  send-keys)
-    shift
-    printf '%s\n' "$*" >> "$FM_FAKE_KEY_LOG"
-    [ "${FM_FAKE_KEY_FAIL:-}" = "$*" ] && exit 1
-    exit 0
-    ;;
-esac
-exit 0
-SH
-  chmod +x "$fakebin/tmux"
-  fm_write_meta "$home/state/$id.meta" \
-    "window=fm-send:0" "endpoint_task_id=$id" "worktree=$case_dir" \
-    "project=$case_dir" "harness=$harness" "kind=ship" "mode=no-mistakes" "yolo=off"
-  printf '%s\n' "$case_dir|$home|$fakebin|$id"
-}
-
-run_send_key() {  # <home> <fakebin> <id> <key> <keylog>
-  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$1" FM_STATE_OVERRIDE="$1/state" \
-    FM_FAKE_KEY_LOG="$5" PATH="$2:$PATH" \
-    "$ROOT/bin/fm-send.sh" "$3" --key "$4" 2>&1
-}
-
-test_muse_escape_aliases_clear_the_composer() {
-  local entry name key rec case_dir home fakebin id keylog out status
-  for entry in exact:Escape lower:escape short:Esc short-lower:esc; do
-    name=${entry%%:*}
-    key=${entry#*:}
-    rec=$(make_send_case "muse-$name" muse)
-    IFS='|' read -r case_dir home fakebin id <<EOF
-$rec
-EOF
-    keylog="$case_dir/keys.log"
-    : > "$keylog"
-    out=$(run_send_key "$home" "$fakebin" "$id" "$key" "$keylog")
-    status=$?
-    expect_code 0 "$status" "muse $key send should succeed: $out"
-    assert_grep "$key" "$keylog" "$key never reached the muse pane"
-    assert_grep 'C-u' "$keylog" "muse $key did not clear the restored composer"
-    [ "$(grep -c . "$keylog")" -ge 2 ] || fail "expected both the interrupt and the clear for $key"
-    head -1 "$keylog" | grep -q "$key" || fail "the clear was sent before the $key interrupt"
-  done
-  pass "every accepted muse Escape alias clears the restored composer"
-}
-
-test_non_muse_escape_does_not_clear() {
-  local rec case_dir home fakebin id keylog
-  rec=$(make_send_case codex codex)
-  IFS='|' read -r case_dir home fakebin id <<EOF
-$rec
-EOF
-  keylog="$case_dir/keys.log"
-  : > "$keylog"
-  run_send_key "$home" "$fakebin" "$id" Escape "$keylog" >/dev/null
-  assert_grep 'Escape' "$keylog" "Escape never reached the codex pane"
-  assert_no_grep 'C-u' "$keylog" "a non-muse interrupt sent a composer clear it does not need"
-  pass "the composer clear is scoped to muse and does not touch other adapters"
-}
-
-# A silent clear failure would leave the restored prompt in place and corrupt
-# the next steer, so the failure has to be loud.
-test_failed_clear_is_reported() {
-  local rec case_dir home fakebin id keylog out status
-  rec=$(make_send_case clearfail muse)
-  IFS='|' read -r case_dir home fakebin id <<EOF
-$rec
-EOF
-  keylog="$case_dir/keys.log"
-  : > "$keylog"
-  out=$(FM_FAKE_KEY_FAIL='-t fm-send:0 C-u' run_send_key "$home" "$fakebin" "$id" Escape "$keylog")
-  status=$?
-  [ "$status" -ne 0 ] || fail "a failed muse composer clear was reported as success"
-  assert_contains "$out" "could not be cleared" "the failed clear did not explain the pane state"
-  pass "a failed muse composer clear fails loudly instead of leaving stale input"
-}
-
 # --- busy source ------------------------------------------------------------
 
 classify_muse() {  # <state-dir> <id>
@@ -919,9 +824,6 @@ test_spawn_accepts_stored_credential
 test_spawn_resolves_relative_xdg_roots
 test_spawn_refuses_secondmate
 test_spawn_writes_busy_binding_and_teardown_removes_it
-test_muse_escape_aliases_clear_the_composer
-test_non_muse_escape_does_not_clear
-test_failed_clear_is_reported
 test_run_fold_tracks_open_and_settled_turns
 test_nested_terminal_record_does_not_settle_a_run
 test_binding_selects_the_matching_main_log
