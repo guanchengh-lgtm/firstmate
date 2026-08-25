@@ -14,7 +14,7 @@
 #   fold-status: parsed within bound | INCOMPLETE: <reason>
 #
 # OPEN PICKS contains only assistant questions carrying an exact `[hold=<id>]`
-# marker whose durable state still resolves to open through fm-decision-hold.sh.
+# marker whose durable state still resolves to open through fm-captain-hold.sh.
 # Decision-like chat without that identity is non-actionable UNVERIFIED PICK
 # CONTEXT. A chat answer never closes a durable hold; resolved or superseded
 # durable state wins over older transcript text.
@@ -92,7 +92,7 @@ FM_PRIOR_FOLD_HOME="$FM_HOME" \
 FM_PRIOR_FOLD_BUDGET="$BUDGET" \
 FM_PRIOR_FOLD_MEMORY_TOKENS="$MEMORY_TOKENS" \
 FM_PRIOR_FOLD_TOKEN_CAP="$TOKEN_CAP" \
-FM_PRIOR_FOLD_DECISION_SCRIPT="$SCRIPT_DIR/fm-decision-hold.sh" \
+FM_PRIOR_FOLD_DECISION_SCRIPT="$SCRIPT_DIR/fm-captain-hold.sh" \
 "$NODE_BIN" - > "$TMP_OUTPUT" 2>/dev/null <<'JS'
 const fs = require("fs");
 const os = require("os");

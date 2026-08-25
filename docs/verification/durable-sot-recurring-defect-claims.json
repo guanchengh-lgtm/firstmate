@@ -2,7 +2,7 @@
   "size": "full",
   "form": "ci-gated rule",
   "shape": "an older leftover hold or chat-derived pick remains actionable after a later durable decision lock or shipped task supersedes it",
-  "structure": "fm-decision-hold supersession records bind an exact captain-hold identity to one ordinary decision record and one already-Done ship task; sot-programs.tsv rows register the existing program, source-task, pointer, and hold identities",
+  "structure": "fm-captain-hold supersession records bind an exact captain-held task identity to one ordinary decision record and one already-Done ship task; sot-programs.tsv rows register the existing program, source-task, pointer, and hold identities",
   "ground_truth_precedent": {
     "repository": "guanchengh-lgtm/firstmate",
     "pull_request": 8,
@@ -69,7 +69,7 @@
   ],
   "skipped": [
     "automatic registry generation because no authoritative complete program inventory exists",
-    "automatic hold closure because only fm-decision-hold supersede may record the exact later authority",
+    "automatic hold closure because only fm-captain-hold supersede may record the exact later authority",
     "private-home rollout because this disposable worktree was instructed not to ship or modify the operating home"
   ]
 }

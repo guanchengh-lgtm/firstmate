@@ -1,6 +1,6 @@
 # Optional home-local registry example for bin/fm-sot-pointer-check.sh.
 # Copy this shape to data/sot-programs.tsv or config/sot-programs.tsv; do not make this example live.
-# Supersession rows require fm-decision-hold.sh supersede to bind the named hold to the exact decision file and shipped source task.
+# Supersession rows require fm-captain-hold.sh supersede to bind the named hold to the exact decision file and shipped source task.
 # program_id	needle_regex	source_task_id,source_task_id,...	superseded_hold_id,superseded_hold_id,...
 example-program	example-program-v1\.0	example-research,example-review
 example-supersession	example-look-lock	example-look-ship	example-review-decision-layout

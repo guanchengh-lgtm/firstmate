@@ -8,12 +8,20 @@
 # --merge, --rebase, or --method after the optional -- separator. --method and
 # --method=<merge|squash|rebase> are translated to the matching gh shorthand
 # because gh does not accept --method. Extra args must not include --repo or -R
-# because the repository comes only from the URL.
+# in any form, including a bundled short-option cluster such as -yR, because
+# the repository comes only from the URL.
 # A no-mistakes ship is refused unless validation truth is readable
 # (bin/fm-validation-truth-lib.sh), independently of the recording step.
 # After recording, this helper re-reads the forge rollup, refuses a red or
 # pending rollup, and merges via `gh pr merge` with --match-head-commit
 # <forge head> so GitHub enforces expectedHeadOid (gh-axi drops that flag).
+#
+# Invariant: this merge path is GitHub-only by standing captain decision at the
+# upstream merge (2026-08-24). bin/fm-pr-lib.sh still parses GitLab merge
+# request URLs so the watcher can follow them, but the validation-truth second
+# proof (fm_require_validation_truth + fm_vt_require_merge_pin) exists only for
+# GitHub, so restoring a GitLab merge arm must first give GitLab an equivalent
+# proof rather than silently exempting it from this invariant.
 # Usage: fm-pr-merge.sh <task-id> <pr-url> [-- <extra gh pr merge args>]
 set -eu
 
@@ -26,6 +34,12 @@ STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 . "$SCRIPT_DIR/fm-pr-lib.sh"
 # shellcheck source=bin/fm-validation-truth-lib.sh
 . "$SCRIPT_DIR/fm-validation-truth-lib.sh"
+# Role partition: merging is MAIN-owned; the Pi supervision branch reports the
+# green PR and never merges (contract: bin/fm-lease-lib.sh; no-op in homes
+# without a branch actor).
+# shellcheck source=bin/fm-lease-lib.sh
+. "$SCRIPT_DIR/fm-lease-lib.sh"
+fm_lease_forbid_branch "PR merge (fm-pr-merge)"
 
 if [ "$#" -lt 2 ]; then
   echo "error: invalid PR merge request" >&2
@@ -33,9 +47,6 @@ if [ "$#" -lt 2 ]; then
 fi
 ID=$1
 RAW_URL=$2
-# bin/fm-pr-lib.sh parses GitLab merge request URLs so the watcher can follow
-# them, but this path still addresses only GitHub by owner/repository. The
-# provider check holds that refusal exactly as it was until merge parity lands.
 if ! fm_pr_task_id_valid "$ID" || ! fm_pr_url_parse "$RAW_URL" \
   || [ "$FM_PR_PROVIDER" != github ]; then
   echo "error: invalid PR merge request" >&2
@@ -62,7 +73,14 @@ reject_repo_overrides() {
   local arg
   for arg in "$@"; do
     case "$arg" in
-      --repo|--repo=*|-R|-R?*)
+      --repo|--repo=*)
+        echo "error: extra merge arguments must not override the repository" >&2
+        return 1
+        ;;
+      --*) ;;
+      # A single-dash argument is a short-option cluster, which gh expands one
+      # character at a time, so -yR carries --repo exactly as a bare -R does.
+      -*R*)
         echo "error: extra merge arguments must not override the repository" >&2
         return 1
         ;;

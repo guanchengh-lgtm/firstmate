@@ -11,11 +11,16 @@
 #   (c) extra gh pr merge args are forwarded after number and --repo
 #   (d) merge is refused before gh when task meta is missing
 #   (e) PR URL is parsed to number + --repo for gh (defaults to --squash)
-#   (f) malformed PR URL fails fast without calling gh merge
+#   (f) malformed PR URL fails fast without calling the forge merge command
 #   (g) explicit merge method is not overridden by the default --squash
-#   (h) repo override args fail fast because the repo comes from the URL
-#   (i) --method=<value> is translated to the gh shorthand gh accepts
-#   (j) --match-head-commit pin is delivered to gh (not gh-axi, which drops it)
+#   (h) repo override args fail fast because the repo comes from the URL,
+#       including a bundled short-option cluster that carries -R
+#   (i) a well-formed GitLab MR URL is refused: this path is GitHub-only by
+#       standing captain decision (see bin/fm-pr-merge.sh header invariant)
+#   (j) --method=<value> is translated to the gh shorthand gh accepts
+#   (k) --match-head-commit is delivered to gh, never gh-axi which drops it
+#   (l) a red GitHub forge rollup refuses before the merge command
+#   (m) --sha in extra args still forwards on GitHub (caller's business)
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -25,8 +30,16 @@ fm_git_identity fmtest fmtest@example.invalid
 PR_MERGE="$ROOT/bin/fm-pr-merge.sh"
 TMP_ROOT=$(fm_test_tmproot fm-pr-merge-tests)
 
+# The GitLab fixture, used only to prove refusal. A placeholder host that
+# resolves nowhere, and a namespace deeper than one group so the URL parses as
+# a genuine merge request rather than failing on shape.
+MR_HOST=gitlab.example
+MR_PATH=group/subgroup/project
+MR_PROJECT_URL="https://$MR_HOST/$MR_PATH"
+MR_URL="$MR_PROJECT_URL/-/merge_requests/7"
+
 # Build a fresh sandbox for one test case: a state dir with a task meta and a
-# fakebin with a gh mock that records how it was invoked. Echoes the case dir.
+# fakebin with a gh-axi mock that records how it was invoked. Echoes the case dir.
 make_case() {
   local name=$1 case_dir fakebin
   case_dir="$TMP_ROOT/$name"
@@ -44,9 +57,9 @@ make_case() {
   printf '%s\n' "$case_dir"
 }
 
-# gh mock recording every invocation; answers headRefOid/rollup for pin+proof.
-# gh-axi is present but must not receive the merge (it drops --match-head-commit).
-# Args: case_dir head_sha
+# gh mock recording every invocation and answering headRefOid/rollup for the
+# metadata record and merge pin. gh-axi remains present to prove it never gets
+# the pinned merge command. Args: case_dir head_sha
 add_gh_mocks() {
   local case_dir=$1 head=$2
   cat > "$case_dir/fakebin/gh-axi" <<'SH'
@@ -67,9 +80,7 @@ case "\${1:-} \${2:-}" in
       *headRefOid*) printf '%s\n' '$head' ; exit 0 ;;
     esac
     ;;
-  "pr merge")
-    exit 0
-    ;;
+  "pr merge") exit 0 ;;
 esac
 exit 0
 SH
@@ -98,15 +109,13 @@ case "\${1:-} \${2:-}" in
       *headRefOid*) printf '%s\n' '$head' ; exit 0 ;;
     esac
     ;;
-  "pr merge")
-    echo "error: pr merge failed" >&2
-    exit 1
-    ;;
+  "pr merge") echo "error: pr merge failed" >&2 ; exit 1 ;;
 esac
 exit 0
 SH
   chmod +x "$case_dir/fakebin/gh-axi" "$case_dir/fakebin/gh"
 }
+
 
 run_pr_merge() {
   local case_dir=$1 rc; shift
@@ -175,8 +184,8 @@ test_merge_failure_propagates_after_recording() {
   expect_code 1 "$rc" "merge-fails: fm-pr-merge should propagate the gh merge failure"
   assert_grep 'pr=https://github.com/example/repo/pull/13' "$case_dir/state/task-x1.meta" \
     "merge-fails: pr= should already be recorded even though the merge itself failed"
-  grep -q 'pr merge' "$case_dir/gh.log" \
-    || fail "merge-fails: gh pr merge was never attempted"
+  assert_grep 'pr merge' "$case_dir/gh.log" \
+    "merge-fails: gh pr merge was never attempted"
   pass "fm-pr-merge propagates a real merge failure without silently succeeding"
 }
 
@@ -231,21 +240,53 @@ test_malformed_url_refuses_before_merge() {
   : > "$case_dir/gh-axi.log"
 
   set +e
-  run_pr_merge "$case_dir" task-x1 'https://gitlab.com/example/repo/-/merge_requests/1' \
+  # A near-miss GitLab URL: one namespace segment where a project needs at
+  # least two, so this refusal is proven on a URL that genuinely does not
+  # parse, distinct from the provider refusal of a well-formed MR URL.
+  run_pr_merge "$case_dir" task-x1 'https://gitlab.com/example/-/merge_requests/1' \
     > "$case_dir/stdout" 2> "$case_dir/stderr"
   rc=$?
   set -e
 
-  expect_code 2 "$rc" "malformed-url: fm-pr-merge should refuse a non-GitHub PR URL"
+  expect_code 2 "$rc" "malformed-url: fm-pr-merge should refuse a malformed merge request URL"
   assert_grep 'error: invalid PR merge request' "$case_dir/stderr" \
     "malformed-url: refusal was not fixed and non-probing"
-  assert_no_grep 'pr=https://gitlab.com/example/repo/-/merge_requests/1' "$case_dir/state/task-x1.meta" \
+  assert_no_grep 'pr=https://gitlab.com/example/-/merge_requests/1' "$case_dir/state/task-x1.meta" \
     "malformed-url: malformed PR URL was recorded in meta"
   assert_absent "$case_dir/state/task-x1.check.sh" \
     "malformed-url: malformed PR URL armed a merge poll"
   assert_no_grep 'pr merge' "$case_dir/gh.log" \
     "malformed-url: gh pr merge was invoked for a malformed URL"
-  pass "fm-pr-merge refuses malformed PR URLs before calling gh"
+  pass "fm-pr-merge refuses malformed PR URLs before calling the forge merge command"
+}
+
+# The merge path is GitHub-only by standing captain decision (2026-08-24); a
+# well-formed GitLab merge request URL parses in bin/fm-pr-lib.sh for the
+# watcher's benefit but must refuse here before anything is recorded or read.
+test_wellformed_gitlab_url_refuses_before_merge() {
+  local case_dir rc
+  case_dir=$(make_case gitlab-url-refused)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" 5555555555555555555555555555555555555555
+  : > "$case_dir/gh.log"
+  : > "$case_dir/gh-axi.log"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 "$MR_URL" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 2 "$rc" "gitlab-url-refused: fm-pr-merge should refuse a GitLab merge request URL"
+  assert_grep 'error: invalid PR merge request' "$case_dir/stderr" \
+    "gitlab-url-refused: refusal was not fixed and non-probing"
+  assert_no_grep "pr=$MR_URL" "$case_dir/state/task-x1.meta" \
+    "gitlab-url-refused: the merge request URL was recorded in meta"
+  assert_absent "$case_dir/state/task-x1.check.sh" \
+    "gitlab-url-refused: a refused merge request armed a merge poll"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "gitlab-url-refused: gh pr merge was invoked for a GitLab URL"
+  pass "fm-pr-merge refuses a well-formed GitLab merge request URL: GitHub-only by captain decision"
 }
 
 test_rejects_unsafe_url_segments_before_recording() {
@@ -302,6 +343,51 @@ test_repo_override_args_refuse_before_recording() {
   pass "fm-pr-merge refuses repo override args before recording state"
 }
 
+# A bundled short-option cluster carries -R without ever being exactly -R, and
+# gh expands it one character at a time, so the guard has to read the whole
+# cluster and refuse before anything is recorded or read.
+test_bundled_repo_override_args_refuse_before_recording() {
+  local case_dir rc
+  case_dir=$(make_case bundled-repo-override)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" abababababababababababababababababababab
+  : > "$case_dir/gh.log"
+  : > "$case_dir/gh-axi.log"
+
+  set +e
+  run_pr_merge "$case_dir" task-x1 https://github.com/right/repo/pull/6 -- -dR wrong/repo \
+    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "bundled-repo-override: fm-pr-merge should refuse a bundled repo override"
+  assert_grep 'extra merge arguments must not override the repository' "$case_dir/stderr" \
+    "bundled-repo-override: refusal did not explain the repo override"
+  assert_no_grep 'pr=https://github.com/right/repo/pull/6' "$case_dir/state/task-x1.meta" \
+    "bundled-repo-override: PR URL was recorded before rejecting the bundled repo override"
+  assert_absent "$case_dir/state/task-x1.check.sh" \
+    "bundled-repo-override: a bundled repo override armed a merge poll"
+  assert_no_grep 'pr merge' "$case_dir/gh.log" \
+    "bundled-repo-override: gh pr merge was invoked despite the bundled repo override"
+
+  # Only a cluster carrying the repository flag is refused: every other short
+  # cluster is still the caller's business and still reaches the forge.
+  case_dir=$(make_case bundled-non-repo-cluster)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc
+  : > "$case_dir/gh.log"
+  : > "$case_dir/gh-axi.log"
+
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/8 -- -d \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" \
+    || fail "bundled-non-repo-cluster: fm-pr-merge refused a short flag that overrides nothing"
+
+  assert_gh_merge_line "$case_dir" \
+    'pr merge 8 --repo example/repo --squash -d --match-head-commit bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc' \
+    "bundled-non-repo-cluster"
+  pass "fm-pr-merge refuses a bundled short-option repo override and forwards other short flags"
+}
+
 test_explicit_merge_method_not_overridden() {
   local case_dir
   case_dir=$(make_case explicit-merge-method)
@@ -330,7 +416,6 @@ test_method_equals_merge_method_not_overridden() {
   run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/23 -- --method=merge \
     > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "method-equals-merge-method: fm-pr-merge failed"
 
-  # gh rejects --method; helper must translate to --merge and still pin the head.
   assert_gh_merge_line "$case_dir" \
     'pr merge 23 --repo example/repo --merge --match-head-commit 7777777777777777777777777777777777777777' \
     "method-equals-merge-method"
@@ -354,6 +439,25 @@ test_parses_pr_url_for_gh() {
   pass "fm-pr-merge parses a GitHub PR URL into gh number and --repo arguments"
 }
 
+test_github_still_forwards_sha_arg() {
+  local case_dir
+  case_dir=$(make_case github-sha-arg)
+  mkdir -p "$case_dir/wt"
+  add_gh_mocks "$case_dir" dddddddddddddddddddddddddddddddddddddddd
+  : > "$case_dir/gh.log"
+  : > "$case_dir/gh-axi.log"
+
+  # --sha is rejected only where the head is firstmate's to determine. GitHub's
+  # extra args are the caller's business exactly as they were.
+  run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/44 -- --sha abc123 \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" || fail "github-sha-arg: fm-pr-merge failed"
+
+  assert_gh_merge_line "$case_dir" \
+    'pr merge 44 --repo example/repo --squash --sha abc123 --match-head-commit dddddddddddddddddddddddddddddddddddddddd' \
+    "github-sha-arg"
+  pass "fm-pr-merge leaves GitHub extra-arg handling unchanged, including --sha"
+}
+
 test_red_rollup_refuses_before_merge() {
   local case_dir rc
   case_dir=$(make_case red-rollup)
@@ -363,8 +467,8 @@ test_red_rollup_refuses_before_merge() {
   : > "$case_dir/gh-axi.log"
 
   set +e
-  FM_TEST_GH_ROLLUP_VERDICT=RED run_pr_merge "$case_dir" task-x1 https://github.com/example/repo/pull/9 \
-    > "$case_dir/stdout" 2> "$case_dir/stderr"
+  FM_TEST_GH_ROLLUP_VERDICT=RED run_pr_merge "$case_dir" task-x1 \
+    https://github.com/example/repo/pull/9 > "$case_dir/stdout" 2> "$case_dir/stderr"
   rc=$?
   set -e
 
@@ -381,9 +485,12 @@ test_merge_failure_propagates_after_recording
 test_extra_merge_args_forwarded
 test_missing_meta_refuses_before_merge
 test_malformed_url_refuses_before_merge
+test_wellformed_gitlab_url_refuses_before_merge
 test_rejects_unsafe_url_segments_before_recording
 test_repo_override_args_refuse_before_recording
+test_bundled_repo_override_args_refuse_before_recording
 test_explicit_merge_method_not_overridden
 test_method_equals_merge_method_not_overridden
 test_parses_pr_url_for_gh
+test_github_still_forwards_sha_arg
 test_red_rollup_refuses_before_merge
