@@ -1,0 +1,28 @@
+# Skill frontmatter semantic model (installer/harness-facing contract)
+
+## worker-control
+name: worker-control
+description: >-
+  Agent-only control procedure for worker communication.
+  Load before steering a worker, resolving its decision, controlling its lifecycle, or retrying an unconfirmed remote send.
+user-invocable: false
+metadata:
+  internal: true
+---
+user-invocable_false True
+metadata_internal_true True
+agent_only_description True
+
+## firstmate-no-mistakes
+name: firstmate-no-mistakes
+description: >-
+  Agent-only Firstmate procedure for no-mistakes ship validation.
+  Load after a builder stops, on any verifier decision or outcome, or before superseding active validation.
+user-invocable: false
+metadata:
+  internal: true
+---
+user-invocable_false True
+metadata_internal_true True
+agent_only_description True
+

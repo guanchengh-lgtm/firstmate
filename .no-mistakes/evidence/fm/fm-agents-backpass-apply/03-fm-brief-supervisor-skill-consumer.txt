@@ -1,0 +1,13 @@
+# End-user surface: fm-brief --check-worker vs supervisor skills
+
+## slash /worker-control (ship brief)
+exit=1
+REFUSED: worker brief invokes forbidden /worker-control; a firstmate-only skill may not be a worker slash.
+
+## slash /firstmate-no-mistakes (ship brief)
+exit=1
+REFUSED: worker brief invokes forbidden /firstmate-no-mistakes; a firstmate-only skill may not be a worker slash.
+
+## plain name firstmate-no-mistakes (allowed)
+exit=0
+<no output>

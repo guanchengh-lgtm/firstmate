@@ -1,0 +1,50 @@
+Locked outside-voice option A acceptance checklist
+============================================================
+PASS  [req6] worker-control user-invocable false
+PASS  [req6] worker-control metadata.internal true
+PASS  [req6] firstmate-no-mistakes user-invocable false
+PASS  [req6] firstmate-no-mistakes metadata.internal true
+PASS  [req6] not a second public no-mistakes
+PASS  [e1] scripts from tracked code root
+PASS  [e1] metadata.internal convention
+PASS  [e2] preview full digest read
+PASS  [e2] ABSENT + registry rebuild
+PASS  [e3] quota load trigger in s4
+PASS  [e3] quota safety owned by skill
+PASS  [e3] malformed-config body
+PASS  [e3] every-candidate body
+PASS  [e3] tie-break body
+PASS  [e4/e5/e11] sections present
+PASS  [e6] worker-control trigger
+PASS  [e6] key+text lifecycle ban
+PASS  [e6] agent-control doc link
+PASS  [e7] firstmate-no-mistakes trigger
+PASS  [e7] inline isolation line
+PASS  [e7] public no-mistakes cross-ref
+PASS  [e8] marker bytes
+PASS  [e8] inbox ack
+PASS  [e8] heartbeat
+PASS  [e8] paused vs blocked
+PASS  [e9] private report carve-out
+PASS  [e9] evidence-first objections
+PASS  [e10] inspect note
+PASS  [e12] section 13 residual heading
+PASS  [e12] residual firstmate-orca
+PASS  [e12] residual process-event-sources arming
+PASS  [e12] residual firstmate-codexapp
+PASS  [e12] residual coding-guidelines
+PASS  [e13] before acting
+PASS  [e13] anti-rigid-block
+PASS  [req7] coding-guidelines section 8 model
+PASS  [req7] coding-guidelines section 13 residual path
+PASS  [req7] bootstrap tangle -> section 1
+PASS  [req7] bootstrap no dangling section 8 tangle
+PASS  [req7] quota s4 ownership line
+PASS  [req9] section 1 hard rules unchanged vs base
+PASS  [req8] no en/em dash in AGENTS
+PASS  [req8] no agent co-author in tip commit
+PASS  [req1] not wholesale tiny synthesis (~half live home)
+PASS  [req5] reject none: all 13 edit families evidenced above
+============================================================
+total=45 failed=0
+AGENTS.md bytes=30626 lines=304

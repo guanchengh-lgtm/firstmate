@@ -1,0 +1,4 @@
+ok - supervisor skills: internal frontmatter + agent-only descriptions + required body contracts
+ok - worker brief: refuses /worker-control and /firstmate-no-mistakes; permits plain names
+not ok - e13 rewrite missing anti-rigid-block clause
+exit=1

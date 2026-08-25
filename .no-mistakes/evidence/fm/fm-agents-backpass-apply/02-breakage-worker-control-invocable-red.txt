@@ -1,0 +1,5 @@
+not ok - worker-control must set user-invocable: false (supervisor procedure, not captain slash skill)
+red exit=1
+--- fm-brief --check-worker after flip ---
+exit=0
+

@@ -1,0 +1,5 @@
+ok - supervisor skills: internal frontmatter + agent-only descriptions + required body contracts
+ok - worker brief: refuses /worker-control and /firstmate-no-mistakes; permits plain names
+ok - AGENTS.md contract: locked always-on facts and restorations present
+ok - companion skills: cross-references resolve to live AGENTS.md text
+ok - style: plain dash and one-sentence-per-line on applied contract surfaces
