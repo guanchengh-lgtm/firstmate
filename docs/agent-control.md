@@ -3,6 +3,7 @@
 Firstmate talks to a running agent two ways, and they are not the same channel.
 
 The **data plane** is [`bin/fm-send.sh`](../bin/fm-send.sh): conversational text for the agent to read.
+It refuses recorded-task lifecycle text and keys before any effect and points callers at the control plane.
 For a `kind=secondmate` target it always prepends the from-firstmate routing marker, because a secondmate is itself a firstmate and its reply must come back through the status path rather than a chat nobody reads.
 
 The **control plane** is [`bin/fm-control.sh`](../bin/fm-control.sh): allowlisted lifecycle verbs addressed to an exact task id.
@@ -13,14 +14,15 @@ The failure repeated across harnesses and homes, and the workaround (remember to
 
 ## What the control plane owns
 
-`bin/fm-control-lib.sh` is the single executable owner of three capability tables, with no side effects, so it can be read as a contract:
+`bin/fm-control-lib.sh` is the single executable owner of three capability tables plus the pure lifecycle classifiers derived from them, with no side effects, so it can be read as a contract:
 
 - The **verb allowlist**: `interrupt`, `exit`, `relaunch`.
   There is no arbitrary-text and no generic raw-key entry point.
   A caller either names an allowlisted verb or is refused.
 - **Per-harness mechanics**: the key that cancels a running turn, how many times it must be delivered, whether the composer needs clearing afterwards, the command that exits the agent, and which task kinds the adapter is verified to run.
   These were previously carried only in the [`harness-adapters`](../.agents/skills/harness-adapters/SKILL.md) skill's per-adapter tables, which now point here.
-  `bin/fm-send.sh` uses this owner's lifecycle classifiers to refuse recorded-task lifecycle text and keys before any send effect.
+  The pure classifiers (`fm_control_message_verb`, `fm_control_key_verb`) expose those mechanics without side effects so the data plane can refuse before any send effect.
+  `bin/fm-send.sh` consumes them and refuses recorded-task lifecycle text and keys, printing the sanctioned `bin/fm-control.sh <id> interrupt|exit` path.
 - **Per-backend capability**: which named keys a runtime backend can deliver, and whether it has a recovery-grade agent-state classifier able to prove an agent stopped.
 
 A recorded `harness=` is not always an exact adapter name: a task launched from a raw command records that command's basename instead.
@@ -117,6 +119,7 @@ The empirical basis for each adapter's value is the `harness-adapters` skill's v
 
 ## Verification
 
-- `tests/fm-control.test.sh` - the adapter contract for every verified harness, the backend capability matrix, exact-id scoping, the closed verb list, the busy, idle, dead, and idempotent lifecycle cases, and marker non-regression, all against a stubbed session provider.
+- `tests/fm-control.test.sh` - the adapter contract for every verified harness, including muse's composer-clear failure path, the backend capability matrix, exact-id scoping, the closed verb list, the busy, idle, dead, and idempotent lifecycle cases, and marker non-regression, all against a stubbed session provider.
+- `tests/fm-send-strict.test.sh` - recorded-task lifecycle text and keys refuse on the data plane before any backend, inbox, remote, or busy-state effect, and name the control owner.
 - `tests/fm-control-relaunch.test.sh` - the relaunch transaction: identity preservation, harness switching, the progress note, checkpoint refusals, and rollback after a failed launch.
 - `tests/fm-control-herdr-smoke.test.sh` - the second state-verified backend against the real herdr binary, on an isolated throwaway lab session.

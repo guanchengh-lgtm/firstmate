@@ -8,10 +8,12 @@
 #   tmux window search, because a "successful" send to the wrong endpoint is
 #   worse than a loud failure.
 # Special data-plane keys instead of text: fm-send.sh <target> --key Enter
-# Lifecycle text and keys for recorded tasks are refused; use
+# Lifecycle text and keys for recorded tasks (/exit, /quit, Escape, C-c, and
+# composer-clear keys such as C-u) are refused before any effect; use
 # bin/fm-control.sh <task-id> interrupt|exit instead.
-# Key support is backend-specific: tmux/herdr support Escape, Enter, and C-c;
-# Orca currently supports Enter and C-c only, and rejects Escape.
+# Non-lifecycle key support is backend-specific: tmux/herdr/zellij/cmux deliver
+# Enter; Orca delivers Enter and rejects Escape. Backend Escape/C-c/C-u
+# capability is owned by the control plane, not this data-plane path.
 #
 # Two data planes:
 #
