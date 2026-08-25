@@ -1,6 +1,6 @@
-# Watcher arm PreToolUse seatbelt
+# Shell command PreToolUse seatbelt
 
-This document is the authoritative human-readable contract for the watcher arm PreToolUse seatbelt.
+This document is the authoritative human-readable contract for the shell command PreToolUse seatbelt.
 `bin/fm-arm-command-policy.mjs` is the single semantic owner.
 `bin/fm-arm-pretool-check.sh` is only the stable harness transport and output renderer.
 The tracked harness adapters forward command text without classifying it.
@@ -11,6 +11,8 @@ The tracked harness adapters forward command text without classifying it.
 A firstmate primary must arm `bin/fm-watch-arm.sh` or run `bin/fm-watch-checkpoint.sh` through an observable harness call.
 A shell background operator, pipeline, redirection, wrapper, or unrelated command list can hide failure or let the watcher child die with the tool call.
 The seatbelt rejects those command shapes before execution.
+The same shell-tool boundary rejects an executable command-position token whose basename is exactly `gh` and directs agents to `gh-axi`.
+The rule does not inspect a called script's contents, so Firstmate-owned scripts may keep their internal raw `gh` calls.
 
 This policy is not a post-arm liveness guarantee.
 `bin/fm-guard.sh` and `bin/fm-turnend-guard.sh` apply their respective post-arm supervision predicates to the watcher lock and beacon after an allowed call.
@@ -32,17 +34,17 @@ The wrapper discovers the code root from its own location.
 The active firstmate home is `${FM_HOME:-<code-root>}`.
 It passes both roots and the exact command string to the Node policy owner.
 
-The wrapper fast-allows a command without invoking the Node policy owner only when the command cannot contain the `fm-watch` byte sequence even after the classifier's decoders run.
+The wrapper fast-allows a command without invoking the Node policy owner only when the command cannot contain either the `fm-watch` or `gh` byte sequence even after the classifier's decoders run.
 The fast path may allow only when both of these hold:
 
-1. The stripped text lacks the `fm-watch` watcher substring, after mirroring the classifier's cheapest byte normalizations - dropping line-continuation and escape backslashes, quotes, and newlines.
+1. The stripped text lacks both policy substrings, after mirroring the classifier's cheapest byte normalizations - dropping line-continuation and escape backslashes, quotes, and newlines.
 2. The raw command carries no quoting-decoder marker: a `$` immediately followed by a single quote (ANSI-C `$'...'`) or a double quote (bash locale `$"..."`).
 
-Any `fm-watch` match or any quoting-decoder marker delegates to the classifier.
+Any `fm-watch` or `gh` match, or any quoting-decoder marker, delegates to the classifier.
 Normalizing first keeps this a strict superset: a protected watcher path obfuscated as `fm-watc\<newline>h-arm.sh` or `fm-"watch"-arm.sh` still delegates, and stripping only those non-alphanumeric bytes can never destroy an existing `fm-watch` run.
 The quoting-decoder marker closes the case the byte strip cannot: `bin/fm-$'\x77'atch-arm.sh` and `bin/fm-$"watch"-arm.sh` both resolve to `bin/fm-watch-arm.sh` only after the classifier decodes the encoded character, so a cheap byte strip would otherwise lose the `fm-watch` bytes and fast-allow them.
 This marker set is coupled to the classifier's decoder set in `bin/fm-arm-command-policy.mjs`: adding any new quote or expansion form the classifier decodes requires extending this marker set in the same change, or the prefilter stops being a strict superset.
-The prefilter owns no semantic exception: it can only ever fast-allow a command that is definitely not a watcher command, so it never flips a classification and the classifier remains the single owner of every decision.
+The prefilter owns no semantic exception: it can only ever fast-allow a command that cannot contain either protected byte sequence, so it never flips a classification and the classifier remains the single owner of every decision.
 
 The seatbelt's threat model is agent mistakes: no one accidentally writes an ANSI-C- or locale-obfuscated watcher path, and deliberate obfuscation is the post-arm liveness guard's territory.
 The marker guard closes the static gap anyway because it is cheap and provable per encoding class.
@@ -71,6 +73,13 @@ Suffix matching recognizes an expanded-path prefix statically, so `$FM_HOME/bin/
 The classifier never expands the variable or tilde; it matches the literal bytes only.
 Static quote forms are cooked before the suffix match, so a command word split by ordinary quotes (`fm-"watch"-arm.sh`), ANSI-C quoting (`fm-$'\x77'atch-arm.sh`), or a bash locale string (`fm-$"watch"-arm.sh`) all resolve to the same identity; this reads the fixed literal bytes as the shell would cook them and never runs an expansion or a command.
 This covers statically-visible literal words in command position; opaque dynamic dataflow such as `bash -lc "$WHOLE_COMMAND"` remains out of scope.
+
+An executed command word whose basename is exactly `gh` denies with `bare-gh`.
+This includes direct paths, supported wrapper prefixes, compound commands, pipelines, subshells, literal shell payloads, and command substitutions to the extent the lexer models them.
+`gh-axi` is a different basename and remains allowed.
+`command -v gh`, `command -V gh`, and `type gh` are diagnostics rather than executions and remain allowed.
+Arguments, comments, and non-executed heredoc text containing `gh` remain data.
+Invoking a script is classified at that outer script command position only; the policy never opens or scans the script, so internal raw `gh` calls remain under the script owner's control.
 
 `bin/fm-watch.sh` is protected but is not a blessed entry point.
 A direct `bin/fm-watch.sh` execution - relative, `<code-root>`-anchored, `$VAR`-prefixed, or `~`-prefixed - always denies with `watcher-direct`, whose reason points the caller at `bin/fm-watch-arm.sh` and `bin/fm-watch-checkpoint.sh`.
@@ -131,6 +140,7 @@ Every semantic deny includes one stable code in square brackets before its prose
 
 | Code | Meaning |
 | --- | --- |
+| `bare-gh` | An agent shell command executes `gh`; use `gh-axi` instead. |
 | `watcher-background` | A protected execution is in an asynchronous list or uses `nohup` or `disown`. |
 | `watcher-pipeline` | A protected execution participates in any pipeline. |
 | `watcher-redirection` | A protected execution uses shell redirection. |

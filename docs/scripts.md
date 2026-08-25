@@ -57,8 +57,8 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-turnend-guard.sh`    | Shared primary turn-end guard: no blind end, no prose-only ready-action idle, no owner-invoke wait, `speech-claim:` SoT content without open evidence, Map 2 answer-time lock mismatch, and no unchecked TradingView session login block (docs/turnend-guard.md; script header owns the session-diagnosis contract) |
 | `fm-turnend-guard-grok.sh` | Grok Stop-hook adapter for the primary turn-end guard                              |
 | `fm-kimi-turnend-hook.sh` | Surgically install or remove Kimi's guarded global crew turn-end hook                |
-| `fm-arm-pretool-check.sh` | Stable PreToolUse transport for the watcher-arm command policy (docs/arm-pretool-check.md) |
-| `fm-arm-command-policy.mjs` | Semantic owner of the watcher-arm PreToolUse policy (docs/arm-pretool-check.md)   |
+| `fm-arm-pretool-check.sh` | Stable PreToolUse transport for shell command policy (docs/arm-pretool-check.md) |
+| `fm-arm-command-policy.mjs` | Semantic owner of shell command PreToolUse policy (docs/arm-pretool-check.md)   |
 | `fm-subagent-pretool-check.sh` | Primary-home delegation-shape PreToolUse guard (docs/subagent-guard.md) |
 | `fm-project-write-pretool-check.sh` | Primary-home PreToolUse guard against file-tool writes into project clones and live task worktrees (docs/project-write-guard.md) |
 | `fm-project-write-grant.sh` | Record one captain-approved short-TTL, path-scoped, single-use exception to that guard (docs/project-write-guard.md) |
