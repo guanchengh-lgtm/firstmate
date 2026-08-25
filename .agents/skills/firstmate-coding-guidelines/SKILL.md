@@ -53,7 +53,7 @@ That is the trigger condition for loading the skill, plus any safety-critical fa
 Everything else - the procedure, the mechanism, the surrounding detail - moves out completely.
 Do not leave a partial restatement behind "just in case".
 A partial copy is exactly the duplication the one-owner rule forbids.
-The model to copy is `AGENTS.md` section 8's "Away-mode stub": it keeps only the marker format, the ownership-transfer rule, and the exit condition inline, and points everything else at the `/afk` skill.
+The model to copy is `AGENTS.md` section 8's away-mode contract: it keeps only the marker format, the ownership-transfer rule, and the exit condition inline, and points everything else at the `/afk` skill.
 
 ## Size discipline
 
@@ -66,7 +66,7 @@ When in doubt, write the fact into the skill or doc first by patching that owner
 ## Trigger hygiene
 
 A new skill is dead weight if nothing loads it.
-Every new skill needs its load trigger declared inline: section 13 for agent-only reference skills, or the relevant operating section for anything else.
+Every new skill needs its load trigger declared inline in the relevant operating section, or in section 13 when no operating section fits.
 State the trigger as a condition ("load before X", "load on Y wake"), never as a vague pointer.
 Briefs for tasks that touch firstmate's own tracked material should tell the crewmate to load this skill.
 `bin/fm-brief.sh`'s `REPO` argument is a caller-supplied string with no reliable signal that it names firstmate's own repo, unlike a project registered in `data/projects.md`, so there is no clean point inside the scaffold to detect this case automatically.
