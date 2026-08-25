@@ -1,0 +1,2 @@
+ok - fm-peek/fm-send: explicit metadata-matched targets use the recorded zellij backend
+ok - fm-send: fm-id zellij targets reject pane ids whose tab label no longer matches

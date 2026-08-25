@@ -1,0 +1,1 @@
+not ok - fm-send --key should route an explicit metadata-matched target through zellij: expected exit 0, got 1

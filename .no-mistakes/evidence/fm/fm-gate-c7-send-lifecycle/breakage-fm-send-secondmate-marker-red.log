@@ -1,0 +1,5 @@
+ok - fm-send: a kind=secondmate target gets the from-firstmate marker and corr prepended
+ok - fm-send: an exact kind=secondmate task id is marked with corr exactly once
+ok - fm-send: exact-id and stable-label kind=ship selectors are sent unmarked
+ok - fm-send: explicit endpoints stay unmarked with or without local metadata
+not ok - --key send to a secondmate should succeed: expected exit 0, got 1

@@ -1,0 +1,4 @@
+not ok - default send: expected a trailing 1s settle pause, got '0.4'
+--- sleeps ---
+0.3
+0.4

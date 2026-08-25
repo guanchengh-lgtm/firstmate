@@ -1,0 +1,73 @@
+=== DEMO: fm-send refuses lifecycle for recorded task (C7) ===
+
+--- recorded task meta ---
+window=sess:fm-worker-7
+worktree=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.vltqoxLVMa/wt
+project=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.vltqoxLVMa/project
+harness=codex
+kind=ship
+mode=no-mistakes
+yolo=off
+
+$ fm-send.sh worker-7 /exit
+exit=1
+error: fm-send refuses lifecycle control for recorded task 'worker-7'; use bin/fm-control.sh worker-7 exit
+
+$ fm-send.sh worker-7 /quit
+exit=1
+error: fm-send refuses lifecycle control for recorded task 'worker-7'; use bin/fm-control.sh worker-7 exit
+
+$ fm-send.sh worker-7 --key Escape
+exit=1
+error: fm-send refuses lifecycle control for recorded task 'worker-7'; use bin/fm-control.sh worker-7 interrupt
+
+$ fm-send.sh worker-7 --key escape
+exit=1
+error: fm-send refuses lifecycle control for recorded task 'worker-7'; use bin/fm-control.sh worker-7 interrupt
+
+$ fm-send.sh worker-7 --key C-c
+exit=1
+error: fm-send refuses lifecycle control for recorded task 'worker-7'; use bin/fm-control.sh worker-7 interrupt
+
+$ fm-send.sh worker-7 --key ctrl+c
+exit=1
+error: fm-send refuses lifecycle control for recorded task 'worker-7'; use bin/fm-control.sh worker-7 interrupt
+
+$ fm-send.sh worker-7 --key C-u
+exit=1
+error: fm-send refuses lifecycle control for recorded task 'worker-7'; use bin/fm-control.sh worker-7 interrupt
+
+$ fm-send.sh sess:fm-worker-7 /exit
+exit=1
+error: fm-send refuses lifecycle control for recorded task 'worker-7'; use bin/fm-control.sh worker-7 exit
+
+$ fm-send.sh worker-7 please type /exit later
+exit=0
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the requested message WILL still be sent.
+●  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e /Users/AI/.no-mistakes/worktrees/edb446952c22/01M0XAET86M6M92Y66RQAQJ66D/.pi/extensions/fm-primary-turnend-guard.ts -e /Users/AI/.no-mistakes/worktrees/edb446952c22/01M0XAET86M6M92Y66RQAQJ66D/.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+$ fm-send.sh worker-7 --key Enter
+exit=0
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+
+--- backend tmux log (lifecycle must not appear) ---
+TMUX display-message -p -t sess:fm-worker-7 #{cursor_y}
+TMUX capture-pane -p -t sess:fm-worker-7 -S -40
+TMUX send-keys -t sess:fm-worker-7 -l Firstmate instruction waiting: list /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.vltqoxLVMa/home/state/worker-7.inbox/*.msg and, in numeric order, read and act on each, then mv each handled file to /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.vltqoxLVMa/home/state/worker-7.inbox/handled/.
+TMUX send-keys -t sess:fm-worker-7 Enter
+TMUX display-message -p -t sess:fm-worker-7 #{cursor_y}
+TMUX capture-pane -p -t sess:fm-worker-7 -S -40
+TMUX display-message -p -t sess:fm-worker-7 #{pane_id}
+TMUX send-keys -t sess:fm-worker-7 Enter
+
+--- inbox after ordinary prose ---
+# 001.msg
+schema=fm-task-inbox.v1
+at=2026-08-25T20:48:38Z
+--
+please type /exit later
