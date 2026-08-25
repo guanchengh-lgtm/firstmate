@@ -3892,9 +3892,9 @@ SH
   : > "$log"
   PATH="$fb:$PATH" FM_ROOT_OVERRIDE="$neutral" FM_HOME="$neutral" FM_STATE_OVERRIDE="$state" \
     FM_HERDR_LOG="$log" FM_HERDR_RESPONSES="$resp" \
-    "$ROOT/bin/fm-send.sh" default:w1:p2 --key Escape >/dev/null 2>&1
+    "$ROOT/bin/fm-send.sh" default:w1:p2 --key Enter >/dev/null 2>&1
   expect_code 0 $? "fm-send --key should route an explicit metadata-matched target through herdr"
-  assert_contains "$(cat "$log")" $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''escape' \
+  assert_contains "$(cat "$log")" $'\x1f''pane'$'\x1f''send-keys'$'\x1f''w1:p2'$'\x1f''enter' \
     "fm-send did not route the explicit stale target through herdr send-key"
 
   pass "fm-peek/fm-send: explicit stale targets matching metadata use the recorded backend"

@@ -203,36 +203,96 @@ test_healthy_fm_id_send_still_works() {
   pass "fm-send strict: healthy fm-<id> sends record the steer and ring once"
 }
 
-# A --key send is how firstmate interrupts a worker, so its exit status is the
-# only signal that the interrupt actually landed.
-# Reporting success for a key that was never delivered would leave supervision
-# believing a runaway worker had been stopped, so the failing case must exit
-# nonzero and name the key.
-# Both directions are asserted from one stub so the failing case cannot go
-# quietly vacuous if the key ever stops being delivered at all.
-test_key_send_exit_status_follows_delivery() {
+# Non-lifecycle keys remain on the data plane, and their exit status still
+# follows backend delivery.
+test_non_lifecycle_key_exit_status_follows_delivery() {
   local dir fb home err log rc
   dir="$TMP_ROOT/key-exit"; mkdir -p "$dir"
   fb=$(make_stubs "$dir"); home=$(setup_home keyexit); err="$dir/send.err"; log="$dir/tmux.log"; : > "$log"
   fm_write_meta "$home/state/lane-key.meta" "window=sess:fm-lane-key" "kind=ship"
 
   PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \
-    "$SEND" lane-key --key Escape >/dev/null 2>"$err"; rc=$?
-  expect_code 0 "$rc" "a delivered --key interrupt should report success"
-  assert_contains "$(cat "$log")" "target=sess:fm-lane-key literal=0 arg=Escape" "the delivered case should send the named key"
+    "$SEND" lane-key --key Enter >/dev/null 2>"$err"; rc=$?
+  expect_code 0 "$rc" "a delivered data-plane key should report success"
+  assert_contains "$(cat "$log")" "target=sess:fm-lane-key literal=0 arg=Enter" "the delivered case should send the named key"
 
   : > "$log"
   PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \
-    FM_FAKE_TMUX_SEND_KEY_FAIL=Escape \
-    "$SEND" lane-key --key Escape >/dev/null 2>"$err"; rc=$?
-  [ "$rc" -ne 0 ] || fail "an undelivered --key interrupt reported success"
-  assert_contains "$(cat "$err")" "key 'Escape' not sent" "the undelivered case should name the key that failed"
-  assert_contains "$(cat "$log")" "target=sess:fm-lane-key literal=0 arg=Escape" "the undelivered case should still have attempted the send"
-  pass "fm-send --key: exit status follows delivery, and an undelivered key never reports success"
+    FM_FAKE_TMUX_SEND_KEY_FAIL=Enter \
+    "$SEND" lane-key --key Enter >/dev/null 2>"$err"; rc=$?
+  [ "$rc" -ne 0 ] || fail "an undelivered data-plane key reported success"
+  assert_contains "$(cat "$err")" "key 'Enter' not sent" "the undelivered case should name the key that failed"
+  assert_contains "$(cat "$log")" "target=sess:fm-lane-key literal=0 arg=Enter" "the undelivered case should still have attempted the send"
+  pass "fm-send --key: data-plane key exit status follows delivery"
+}
+
+test_recorded_task_lifecycle_refuses_before_effects() {
+  local dir fb home err log rc payload key before after
+  dir="$TMP_ROOT/lifecycle"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); home=$(setup_home lifecycle); err="$dir/send.err"; log="$dir/tmux.log"
+  fm_write_meta "$home/state/lane-life.meta" \
+    "window=sess:fm-lane-life" "worktree=$home/wt" "project=$home/project" \
+    "harness=codex" "kind=ship" "mode=no-mistakes" "yolo=off"
+
+  for payload in /exit /quit; do
+    : > "$log"
+    before=$(find "$home/state" -mindepth 1 -print | sort)
+    PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \
+      "$SEND" lane-life "$payload" >/dev/null 2>"$err"; rc=$?
+    [ "$rc" -ne 0 ] || fail "recorded task accepted lifecycle message '$payload'"
+    assert_contains "$(cat "$err")" "bin/fm-control.sh lane-life exit" \
+      "lifecycle message refusal should name the control owner"
+    [ ! -s "$log" ] || fail "lifecycle message '$payload' reached the backend"
+    after=$(find "$home/state" -mindepth 1 -print | sort)
+    [ "$after" = "$before" ] || fail "lifecycle message '$payload' changed task state before refusing"
+  done
+
+  for key in Escape escape Esc esc C-c ctrl+c C-u ctrl+u; do
+    : > "$log"
+    before=$(find "$home/state" -mindepth 1 -print | sort)
+    PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \
+      "$SEND" lane-life --key "$key" >/dev/null 2>"$err"; rc=$?
+    [ "$rc" -ne 0 ] || fail "recorded task accepted lifecycle key '$key'"
+    assert_contains "$(cat "$err")" "bin/fm-control.sh lane-life interrupt" \
+      "lifecycle key refusal should name the control owner"
+    [ ! -s "$log" ] || fail "lifecycle key '$key' reached the backend"
+    after=$(find "$home/state" -mindepth 1 -print | sort)
+    [ "$after" = "$before" ] || fail "lifecycle key '$key' changed task state before refusing"
+  done
+
+  : > "$log"
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" sess:fm-lane-life /exit >/dev/null 2>"$err"; rc=$?
+  [ "$rc" -ne 0 ] || fail "metadata-matched explicit endpoint accepted lifecycle control"
+  assert_contains "$(cat "$err")" "bin/fm-control.sh lane-life exit" \
+    "metadata-matched endpoint refusal should name its recorded task"
+  [ ! -s "$log" ] || fail "metadata-matched lifecycle control reached the backend"
+
+  fm_write_meta "$home/state/remote-life.meta" \
+    "window=remote:fm-remote-life" "worktree=$home/remote-wt" "project=$home/project" \
+    "remote_host=worker.example" "harness=codex" "kind=secondmate" "mode=no-mistakes" "yolo=off"
+  before=$(find "$home/state" -mindepth 1 -print | sort)
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" remote-life /quit >/dev/null 2>"$err"; rc=$?
+  [ "$rc" -ne 0 ] || fail "remote recorded task accepted lifecycle control"
+  assert_contains "$(cat "$err")" "bin/fm-control.sh remote-life exit" \
+    "remote lifecycle refusal should name the control owner"
+  after=$(find "$home/state" -mindepth 1 -print | sort)
+  [ "$after" = "$before" ] || fail "remote lifecycle control changed task state before refusing"
+
+  : > "$log"
+  PATH="$fb:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_TMUX_LOG="$log" FM_SEND_SETTLE=0 \
+    "$SEND" lane-life "please type /exit later" >/dev/null 2>"$err"; rc=$?
+  expect_code 0 "$rc" "ordinary prose containing /exit should remain a data-plane message"
+  grep -qF 'please type /exit later' "$home/state/lane-life.inbox/001.msg" \
+    || fail "ordinary prose containing /exit was not delivered"
+
+  pass "fm-send lifecycle: recorded task messages and keys refuse before effects"
 }
 
 test_exact_lane_id_send_still_works
-test_key_send_exit_status_follows_delivery
+test_non_lifecycle_key_exit_status_follows_delivery
+test_recorded_task_lifecycle_refuses_before_effects
 test_unset_fm_home_fails
 test_unresolvable_target_does_not_tmux_fallback
 test_prefixless_herdr_pane_id_fails

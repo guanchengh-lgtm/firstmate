@@ -12,9 +12,9 @@
 # verbs addressed to an exact task id, with the per-harness mechanics owned
 # here rather than improvised per harness in agent prose.
 #
-# This file owns three capability tables plus their pure artifact-path tables
-# and nothing else. It has no side effects, runs no backend command, and reads
-# no state, so it can be sourced by a test as a pure contract:
+# This file owns three capability tables, their pure lifecycle classifiers,
+# and their pure artifact-path tables. It has no side effects, runs no backend
+# command, and reads no state, so it can be sourced by a test as a pure contract:
 #
 #   1. Verb allowlist. There is no arbitrary-text and no generic raw-key entry
 #      point on the control plane; a caller either names an allowlisted verb or
@@ -25,9 +25,9 @@
 #      which command exits the agent, and which task kinds the adapter is
 #      verified to run. These are the empirically verified facts previously
 #      carried only in the harness-adapters skill's per-adapter tables; that
-#      skill now points here so one executable owner holds them, and
-#      bin/fm-send.sh's --key path reads the same table rather than a second
-#      copy of it.
+#      skill now points here so one executable owner holds them. The data plane
+#      consumes the pure lifecycle classifiers below and refuses recorded-task
+#      lifecycle payloads before effects.
 #   3. Per-backend capability: which named keys a runtime backend can deliver,
 #      and whether the backend has a recovery-grade agent-state classifier
 #      (bin/fm-backend.sh's fm_backend_agent_state) able to PROVE that an agent
@@ -58,13 +58,30 @@ fm_control_verb_allowed() {  # <verb>
   return 1
 }
 
-# The harnesses whose control mechanics are verified. Mirrors AGENTS.md
-# section 4's verified-adapter list; an unverified adapter is refused rather
-# than guessed at, exactly as a spawn on it would be.
+# The harnesses whose control mechanics are verified, one per line.
+fm_control_harnesses() {
+  cat <<'EOF'
+claude
+codex
+opencode
+pi
+pi-signed
+grok
+kimi
+cursor
+muse
+EOF
+}
+
+# Mirrors AGENTS.md section 4's verified-adapter list; an unverified adapter is
+# refused rather than guessed at, exactly as a spawn on it would be.
 fm_control_harness_supported() {  # <harness>
-  case "${1-}" in
-    claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|muse) return 0 ;;
-  esac
+  local harness
+  while IFS= read -r harness; do
+    [ "${1-}" = "$harness" ] && return 0
+  done <<EOF
+$(fm_control_harnesses)
+EOF
   return 1
 }
 
@@ -163,6 +180,51 @@ fm_control_exit_command() {  # <harness>
     codex|pi|pi-signed) printf '/quit' ;;
     *) return 1 ;;
   esac
+}
+
+# Normalize every spelling the supported backends accept for keys owned by
+# lifecycle control. Keeping this table here lets data-plane callers refuse
+# control operations without duplicating per-backend spellings.
+fm_control_normalize_key() {  # <key>
+  case "${1-}" in
+    Escape|escape|Esc|esc) printf 'Escape' ;;
+    C-c|c-c|ctrl+c|Ctrl+c|Ctrl+C|ctrl-c|Ctrl-c|Ctrl-C|'Ctrl c'|'ctrl c') printf 'C-c' ;;
+    C-u|c-u|ctrl+u|Ctrl+u|Ctrl+U|ctrl-u|Ctrl-u|Ctrl-U|'Ctrl u'|'ctrl u') printf 'C-u' ;;
+    *) printf '%s' "${1-}" ;;
+  esac
+}
+
+fm_control_message_verb() {  # <complete-message>
+  local harness command
+  while IFS= read -r harness; do
+    command=$(fm_control_exit_command "$harness") || continue
+    [ "${1-}" = "$command" ] || continue
+    printf 'exit'
+    return 0
+  done <<EOF
+$(fm_control_harnesses)
+EOF
+  return 1
+}
+
+fm_control_key_verb() {  # <key>
+  local key harness owned
+  key=$(fm_control_normalize_key "${1-}")
+  while IFS= read -r harness; do
+    owned=$(fm_control_interrupt_key "$harness") || continue
+    if [ "$key" = "$owned" ]; then
+      printf 'interrupt'
+      return 0
+    fi
+    owned=$(fm_control_interrupt_clear_key "$harness") || continue
+    if [ -n "$owned" ] && [ "$key" = "$owned" ]; then
+      printf 'interrupt'
+      return 0
+    fi
+  done <<EOF
+$(fm_control_harnesses)
+EOF
+  return 1
 }
 
 # Which named keys a backend adapter can deliver. Every session provider

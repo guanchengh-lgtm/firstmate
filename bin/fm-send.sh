@@ -7,7 +7,9 @@
 #   target. fm-send refuses unresolved guesses rather than falling back to a
 #   tmux window search, because a "successful" send to the wrong endpoint is
 #   worse than a loud failure.
-# Special keys instead of text: fm-send.sh <target> --key Enter
+# Special data-plane keys instead of text: fm-send.sh <target> --key Enter
+# Lifecycle text and keys for recorded tasks are refused; use
+# bin/fm-control.sh <task-id> interrupt|exit instead.
 # Key support is backend-specific: tmux/herdr support Escape, Enter, and C-c;
 # Orca currently supports Enter and C-c only, and rejects Escape.
 #
@@ -217,63 +219,10 @@ fi
 # shellcheck source=bin/fm-task-inbox-lib.sh
 . "$SCRIPT_DIR/fm-task-inbox-lib.sh"
 
-FM_GUARD_CONTINUE_LINE='This is a supervision warning only; the requested message WILL still be sent.' "$SCRIPT_DIR/fm-guard.sh" || true
-
 fm_send_id_from_meta() {  # <meta-file>
   local base
   base=${1##*/}
   printf '%s' "${base%.meta}"
-}
-
-# fm_send_clear_after_interrupt: muse RESTORES the interrupted prompt back into
-# the composer when Escape cancels a turn, as real bright text (verified: fg
-# 38;2;204;211;219, luminance ~210, muse 0.1.0-R708.1), not de-emphasised ghost
-# text. Classifying that as pending input is correct - the text really is
-# unsubmitted - but leaving it there means the NEXT steer types onto the end of
-# it and submits both as one garbled message. Ctrl-U clears the composer
-# (verified), so the interrupt is not complete until it has been sent. A failed
-# clear is loud rather than silent, because the alternative is a corrupted steer.
-# WHICH adapters need that clear, and which key clears them, comes from the one
-# control-plane capability table (bin/fm-control-lib.sh) rather than a second
-# copy here - the same table bin/fm-control.sh's interrupt verb reads.
-fm_send_clear_after_interrupt() {  # <key>
-  local key=$1 family clear
-  [ "$key" = Escape ] || return 0
-  family=$(fm_control_harness_family "$TARGET_HARNESS") || return 0
-  clear=$(fm_control_interrupt_clear_key "$family") || return 0
-  [ -n "$clear" ] || return 0
-  [ "$TARGET_BACKEND" != remote ] || return 0
-  if ! fm_backend_send_key "$TARGET_BACKEND" "$T" "$clear" "$EXPECTED_LABEL"; then
-    echo "error: Escape reached $T, but the $TARGET_HARNESS composer could not be cleared; it still holds the restored prompt. Clear it before sending the next message." >&2
-    return 1
-  fi
-}
-
-fm_send_normalize_key() {  # <key>
-  case "$1" in
-    Escape|escape|Esc|esc) printf '%s' Escape ;;
-    *) printf '%s' "$1" ;;
-  esac
-}
-
-fm_send_record_interrupt() {  # <key>
-  local key=$1 id gen
-  [ "$key" = Escape ] || return 0
-  case "$TARGET_HARNESS" in claude*) : ;; *) return 0 ;; esac
-  [ -n "$TARGET_META" ] || return 0
-  id=$(fm_send_id_from_meta "$TARGET_META")
-  [ -f "$STATE/$id.busy-gen" ] || return 0
-  gen=$(fm_meta_get "$TARGET_META" busy_gen)
-  if [ -n "$gen" ]; then
-    "$FM_ROOT/bin/fm-busy-event.sh" apply "$STATE" "$id" idle \
-      --gen "$gen" --source fm-interrupt --event interrupt
-  else
-    "$FM_ROOT/bin/fm-busy-event.sh" apply "$STATE" "$id" idle \
-      --current-gen --source fm-interrupt --event interrupt
-  fi || {
-    echo "error: key '$key' reached $T, but the Claude interrupt state could not be recorded for $id" >&2
-    return 1
-  }
 }
 
 fm_send_meta_for_key_value() {  # <state-dir> <key> <value>
@@ -403,20 +352,6 @@ fm_send_resolve_target "$RAW_TARGET" || exit 1
 T=$RESOLVED_TARGET
 shift
 
-# Supervision lease guard: a steer is overlap territory between the two Pi
-# supervision actors, so refuse while the OTHER actor holds this task's live
-# lease. A home with no supervision branch has no lease files and passes
-# untouched (contract: bin/fm-lease-lib.sh).
-# shellcheck source=bin/fm-lease-lib.sh
-. "$SCRIPT_DIR/fm-lease-lib.sh"
-if [ -n "$TARGET_META" ]; then
-  LEASE_GUARD_TASK=$(fm_send_id_from_meta "$TARGET_META")
-  if [ -n "$LEASE_GUARD_TASK" ]; then
-    fm_lease_guard "$LEASE_GUARD_TASK" "steer (fm-send)"
-    trap 'fm_lease_guard_release' EXIT
-  fi
-fi
-
 # Collect --resolve-key flags (answerer-closes; see the header contract). They
 # must precede --key or the message text; everything after the last flag is the
 # message exactly as before, so ordinary sends are byte-identical.
@@ -451,6 +386,39 @@ while :; do
     *) break ;;
   esac
 done
+
+# A metadata match means the target is a recorded task even when the caller
+# supplied its explicit endpoint. Refuse lifecycle control before the lease,
+# pending-reply, inbox, remote, or backend paths can have any effect.
+fm_send_refuse_recorded_lifecycle() {  # <remaining-args...>
+  local id verb
+  [ -n "$TARGET_META" ] || return 0
+  if [ "${1:-}" = --key ]; then
+    verb=$(fm_control_key_verb "${2:-}") || return 0
+  else
+    verb=$(fm_control_message_verb "$*") || return 0
+  fi
+  id=$(fm_send_id_from_meta "$TARGET_META")
+  echo "error: fm-send refuses lifecycle control for recorded task '$id'; use bin/fm-control.sh $id $verb" >&2
+  return 1
+}
+fm_send_refuse_recorded_lifecycle "$@" || exit 1
+
+FM_GUARD_CONTINUE_LINE='This is a supervision warning only; the requested message WILL still be sent.' "$SCRIPT_DIR/fm-guard.sh" || true
+
+# Supervision lease guard: a steer is overlap territory between the two Pi
+# supervision actors, so refuse while the OTHER actor holds this task's live
+# lease. A home with no supervision branch has no lease files and passes
+# untouched (contract: bin/fm-lease-lib.sh).
+# shellcheck source=bin/fm-lease-lib.sh
+. "$SCRIPT_DIR/fm-lease-lib.sh"
+if [ -n "$TARGET_META" ]; then
+  LEASE_GUARD_TASK=$(fm_send_id_from_meta "$TARGET_META")
+  if [ -n "$LEASE_GUARD_TASK" ]; then
+    fm_lease_guard "$LEASE_GUARD_TASK" "steer (fm-send)"
+    trap 'fm_lease_guard_release' EXIT
+  fi
+fi
 
 if [ "$TARGET_BACKEND" != remote ]; then
   fm_backend_validate "$TARGET_BACKEND" || exit 1
@@ -611,7 +579,6 @@ if [ "${1:-}" = "--key" ]; then
       ;;
   esac
   key=$2
-  semantic_key=$(fm_send_normalize_key "$key")
   if [ "$TARGET_BACKEND" = remote ]; then
     if ! "$SCRIPT_DIR/fm-on.sh" "$TARGET_REMOTE_ID" fm-remote-secondmate-control.sh key "$TARGET_REMOTE_ID" "$key" < /dev/null; then
       echo "error: key '$key' not sent to remote secondmate $TARGET_REMOTE_ID; completion may be unknown" >&2
@@ -621,8 +588,6 @@ if [ "${1:-}" = "--key" ]; then
     echo "error: key '$key' not sent to $T ($TARGET_BACKEND send failed; tried $RESOLUTION_TRIED)" >&2
     exit 1
   fi
-  fm_send_clear_after_interrupt "$semantic_key" || exit 1
-  fm_send_record_interrupt "$semantic_key" || exit 1
 else
   MESSAGE=$*
   # The pre-marker answer text, kept for the closing resolved note so the

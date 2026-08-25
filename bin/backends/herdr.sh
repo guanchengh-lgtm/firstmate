@@ -2549,7 +2549,7 @@ fm_backend_herdr_send_literal() {  # <target> <text>
 }
 
 # fm_backend_herdr_normalize_key: map firstmate's key vocabulary (Enter,
-# Escape, C-c, as used by fm-send.sh --key and stuck-crewmate-recovery) onto
+# Escape, C-c, as used by fm-send.sh and fm-control.sh) onto
 # herdr's `pane send-keys` names. Verified empirically: enter, escape/esc, and
 # both ctrl+c/C-c all work (case-insensitive on herdr's side, but normalize
 # explicitly rather than relying on that).
@@ -2558,15 +2558,13 @@ fm_backend_herdr_normalize_key() {  # <key>
     Enter|enter) printf 'enter' ;;
     Escape|escape|Esc|esc) printf 'escape' ;;
     C-c|c-c|ctrl+c|Ctrl+C) printf 'ctrl+c' ;;
-    # C-u clears a composer line. fm-send.sh's muse interrupt path needs it to
-    # drop the prompt muse restores into the composer after Escape.
+    # C-u clears the prompt muse restores after Escape during fm-control.
     C-u|c-u|ctrl+u|Ctrl+U) printf 'ctrl+u' ;;
     *) printf '%s' "$1" ;;
   esac
 }
 
-# fm_backend_herdr_send_key: one named special key. Mirrors fm-send.sh's --key
-# path (tmux's `send-keys -t T key`).
+# fm_backend_herdr_send_key: one named special key for data or control planes.
 fm_backend_herdr_send_key() {  # <target> <key>
   fm_backend_herdr_target_ready "$1" || return 1
   local key

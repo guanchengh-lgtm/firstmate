@@ -47,8 +47,7 @@ Escalate in order:
 
 1. Peek the pane, and check the task's steering inbox (`state/<id>.inbox/`) for unhandled `*.msg` records - a stale wake naming an unread firstmate instruction means the worker never acknowledged a durable steer, and the record itself shows exactly what was intended.
 2. If the crewmate is waiting on a question its brief already answers, answer in one line via `FM_HOME=<this-firstmate-home> bin/fm-send.sh` from an active firstmate session unless `FM_HOME` is already set to the active firstmate home.
-3. If the crewmate is confused or looping, interrupt with the adapter's interrupt key, then redirect with one corrective line.
-   For example, for a single-Escape adapter: `FM_HOME=<this-firstmate-home> bin/fm-send.sh <window> --key Escape`.
+3. If the crewmate is confused or looping, interrupt through `FM_HOME=<this-firstmate-home> bin/fm-control.sh <task-id> interrupt`, then redirect with one corrective line.
 4. If the crewmate is genuinely wedged after redirection, exit the agent with the adapter's exit command and relaunch with a `progress so far` note: for `kind=ship`, pass `bin/fm-spawn.sh --role` from recorded `role=` when present and append to that role's file; for `kind=scout`, omit `--role` and append to `data/<id>/brief.md`.
    Genuine wedging means looping, unresponsive, repeating the same obstacle, or truly dead.
    A low context reading is not wedging; modern harnesses auto-compact and keep going.
