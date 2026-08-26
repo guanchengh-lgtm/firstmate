@@ -1,0 +1,14 @@
+SCENARIO 1 — direct same-branch running run, valid but unavailable SHA
+state: working · source: run-step · validating (running)
+
+SCENARIO 2 — newest coarse same-branch row is running with unavailable SHA
+coarse rows: running fffffff (newest), cancelled matching-head (older)
+state: working · source: run-step · validating (background run)
+
+SCENARIO 3 — top-level running has gate signal and coarse list is explicitly empty
+expected: identity-bound run is rejected; current status-log remains visible
+state: working · source: status-log · current implementation continues
+
+SCENARIO 4 — newest coarse terminal row has mismatched identity; older running row matches
+expected: first same-branch row is decisive, so no older-row attribution and no false terminal
+state: working · source: status-log · current implementation continues
