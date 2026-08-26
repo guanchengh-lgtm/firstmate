@@ -8,8 +8,8 @@
 # or blocked and the crew resumes (responds to the gate, the pipeline fixes, it
 # re-validates), the log's last line stays stale. This helper never infers the
 # current state from a tail of the log: it reads the authoritative source (a
-# no-mistakes run-step attributed to this crew's branch and current code
-# identity, else the pane busy-signature) and reconciles the possibly-stale log
+# no-mistakes run-step safely attributed to this crew's branch under the rules
+# below, else the pane busy-signature) and reconciles the possibly-stale log
 # against it.
 #
 # The determinism lives entirely here - only run-step / pane / log reads plus
@@ -27,10 +27,15 @@
 #      to the routed status log; dead/missing report the remote verdict; an
 #      unreachable or unreadable remote reports unknown-remote, never a false
 #      gone/dead.
-#   2. Matching no-mistakes run for this crew's branch AND current code identity,
-#      active or terminal (from `axi status`, or the coarse `no-mistakes runs`
-#      fallback)? Branch name alone is not enough. Code identity is owned by
-#      fm_nm_head_matches_worktree in bin/fm-nm-run-lib.sh.
+#   2. Matching no-mistakes run for this crew's branch: a direct running,
+#      fixing, or ci payload with an ID, syntactically valid head, no outcome,
+#      no awaiting-agent field, and no gate signal binds by branch alone. So
+#      does the newest same-branch coarse running row. Every other direct or
+#      coarse payload remains current-code-identity-bound (from `axi status`,
+#      or the coarse `no-mistakes runs` fallback). Code identity is owned by
+#      fm_nm_head_matches_worktree in bin/fm-nm-run-lib.sh. Residual: a parked
+#      run with an unfetchable head may degrade through the coarse view to
+#      working, never to a false terminal.
 #      The run-step is AUTHORITATIVE: running/fixing -> working, ci -> working,
 #      awaiting_approval/fix_review -> parked (with gate findings), terminal
 #      passed/checks-passed -> done, failed/cancelled -> failed. EXCEPT: while
@@ -394,12 +399,12 @@ nm_runs_status_for_branch() {  # <branch>
     rest=$(trim "$rest")
     sha=${rest%% *}
     if [ "$br" = "$branch" ]; then
-      # Same code-identity rule as axi status: skip a same-branch row whose
-      # short-sha does not match this worktree (rewritten or advanced tip).
-      if ! nm_coarse_head_matches_worktree "$sha"; then
-        continue
+      # The list is newest-first, so this row alone decides attribution for
+      # the branch. An executing run owns its branch even when its moving head
+      # is not fetchable; terminal and unknown rows remain identity-bound.
+      if [ "$st" = running ] || nm_coarse_head_matches_worktree "$sha"; then
+        printf '%s' "$st"
       fi
-      printf '%s' "$st"
       return 0
     fi
   done <<< "$out"
@@ -438,8 +443,24 @@ COARSE_STATUS=""
 if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/null 2>&1; then
   RUN_OUT=$(nm_run axi status)
   if [ -n "$RUN_OUT" ]; then
+    run_id=$(strip_quotes "$(nm_field id)")
     run_branch=$(strip_quotes "$(nm_field branch)")
-    if [ -n "$run_branch" ] && [ "$run_branch" = "$CREW_BRANCH" ] && nm_run_head_matches_worktree; then
+    run_status=$(strip_quotes "$(nm_field status)")
+    run_head=$(strip_quotes "$(nm_field head)")
+    run_outcome=$(strip_quotes "$(nm_field outcome)")
+    run_awaiting=$(printf '%s\n' "$RUN_OUT" | grep -E '^[[:space:]]*awaiting_agent:' | head -1 || true)
+    run_gate_status=$(nm_gate_status)
+    run_has_gate=0
+    nm_has_gate && run_has_gate=1
+    run_is_executing=0
+    if [ -n "$run_id" ] && fm_nm_sha_form "$run_head" \
+      && [ -z "$run_outcome" ] && [ -z "$run_awaiting" ] && [ -z "$run_gate_status" ] && [ "$run_has_gate" = 0 ]; then
+      case "$run_status" in
+        running|fixing|ci) run_is_executing=1 ;;
+      esac
+    fi
+    if [ -n "$run_branch" ] && [ "$run_branch" = "$CREW_BRANCH" ] \
+      && { [ "$run_is_executing" = 1 ] || nm_run_head_matches_worktree; }; then
       HAVE_RUN=1
     else
       # The active-or-most-recent run is for another branch, or same branch with

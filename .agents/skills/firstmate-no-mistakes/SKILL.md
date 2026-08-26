@@ -28,7 +28,7 @@ Load `ask-user-authority` before deciding an ask-user finding.
 If a decision goes to the verifier, send one exact answer naming the decision key, step, action, finding IDs, instructions when needed, and response command; pass `--resolve-key`, require the matching resolved event, forbid `--yes`, and have the verifier process every synchronous return through completion or a new escalation.
 Resume fleet supervision after the answer lands.
 
-Judge validation by the current-code-matched run step from `bin/fm-crew-state.sh`, not shell liveness or the last status event.
+Judge validation by the attributed run step from `bin/fm-crew-state.sh`, whose header owns the exact direct and coarse attribution rules, not shell liveness or the last status event.
 Running, fixing, and CI remain working; parked approval or fix-review requires the verifier to follow current gate help; passed or checks-passed is complete; failed or cancelled is failure.
 If a verifier edits, commits, aborts, or restarts during an active run outside the supersession sequence, steer it back to the gate-response flow.
 The verifier reports the PR when CI first becomes green rather than waiting for merge monitoring.

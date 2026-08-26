@@ -740,6 +740,90 @@ EOF
   pass "cross-branch attribution picks the branch's most recent row"
 }
 
+test_newest_executing_same_branch_run_wins() {
+  reset_fakes
+  local d unavailable out matching_short
+  unavailable=ffffffffffffffffffffffffffffffffffffffff
+
+  d=$(new_case direct-running-unavailable-head)
+  make_repo_on_branch "$d/wt" fm/feat-direct-running
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/direct-running.meta" "window=fm:fm-direct-running" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_RUN_HEAD=$unavailable
+  FM_FAKE_AXI_STATUS="$(run_running fm/feat-direct-running)"
+  out=$(run_crew_state "$d" direct-running)
+  assert_contains "$out" "state: working" "executing direct status binds with unavailable head"
+  assert_contains "$out" "source: run-step" "executing direct status remains run-step sourced"
+  assert_not_contains "$out" "failed" "executing direct status does not surface a terminal result"
+
+  reset_fakes
+  d=$(new_case direct-running-missing-id)
+  make_repo_on_branch "$d/wt" fm/feat-running-missing-id
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/running-missing-id.meta" "window=fm:fm-running-missing-id" "worktree=$d/wt" "kind=ship" "harness=claude"
+  printf 'working: current implementation continues\n' > "$d/state/running-missing-id.status"
+  FM_FAKE_RUN_HEAD=$unavailable
+  FM_FAKE_AXI_STATUS=$(run_running fm/feat-running-missing-id | grep -v '^  id:')
+  FM_FAKE_RUNS_LIST=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" running-missing-id
+  out=$(run_crew_state "$d" running-missing-id)
+  assert_not_contains "$out" "source: run-step" "executing status without a run id remains identity-bound"
+  assert_contains "$out" "source: status-log" "missing run id falls through to current state"
+
+  reset_fakes
+  d=$(new_case direct-running-malformed-head)
+  make_repo_on_branch "$d/wt" fm/feat-running-malformed-head
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/running-malformed-head.meta" "window=fm:fm-running-malformed-head" "worktree=$d/wt" "kind=ship" "harness=claude"
+  printf 'working: current implementation continues\n' > "$d/state/running-malformed-head.status"
+  FM_FAKE_RUN_HEAD=not-a-sha
+  FM_FAKE_AXI_STATUS="$(run_running fm/feat-running-malformed-head)"
+  FM_FAKE_RUNS_LIST=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" running-malformed-head
+  out=$(run_crew_state "$d" running-malformed-head)
+  assert_not_contains "$out" "source: run-step" "executing status with a malformed head remains identity-bound"
+  assert_contains "$out" "source: status-log" "malformed run head falls through to current state"
+
+  reset_fakes
+  d=$(new_case coarse-newest-running-unavailable-head)
+  make_repo_on_branch "$d/wt" fm/feat-coarse-newest
+  matching_short=$(git -C "$d/wt" rev-parse --short=7 HEAD)
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/coarse-newest.meta" "window=fm:fm-coarse-newest" "worktree=$d/wt" "kind=ship"
+  FM_FAKE_AXI_STATUS="$(run_running fm/other-crew)"
+  FM_FAKE_RUNS_LIST="$(cat <<EOF
+  running    fm/feat-coarse-newest fffffff  2026-08-26 10:10
+  cancelled  fm/feat-coarse-newest ${matching_short}  2026-08-26 10:00
+EOF
+)"
+  out=$(run_crew_state "$d" coarse-newest)
+  assert_contains "$out" "state: working" "newest coarse running row wins with unavailable head"
+  assert_contains "$out" "source: run-step" "newest coarse running row remains run-step sourced"
+  assert_not_contains "$out" "cancelled" "older matching cancelled row is not attributed"
+  assert_not_contains "$out" "state: failed" "older matching cancelled row cannot fail current work"
+
+  reset_fakes
+  d=$(new_case gated-running-unavailable-head)
+  make_repo_on_branch "$d/wt" fm/feat-gated-running
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/gated-running.meta" "window=fm:fm-gated-running" "worktree=$d/wt" "kind=ship" "harness=claude"
+  printf 'working: current implementation continues\n' > "$d/state/gated-running.status"
+  FM_FAKE_RUN_HEAD=$unavailable
+  FM_FAKE_AXI_STATUS="$(run_parked_scalar_gate_running fm/feat-gated-running)"
+  FM_FAKE_RUNS_LIST=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" gated-running
+  out=$(run_crew_state "$d" gated-running)
+  assert_not_contains "$out" "source: run-step" "gated top-level running status remains identity-bound"
+  assert_not_contains "$out" "parked at" "unmatched gated run does not mask current state"
+  assert_contains "$out" "state: working" "unmatched gated run falls through to current status"
+  assert_contains "$out" "source: status-log" "empty coarse list leaves gated run unattributed"
+
+  pass "newest executing same-branch run wins without weakening parked identity"
+}
+
 test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status() {
   reset_fakes
   local d short; d=$(new_case coarse-ready-other-log)
@@ -1516,6 +1600,7 @@ test_terminal_passed
 test_terminal_failed
 test_cross_branch_attribution_via_runs_list
 test_cross_branch_attribution_picks_most_recent_row
+test_newest_executing_same_branch_run_wins
 test_coarse_run_does_not_probe_other_branch_ci_log_for_ready_status
 test_other_branch_run_ignored
 test_no_run_busy_pane
