@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1091,SC2016,SC2088
-# Behavior tests for the watcher-arm PreToolUse seatbelt (docs/arm-pretool-check.md).
+# Behavior tests for the shell-command PreToolUse seatbelt (docs/arm-pretool-check.md).
 #
 # bin/fm-arm-command-policy.mjs is the single owner of command classification.
 # This suite drives the stable shell transport through all five harness entry
@@ -141,6 +141,42 @@ matrix_case E15 allow '$FM_HOME/bin/fm-watch-arm.sh'
 matrix_case E16 allow '~/firstmate/bin/fm-watch-checkpoint.sh --seconds 180'
 matrix_case E17 allow 'for f in 1; do echo fm-watch; done'
 
+matrix_case G01 deny 'gh issue list'
+matrix_case G02 deny '/usr/bin/gh pr list'
+matrix_case G03 deny 'env GH_HOST=github.example gh api /rate_limit'
+matrix_case G04 deny 'printf x | gh api /graphql'
+matrix_case G05 deny '(gh issue list)'
+matrix_case G06 deny "bash -c 'gh issue list'"
+matrix_case G07 deny 'echo "$(gh issue list)"'
+matrix_case G08 deny 'command gh issue list'
+matrix_case G09 deny 'gh issue list && echo done'
+matrix_case G10 allow 'gh-axi issue list'
+matrix_case G11 allow 'command -v gh'
+matrix_case G12 allow 'command -V /usr/bin/gh'
+matrix_case G13 allow 'type gh'
+matrix_case G14 allow "printf '%s\\n' gh"
+matrix_case G15 allow $'cat <<\'EOF\'\ngh issue list\nEOF'
+matrix_case G16 allow 'bin/fm-pr-check.sh task gh'
+matrix_case G19 allow 'command --help gh'
+matrix_case G20 allow 'command --version gh'
+matrix_case G21 allow 'env --help gh'
+matrix_case G22 allow 'sudo -v gh'
+matrix_case G23 deny 'sudo -u -v gh issue list'
+matrix_case G24 deny 'env -u --help gh issue list'
+matrix_case G25 deny '/usr/bin/time gh issue list'
+matrix_case G26 deny 'time gh issue list'
+matrix_case G27 deny 'time -p -- gh issue list'
+matrix_case G28 deny 'if true; then gh issue list; fi'
+matrix_case G29 deny 'while true; do gh issue list; done'
+matrix_case G30 deny 'until false; do gh issue list; done'
+matrix_case G31 deny '! gh issue list'
+matrix_case G32 deny 'command time gh issue list'
+matrix_case G33 deny 'time command gh issue list'
+matrix_case G34 allow 'time -- echo gh'
+matrix_case G35 allow 'if command -v gh; then echo ok; fi'
+matrix_case G36 allow 'env -S "gh issue list" --help'
+matrix_case G37 allow $'cat <<EOF\n$(gh issue list)\nEOF'
+
 MATRIX_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-arm-policy-matrix.XXXXXX")
 FM_TEST_CLEANUP_DIRS+=("$MATRIX_TMP")
 trap fm_test_cleanup EXIT
@@ -183,7 +219,7 @@ run_matrix_entry() {
   fi
 
   [ "$rc" -eq 2 ] || fail "$id via $entry must deny, got exit $rc"
-  jq -e '.hookSpecificOutput.permissionDecision == "deny" and (.systemMessage | test("\\[(watcher-(background|pipeline|redirection|bundled|nested|direct)|broad-watcher-kill|unclassifiable-protected-command)\\]"))' "$err_file" >/dev/null 2>&1 \
+  jq -e '.hookSpecificOutput.permissionDecision == "deny" and (.systemMessage | test("\\[(bare-gh|watcher-(background|pipeline|redirection|bundled|nested|direct)|broad-watcher-kill|unclassifiable-protected-command)\\]"))' "$err_file" >/dev/null 2>&1 \
     || fail "$id via $entry deny must carry a stable reason code on stderr: $(cat "$err_file")"
   if [ "$entry" = claude ]; then
     [ ! -s "$out_file" ] || fail "$id via claude deny must leave stdout empty: $(cat "$out_file")"
@@ -233,6 +269,34 @@ test_direct_policy_contract() {
   assert_policy direct-watch-not-blessed $'deny\twatcher-direct' 'bin/fm-watch.sh'
   assert_policy direct-watch-expanded $'deny\twatcher-direct' '$FM_HOME/bin/fm-watch.sh'
   assert_policy direct-watch-safe-shape $'deny\twatcher-direct' 'cd /tmp; bin/fm-watch.sh'
+  assert_policy direct-bare-gh $'deny\tbare-gh' 'gh issue list'
+  assert_policy direct-path-gh $'deny\tbare-gh' '/usr/local/bin/gh pr list'
+  assert_policy direct-wrapper-gh $'deny\tbare-gh' 'sudo -u operator gh api /user'
+  assert_policy direct-compound-gh $'deny\tbare-gh' 'echo before; gh issue list'
+  assert_policy direct-shell-gh $'deny\tbare-gh' "bash -lc 'gh issue list'"
+  assert_policy direct-substitution-gh $'deny\tbare-gh' 'echo "$(gh issue list)"'
+  assert_policy direct-gh-axi allow 'gh-axi issue list'
+  assert_policy direct-command-v-gh allow 'command -v gh'
+  assert_policy direct-type-gh allow 'type gh'
+  assert_policy direct-owned-script-boundary allow 'bin/fm-pr-check.sh task gh'
+  assert_policy direct-command-help-gh allow 'command --help gh'
+  assert_policy direct-env-help-gh allow 'env --help gh'
+  assert_policy direct-sudo-validate-gh allow 'sudo -v gh'
+  assert_policy direct-sudo-option-argument-gh $'deny\tbare-gh' 'sudo -u -v gh issue list'
+  assert_policy direct-env-option-argument-gh $'deny\tbare-gh' 'env -u --help gh issue list'
+  assert_policy direct-path-time-gh $'deny\tbare-gh' '/usr/bin/time gh issue list'
+  assert_policy direct-time-gh $'deny\tbare-gh' 'time gh issue list'
+  assert_policy direct-time-options-gh $'deny\tbare-gh' 'time -p -- gh issue list'
+  assert_policy direct-if-gh $'deny\tbare-gh' 'if true; then gh issue list; fi'
+  assert_policy direct-while-gh $'deny\tbare-gh' 'while true; do gh issue list; done'
+  assert_policy direct-until-gh $'deny\tbare-gh' 'until false; do gh issue list; done'
+  assert_policy direct-negated-gh $'deny\tbare-gh' '! gh issue list'
+  assert_policy direct-command-time-gh $'deny\tbare-gh' 'command time gh issue list'
+  assert_policy direct-time-command-gh $'deny\tbare-gh' 'time command gh issue list'
+  assert_policy direct-time-data-gh allow 'time -- echo gh'
+  assert_policy direct-if-diagnostic-gh allow 'if command -v gh; then echo ok; fi'
+  assert_policy direct-env-split-terminal-gh allow 'env -S "gh issue list" --help'
+  assert_policy direct-unquoted-heredoc-substitution-gh allow $'cat <<EOF\n$(gh issue list)\nEOF'
   heredoc_data=$'cat <<\'EOF\'\nbin/fm-watch-arm.sh &\nEOF'
   heredoc_watcher=$'bin/fm-watch-arm.sh <<\'EOF\'\ndata only\nEOF'
   assert_policy direct-heredoc-data allow "$heredoc_data"
@@ -343,12 +407,20 @@ test_prefilter_is_strict_superset() {
   "$CHECK" --command 'echo "$HOME/scratch" && ls -la' >/dev/null 2>&1
   rc=$?
   [ "$rc" -eq 0 ] || fail "a benign \$HOME command must still fast-allow, got exit $rc"
+  # Bare gh and gh-axi both reach the classifier; command position, not raw
+  # substring matching, owns the verdict.
+  "$CHECK" --command 'gh issue list' >/dev/null 2>&1
+  rc=$?
+  [ "$rc" -eq 2 ] || fail "prefilter must delegate bare gh, not fast-allow it, got exit $rc"
+  "$CHECK" --command 'gh-axi issue list' >/dev/null 2>&1
+  rc=$?
+  [ "$rc" -eq 0 ] || fail "gh-axi must reach the classifier and remain allowed, got exit $rc"
   # A benign command that only mentions fm-watch as data still reaches the
   # classifier and is allowed there, proving the prefilter owns no verdict.
   "$CHECK" --command "echo 'pkill -f fm-watch'" >/dev/null 2>&1
   rc=$?
   [ "$rc" -eq 0 ] || fail "a benign fm-watch-substring command must be classified and allowed, got exit $rc"
-  pass "transport prefilter is a strict superset: non-fm-watch fast-allows, every fm-watch and quoting-decoder-marker command reaches the classifier"
+  pass "transport prefilter is a strict superset: unrelated commands fast-allow and all policy substrings reach the classifier"
 }
 
 # --- fail-open ----------------------------------------------------------------

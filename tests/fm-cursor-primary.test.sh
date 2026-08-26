@@ -247,6 +247,12 @@ test_pretool_guards_deduplicate_and_render_cursor_deny() {
   [ "$decision" = deny ] || fail "expected a Cursor deny object on stdout, got: $out"
   printf '%s' "$out" | jq -e '.user_message | type == "string" and length > 0' >/dev/null 2>&1 \
     || fail "Cursor's deny object must carry a user_message reason, got: $out"
+
+  payload='{"tool_name":"Shell","tool_input":{"command":"gh issue list"},"cursor_version":"2026.08.11-e8db854"}'
+  out=$(printf '%s' "$payload" | bash "$dir/bin/fm-arm-pretool-check.sh" --cursor 2>/dev/null); status=$?
+  expect_code 0 "$status" "Cursor reads the bare gh decision object, so the deny path exits 0"
+  printf '%s' "$out" | jq -e '.permission == "deny" and (.user_message | contains("bare-gh"))' >/dev/null 2>&1 \
+    || fail "expected a Cursor bare-gh deny object on stdout, got: $out"
   pass "fm-arm-pretool-check: Cursor duplicate allows, --cursor denies in Cursor's own shape"
 }
 

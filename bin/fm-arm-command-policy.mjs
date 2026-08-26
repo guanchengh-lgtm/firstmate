@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Semantic policy for watcher arm and checkpoint shell commands.
+// Semantic policy for Firstmate shell commands.
 //
 // This parser is deliberately narrow.
 // It recognizes executed command positions without evaluating, expanding,
@@ -9,8 +9,8 @@
 // The tokenizer and command-position analysis (Lexer, splitProgram,
 // commandPosition) are exported so the sibling cd-guard policy
 // (bin/fm-cd-command-policy.mjs) reuses the same proven parser instead of
-// duplicating shell lexing; see docs/cd-guard.md. The watcher-arm decision
-// procedure below stays private to this file. The CLI entry point at the bottom
+// duplicating shell lexing; see docs/cd-guard.md. The decision procedures below
+// stay private to this file. The CLI entry point at the bottom
 // runs only when this module is invoked directly, never on import.
 
 import path from "node:path";
@@ -18,6 +18,7 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 const REASONS = {
+  "bare-gh": "agent shell commands must use gh-axi instead of gh; Firstmate-owned scripts may call gh internally",
   "watcher-background": "a protected watcher command cannot run in an asynchronous shell list or through nohup/disown",
   "watcher-pipeline": "a protected watcher command must not participate in a pipeline",
   "watcher-redirection": "a protected watcher command must not use shell redirection",
@@ -595,6 +596,133 @@ export function commandPosition(tokens) {
   return { words, index, command, wrappers, prefixAssignments, unresolvedWrapperOption, wrapperPayloads };
 }
 
+const BARE_GH_WRAPPER_TERMINAL_OPTIONS = {
+  command: { short: new Set(["v", "V"]), long: new Set(["help", "version"]) },
+  env: { short: new Set(), long: new Set(["help", "version"]) },
+  exec: { short: new Set(), long: new Set() },
+  nohup: { short: new Set(), long: new Set(["help", "version"]) },
+  sudo: { short: new Set(["e", "h", "l", "V", "v"]), long: new Set(["edit", "help", "list", "validate", "version"]) },
+  timeout: { short: new Set(), long: new Set(["help", "version"]) },
+};
+
+const BARE_GH_COMMAND_HEAD_PREFIXES = new Set(["!", "if", "then", "else", "elif", "while", "until", "do"]);
+
+function consumeBareGhWrapperOptions(name, words, index) {
+  const optionOwner = name === "gtimeout" ? "timeout" : name;
+  const short = WRAPPER_OPTIONS[optionOwner];
+  const long = WRAPPER_LONG_OPTIONS[optionOwner];
+  const terminal = BARE_GH_WRAPPER_TERMINAL_OPTIONS[optionOwner];
+  const embeddedPayloads = [];
+  let terminalOption = false;
+  let next = index;
+  while (words[next]) {
+    const value = words[next].value;
+    if (value === "--") return { index: next + 1, embeddedPayloads, terminalOption };
+    if (!value.startsWith("-") || value === "-") return { index: next, embeddedPayloads, terminalOption };
+    if (value.startsWith("--")) {
+      const equals = value.indexOf("=");
+      const option = value.slice(2, equals === -1 ? undefined : equals);
+      if (long.noArgument.has(option)) {
+        terminalOption ||= terminal.long.has(option);
+        next += 1;
+        continue;
+      }
+      if (!long.takesArgument.has(option)) return { index: next, embeddedPayloads, terminalOption };
+      if (equals !== -1) {
+        if (name === "env" && option === "split-string") embeddedPayloads.push(value.slice(equals + 1));
+        next += 1;
+        continue;
+      }
+      if (!words[next + 1]) return { index: next, embeddedPayloads, terminalOption };
+      if (name === "env" && option === "split-string") embeddedPayloads.push(words[next + 1].value);
+      next += 2;
+      continue;
+    }
+    let consumedArgument = false;
+    for (let offset = 1; offset < value.length; offset += 1) {
+      const option = value[offset];
+      if (short.noArgument.has(option)) {
+        terminalOption ||= terminal.short.has(option);
+        continue;
+      }
+      if (!short.takesArgument.has(option)) return { index: next, embeddedPayloads, terminalOption };
+      if (offset + 1 === value.length) {
+        if (!words[next + 1]) return { index: next, embeddedPayloads, terminalOption };
+        if (name === "env" && option === "S") embeddedPayloads.push(words[next + 1].value);
+        next += 2;
+      } else {
+        if (name === "env" && option === "S") embeddedPayloads.push(value.slice(offset + 1));
+        next += 1;
+      }
+      consumedArgument = true;
+      break;
+    }
+    if (!consumedArgument) next += 1;
+  }
+  return { index: next, embeddedPayloads, terminalOption };
+}
+
+function skipBareGhCommandHeadPrefixes(words, index) {
+  let next = index;
+  while (words[next]) {
+    const word = words[next];
+    if (!word.quoted && BARE_GH_COMMAND_HEAD_PREFIXES.has(word.value)) {
+      next += 1;
+      continue;
+    }
+    if (basename(word.value) !== "time") break;
+    next += 1;
+    if (words[next]?.value === "-p") next += 1;
+    if (words[next]?.value === "--") next += 1;
+  }
+  return next;
+}
+
+function bareGhCommandPosition(tokens) {
+  const words = wordsInNode(tokens);
+  let index = 0;
+  while (index < words.length && isAssignment(words[index].value)) index += 1;
+  const prefixAssignments = index;
+  const wrappers = [];
+  const wrapperPayloads = [];
+  let terminalOption = false;
+  while (words[index]) {
+    const next = skipBareGhCommandHeadPrefixes(words, index);
+    if (next !== index) {
+      index = next;
+      continue;
+    }
+    const name = basename(words[index].value);
+    if (name === "exec" || name === "command" || name === "sudo" || name === "nohup" || name === "env" || name === "timeout" || name === "gtimeout") {
+      wrappers.push(name);
+      const options = consumeBareGhWrapperOptions(name, words, index + 1);
+      wrapperPayloads.push(...options.embeddedPayloads);
+      terminalOption ||= options.terminalOption;
+      index = options.index;
+      if (terminalOption) break;
+      if (name === "env") {
+        while (words[index] && (words[index].value.startsWith("-") || isAssignment(words[index].value))) index += 1;
+      } else if ((name === "timeout" || name === "gtimeout") && words[index]) {
+        index += 1;
+      }
+      continue;
+    }
+    break;
+  }
+  return { words, index, command: terminalOption ? undefined : words[index], wrappers, prefixAssignments, wrapperPayloads, terminalOption };
+}
+
+function bareGhExecutionPayloads(tokens, position) {
+  if (position.terminalOption) return [];
+  const payloads = [...position.wrapperPayloads];
+  const shell = shellInvocation(position);
+  if (shell?.kind === "command" && shell.payload?.literal && shell.payload.subs.length === 0) payloads.push(shell.payload.value);
+  const literalEvalPayload = evalPayload(position);
+  if (literalEvalPayload !== null) payloads.push(literalEvalPayload);
+  payloads.push(...shellHeredocPayloads(tokens, position), ...shellHereStringPayloads(tokens, position));
+  return payloads;
+}
+
 const PROTECTED_SCRIPTS = [
   { relative: "bin/fm-watch-arm.sh", kind: "arm" },
   { relative: "bin/fm-watch-checkpoint.sh", kind: "checkpoint" },
@@ -728,16 +856,17 @@ function isWatcherPgrep(position, context) {
 
 function analyzeProgram(command, context, depth = 0) {
   if (depth > 12) {
-    return { error: "recursion limit", protectedFound: rawMentionsProtected(command), broadKill: rawMentionsBroadKill(command), pgrepWatcher: false, watcherPids: new Set() };
+    return { error: "recursion limit", protectedFound: rawMentionsProtected(command), broadKill: rawMentionsBroadKill(command), bareGh: false, pgrepWatcher: false, watcherPids: new Set() };
   }
   const lexed = new Lexer(command).tokenize();
   if (lexed.error) {
-    return { error: lexed.error, protectedFound: rawMentionsProtected(command), broadKill: rawMentionsBroadKill(command), pgrepWatcher: false, watcherPids: new Set() };
+    return { error: lexed.error, protectedFound: rawMentionsProtected(command), broadKill: rawMentionsBroadKill(command), bareGh: false, pgrepWatcher: false, watcherPids: new Set() };
   }
   const program = splitProgram(lexed.tokens);
   const nodeInfos = [];
   let nestedProtected = false;
   let broadKill = false;
+  let bareGh = false;
   let pgrepWatcher = false;
   let unsupported = false;
   let activeContext = {
@@ -747,9 +876,9 @@ function analyzeProgram(command, context, depth = 0) {
     watcherPids: new Set(context.watcherPids || []),
   };
   let unclassifiableProtected = false;
-
   for (const tokens of program.nodes) {
     const position = commandPosition(tokens);
+    const bareGhPosition = bareGhCommandPosition(tokens);
     const nodeContext = contextWithAssignments(activeContext, position.words);
     const firstName = basename(position.words[0]?.value || "");
     if (["if", "then", "else", "elif", "fi", "for", "while", "until", "case", "esac", "do", "done", "function", "time", "coproc"].includes(firstName)) {
@@ -766,11 +895,15 @@ function analyzeProgram(command, context, depth = 0) {
       nodePgrepWatcher ||= nested.pgrepWatcher;
       if (nested.error && rawMentionsProtected(payload)) unsupported = true;
     }
+    for (const payload of bareGhExecutionPayloads(tokens, bareGhPosition)) {
+      bareGh ||= analyzeProgram(payload, nodeContext, depth + 1).bareGh;
+    }
     for (const token of tokens) {
       if (token.type === "group") {
         const nested = analyzeProgram(token.content, nodeContext, depth + 1);
         nodeNestedProtected ||= nested.protectedFound;
         broadKill ||= nested.broadKill;
+        bareGh ||= nested.bareGh;
         nodePgrepWatcher ||= nested.pgrepWatcher;
         if (nested.error && rawMentionsProtected(token.content)) unsupported = true;
       }
@@ -780,6 +913,7 @@ function analyzeProgram(command, context, depth = 0) {
           substitutionResults.set(substitution, nested);
           nodeNestedProtected ||= nested.protectedFound;
           broadKill ||= nested.broadKill;
+          bareGh ||= nested.bareGh;
           nodePgrepWatcher ||= nested.pgrepWatcher;
           if (nested.error && rawMentionsProtected(substitution.content)) unsupported = true;
         }
@@ -820,6 +954,7 @@ function analyzeProgram(command, context, depth = 0) {
     const protectedKind = protectedIdentity(executable, context.root);
     if (hasUnclassifiableProtectedExpansion(position.command, context.root)) unclassifiableProtected = true;
     const commandName = basename(executable);
+    if (basename(bareGhPosition.command?.value || "") === "gh") bareGh = true;
     const args = position.words.slice(position.index + 1);
     if (commandName === "pkill" && args.some((word) => /fm-watch/.test(word.value) || wordReferencesAny(word, nodeContext.watcherPatterns))) broadKill = true;
     if (commandName === "kill" && (nodePgrepWatcher || args.some((word) => wordReferencesAny(word, nodeContext.watcherPids)))) broadKill = true;
@@ -849,9 +984,9 @@ function analyzeProgram(command, context, depth = 0) {
   if (unclassifiableProtected) unsupported = true;
   const broadKillFound = broadKill || (unsupported && rawMentionsBroadKill(command));
   if (unsupported && (protectedFound || rawMentionsProtected(command) || broadKillFound)) {
-    return { error: "unsupported compound grammar", protectedFound: true, broadKill: broadKillFound, pgrepWatcher, watcherPids: activeContext.watcherPids, program, nodeInfos };
+    return { error: "unsupported compound grammar", protectedFound: true, broadKill: broadKillFound, bareGh, pgrepWatcher, watcherPids: activeContext.watcherPids, program, nodeInfos };
   }
-  return { error: "", protectedFound, directProtected, nestedProtected, broadKill: broadKillFound, pgrepWatcher, watcherPids: activeContext.watcherPids, program, nodeInfos };
+  return { error: "", protectedFound, directProtected, nestedProtected, broadKill: broadKillFound, bareGh, pgrepWatcher, watcherPids: activeContext.watcherPids, program, nodeInfos };
 }
 
 function xModePathAllowed(value, home, root) {
@@ -904,6 +1039,7 @@ function blessedProgram(analysis, context) {
 function decision(command, root, home) {
   const context = { root: path.normalize(root), home: path.normalize(home), protectedVariables: new Set(), watcherPatterns: new Set(), watcherPids: new Set() };
   const analysis = analyzeProgram(command, context);
+  if (analysis.bareGh) return deny("bare-gh");
   if (analysis.broadKill) return deny("broad-watcher-kill");
   if (analysis.error && analysis.protectedFound) return deny("unclassifiable-protected-command");
   if (!analysis.protectedFound) return { decision: "allow" };
