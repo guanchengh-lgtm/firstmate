@@ -1,0 +1,224 @@
++TRACE 8: set -u
+++TRACE 11: dirname tests/fm-spawn-treehouse-pool-exhaustion.test.sh
++TRACE 11: . tests/lib.sh
+++TRACE 23: '[' -n '' ']'
+++TRACE 26: FM_TEST_LIB_SOURCED=1
+++TRACE 35: export FM_GATE_REFUSE_BYPASS=1
+++TRACE 35: FM_GATE_REFUSE_BYPASS=1
+++TRACE 41: export FM_VALIDATION_TRUTH_BYPASS=1
+++TRACE 41: FM_VALIDATION_TRUTH_BYPASS=1
+++++TRACE 46: dirname tests/lib.sh
++++TRACE 46: cd tests/..
++++TRACE 46: pwd
+++TRACE 46: ROOT=/Users/AI/.no-mistakes/worktrees/edb446952c22/01M0YWYXGCETXJ5PT8ZCE5QK7Q
+++TRACE 77: FM_TEST_CLEANUP_DIRS=()
++++TRACE 78: mktemp /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//.fm-test-cleanup.69103.XXXXXX
+++TRACE 78: FM_TEST_CLEANUP_REGISTRY=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//.fm-test-cleanup.69103.UBFjkL
++++TRACE 86: fm_test_pid_identity 69103
++++TRACE 81: local pid=69103
++++TRACE 82: FM_STATE_OVERRIDE=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/
++++TRACE 82: bash -c '. "$1"; fm_pid_identity "$2"' _ /Users/AI/.no-mistakes/worktrees/edb446952c22/01M0YWYXGCETXJ5PT8ZCE5QK7Q/bin/fm-wake-lib.sh 69103
+++TRACE 86: FM_TEST_OWNER_IDENTITY='Wed Aug 26 19:29:31 2026     bash -x tests/fm-spawn-treehouse-pool-exhaustion.test.sh'
+++TRACE 115: trap fm_test_cleanup EXIT
+++TRACE 116: trap 'fm_test_cleanup; exit 130' INT
+++TRACE 117: trap 'fm_test_cleanup; exit 143' TERM
+++TRACE 126: FM_TEST_ORPHAN_MAX_AGE_SECONDS=3600
+++TRACE 151: fm_test_reap_orphans
+++TRACE 129: local marker dir mtime now owner_pid owner_identity current_identity
++++TRACE 130: date +%s
+++TRACE 130: now=1787743771
+++TRACE 131: for marker in '"${TMPDIR:-/tmp}"/fm-*/.fm-test-fixture'
+++TRACE 132: '[' -e '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-*/.fm-test-fixture' ']'
+++TRACE 132: continue
++TRACE 13: SPAWN=/Users/AI/.no-mistakes/worktrees/edb446952c22/01M0YWYXGCETXJ5PT8ZCE5QK7Q/bin/fm-spawn.sh
+++TRACE 14: fm_test_tmproot fm-spawn-treehouse-pool-exhaustion
+++TRACE 105: local prefix=fm-spawn-treehouse-pool-exhaustion root
++++TRACE 106: mktemp -d /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.XXXXXX
+++TRACE 106: root=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt
+++TRACE 107: printf '%s\n%s\n' 69103 'Wed Aug 26 19:29:31 2026     bash -x tests/fm-spawn-treehouse-pool-exhaustion.test.sh'
+++TRACE 108: printf '%s\n' /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt
+++TRACE 112: printf '%s\n' /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt
++TRACE 14: TMP_ROOT=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt
++TRACE 177: test_pool_refusal_is_fast_and_preserves_dirty_copy
++TRACE 81: local case_dir home project dirty_copy fakebin screen calls id before out status start end elapsed
++TRACE 82: case_dir=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case
++TRACE 83: home=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/home
++TRACE 84: project=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project
++TRACE 85: dirty_copy=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/dirty-copy
++TRACE 86: screen=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/screen
++TRACE 87: calls=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/treehouse-calls
++TRACE 88: id=pool-exhausted-r1
+++TRACE 89: make_pool_refusal_fakebin /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/fake
+++TRACE 17: local dir=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/fake fakebin
++++TRACE 18: fm_fakebin /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/fake
++++TRACE 162: local dir=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/fake fakebin=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/fake/fakebin
++++TRACE 163: mkdir -p /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/fake/fakebin
++++TRACE 164: printf '%s\n' /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/fake/fakebin
+++TRACE 18: fakebin=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/fake/fakebin
+++TRACE 19: cat
+++TRACE 26: cat
+++TRACE 76: chmod +x /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/fake/fakebin/treehouse /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/fake/fakebin/tmux
+++TRACE 77: printf '%s\n' /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/fake/fakebin
++TRACE 89: fakebin=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/fake/fakebin
++TRACE 91: mkdir -p /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/home/data/pool-exhausted-r1 /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/home/projects /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/home/state /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/home/config
++TRACE 92: printf 'codex\n'
++TRACE 93: printf 'brief for %s\n' pool-exhausted-r1
++TRACE 94: printf 'builder\n'
++TRACE 95: printf 'no-mistakes\n'
++TRACE 96: touch /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/home/state/.last-watcher-beat
++TRACE 97: fm_git_worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/dirty-copy dirty-copy
++TRACE 229: local repo=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project worktree=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/dirty-copy branch=dirty-copy
++TRACE 230: fm_git_init_commit /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project
++TRACE 209: local dir=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project
++TRACE 210: mkdir -p /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project
++TRACE 211: git -C /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project init -q
+++TRACE 212: basename /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project
++TRACE 212: printf '# %s\n' project
++TRACE 213: git -C /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project add README.md
++TRACE 214: git -C /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project -c 'user.name=Firstmate Tests' -c user.email=tests@example.invalid commit -qm initial
++TRACE 231: fm_git_add_origin /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project.origin.git
++TRACE 220: local repo=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project remote=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project.origin.git remote_abs
++TRACE 221: git clone --quiet --bare /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project.origin.git
+++TRACE 222: cd /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project.origin.git
+++TRACE 222: pwd
++TRACE 222: remote_abs=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project.origin.git
++TRACE 223: git -C /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project remote add origin file:///var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project.origin.git
++TRACE 232: git -C /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project worktree add --quiet -b dirty-copy /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/dirty-copy
++TRACE 98: printf 'unlanded work must survive\n'
+++TRACE 99: git -C /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/dirty-copy rev-parse HEAD
++TRACE 99: before=53f121fff295875d50658f07a4d213c1ed8765a5
+++TRACE 101: date +%s
++TRACE 101: start=1787743771
+++TRACE 111: FM_ROOT_OVERRIDE=
+++TRACE 111: FM_HOME=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/home
+++TRACE 111: FM_STATE_OVERRIDE=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/home/state
+++TRACE 111: FM_DATA_OVERRIDE=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/home/data
+++TRACE 111: FM_PROJECTS_OVERRIDE=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/home/projects
+++TRACE 111: FM_CONFIG_OVERRIDE=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/home/config
+++TRACE 111: FM_SPAWN_NO_GUARD=1
+++TRACE 111: TMUX=fake,1,0
+++TRACE 111: FM_FAKE_PANE_PATH=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project
+++TRACE 111: FM_FAKE_SCREEN=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/screen
+++TRACE 111: FM_FAKE_TREEHOUSE_CALLS=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/treehouse-calls
+++TRACE 111: PATH=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/fake/fakebin:/Users/AI/.grok/bin:/Users/AI/bin:/Users/AI/.homebrew/opt/node@24/bin:/Users/AI/.local/bin:/Users/AI/.homebrew/bin:/Users/AI/.homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/opt/homebrew/bin:/Users/AI/.codex/tmp/arg0/codex-arg056E5T9:/Users/AI/.grok/bin:/Users/AI/bin:/Users/AI/.homebrew/opt/node@24/bin:/Users/AI/.local/bin:/Users/AI/go/bin:/Users/AI/.cargo/bin:/opt/homebrew/sbin:/usr/local/sbin
+++TRACE 111: /Users/AI/.no-mistakes/worktrees/edb446952c22/01M0YWYXGCETXJ5PT8ZCE5QK7Q/bin/fm-spawn.sh pool-exhausted-r1 /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/project --mode no-mistakes --yolo off --role builder
++TRACE 110: out='error: treehouse get failed: all 1 worktrees are in use or dirty (max_trees = 1). Run '\''treehouse status'\'' to see details, or increase max_trees in treehouse.toml; inspect window firstmate:fm-pool-exhausted-r1'
++TRACE 111: status=1
+++TRACE 112: date +%s
++TRACE 112: end=1787743772
++TRACE 113: elapsed=1
++TRACE 115: '[' 1 -ne 0 ']'
++TRACE 116: '[' 1 -le 5 ']'
++TRACE 117: assert_contains 'error: treehouse get failed: all 1 worktrees are in use or dirty (max_trees = 1). Run '\''treehouse status'\'' to see details, or increase max_trees in treehouse.toml; inspect window firstmate:fm-pool-exhausted-r1' 'all 1 worktrees are in use or dirty (max_trees = 1)' 'spawn did not relay treehouse'\''s pool refusal'
++TRACE 291: case "$1" in
++TRACE 292: :
++TRACE 119: assert_no_grep 'did not enter a worktree within 60s' /dev/fd/63 'spawn fell through to the generic cwd timeout'
++TRACE 319: grep -F -- 'did not enter a worktree within 60s' /dev/fd/63
+++TRACE 119: printf '%s\n' 'error: treehouse get failed: all 1 worktrees are in use or dirty (max_trees = 1). Run '\''treehouse status'\'' to see details, or increase max_trees in treehouse.toml; inspect window firstmate:fm-pool-exhausted-r1'
++TRACE 121: assert_grep get /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/treehouse-calls 'spawn did not drive treehouse get'
++TRACE 314: grep -F -- get /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/treehouse-calls
+++TRACE 122: git -C /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/dirty-copy rev-parse HEAD
++TRACE 122: '[' 53f121fff295875d50658f07a4d213c1ed8765a5 = 53f121fff295875d50658f07a4d213c1ed8765a5 ']'
++TRACE 124: assert_grep 'unlanded work must survive' /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/dirty-copy/unlanded.txt 'spawn discarded work from the dirty unused worktree'
++TRACE 314: grep -F -- 'unlanded work must survive' /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/dirty-copy/unlanded.txt
++TRACE 126: pass 'an exhausted treehouse pool fails fast and preserves dirty unused work'
++TRACE 56: printf 'ok - %s\n' 'an exhausted treehouse pool fails fast and preserves dirty unused work'
+ok - an exhausted treehouse pool fails fast and preserves dirty unused work
++TRACE 178: test_delayed_refusal_wins_over_stable_stale_path
++TRACE 130: local case_dir home project dirty_copy fakebin screen calls capture_count pane_count id before out status
++TRACE 131: case_dir=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case
++TRACE 132: home=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/home
++TRACE 133: project=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project
++TRACE 134: dirty_copy=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/dirty-copy
++TRACE 135: screen=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/screen
++TRACE 136: calls=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/treehouse-calls
++TRACE 137: capture_count=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/capture-count
++TRACE 138: pane_count=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/pane-count
++TRACE 139: id=pool-delayed-refusal-r2
+++TRACE 140: make_pool_refusal_fakebin /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/fake
+++TRACE 17: local dir=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/fake fakebin
++++TRACE 18: fm_fakebin /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/fake
++++TRACE 162: local dir=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/fake fakebin=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/fake/fakebin
++++TRACE 163: mkdir -p /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/fake/fakebin
++++TRACE 164: printf '%s\n' /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/fake/fakebin
+++TRACE 18: fakebin=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/fake/fakebin
+++TRACE 19: cat
+++TRACE 26: cat
+++TRACE 76: chmod +x /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/fake/fakebin/treehouse /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/fake/fakebin/tmux
+++TRACE 77: printf '%s\n' /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/fake/fakebin
++TRACE 140: fakebin=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/fake/fakebin
++TRACE 142: mkdir -p /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/home/data/pool-delayed-refusal-r2 /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/home/projects /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/home/state /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/home/config
++TRACE 143: printf 'codex\n'
++TRACE 144: printf 'brief for %s\n' pool-delayed-refusal-r2
++TRACE 145: printf 'builder\n'
++TRACE 146: printf 'no-mistakes\n'
++TRACE 147: touch /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/home/state/.last-watcher-beat
++TRACE 148: fm_git_worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/dirty-copy dirty-copy
++TRACE 229: local repo=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project worktree=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/dirty-copy branch=dirty-copy
++TRACE 230: fm_git_init_commit /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project
++TRACE 209: local dir=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project
++TRACE 210: mkdir -p /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project
++TRACE 211: git -C /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project init -q
+++TRACE 212: basename /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project
++TRACE 212: printf '# %s\n' project
++TRACE 213: git -C /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project add README.md
++TRACE 214: git -C /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project -c 'user.name=Firstmate Tests' -c user.email=tests@example.invalid commit -qm initial
++TRACE 231: fm_git_add_origin /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project.origin.git
++TRACE 220: local repo=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project remote=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project.origin.git remote_abs
++TRACE 221: git clone --quiet --bare /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project.origin.git
+++TRACE 222: cd /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project.origin.git
+++TRACE 222: pwd
++TRACE 222: remote_abs=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project.origin.git
++TRACE 223: git -C /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project remote add origin file:///var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project.origin.git
++TRACE 232: git -C /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project worktree add --quiet -b dirty-copy /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/dirty-copy
++TRACE 149: printf 'delayed refusal must not expose this work\n'
+++TRACE 150: git -C /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/dirty-copy rev-parse HEAD
++TRACE 150: before=ef4cf71c4aabc936570993ff23e3d0c183af946e
+++TRACE 163: FM_ROOT_OVERRIDE=
+++TRACE 163: FM_HOME=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/home
+++TRACE 163: FM_STATE_OVERRIDE=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/home/state
+++TRACE 163: FM_DATA_OVERRIDE=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/home/data
+++TRACE 163: FM_PROJECTS_OVERRIDE=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/home/projects
+++TRACE 163: FM_CONFIG_OVERRIDE=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/home/config
+++TRACE 163: FM_SPAWN_NO_GUARD=1
+++TRACE 163: TMUX=fake,1,0
+++TRACE 163: FM_FAKE_PANE_PATH=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project
+++TRACE 163: FM_FAKE_PANE_STALE=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/dirty-copy
+++TRACE 163: FM_FAKE_PANE_STALE_READS=2
+++TRACE 163: FM_FAKE_PANE_COUNTFILE=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/pane-count
+++TRACE 163: FM_FAKE_CAPTURE_DELAY=2
+++TRACE 163: FM_FAKE_CAPTURE_COUNTFILE=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/capture-count
+++TRACE 163: FM_FAKE_SCREEN=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/screen
+++TRACE 163: FM_FAKE_TREEHOUSE_CALLS=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/treehouse-calls
+++TRACE 163: PATH=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/fake/fakebin:/Users/AI/.grok/bin:/Users/AI/bin:/Users/AI/.homebrew/opt/node@24/bin:/Users/AI/.local/bin:/Users/AI/.homebrew/bin:/Users/AI/.homebrew/sbin:/usr/local/bin:/System/Cryptexes/App/usr/bin:/usr/bin:/bin:/usr/sbin:/sbin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/local/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/bin:/var/run/com.apple.security.cryptexd/codex.system/bootstrap/usr/appleinternal/bin:/pkg/env/global/bin:/opt/homebrew/bin:/Users/AI/.codex/tmp/arg0/codex-arg056E5T9:/Users/AI/.grok/bin:/Users/AI/bin:/Users/AI/.homebrew/opt/node@24/bin:/Users/AI/.local/bin:/Users/AI/go/bin:/Users/AI/.cargo/bin:/opt/homebrew/sbin:/usr/local/sbin
+++TRACE 163: /Users/AI/.no-mistakes/worktrees/edb446952c22/01M0YWYXGCETXJ5PT8ZCE5QK7Q/bin/fm-spawn.sh pool-delayed-refusal-r2 /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/project --mode no-mistakes --yolo off --role builder
++TRACE 162: out='error: treehouse get failed: all 1 worktrees are in use or dirty (max_trees = 1). Run '\''treehouse status'\'' to see details, or increase max_trees in treehouse.toml; inspect window firstmate:fm-pool-delayed-refusal-r2'
++TRACE 163: status=1
++TRACE 165: '[' 1 -ne 0 ']'
++TRACE 166: assert_contains 'error: treehouse get failed: all 1 worktrees are in use or dirty (max_trees = 1). Run '\''treehouse status'\'' to see details, or increase max_trees in treehouse.toml; inspect window firstmate:fm-pool-delayed-refusal-r2' 'all 1 worktrees are in use or dirty (max_trees = 1)' 'a stable stale path won before the delayed treehouse refusal'
++TRACE 291: case "$1" in
++TRACE 292: :
++TRACE 168: assert_no_grep 'is not clean' /dev/fd/63 'spawn inspected the unrelated dirty copy before honoring treehouse'\''s refusal'
+++TRACE 168: printf '%s\n' 'error: treehouse get failed: all 1 worktrees are in use or dirty (max_trees = 1). Run '\''treehouse status'\'' to see details, or increase max_trees in treehouse.toml; inspect window firstmate:fm-pool-delayed-refusal-r2'
++TRACE 319: grep -F -- 'is not clean' /dev/fd/63
+++TRACE 170: git -C /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/dirty-copy rev-parse HEAD
++TRACE 170: '[' ef4cf71c4aabc936570993ff23e3d0c183af946e = ef4cf71c4aabc936570993ff23e3d0c183af946e ']'
++TRACE 172: assert_grep 'delayed refusal must not expose this work' /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/dirty-copy/unlanded.txt 'spawn discarded work after a delayed treehouse refusal'
++TRACE 314: grep -F -- 'delayed refusal must not expose this work' /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/dirty-copy/unlanded.txt
++TRACE 174: pass 'a delayed pool refusal wins before two stale cwd reads can select another copy'
++TRACE 56: printf 'ok - %s\n' 'a delayed pool refusal wins before two stale cwd reads can select another copy'
+ok - a delayed pool refusal wins before two stale cwd reads can select another copy
++TRACE 180: echo '# all fm-spawn-treehouse-pool-exhaustion tests passed'
+# all fm-spawn-treehouse-pool-exhaustion tests passed
++TRACE 181: fm_test_cleanup
++TRACE 92: local d
++TRACE 93: for d in '"${FM_TEST_CLEANUP_DIRS[@]:-}"'
++TRACE 94: '[' -n '' ']'
++TRACE 96: '[' -f /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//.fm-test-cleanup.69103.UBFjkL ']'
++TRACE 97: IFS=
++TRACE 97: read -r d
++TRACE 98: '[' -n /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt ']'
++TRACE 98: rm -rf /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt
++TRACE 97: IFS=
++TRACE 97: read -r d
++TRACE 100: rm -f /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//.fm-test-cleanup.69103.UBFjkL

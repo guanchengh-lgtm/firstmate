@@ -1,0 +1,9 @@
+105:+TRACE 110: out='error: treehouse get failed: all 1 worktrees are in use or dirty (max_trees = 1). Run '\''treehouse status'\'' to see details, or increase max_trees in treehouse.toml; inspect window firstmate:fm-pool-exhausted-r1'
+109:+TRACE 113: elapsed=1
+122:+TRACE 124: assert_grep 'unlanded work must survive' /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/case/dirty-copy/unlanded.txt 'spawn discarded work from the dirty unused worktree'
+126:ok - an exhausted treehouse pool fails fast and preserves dirty unused work
+195:+TRACE 162: out='error: treehouse get failed: all 1 worktrees are in use or dirty (max_trees = 1). Run '\''treehouse status'\'' to see details, or increase max_trees in treehouse.toml; inspect window firstmate:fm-pool-delayed-refusal-r2'
+206:+TRACE 172: assert_grep 'delayed refusal must not expose this work' /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-treehouse-pool-exhaustion.JRcZKt/delayed-case/dirty-copy/unlanded.txt 'spawn discarded work after a delayed treehouse refusal'
+210:ok - a delayed pool refusal wins before two stale cwd reads can select another copy
+211:+TRACE 180: echo '# all fm-spawn-treehouse-pool-exhaustion tests passed'
+212:# all fm-spawn-treehouse-pool-exhaustion tests passed

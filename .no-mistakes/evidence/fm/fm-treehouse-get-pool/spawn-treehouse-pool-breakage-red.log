@@ -1,0 +1,5 @@
+manufactured_breakage: bin/fm-spawn.sh:2460 exit 1 -> exit 0
+command: bash tests/fm-spawn-treehouse-pool-exhaustion.test.sh
+not ok - spawn succeeded despite an exhausted treehouse pool
+observed_exit_status: 1
+expected_red: test rejected spawn success on exhausted pool

@@ -1,0 +1,7 @@
+command: bash tests/fm-spawn-treehouse-pool-exhaustion.test.sh
+started: 2026-08-26T11:28:12Z
+ok - an exhausted treehouse pool fails fast and preserves dirty unused work
+ok - a delayed pool refusal wins before two stale cwd reads can select another copy
+# all fm-spawn-treehouse-pool-exhaustion tests passed
+exit_status: 0
+finished: 2026-08-26T11:28:17Z
