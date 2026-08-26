@@ -8,8 +8,8 @@
 # or blocked and the crew resumes (responds to the gate, the pipeline fixes, it
 # re-validates), the log's last line stays stale. This helper never infers the
 # current state from a tail of the log: it reads the authoritative source (a
-# no-mistakes run-step attributed to this crew's branch and current code
-# identity, else the pane busy-signature) and reconciles the possibly-stale log
+# no-mistakes run-step safely attributed to this crew's branch under the rules
+# below, else the pane busy-signature) and reconciles the possibly-stale log
 # against it.
 #
 # The determinism lives entirely here - only run-step / pane / log reads plus
@@ -27,11 +27,13 @@
 #      to the routed status log; dead/missing report the remote verdict; an
 #      unreachable or unreadable remote reports unknown-remote, never a false
 #      gone/dead.
-#   2. Matching no-mistakes run for this crew's branch: a genuinely executing
-#      run binds by branch alone, while parked and terminal runs also require
-#      current code identity (from `axi status`, or the coarse `no-mistakes
-#      runs` fallback). Code identity is owned by fm_nm_head_matches_worktree
-#      in bin/fm-nm-run-lib.sh.
+#   2. Matching no-mistakes run for this crew's branch: a structurally valid
+#      direct executing run or the newest coarse running row binds by branch
+#      alone, while parked and terminal runs also require current code identity
+#      (from `axi status`, or the coarse `no-mistakes runs` fallback). Code
+#      identity is owned by fm_nm_head_matches_worktree in
+#      bin/fm-nm-run-lib.sh. Residual: a parked run with an unfetchable head may
+#      degrade through the coarse view to working, never to a false terminal.
 #      The run-step is AUTHORITATIVE: running/fixing -> working, ci -> working,
 #      awaiting_approval/fix_review -> parked (with gate findings), terminal
 #      passed/checks-passed -> done, failed/cancelled -> failed. EXCEPT: while
@@ -439,15 +441,18 @@ COARSE_STATUS=""
 if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/null 2>&1; then
   RUN_OUT=$(nm_run axi status)
   if [ -n "$RUN_OUT" ]; then
+    run_id=$(strip_quotes "$(nm_field id)")
     run_branch=$(strip_quotes "$(nm_field branch)")
     run_status=$(strip_quotes "$(nm_field status)")
+    run_head=$(strip_quotes "$(nm_field head)")
     run_outcome=$(strip_quotes "$(nm_field outcome)")
     run_awaiting=$(printf '%s\n' "$RUN_OUT" | grep -E '^[[:space:]]*awaiting_agent:' | head -1 || true)
     run_gate_status=$(nm_gate_status)
     run_has_gate=0
     nm_has_gate && run_has_gate=1
     run_is_executing=0
-    if [ -z "$run_outcome" ] && [ -z "$run_awaiting" ] && [ -z "$run_gate_status" ] && [ "$run_has_gate" = 0 ]; then
+    if [ -n "$run_id" ] && fm_nm_sha_form "$run_head" \
+      && [ -z "$run_outcome" ] && [ -z "$run_awaiting" ] && [ -z "$run_gate_status" ] && [ "$run_has_gate" = 0 ]; then
       case "$run_status" in
         running|fixing|ci) run_is_executing=1 ;;
       esac

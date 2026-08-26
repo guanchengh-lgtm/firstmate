@@ -757,6 +757,36 @@ test_newest_executing_same_branch_run_wins() {
   assert_not_contains "$out" "failed" "executing direct status does not surface a terminal result"
 
   reset_fakes
+  d=$(new_case direct-running-missing-id)
+  make_repo_on_branch "$d/wt" fm/feat-running-missing-id
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/running-missing-id.meta" "window=fm:fm-running-missing-id" "worktree=$d/wt" "kind=ship" "harness=claude"
+  printf 'working: current implementation continues\n' > "$d/state/running-missing-id.status"
+  FM_FAKE_RUN_HEAD=$unavailable
+  FM_FAKE_AXI_STATUS=$(run_running fm/feat-running-missing-id | grep -v '^  id:')
+  FM_FAKE_RUNS_LIST=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" running-missing-id
+  out=$(run_crew_state "$d" running-missing-id)
+  assert_not_contains "$out" "source: run-step" "executing status without a run id remains identity-bound"
+  assert_contains "$out" "source: status-log" "missing run id falls through to current state"
+
+  reset_fakes
+  d=$(new_case direct-running-malformed-head)
+  make_repo_on_branch "$d/wt" fm/feat-running-malformed-head
+  make_fakebin "$d" >/dev/null
+  fm_write_meta "$d/state/running-malformed-head.meta" "window=fm:fm-running-malformed-head" "worktree=$d/wt" "kind=ship" "harness=claude"
+  printf 'working: current implementation continues\n' > "$d/state/running-malformed-head.status"
+  FM_FAKE_RUN_HEAD=not-a-sha
+  FM_FAKE_AXI_STATUS="$(run_running fm/feat-running-malformed-head)"
+  FM_FAKE_RUNS_LIST=""
+  FM_FAKE_BUSY=0
+  arm_idle_record "$d/state" running-malformed-head
+  out=$(run_crew_state "$d" running-malformed-head)
+  assert_not_contains "$out" "source: run-step" "executing status with a malformed head remains identity-bound"
+  assert_contains "$out" "source: status-log" "malformed run head falls through to current state"
+
+  reset_fakes
   d=$(new_case coarse-newest-running-unavailable-head)
   make_repo_on_branch "$d/wt" fm/feat-coarse-newest
   matching_short=$(git -C "$d/wt" rev-parse --short=7 HEAD)
