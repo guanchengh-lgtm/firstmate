@@ -75,11 +75,19 @@ Static quote forms are cooked before the suffix match, so a command word split b
 This covers statically-visible literal words in command position; opaque dynamic dataflow such as `bash -lc "$WHOLE_COMMAND"` remains out of scope.
 
 An executed command word whose basename is exactly `gh` denies with `bare-gh`.
-This includes direct paths, supported wrapper prefixes, compound commands, pipelines, subshells, literal shell payloads, and command substitutions to the extent the lexer models them.
+This includes direct paths, supported wrapper and `time` prefixes, supported `if`, `while`, `until`, and negated command heads, pipelines, subshells, literal shell payloads, and command substitutions to the extent the lexer models them.
 `gh-axi` is a different basename and remains allowed.
 `command -v gh`, `command -V gh`, and `type gh` are diagnostics rather than executions and remain allowed.
 Arguments, comments, and non-executed heredoc text containing `gh` remain data.
 Invoking a script is classified at that outer script command position only; the policy never opens or scans the script, so internal raw `gh` calls remain under the script owner's control.
+
+The bare-gh rule intentionally reuses the narrow shell lexer and does not grow it into a general shell parser.
+Unsupported grammar that the lexer cannot reduce to a modeled command head remains accepted, including `case` and `coproc` forms, and wrapper or `time` option shapes outside the policy's supported option sets.
+Dynamically assembled command words or payloads, aliases and shell functions, and indirect execution sinks such as `xargs` and `find -exec` also remain accepted.
+An `env -S` or `env --split-string` payload followed by a terminal `env` option remains accepted even when the split payload executes `gh`.
+Command substitutions in an unquoted heredoc body remain accepted when the outer command is not a modeled shell reading standard input.
+Deliberate expansion or quoting obfuscation beyond the lexer's cooked literal forms remains outside the agent-mistake threat model.
+These leftovers are accepted fail-open and are not authorization to expand the shared lexer for this rule.
 
 `bin/fm-watch.sh` is protected but is not a blessed entry point.
 A direct `bin/fm-watch.sh` execution - relative, `<code-root>`-anchored, `$VAR`-prefixed, or `~`-prefixed - always denies with `watcher-direct`, whose reason points the caller at `bin/fm-watch-arm.sh` and `bin/fm-watch-checkpoint.sh`.

@@ -494,42 +494,30 @@ const WRAPPER_LONG_OPTIONS = {
   timeout: { noArgument: new Set(["foreground", "preserve-status", "verbose", "help", "version"]), takesArgument: new Set(["kill-after", "signal"]) },
 };
 
-const WRAPPER_TERMINAL_OPTIONS = {
-  command: { short: new Set(["v", "V"]), long: new Set(["help", "version"]) },
-  env: { short: new Set(), long: new Set(["help", "version"]) },
-  exec: { short: new Set(), long: new Set() },
-  nohup: { short: new Set(), long: new Set(["help", "version"]) },
-  sudo: { short: new Set(["h", "l", "V", "v"]), long: new Set(["help", "list", "validate", "version"]) },
-  timeout: { short: new Set(), long: new Set(["help", "version"]) },
-};
-
 function consumeWrapperOptions(name, words, index) {
   const optionOwner = name === "gtimeout" ? "timeout" : name;
   const short = WRAPPER_OPTIONS[optionOwner];
   const long = WRAPPER_LONG_OPTIONS[optionOwner];
-  const terminal = WRAPPER_TERMINAL_OPTIONS[optionOwner];
   const embeddedPayloads = [];
-  let terminalOption = false;
   let next = index;
   while (words[next]) {
     const value = words[next].value;
-    if (value === "--") return { index: next + 1, unresolved: false, embeddedPayloads, terminalOption };
-    if (!value.startsWith("-") || value === "-") return { index: next, unresolved: false, embeddedPayloads, terminalOption };
+    if (value === "--") return { index: next + 1, unresolved: false, embeddedPayloads };
+    if (!value.startsWith("-") || value === "-") return { index: next, unresolved: false, embeddedPayloads };
     if (value.startsWith("--")) {
       const equals = value.indexOf("=");
       const option = value.slice(2, equals === -1 ? undefined : equals);
       if (long.noArgument.has(option)) {
-        terminalOption ||= terminal.long.has(option);
         next += 1;
         continue;
       }
-      if (!long.takesArgument.has(option)) return { index: next, unresolved: true, embeddedPayloads, terminalOption };
+      if (!long.takesArgument.has(option)) return { index: next, unresolved: true, embeddedPayloads };
       if (equals !== -1) {
         if (name === "env" && option === "split-string") embeddedPayloads.push(value.slice(equals + 1));
         next += 1;
         continue;
       }
-      if (!words[next + 1]) return { index: next, unresolved: true, embeddedPayloads, terminalOption };
+      if (!words[next + 1]) return { index: next, unresolved: true, embeddedPayloads };
       if (name === "env" && option === "split-string") embeddedPayloads.push(words[next + 1].value);
       next += 2;
       continue;
@@ -537,13 +525,10 @@ function consumeWrapperOptions(name, words, index) {
     let consumedArgument = false;
     for (let offset = 1; offset < value.length; offset += 1) {
       const option = value[offset];
-      if (short.noArgument.has(option)) {
-        terminalOption ||= terminal.short.has(option);
-        continue;
-      }
-      if (!short.takesArgument.has(option)) return { index: next, unresolved: true, embeddedPayloads, terminalOption };
+      if (short.noArgument.has(option)) continue;
+      if (!short.takesArgument.has(option)) return { index: next, unresolved: true, embeddedPayloads };
       if (offset + 1 === value.length) {
-        if (!words[next + 1]) return { index: next, unresolved: true, embeddedPayloads, terminalOption };
+        if (!words[next + 1]) return { index: next, unresolved: true, embeddedPayloads };
         if (name === "env" && option === "S") embeddedPayloads.push(words[next + 1].value);
         next += 2;
       } else {
@@ -555,7 +540,7 @@ function consumeWrapperOptions(name, words, index) {
     }
     if (!consumedArgument) next += 1;
   }
-  return { index: next, unresolved: false, embeddedPayloads, terminalOption };
+  return { index: next, unresolved: false, embeddedPayloads };
 }
 
 export function commandPosition(tokens) {
@@ -575,10 +560,6 @@ export function commandPosition(tokens) {
       unresolvedWrapperOption ||= options.unresolved;
       wrapperPayloads.push(...options.embeddedPayloads);
       index = options.index;
-      if (options.terminalOption) {
-        command = undefined;
-        break;
-      }
       command = words[index];
       continue;
     }
@@ -588,10 +569,6 @@ export function commandPosition(tokens) {
       unresolvedWrapperOption ||= options.unresolved;
       wrapperPayloads.push(...options.embeddedPayloads);
       index = options.index;
-      if (options.terminalOption) {
-        command = undefined;
-        break;
-      }
       while (words[index] && (words[index].value.startsWith("-") || isAssignment(words[index].value))) index += 1;
       command = words[index];
       continue;
@@ -601,10 +578,6 @@ export function commandPosition(tokens) {
       const options = consumeWrapperOptions(name, words, index + 1);
       unresolvedWrapperOption ||= options.unresolved;
       index = options.index;
-      if (options.terminalOption) {
-        command = undefined;
-        break;
-      }
       if (!words[index]) {
         unresolvedWrapperOption = true;
         command = undefined;
@@ -621,6 +594,133 @@ export function commandPosition(tokens) {
     break;
   }
   return { words, index, command, wrappers, prefixAssignments, unresolvedWrapperOption, wrapperPayloads };
+}
+
+const BARE_GH_WRAPPER_TERMINAL_OPTIONS = {
+  command: { short: new Set(["v", "V"]), long: new Set(["help", "version"]) },
+  env: { short: new Set(), long: new Set(["help", "version"]) },
+  exec: { short: new Set(), long: new Set() },
+  nohup: { short: new Set(), long: new Set(["help", "version"]) },
+  sudo: { short: new Set(["e", "h", "l", "V", "v"]), long: new Set(["edit", "help", "list", "validate", "version"]) },
+  timeout: { short: new Set(), long: new Set(["help", "version"]) },
+};
+
+const BARE_GH_COMMAND_HEAD_PREFIXES = new Set(["!", "if", "then", "else", "elif", "while", "until", "do"]);
+
+function consumeBareGhWrapperOptions(name, words, index) {
+  const optionOwner = name === "gtimeout" ? "timeout" : name;
+  const short = WRAPPER_OPTIONS[optionOwner];
+  const long = WRAPPER_LONG_OPTIONS[optionOwner];
+  const terminal = BARE_GH_WRAPPER_TERMINAL_OPTIONS[optionOwner];
+  const embeddedPayloads = [];
+  let terminalOption = false;
+  let next = index;
+  while (words[next]) {
+    const value = words[next].value;
+    if (value === "--") return { index: next + 1, embeddedPayloads, terminalOption };
+    if (!value.startsWith("-") || value === "-") return { index: next, embeddedPayloads, terminalOption };
+    if (value.startsWith("--")) {
+      const equals = value.indexOf("=");
+      const option = value.slice(2, equals === -1 ? undefined : equals);
+      if (long.noArgument.has(option)) {
+        terminalOption ||= terminal.long.has(option);
+        next += 1;
+        continue;
+      }
+      if (!long.takesArgument.has(option)) return { index: next, embeddedPayloads, terminalOption };
+      if (equals !== -1) {
+        if (name === "env" && option === "split-string") embeddedPayloads.push(value.slice(equals + 1));
+        next += 1;
+        continue;
+      }
+      if (!words[next + 1]) return { index: next, embeddedPayloads, terminalOption };
+      if (name === "env" && option === "split-string") embeddedPayloads.push(words[next + 1].value);
+      next += 2;
+      continue;
+    }
+    let consumedArgument = false;
+    for (let offset = 1; offset < value.length; offset += 1) {
+      const option = value[offset];
+      if (short.noArgument.has(option)) {
+        terminalOption ||= terminal.short.has(option);
+        continue;
+      }
+      if (!short.takesArgument.has(option)) return { index: next, embeddedPayloads, terminalOption };
+      if (offset + 1 === value.length) {
+        if (!words[next + 1]) return { index: next, embeddedPayloads, terminalOption };
+        if (name === "env" && option === "S") embeddedPayloads.push(words[next + 1].value);
+        next += 2;
+      } else {
+        if (name === "env" && option === "S") embeddedPayloads.push(value.slice(offset + 1));
+        next += 1;
+      }
+      consumedArgument = true;
+      break;
+    }
+    if (!consumedArgument) next += 1;
+  }
+  return { index: next, embeddedPayloads, terminalOption };
+}
+
+function skipBareGhCommandHeadPrefixes(words, index) {
+  let next = index;
+  while (words[next]) {
+    const word = words[next];
+    if (!word.quoted && BARE_GH_COMMAND_HEAD_PREFIXES.has(word.value)) {
+      next += 1;
+      continue;
+    }
+    if (basename(word.value) !== "time") break;
+    next += 1;
+    if (words[next]?.value === "-p") next += 1;
+    if (words[next]?.value === "--") next += 1;
+  }
+  return next;
+}
+
+function bareGhCommandPosition(tokens) {
+  const words = wordsInNode(tokens);
+  let index = 0;
+  while (index < words.length && isAssignment(words[index].value)) index += 1;
+  const prefixAssignments = index;
+  const wrappers = [];
+  const wrapperPayloads = [];
+  let terminalOption = false;
+  while (words[index]) {
+    const next = skipBareGhCommandHeadPrefixes(words, index);
+    if (next !== index) {
+      index = next;
+      continue;
+    }
+    const name = basename(words[index].value);
+    if (name === "exec" || name === "command" || name === "sudo" || name === "nohup" || name === "env" || name === "timeout" || name === "gtimeout") {
+      wrappers.push(name);
+      const options = consumeBareGhWrapperOptions(name, words, index + 1);
+      wrapperPayloads.push(...options.embeddedPayloads);
+      terminalOption ||= options.terminalOption;
+      index = options.index;
+      if (terminalOption) break;
+      if (name === "env") {
+        while (words[index] && (words[index].value.startsWith("-") || isAssignment(words[index].value))) index += 1;
+      } else if ((name === "timeout" || name === "gtimeout") && words[index]) {
+        index += 1;
+      }
+      continue;
+    }
+    break;
+  }
+  return { words, index, command: terminalOption ? undefined : words[index], wrappers, prefixAssignments, wrapperPayloads, terminalOption };
+}
+
+function bareGhExecutionPayloads(tokens, position) {
+  if (position.terminalOption) return [];
+  const payloads = [...position.wrapperPayloads];
+  const shell = shellInvocation(position);
+  if (shell?.kind === "command" && shell.payload?.literal && shell.payload.subs.length === 0) payloads.push(shell.payload.value);
+  const literalEvalPayload = evalPayload(position);
+  if (literalEvalPayload !== null) payloads.push(literalEvalPayload);
+  payloads.push(...shellHeredocPayloads(tokens, position), ...shellHereStringPayloads(tokens, position));
+  return payloads;
 }
 
 const PROTECTED_SCRIPTS = [
@@ -778,6 +878,7 @@ function analyzeProgram(command, context, depth = 0) {
   let unclassifiableProtected = false;
   for (const tokens of program.nodes) {
     const position = commandPosition(tokens);
+    const bareGhPosition = bareGhCommandPosition(tokens);
     const nodeContext = contextWithAssignments(activeContext, position.words);
     const firstName = basename(position.words[0]?.value || "");
     if (["if", "then", "else", "elif", "fi", "for", "while", "until", "case", "esac", "do", "done", "function", "time", "coproc"].includes(firstName)) {
@@ -791,9 +892,11 @@ function analyzeProgram(command, context, depth = 0) {
       const nested = analyzeProgram(payload, nodeContext, depth + 1);
       nodeNestedProtected ||= nested.protectedFound;
       broadKill ||= nested.broadKill;
-      bareGh ||= nested.bareGh;
       nodePgrepWatcher ||= nested.pgrepWatcher;
       if (nested.error && rawMentionsProtected(payload)) unsupported = true;
+    }
+    for (const payload of bareGhExecutionPayloads(tokens, bareGhPosition)) {
+      bareGh ||= analyzeProgram(payload, nodeContext, depth + 1).bareGh;
     }
     for (const token of tokens) {
       if (token.type === "group") {
@@ -835,7 +938,6 @@ function analyzeProgram(command, context, depth = 0) {
       const nested = analyzeProgram(shellPayload.value, nodeContext, depth + 1);
       nodeNestedProtected ||= nested.protectedFound;
       broadKill ||= nested.broadKill;
-      bareGh ||= nested.bareGh;
       nodePgrepWatcher ||= nested.pgrepWatcher;
       if (nested.error && rawMentionsProtected(shellPayload.value)) unsupported = true;
     }
@@ -844,7 +946,6 @@ function analyzeProgram(command, context, depth = 0) {
       const nested = analyzeProgram(payload, nodeContext, depth + 1);
       nodeNestedProtected ||= nested.protectedFound;
       broadKill ||= nested.broadKill;
-      bareGh ||= nested.bareGh;
       nodePgrepWatcher ||= nested.pgrepWatcher;
       if (nested.error && rawMentionsProtected(payload)) unsupported = true;
     }
@@ -853,7 +954,7 @@ function analyzeProgram(command, context, depth = 0) {
     const protectedKind = protectedIdentity(executable, context.root);
     if (hasUnclassifiableProtectedExpansion(position.command, context.root)) unclassifiableProtected = true;
     const commandName = basename(executable);
-    if (commandName === "gh") bareGh = true;
+    if (basename(bareGhPosition.command?.value || "") === "gh") bareGh = true;
     const args = position.words.slice(position.index + 1);
     if (commandName === "pkill" && args.some((word) => /fm-watch/.test(word.value) || wordReferencesAny(word, nodeContext.watcherPatterns))) broadKill = true;
     if (commandName === "kill" && (nodePgrepWatcher || args.some((word) => wordReferencesAny(word, nodeContext.watcherPids)))) broadKill = true;
