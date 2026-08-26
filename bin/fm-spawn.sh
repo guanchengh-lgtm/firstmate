@@ -168,8 +168,7 @@
 #   origin, resolves the current remote default branch, and resets to its tip.
 #   An unreachable origin, unresolved default branch, or non-clean worktree
 #   refuses the spawn rather than risking a PR based on stale history.
-#   If treehouse reports that every pooled worktree is in use or dirty, spawn
-#   relays that reason immediately instead of waiting for the cwd poll timeout.
+#   If treehouse reports that every pooled worktree is in use or dirty, spawn relays that reason immediately instead of waiting for the cwd poll timeout.
 # Batch dispatch: pass one or more `id=repo` pairs instead of a single <id> <project>, e.g.
 #     fm-spawn.sh fix-a-k3=projects/foo add-b-q7=projects/bar [--scout]
 #   Each pair re-execs this script in single-task mode, so the single path stays the only
