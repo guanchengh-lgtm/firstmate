@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1091,SC2016,SC2088
-# Behavior tests for the watcher-arm PreToolUse seatbelt (docs/arm-pretool-check.md).
+# Behavior tests for the shell-command PreToolUse seatbelt (docs/arm-pretool-check.md).
 #
 # bin/fm-arm-command-policy.mjs is the single owner of command classification.
 # This suite drives the stable shell transport through all five harness entry
