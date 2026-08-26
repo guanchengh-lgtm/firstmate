@@ -1,0 +1,22 @@
+$ bin/fm-arm-pretool-check.sh --command "gh issue list"
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"[bare-gh] agent shell commands must use gh-axi instead of gh; Firstmate-owned scripts may call gh internally"}
+{"decision":"deny","reason":"[bare-gh] agent shell commands must use gh-axi instead of gh; Firstmate-owned scripts may call gh internally"}
+exit=2
+
+$ bin/fm-arm-pretool-check.sh --command "gh-axi issue list"
+output=<empty>
+exit=0
+
+$ Codex Bash payload: gh issue list
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"[bare-gh] agent shell commands must use gh-axi instead of gh; Firstmate-owned scripts may call gh internally"}
+{"decision":"deny","reason":"[bare-gh] agent shell commands must use gh-axi instead of gh; Firstmate-owned scripts may call gh internally"}
+exit=2
+
+$ Cursor Shell payload: gh issue list
+{"permission":"deny","user_message":"[bare-gh] agent shell commands must use gh-axi instead of gh; Firstmate-owned scripts may call gh internally"}
+exit=0
+
+$ bin/fm-arm-pretool-check.sh --command "bash -lc 'gh issue list'"
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"[bare-gh] agent shell commands must use gh-axi instead of gh; Firstmate-owned scripts may call gh internally"}
+{"decision":"deny","reason":"[bare-gh] agent shell commands must use gh-axi instead of gh; Firstmate-owned scripts may call gh internally"}
+exit=2
