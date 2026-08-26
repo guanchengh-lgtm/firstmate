@@ -27,13 +27,15 @@
 #      to the routed status log; dead/missing report the remote verdict; an
 #      unreachable or unreadable remote reports unknown-remote, never a false
 #      gone/dead.
-#   2. Matching no-mistakes run for this crew's branch: a structurally valid
-#      direct executing run or the newest coarse running row binds by branch
-#      alone, while parked and terminal runs also require current code identity
-#      (from `axi status`, or the coarse `no-mistakes runs` fallback). Code
-#      identity is owned by fm_nm_head_matches_worktree in
-#      bin/fm-nm-run-lib.sh. Residual: a parked run with an unfetchable head may
-#      degrade through the coarse view to working, never to a false terminal.
+#   2. Matching no-mistakes run for this crew's branch: a direct running,
+#      fixing, or ci payload with an ID, syntactically valid head, no outcome,
+#      no awaiting-agent field, and no gate signal binds by branch alone. So
+#      does the newest same-branch coarse running row. Every other direct or
+#      coarse payload remains current-code-identity-bound (from `axi status`,
+#      or the coarse `no-mistakes runs` fallback). Code identity is owned by
+#      fm_nm_head_matches_worktree in bin/fm-nm-run-lib.sh. Residual: a parked
+#      run with an unfetchable head may degrade through the coarse view to
+#      working, never to a false terminal.
 #      The run-step is AUTHORITATIVE: running/fixing -> working, ci -> working,
 #      awaiting_approval/fix_review -> parked (with gate findings), terminal
 #      passed/checks-passed -> done, failed/cancelled -> failed. EXCEPT: while
