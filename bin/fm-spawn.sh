@@ -168,6 +168,8 @@
 #   origin, resolves the current remote default branch, and resets to its tip.
 #   An unreachable origin, unresolved default branch, or non-clean worktree
 #   refuses the spawn rather than risking a PR based on stale history.
+#   If treehouse reports that every pooled worktree is in use or dirty, spawn
+#   relays that reason immediately instead of waiting for the cwd poll timeout.
 # Batch dispatch: pass one or more `id=repo` pairs instead of a single <id> <project>, e.g.
 #     fm-spawn.sh fix-a-k3=projects/foo add-b-q7=projects/bar [--scout]
 #   Each pair re-execs this script in single-task mode, so the single path stays the only
@@ -2397,6 +2399,19 @@ kimi_spawn_fail() {  # <detail>
   echo "error: $1; inspect window $T" >&2
 }
 
+treehouse_pool_refusal_reason() {  # <target>
+  local target=$1 pane compact reason count max
+  pane=$(fm_backend_capture "$BACKEND" "$target" 40 "$W" 2>/dev/null) || return 1
+  compact=$(printf '%s\n' "$pane" | tr -d '[:space:]')
+  reason=$(printf '%s\n' "$compact" | LC_ALL=C grep -Eo \
+    "all[0-9]+worktreesareinuseordirty\\(max_trees=[0-9]+\\)\\.Run'treehousestatus'toseedetails,orincreasemax_treesintreehouse\\.toml") \
+    || return 1
+  count=$(printf '%s\n' "$reason" | sed -E 's/^all([0-9]+).*/\1/')
+  max=$(printf '%s\n' "$reason" | sed -E 's/.*max_trees=([0-9]+).*/\1/')
+  printf "all %s worktrees are in use or dirty (max_trees = %s). Run 'treehouse status' to see details, or increase max_trees in treehouse.toml\n" \
+    "$count" "$max"
+}
+
 if [ "$RELAUNCH" -eq 1 ]; then
   # No worktree is acquired: the recorded one is reused as-is. What must be
   # proven instead is that the adopted endpoint's shell is actually sitting in
@@ -2438,12 +2453,21 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   # pane that is already settled by the first real read only costs the one existing
   # inter-poll sleep as confirmation, not a whole extra cycle on top.
   candidate=""
+  refusal=""
   for _ in $(seq 1 60); do
+    if refusal=$(treehouse_pool_refusal_reason "$WT_TARGET"); then
+      echo "error: treehouse get failed: $refusal; inspect window $T" >&2
+      exit 1
+    fi
     p=$(spawn_current_path "$WT_TARGET" || true)
     if [ -n "$p" ]; then
       p_real=$(real_path_or_raw "$p")
       if [ "$p_real" != "$PROJ_ABS_REAL" ]; then
         if [ -n "$candidate" ] && [ "$p_real" = "$candidate" ]; then
+          if refusal=$(treehouse_pool_refusal_reason "$WT_TARGET"); then
+            echo "error: treehouse get failed: $refusal; inspect window $T" >&2
+            exit 1
+          fi
           WT="$p"
           break
         fi
