@@ -53,6 +53,9 @@ The branch's role stays bounded exactly as the captain-approved architecture set
 Homes on any other primary harness never load this feature and are entirely unaffected.
 Runtime state lives in `state/branch-outcomes.jsonl` with its `.branch-outcomes-cursor`, rotated conversation files under `state/branch-session/` with `.branch-session` naming the current file and `.branch-mirror-cursor` tracking mirrored main dialog, and per-task `state/.lease-<task>` files; `bin/fm-branch-outcome.sh` and `bin/fm-lease-lib.sh` own those formats.
 Rotation leaves old conversation files intact, and this feature does not truncate, prune, or delete them.
+The default conversation budget is 25% of the active model's context window, or 120000 tokens when no model window is known.
+`FM_BRANCH_CONTEXT_BUDGET_TOKENS` accepts a positive decimal integer within JavaScript's safe integer range as an override; absent or invalid values use the default.
+When the model window is known, the effective budget is capped at `max(1, contextWindow - 16384)` to preserve Pi's compaction reserve.
 A captain-facing (verdict `captain`) branch outcome opens exactly one follow-up turn on main - that turn is the captain-visible result, and Pi never separately prints or renders the merge note itself.
 A no-change heartbeat outcome explicitly reported with `task=fleet` and `silent=true` is delivered silently with no rendered note, while every other routine outcome still appends a rendered, sailboat-prefixed note.
 

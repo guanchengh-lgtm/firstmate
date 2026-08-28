@@ -37,10 +37,8 @@
 // branch that dies mid-handling re-presents its rows at the next drain exactly
 // as a mid-handling main crash always has.
 //
-// FM_BRANCH_CONTEXT_BUDGET_TOKENS overrides the default budget of 25% of the
-// active model's context window (120000 tokens when no model window is known).
-// The override is clamped below the model window by Pi's 16384-token
-// compaction reserve.
+// docs/configuration.md "Pi supervision branch" owns the operator-facing
+// context-budget and override contract.
 //
 // Threat model (captain-decided): the branch's actor identity is
 // CONFUSED-AGENT-GRADE - deterministic spawnHook env injection plus a

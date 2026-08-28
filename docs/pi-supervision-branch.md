@@ -24,7 +24,7 @@ This feature is Pi-only by construction and changes nothing anywhere else:
   It checks the current extension generation and `state/.lock` ownership before each guarded branch side effect so replacement or lock loss cannot let an old continuation mutate the new session.
   A wake is complete only after its `fm_branch_report` call stores and merges an outcome; a turn that throws, returns a provider error, omits the report, or receives a report-tool error falls back to delivering that wake to main.
   Three consecutive wakes without a completed report break the branch until the next main-session replacement, while any completed report resets that breaker.
-  The current branch session rotates without summary or carry-over when its context use exceeds the model-derived token budget, while its old session file remains untouched.
+  The current branch session releases its branch-owned task leases and rotates without summary or carry-over when its context use exceeds the model-derived token budget, while its old session file remains untouched.
   Every path that cannot reach a working branch therefore degrades to today's behavior, never to a lost wake.
 - Branch system prompt: `bin/fm-branch-prompt.sh`; its header owns the byte-stable-prefix contract (no timestamps, no fleet snapshot, no per-wake content).
 - Outcome store: `bin/fm-branch-outcome.sh`; its header owns the append-only format and the read cursor.
@@ -65,7 +65,7 @@ Every other fleet-wide or unresolvable wake - including watcher-failure alarms, 
 
 The captain accepted the normal provider prompt-caching strategy: a byte-identical branch prefix generated once per firstmate version, the same tool set in the same order on every request, and one shared `prompt_cache_key` per home for all branch sessions (set in a `before_provider_request` hook, and only for providers whose requests already carry that field); main keeps its own per-session key.
 Caching reduces the price of a reused prefix but does not make a growing conversation free, so the branch bounds each session instead of depending on unbounded cached history or model-side compaction.
-The default budget is 25% of the active model's context window, or 120000 tokens when no model window is known; `FM_BRANCH_CONTEXT_BUDGET_TOKENS` overrides that value but is clamped below the model window by Pi's 16384-token compaction reserve.
+The [Pi supervision branch configuration](configuration.md#pi-supervision-branch) owns the exact budget default, override syntax, and compaction-reserve cap.
 After every wake turn, including provider-error turns, context use above that budget disposes the current session and clears its pointer so the next wake creates a fresh session; rotation makes no model call, writes no summary, and leaves the old file untouched.
 Cache reuse remains best-effort and never guaranteed across either calls or rotations.
 No caching machinery beyond this exists, deliberately: any later dynamic content in the branch prefix silently removes most of the cache benefit, which is why `bin/fm-branch-prompt.sh`'s header is the contract's single owner and `tests/fm-branch-supervision.test.sh` pins the output to byte identity.
