@@ -670,9 +670,11 @@ ${context.command}
           rotationError = error;
         }
         if (reportsDelivered > reportsBefore) {
-          consecutiveUnreportedWakes = 0;
-          if (rotationError && acceptedGeneration === generation && !shuttingDown) {
-            branchBroken = rotationError instanceof Error ? rotationError.message : String(rotationError);
+          if (actingAsOwner(acceptedGeneration)) {
+            consecutiveUnreportedWakes = 0;
+            if (rotationError) {
+              branchBroken = rotationError instanceof Error ? rotationError.message : String(rotationError);
+            }
           }
           return;
         }
@@ -689,13 +691,11 @@ ${context.command}
               ? String(rotationError)
               : "";
         const detail = `branch turn ended without a report${failureDetail ? `: ${failureDetail}` : ""}${rotationDetail ? `; ${rotationDetail}` : ""}`;
-        consecutiveUnreportedWakes += 1;
-        if (
-          consecutiveUnreportedWakes >= UNREPORTED_WAKE_BREAKER_THRESHOLD &&
-          acceptedGeneration === generation &&
-          !shuttingDown
-        ) {
-          branchBroken = detail;
+        if (actingAsOwner(acceptedGeneration)) {
+          consecutiveUnreportedWakes += 1;
+          if (consecutiveUnreportedWakes >= UNREPORTED_WAKE_BREAKER_THRESHOLD) {
+            branchBroken = detail;
+          }
         }
         throw new Error(detail);
       })

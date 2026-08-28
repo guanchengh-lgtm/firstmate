@@ -901,12 +901,25 @@ if (readFileSync(`${home}/state/.branch-session`, "utf8") !== pointerBefore) {
   throw new Error("stale over-budget continuation rewrote the branch pointer");
 }
 if (globalThis.__fmCreateCount !== 1) throw new Error("stale rotation created another session");
+globalThis.__fmContextTokens = 0;
+globalThis.__fmPromptBehavior = async (session) => {
+  session.messages.push({ role: "assistant", stopReason: "error", errorMessage: "fresh unreported wake" });
+};
+for (let i = 1; i <= 3; i += 1) {
+  if (!dispatch(`signal: fresh failure ${i}`).accepted) {
+    throw new Error(`fresh failure ${i} was refused before three new strikes`);
+  }
+  await settle(() => mainUserMessages.length === i + 1, `fresh fallback ${i}`);
+}
+if (dispatch("signal: stale reset breaker must decline").accepted) {
+  throw new Error("branch accepted a fourth fresh wake after three new strikes");
+}
 process.exit(0);
 EOF
   status=$?
   out=$(cat "$TMP_ROOT/node-output")
   expect_code 0 "$status" "a stale over-budget continuation must not rotate branch state: $out"
-  pass "stale generation cannot rewrite the branch pointer during rotation"
+  pass "stale generation cannot rotate state or add a breaker strike"
 }
 
 test_branch_predrain_recheck_defers_new_main_owned_row() {
