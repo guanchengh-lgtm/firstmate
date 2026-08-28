@@ -90,7 +90,16 @@ export async function createAgentSession(options) {
   const session = {
     options,
     ops: [],
+    messages: [],
     disposed: false,
+    get model() {
+      return globalThis.__fmModel ?? { provider: "stub", id: "stub-model", contextWindow: 500000 };
+    },
+    getContextUsage() {
+      const contextWindow = session.model.contextWindow;
+      const tokens = globalThis.__fmContextTokens ?? 0;
+      return { tokens, contextWindow, percent: contextWindow > 0 ? (tokens / contextWindow) * 100 : null };
+    },
     async prompt(text) {
       if (globalThis.__fmPromptGate) {
         globalThis.__fmPromptStarted = true;
@@ -98,6 +107,19 @@ export async function createAgentSession(options) {
       }
       session.ops.push({ kind: "prompt", text });
       (globalThis.__fmPrompts ??= []).push(text);
+      if (globalThis.__fmPromptBehavior) {
+        await globalThis.__fmPromptBehavior(session, text);
+        return;
+      }
+      const report = options.customTools.find((tool) => tool.name === "fm_branch_report");
+      const result = await report.execute(
+        `stub-report-${globalThis.__fmPrompts.length}`,
+        { task: "fleet", verdict: "routine", summary: "stub handled wake", silent: true },
+        undefined,
+        undefined,
+        {},
+      );
+      if (result.isError) session.messages.push({ role: "assistant", stopReason: "error", errorMessage: result.content[0].text });
     },
     async sendCustomMessage(message, opts) {
       if (globalThis.__fmMirrorGate) {
@@ -277,9 +299,19 @@ import { readFileSync, writeFileSync } from "node:fs";
 writeFileSync(`${home}/state/.lock`, `${process.ppid}\n`);
 
 // 1. An accepted wake reaches the branch session, never main.
+globalThis.__fmPromptBehavior = async (session) => {
+  const report = session.options.customTools.find((tool) => tool.name === "fm_branch_report");
+  globalThis.__fmInitialReport = await report.execute(
+    "call-1",
+    { task: "task-9", verdict: "routine", summary: "worker healthy, no action needed", wake: "signal: working" },
+    undefined,
+    undefined,
+    {},
+  );
+};
 const offer = dispatch("signal: task-9 done: PR https://example.com/pr/9 checks green");
 if (!offer.accepted) throw new Error("branch did not accept the wake offer");
-await settle(() => (globalThis.__fmPrompts ?? []).length === 1, "branch wake prompt");
+await settle(() => globalThis.__fmInitialReport !== undefined, "branch wake report");
 const wakePrompt = globalThis.__fmPrompts[0];
 if (!wakePrompt.includes("FIRSTMATE SUPERVISION WAKE: signal: task-9 done")) {
   throw new Error(`branch prompt lost the wake reason: ${wakePrompt}`);
@@ -327,7 +359,7 @@ console.log(`CACHE_KEY=${rewriteA.prompt_cache_key}`);
 // captain-relevant appends and triggers exactly one turn. Store rows are
 // written BEFORE the merge note and marked read after it.
 const report = session.options.customTools.find((tool) => tool.name === "fm_branch_report");
-const r1 = await report.execute("call-1", { task: "task-9", verdict: "routine", summary: "worker healthy, no action needed", wake: "signal: working" }, undefined, undefined, {});
+const r1 = globalThis.__fmInitialReport;
 if (r1.isError) throw new Error(`routine report failed: ${JSON.stringify(r1)}`);
 if (sentToMain.length !== 1) throw new Error("routine report did not merge exactly one note");
 if (sentToMain[0].message.customType !== "fm-branch-merge") throw new Error("merge note has the wrong custom type");
@@ -609,6 +641,346 @@ EOF
   out=$(cat "$TMP_ROOT/node-output")
   expect_code 0 "$status" "broken-branch fallback must return wakes to main: $out"
   pass "branch default-on eligibility (task-scoped, heartbeat, afk) binds and a broken branch falls back to main"
+}
+
+test_branch_turn_completion_handshake() {
+  local repo home out status
+  repo="$TMP_ROOT/handshake-root"
+  home="$TMP_ROOT/handshake-home"
+  mkdir -p "$home/state" "$home/config"
+  install_pi_branch_extension_fixture "$repo"
+  PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    DRIVER_PRELUDE="$DRIVER_PRELUDE" node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
+const prelude = process.env.DRIVER_PRELUDE;
+await eval(`(async () => { ${prelude}; globalThis.__t = { dispatch, settle, mainUserMessages }; })()`);
+const { dispatch, settle, mainUserMessages } = globalThis.__t;
+
+globalThis.__fmPromptBehavior = async (session) => {
+  session.messages.push({
+    role: "assistant",
+    stopReason: "error",
+    errorMessage: "This model's maximum prompt length is 500000 but the request contains 514192 tokens.",
+  });
+};
+if (!dispatch("signal: unreported wake").accepted) throw new Error("unreported wake was not accepted");
+await settle(() => mainUserMessages.length === 1, "unreported-wake fallback");
+const fallback = mainUserMessages[0];
+if (!fallback.content.includes("FIRSTMATE WATCHER WAKE: signal: unreported wake")) {
+  throw new Error(`fallback lost the wake: ${fallback.content}`);
+}
+if (!fallback.content.includes("Supervision branch unavailable")) {
+  throw new Error(`fallback did not name branch failure: ${fallback.content}`);
+}
+if (!fallback.content.includes("request contains 514192 tokens")) {
+  throw new Error(`fallback lost provider detail: ${fallback.content}`);
+}
+if (fallback.options.deliverAs !== "followUp") throw new Error("fallback must use followUp delivery");
+if (!dispatch("signal: retry after one failure").accepted) {
+  throw new Error("one unreported wake broke the branch before the three-strike threshold");
+}
+process.exit(0);
+EOF
+  status=$?
+  out=$(cat "$TMP_ROOT/node-output")
+  expect_code 0 "$status" "an unreported resolved turn must fall back with provider detail: $out"
+
+  home="$TMP_ROOT/late-error-home"
+  mkdir -p "$home/state" "$home/config"
+  PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    DRIVER_PRELUDE="$DRIVER_PRELUDE" node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
+const prelude = process.env.DRIVER_PRELUDE;
+await eval(`(async () => { ${prelude}; globalThis.__t = { dispatch, settle, sentToMain, mainUserMessages }; })()`);
+const { dispatch, settle, sentToMain, mainUserMessages } = globalThis.__t;
+
+globalThis.__fmPromptBehavior = async (session) => {
+  const report = session.options.customTools.find((tool) => tool.name === "fm_branch_report");
+  const result = await report.execute(
+    "reported-before-error",
+    { task: "task-late", verdict: "routine", summary: "wake handled before late error" },
+    undefined,
+    undefined,
+    {},
+  );
+  if (result.isError) throw new Error(`report failed: ${JSON.stringify(result)}`);
+  session.messages.push({ role: "assistant", stopReason: "error", errorMessage: "late provider error" });
+};
+if (!dispatch("signal: reported then errored").accepted) throw new Error("reported wake was not accepted");
+await settle(() => sentToMain.length === 1, "reported wake merge");
+await new Promise((resolve) => setTimeout(resolve, 25));
+if (mainUserMessages.length !== 0) {
+  throw new Error(`reported wake was delivered again to main: ${JSON.stringify(mainUserMessages)}`);
+}
+process.exit(0);
+EOF
+  status=$?
+  out=$(cat "$TMP_ROOT/node-output")
+  expect_code 0 "$status" "a reported wake with a late error must not be delivered twice: $out"
+  pass "branch uses successful report delivery as the wake-completion handshake"
+}
+
+test_branch_context_budget_rotation() {
+  local repo home out status
+  repo="$TMP_ROOT/rotation-root"
+  home="$TMP_ROOT/rotation-home"
+  mkdir -p "$home/state" "$home/config"
+  install_pi_branch_extension_fixture "$repo"
+  PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_BRANCH_CONTEXT_BUDGET_TOKENS=1000 DRIVER_PRELUDE="$DRIVER_PRELUDE" \
+    node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
+const prelude = process.env.DRIVER_PRELUDE;
+await eval(`(async () => { ${prelude}; globalThis.__t = { dispatch, settle, home, sentToMain, mainUserMessages }; })()`);
+const { dispatch, settle, home, sentToMain, mainUserMessages } = globalThis.__t;
+import { spawnSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
+
+globalThis.__fmContextTokens = 1500;
+let releaseTurn;
+globalThis.__fmRotationGate = new Promise((resolve) => { releaseTurn = resolve; });
+const leaseScript = `${process.env.FM_ROOT_OVERRIDE}/bin/fm-lease.sh`;
+const leaseEnv = {
+  ...process.env,
+  FM_HOME: home,
+  FM_STATE_OVERRIDE: `${home}/state`,
+  FM_LEASE_HOLDER_PID: String(process.pid),
+};
+globalThis.__fmPromptBehavior = async () => {
+  const claim = spawnSync("bash", [leaseScript, "claim", "task-rotation", "--actor", "branch"], {
+    encoding: "utf8",
+    env: { ...leaseEnv, FM_SUPERVISION_ACTOR: "branch" },
+  });
+  if (claim.status !== 0) throw new Error(`branch lease claim failed: ${claim.stderr}`);
+  globalThis.__fmRotationLeaseClaimed = true;
+  await globalThis.__fmRotationGate;
+};
+if (!dispatch("signal: rotate over budget").accepted) throw new Error("over-budget wake was not accepted");
+await settle(() => globalThis.__fmRotationLeaseClaimed === true, "rotation lease claim");
+const firstFile = globalThis.__fmSessionManagers[0].getSessionFile();
+writeFileSync(firstFile, "preserved session bytes\n");
+const firstBytes = readFileSync(firstFile);
+releaseTurn();
+await settle(
+  () => globalThis.__fmSessions?.[0]?.disposed === true && mainUserMessages.length === 1,
+  "over-budget rotation fallback",
+);
+if (readFileSync(`${home}/state/.branch-session`, "utf8") !== "\n") {
+  throw new Error("rotation did not clear the current-session pointer");
+}
+const mainClaim = spawnSync("bash", [leaseScript, "claim", "task-rotation", "--actor", "main"], {
+  encoding: "utf8",
+  env: { ...leaseEnv, FM_SUPERVISION_ACTOR: "main" },
+});
+if (mainClaim.status !== 0) throw new Error(`rotation left main blocked by a branch lease: ${mainClaim.stderr}`);
+const mainRelease = spawnSync("bash", [leaseScript, "release", "task-rotation", "--actor", "main"], {
+  encoding: "utf8",
+  env: { ...leaseEnv, FM_SUPERVISION_ACTOR: "main" },
+});
+if (mainRelease.status !== 0) throw new Error(`main lease release failed: ${mainRelease.stderr}`);
+globalThis.__fmPromptBehavior = undefined;
+globalThis.__fmContextTokens = 500;
+if (!dispatch("signal: create after rotation").accepted) throw new Error("post-rotation wake was not accepted");
+await settle(() => globalThis.__fmSessions?.length === 2 && sentToMain.length === 1, "fresh session after rotation");
+const secondFile = readFileSync(`${home}/state/.branch-session`, "utf8").trim();
+if (globalThis.__fmCreateCount !== 2) throw new Error(`rotation did not create a fresh session: ${globalThis.__fmCreateCount}`);
+if (secondFile === firstFile) throw new Error("rotation reused the over-budget session file");
+if (!readFileSync(firstFile).equals(firstBytes)) throw new Error("rotation changed the old session file");
+process.exit(0);
+EOF
+  status=$?
+  out=$(cat "$TMP_ROOT/node-output")
+  expect_code 0 "$status" "an over-budget branch must rotate without changing its old session file: $out"
+
+  home="$TMP_ROOT/reuse-home"
+  mkdir -p "$home/state" "$home/config"
+  PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_BRANCH_CONTEXT_BUDGET_TOKENS=1000 DRIVER_PRELUDE="$DRIVER_PRELUDE" \
+    node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
+const prelude = process.env.DRIVER_PRELUDE;
+await eval(`(async () => { ${prelude}; globalThis.__t = { dispatch, settle, home, sentToMain }; })()`);
+const { dispatch, settle, home, sentToMain } = globalThis.__t;
+import { readFileSync } from "node:fs";
+
+globalThis.__fmContextTokens = 500;
+dispatch("signal: reuse one");
+await settle(() => sentToMain.length === 1, "first under-budget report");
+const pointer = readFileSync(`${home}/state/.branch-session`, "utf8");
+dispatch("signal: reuse two");
+await settle(() => sentToMain.length === 2, "second under-budget report");
+if (globalThis.__fmSessions.length !== 1 || globalThis.__fmCreateCount !== 1) {
+  throw new Error("under-budget wakes did not reuse one session");
+}
+if (readFileSync(`${home}/state/.branch-session`, "utf8") !== pointer) {
+  throw new Error("under-budget reuse changed the session pointer");
+}
+process.exit(0);
+EOF
+  status=$?
+  out=$(cat "$TMP_ROOT/node-output")
+  expect_code 0 "$status" "under-budget wakes must reuse their session: $out"
+
+  home="$TMP_ROOT/model-budget-home"
+  mkdir -p "$home/state" "$home/config"
+  PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    DRIVER_PRELUDE="$DRIVER_PRELUDE" node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
+const prelude = process.env.DRIVER_PRELUDE;
+await eval(`(async () => { ${prelude}; globalThis.__t = { dispatch, settle, sentToMain }; })()`);
+const { dispatch, settle, sentToMain } = globalThis.__t;
+
+globalThis.__fmModel = { provider: "stub", id: "small-model", contextWindow: 40000 };
+globalThis.__fmContextTokens = 9000;
+dispatch("signal: derived budget under");
+await settle(() => sentToMain.length === 1, "derived-budget reuse");
+if (globalThis.__fmSessions[0].disposed) throw new Error("9000 tokens exceeded a derived 10000-token budget");
+globalThis.__fmContextTokens = 11000;
+dispatch("signal: derived budget over");
+await settle(() => globalThis.__fmSessions[0].disposed === true, "derived-budget rotation");
+process.exit(0);
+EOF
+  status=$?
+  out=$(cat "$TMP_ROOT/node-output")
+  expect_code 0 "$status" "default budget must derive from the active model window: $out"
+
+  home="$TMP_ROOT/clamped-budget-home"
+  mkdir -p "$home/state" "$home/config"
+  PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_BRANCH_CONTEXT_BUDGET_TOKENS=1000000 DRIVER_PRELUDE="$DRIVER_PRELUDE" \
+    node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
+const prelude = process.env.DRIVER_PRELUDE;
+await eval(`(async () => { ${prelude}; globalThis.__t = { dispatch, settle }; })()`);
+const { dispatch, settle } = globalThis.__t;
+
+globalThis.__fmModel = { provider: "stub", id: "small-model", contextWindow: 40000 };
+globalThis.__fmContextTokens = 30000;
+dispatch("signal: clamped override");
+await settle(() => globalThis.__fmSessions?.[0]?.disposed === true, "clamped-budget rotation");
+process.exit(0);
+EOF
+  status=$?
+  out=$(cat "$TMP_ROOT/node-output")
+  expect_code 0 "$status" "context-budget override must stay below the model reserve: $out"
+  pass "branch rotates on model-derived token budgets and reuses sessions below budget"
+}
+
+test_branch_unreported_wake_breaker() {
+  local repo home out status
+  repo="$TMP_ROOT/breaker-root"
+  home="$TMP_ROOT/breaker-home"
+  mkdir -p "$home/state" "$home/config"
+  install_pi_branch_extension_fixture "$repo"
+  PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    DRIVER_PRELUDE="$DRIVER_PRELUDE" node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
+const prelude = process.env.DRIVER_PRELUDE;
+await eval(`(async () => { ${prelude}; globalThis.__t = { fire, dispatch, settle, sentToMain, mainUserMessages }; })()`);
+const { fire, dispatch, settle, sentToMain, mainUserMessages } = globalThis.__t;
+
+let attempt = 0;
+globalThis.__fmPromptBehavior = async (session) => {
+  attempt += 1;
+  if (attempt !== 3) return;
+  const report = session.options.customTools.find((tool) => tool.name === "fm_branch_report");
+  const result = await report.execute(
+    "breaker-reset-report",
+    { task: "task-breaker", verdict: "routine", summary: "reported wake resets breaker" },
+    undefined,
+    undefined,
+    {},
+  );
+  if (result.isError) throw new Error(`breaker reset report failed: ${JSON.stringify(result)}`);
+};
+for (let i = 1; i <= 2; i += 1) {
+  if (!dispatch(`signal: pre-reset failure ${i}`).accepted) throw new Error(`failure ${i} was not accepted`);
+  await settle(() => mainUserMessages.length === i, `fallback ${i}`);
+}
+if (!dispatch("signal: reported reset").accepted) throw new Error("reported reset wake was not accepted");
+await settle(() => sentToMain.length === 1, "breaker reset report");
+for (let i = 1; i <= 3; i += 1) {
+  if (!dispatch(`signal: post-reset failure ${i}`).accepted) {
+    throw new Error(`post-reset failure ${i} was refused before three strikes`);
+  }
+  await settle(() => mainUserMessages.length === i + 2, `post-reset fallback ${i}`);
+}
+if (dispatch("signal: breaker must decline").accepted) throw new Error("branch accepted a fourth wake after three strikes");
+fire("session_shutdown", {});
+fire("session_start", {});
+let releaseFirstQueued;
+const firstQueuedGate = new Promise((resolve) => { releaseFirstQueued = resolve; });
+let queuedAttempts = 0;
+globalThis.__fmPromptBehavior = async () => {
+  queuedAttempts += 1;
+  if (queuedAttempts === 1) {
+    globalThis.__fmFirstQueuedPromptStarted = true;
+    await firstQueuedGate;
+  }
+};
+const promptsBeforeQueue = globalThis.__fmPrompts.length;
+const fallbacksBeforeQueue = mainUserMessages.length;
+if (!dispatch("signal: queued failure 1").accepted) throw new Error("session replacement did not reset breaker");
+await settle(() => globalThis.__fmFirstQueuedPromptStarted === true, "first queued prompt");
+for (let i = 2; i <= 4; i += 1) {
+  if (!dispatch(`signal: queued failure ${i}`).accepted) throw new Error(`queued failure ${i} was not accepted`);
+}
+releaseFirstQueued();
+await settle(() => mainUserMessages.length === fallbacksBeforeQueue + 4, "queued wake fallbacks");
+if (globalThis.__fmPrompts.length !== promptsBeforeQueue + 3 || queuedAttempts !== 3) {
+  throw new Error(`queued wakes bypassed the breaker: prompts=${globalThis.__fmPrompts.length - promptsBeforeQueue}`);
+}
+if (dispatch("signal: queued breaker must decline").accepted) {
+  throw new Error("branch accepted a new wake after queued failures tripped the breaker");
+}
+process.exit(0);
+EOF
+  status=$?
+  out=$(cat "$TMP_ROOT/node-output")
+  expect_code 0 "$status" "three consecutive unreported wakes must break until session replacement: $out"
+  pass "branch circuit breaker trips after three consecutive unreported wakes and resets on reports or replacement"
+}
+
+test_stale_rotation_is_side_effect_free() {
+  local repo home out status
+  repo="$TMP_ROOT/stale-rotation-root"
+  home="$TMP_ROOT/stale-rotation-home"
+  mkdir -p "$home/state" "$home/config"
+  install_pi_branch_extension_fixture "$repo"
+  PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_BRANCH_CONTEXT_BUDGET_TOKENS=1000 DRIVER_PRELUDE="$DRIVER_PRELUDE" \
+    node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
+const prelude = process.env.DRIVER_PRELUDE;
+await eval(`(async () => { ${prelude}; globalThis.__t = { fire, dispatch, settle, home, mainUserMessages }; })()`);
+const { fire, dispatch, settle, home, mainUserMessages } = globalThis.__t;
+import { readFileSync } from "node:fs";
+
+globalThis.__fmContextTokens = 1500;
+let releasePrompt;
+globalThis.__fmPromptGate = new Promise((resolve) => { releasePrompt = resolve; });
+dispatch("signal: stale over-budget wake");
+await settle(() => globalThis.__fmPromptStarted === true, "blocked stale prompt");
+const pointerBefore = readFileSync(`${home}/state/.branch-session`, "utf8");
+fire("session_shutdown", {});
+fire("session_start", {});
+releasePrompt();
+await settle(() => mainUserMessages.length === 1, "stale wake fallback");
+if (readFileSync(`${home}/state/.branch-session`, "utf8") !== pointerBefore) {
+  throw new Error("stale over-budget continuation rewrote the branch pointer");
+}
+if (globalThis.__fmCreateCount !== 1) throw new Error("stale rotation created another session");
+globalThis.__fmContextTokens = 0;
+globalThis.__fmPromptBehavior = async (session) => {
+  session.messages.push({ role: "assistant", stopReason: "error", errorMessage: "fresh unreported wake" });
+};
+for (let i = 1; i <= 3; i += 1) {
+  if (!dispatch(`signal: fresh failure ${i}`).accepted) {
+    throw new Error(`fresh failure ${i} was refused before three new strikes`);
+  }
+  await settle(() => mainUserMessages.length === i + 1, `fresh fallback ${i}`);
+}
+if (dispatch("signal: stale reset breaker must decline").accepted) {
+  throw new Error("branch accepted a fourth fresh wake after three new strikes");
+}
+process.exit(0);
+EOF
+  status=$?
+  out=$(cat "$TMP_ROOT/node-output")
+  expect_code 0 "$status" "a stale over-budget continuation must not rotate branch state: $out"
+  pass "stale generation cannot rotate state or add a breaker strike"
 }
 
 test_branch_predrain_recheck_defers_new_main_owned_row() {
@@ -912,9 +1284,9 @@ fire("turn_end", {}, {
 });
 unlinkSync(`${home}/state/.lock`);
 releasePrompt();
-await settle(() => mainUserMessages.length === 1, "lost-ownership fallback");
-if (!mainUserMessages[0].content.includes("FIRSTMATE WATCHER WAKE: signal: queued wake")) {
-  throw new Error(`queued wake did not fall back to main: ${mainUserMessages[0].content}`);
+await settle(() => mainUserMessages.length === 2, "lost-ownership fallbacks");
+if (!mainUserMessages.some((message) => message.content.includes("FIRSTMATE WATCHER WAKE: signal: queued wake"))) {
+  throw new Error(`queued wake did not fall back to main: ${JSON.stringify(mainUserMessages)}`);
 }
 await new Promise((resolve) => setTimeout(resolve, 25));
 const session = globalThis.__fmSessions[0];
@@ -942,10 +1314,12 @@ const { fire, dispatch, settle, home, sentToMain } = globalThis.__t;
 import { existsSync, readFileSync } from "node:fs";
 
 if (!dispatch("signal: establish old branch").accepted) throw new Error("old branch wake was not accepted");
-await settle(() => (globalThis.__fmPrompts ?? []).length === 1, "old branch prompt");
+await settle(() => sentToMain.length === 1, "old branch report");
 const oldSession = globalThis.__fmSessions[0];
 const oldReport = oldSession.options.customTools.find((tool) => tool.name === "fm_branch_report");
 const oldBash = oldSession.options.customTools.find((tool) => tool.name === "bash");
+const outcomesBefore = readFileSync(`${home}/state/branch-outcomes.jsonl`, "utf8");
+const mergesBefore = sentToMain.length;
 
 let releaseMirror;
 globalThis.__fmMirrorGate = new Promise((resolve) => { releaseMirror = resolve; });
@@ -980,9 +1354,11 @@ try {
   bashRefused = true;
 }
 if (!bashRefused) throw new Error("stale bash tool was not refused");
-if (existsSync(`${home}/state/branch-outcomes.jsonl`)) throw new Error("stale report appended an outcome");
+if (readFileSync(`${home}/state/branch-outcomes.jsonl`, "utf8") !== outcomesBefore) {
+  throw new Error("stale report appended an outcome");
+}
 if (existsSync(`${home}/state/.lease-task-stale`)) throw new Error("stale bash claimed a lease");
-if (sentToMain.length !== 0) throw new Error("stale report merged a note into main");
+if (sentToMain.length !== mergesBefore) throw new Error("stale report merged a note into main");
 
 releaseMirror();
 await new Promise((resolve) => setTimeout(resolve, 25));
@@ -1126,6 +1502,10 @@ EOF
 test_branch_dispatch_two_stage_filter_and_prefix_contract
 test_branch_cache_key_is_per_home_stable
 test_branch_default_on_heartbeat_afk_and_fallback
+test_branch_turn_completion_handshake
+test_branch_context_budget_rotation
+test_branch_unreported_wake_breaker
+test_stale_rotation_is_side_effect_free
 test_branch_predrain_recheck_defers_new_main_owned_row
 test_branch_predrain_recheck_noops_already_drained_wake
 test_branch_mirror_filters_order_and_cursor
