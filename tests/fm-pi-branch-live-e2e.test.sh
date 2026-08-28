@@ -33,7 +33,7 @@ TMP_ROOT=$(fm_test_tmproot fm-pi-branch-live)
 repo="$TMP_ROOT/repo"
 home="$TMP_ROOT/home"
 agentdir="$TMP_ROOT/agent-dir"
-mkdir -p "$repo/.pi/extensions/lib" "$repo/node_modules/@earendil-works" \
+mkdir -p "$repo/.pi/extensions/lib" "$repo/node_modules/@earendil-works/pi-coding-agent" \
   "$home/state" "$home/config" "$agentdir"
 cp "$ROOT/.pi/extensions/fm-branch-supervision.ts" "$repo/.pi/extensions/fm-branch-supervision.ts"
 cp "$ROOT/.pi/extensions/lib/fm-branch-dispatch.ts" "$repo/.pi/extensions/lib/fm-branch-dispatch.ts"
@@ -41,14 +41,31 @@ cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" "$repo/.pi/extensions/lib/
 mkdir -p "$repo/bin"
 cp "$ROOT/bin/fm-operational-input.sh" "$repo/bin/fm-operational-input.sh"
 chmod +x "$repo/bin/fm-operational-input.sh"
-ln -s "$PI_PACKAGE_DIR" "$repo/node_modules/@earendil-works/pi-coding-agent"
+cat > "$repo/node_modules/@earendil-works/pi-coding-agent/package.json" <<'JSON'
+{"name":"@earendil-works/pi-coding-agent","type":"module","exports":"./index.js"}
+JSON
+cat > "$repo/node_modules/@earendil-works/pi-coding-agent/index.js" <<'JS'
+import { pathToFileURL } from "node:url";
+
+const real = await import(pathToFileURL(process.env.FM_REAL_PI_PACKAGE_ENTRY).href);
+export const createBashToolDefinition = real.createBashToolDefinition;
+export const DefaultResourceLoader = real.DefaultResourceLoader;
+export const getAgentDir = real.getAgentDir;
+export const SessionManager = real.SessionManager;
+export async function createAgentSession(options) {
+  const created = await real.createAgentSession(options);
+  globalThis.__fmLiveBranchSession = created.session;
+  return created;
+}
+JS
 ln -s "$PI_PACKAGE_DIR/node_modules/@earendil-works/pi-tui" "$repo/node_modules/@earendil-works/pi-tui"
 ln -s "$PI_PACKAGE_DIR/node_modules/typebox" "$repo/node_modules/typebox"
 
 # Stock macOS Bash 3.2 cannot reliably parse JavaScript template literals in a
 # heredoc nested inside command substitution, so capture through a file.
 PLUGIN="$repo/.pi/extensions/fm-branch-supervision.ts" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
-  PI_CODING_AGENT_DIR="$agentdir" node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
+  FM_REAL_PI_PACKAGE_ENTRY="$PI_PACKAGE_DIR/dist/index.js" PI_CODING_AGENT_DIR="$agentdir" \
+  node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -122,6 +139,16 @@ if (!fallback.includes("FIRSTMATE WATCHER WAKE: signal: live-sdk probe")) {
 }
 if (!fallback.includes("Supervision branch unavailable")) {
   throw new Error(`fallback did not name the branch failure: ${fallback}`);
+}
+const branchSession = globalThis.__fmLiveBranchSession;
+if (!branchSession) throw new Error("real createAgentSession did not expose its branch session to the guard");
+if (!Array.isArray(branchSession.messages)) throw new Error("real AgentSession.messages is not an array");
+if (typeof branchSession.getContextUsage !== "function") {
+  throw new Error("real AgentSession.getContextUsage is not a function");
+}
+const modelDescriptor = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(branchSession), "model");
+if (!modelDescriptor || typeof modelDescriptor.get !== "function") {
+  throw new Error("real AgentSession.model is not a getter");
 }
 if (!existsSync(`${home}/state/.branch-session`)) {
   throw new Error("real SessionManager did not persist the branch session pointer");

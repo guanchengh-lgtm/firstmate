@@ -28,12 +28,19 @@
 // for the whole process; and a secondary read-only Pi session that never owns
 // the lock must never write markers, clean leases, or accept wakes.
 //
-// Failure direction: every path that cannot reach a working branch falls back
-// to delivering the wake to MAIN exactly as before the branch existed - a
-// broken branch degrades to today's behavior, never to a lost wake. The wake
-// queue itself stays durable until the handler runs the drain's
-// acknowledgement, so a branch that dies mid-handling re-presents its rows at
-// the next drain exactly as a mid-handling main crash always has.
+// Failure direction: a wake is handled only when fm_branch_report completes;
+// every other turn result falls back to MAIN exactly as before the branch
+// existed. The branch session rotates without deleting history when its
+// model-derived token budget is exceeded, and three consecutive unreported
+// wakes break the branch until session replacement. The wake queue itself
+// stays durable until the handler runs the drain's acknowledgement, so a
+// branch that dies mid-handling re-presents its rows at the next drain exactly
+// as a mid-handling main crash always has.
+//
+// FM_BRANCH_CONTEXT_BUDGET_TOKENS overrides the default budget of 25% of the
+// active model's context window (120000 tokens when no model window is known).
+// The override is clamped below the model window by Pi's 16384-token
+// compaction reserve.
 //
 // Threat model (captain-decided): the branch's actor identity is
 // CONFUSED-AGENT-GRADE - deterministic spawnHook env injection plus a
@@ -90,6 +97,10 @@ const BRANCH_TOOL_NAMES = ["read", "bash", "fm_branch_report"] as const;
 const branchCacheKey = `fm-branch-${createHash("sha256").update(fmHome).digest("hex").slice(0, 24)}`;
 
 const MIRROR_MESSAGE_CAP = 4000;
+const DEFAULT_CONTEXT_BUDGET_TOKENS = 120000;
+const CONTEXT_BUDGET_FRACTION = 0.25;
+const PI_COMPACTION_RESERVE_TOKENS = 16384;
+const UNREPORTED_WAKE_BREAKER_THRESHOLD = 3;
 const MERGE_NOTE_BOAT = "⛵";
 type MirrorItem = { tag: "captain" | "main"; text: string };
 type MirrorCursor = { file: string; index: number };
@@ -238,6 +249,8 @@ function collectMainDialog(sessionManager: ReadonlyEntries, collection: MirrorCo
 export default function (pi: ExtensionAPI) {
   let branch: AgentSession | null = null;
   let branchBroken = "";
+  let reportsDelivered = 0;
+  let consecutiveUnreportedWakes = 0;
   let mainStreaming = false;
   let shuttingDown = false;
   // Bumps at every session replacement so a stale chain continuation from the
@@ -313,6 +326,49 @@ export default function (pi: ExtensionAPI) {
       };
     } catch (error) {
       return { ok: false, stdout: "", detail: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  function writeSessionPointer(sessionFile: string): boolean {
+    try {
+      writeFileSync(sessionPointer, `${sessionFile}\n`);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function contextBudgetTokens(session: AgentSession): number {
+    const contextWindow = session.model?.contextWindow;
+    const modelBudget =
+      typeof contextWindow === "number" && contextWindow > 0
+        ? Math.floor(contextWindow * CONTEXT_BUDGET_FRACTION)
+        : DEFAULT_CONTEXT_BUDGET_TOKENS;
+    const overrideRaw = process.env.FM_BRANCH_CONTEXT_BUDGET_TOKENS;
+    const override = overrideRaw && /^[1-9][0-9]*$/.test(overrideRaw) ? Number(overrideRaw) : undefined;
+    let budget = override && Number.isSafeInteger(override) ? override : modelBudget;
+    if (typeof contextWindow === "number" && contextWindow > 0) {
+      budget = Math.min(budget, Math.max(1, contextWindow - PI_COMPACTION_RESERVE_TOKENS));
+    }
+    return budget;
+  }
+
+  function branchErrorDetail(session: AgentSession): string {
+    const last = session.messages.at(-1);
+    if (last?.role !== "assistant" || last.stopReason !== "error") return "";
+    return typeof last.errorMessage === "string" ? last.errorMessage.trim() : "";
+  }
+
+  function rotateBranchIfOverBudget(session: AgentSession, expectedGeneration: number): void {
+    const tokens = session.getContextUsage()?.tokens;
+    if (typeof tokens !== "number" || tokens <= contextBudgetTokens(session)) return;
+    if (!actingAsOwner(expectedGeneration) || branch !== session) {
+      throw new Error("supervision session was replaced or lost lock ownership before branch rotation");
+    }
+    session.dispose();
+    branch = null;
+    if (!writeSessionPointer("")) {
+      throw new Error("could not clear the supervision branch session pointer during rotation");
     }
   }
 
@@ -413,6 +469,7 @@ export default function (pi: ExtensionAPI) {
             isError: true,
           };
         }
+        reportsDelivered += 1;
         return {
           content: [{ type: "text", text: `recorded seq ${appended.stdout} and merged [${verdict}] into main` }],
           details: undefined,
@@ -518,9 +575,7 @@ ${context.command}
       } catch {}
       throw new Error("supervision session was replaced or lost lock ownership");
     }
-    try {
-      writeFileSync(sessionPointer, `${sessionManager.getSessionFile()}\n`);
-    } catch {
+    if (!writeSessionPointer(sessionManager.getSessionFile() ?? "")) {
       // Pointer write failure only costs cross-restart session reuse.
     }
     return created.session;
@@ -598,9 +653,51 @@ ${context.command}
         }
         // A row can still arrive between this re-check and the model starting
         // the drain; that residual is accepted by the confused-agent-grade boundary.
-        await session.prompt(
-          `FIRSTMATE SUPERVISION WAKE: ${message}\n\nHandle this per your operating procedure and finish with fm_branch_report.`,
-        );
+        const reportsBefore = reportsDelivered;
+        let promptError: unknown;
+        try {
+          await session.prompt(
+            `FIRSTMATE SUPERVISION WAKE: ${message}\n\nHandle this per your operating procedure and finish with fm_branch_report.`,
+          );
+        } catch (error) {
+          promptError = error;
+        }
+        const providerDetail = branchErrorDetail(session);
+        let rotationError: unknown;
+        try {
+          rotateBranchIfOverBudget(session, acceptedGeneration);
+        } catch (error) {
+          rotationError = error;
+        }
+        if (reportsDelivered > reportsBefore) {
+          consecutiveUnreportedWakes = 0;
+          if (rotationError && acceptedGeneration === generation && !shuttingDown) {
+            branchBroken = rotationError instanceof Error ? rotationError.message : String(rotationError);
+          }
+          return;
+        }
+        const failureDetail =
+          promptError instanceof Error
+            ? promptError.message
+            : promptError !== undefined
+              ? String(promptError)
+              : providerDetail;
+        const rotationDetail =
+          rotationError instanceof Error
+            ? rotationError.message
+            : rotationError !== undefined
+              ? String(rotationError)
+              : "";
+        const detail = `branch turn ended without a report${failureDetail ? `: ${failureDetail}` : ""}${rotationDetail ? `; ${rotationDetail}` : ""}`;
+        consecutiveUnreportedWakes += 1;
+        if (
+          consecutiveUnreportedWakes >= UNREPORTED_WAKE_BREAKER_THRESHOLD &&
+          acceptedGeneration === generation &&
+          !shuttingDown
+        ) {
+          branchBroken = detail;
+        }
+        throw new Error(detail);
       })
       .catch(async (error: unknown) => {
         // Return the wake to main rather than losing it; the durable wake
@@ -674,6 +771,7 @@ ${context.command}
   pi.on?.("session_start", () => {
     shuttingDown = false;
     branchBroken = "";
+    consecutiveUnreportedWakes = 0;
     generation += 1;
     actingAsOwner(generation);
   });

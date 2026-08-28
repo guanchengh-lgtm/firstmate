@@ -51,7 +51,8 @@ The branch repeats the eligibility check immediately before prompting the branch
 Away mode still declines every wake offer, and a broken branch still falls back to today's wake-to-main path.
 The branch's role stays bounded exactly as the captain-approved architecture set it: it cannot merge a PR, land local work, or freshly spawn, and every existing captain gate remains unchanged.
 Homes on any other primary harness never load this feature and are entirely unaffected.
-Runtime state lives in `state/branch-outcomes.jsonl` with its `.branch-outcomes-cursor`, the persistent conversation under `state/branch-session/` with its `.branch-session` pointer and `.branch-mirror-cursor`, and per-task `state/.lease-<task>` files; `bin/fm-branch-outcome.sh` and `bin/fm-lease-lib.sh` own those formats.
+Runtime state lives in `state/branch-outcomes.jsonl` with its `.branch-outcomes-cursor`, rotated conversation files under `state/branch-session/` with `.branch-session` naming the current file and `.branch-mirror-cursor` tracking mirrored main dialog, and per-task `state/.lease-<task>` files; `bin/fm-branch-outcome.sh` and `bin/fm-lease-lib.sh` own those formats.
+Rotation leaves old conversation files intact, and this feature does not truncate, prune, or delete them.
 A captain-facing (verdict `captain`) branch outcome opens exactly one follow-up turn on main - that turn is the captain-visible result, and Pi never separately prints or renders the merge note itself.
 A no-change heartbeat outcome explicitly reported with `task=fleet` and `silent=true` is delivered silently with no rendered note, while every other routine outcome still appends a rendered, sailboat-prefixed note.
 
