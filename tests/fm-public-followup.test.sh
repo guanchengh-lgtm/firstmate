@@ -93,11 +93,13 @@ EOF
 }
 
 run_pf() {  # <home> <args...>
-  local home=$1
+  local home=$1 now=${FMX_NOW_OVERRIDE:-}
   shift
+  [ -n "$now" ] || [ "${1:-}" != rechain ] || now=1787539200
   PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FAKE_CURL_LOG="${FAKE_CURL_LOG:-}" \
-    FAKE_FOLLOWUP_CODE="${FAKE_FOLLOWUP_CODE:-200}" "$PF" "$@"
+    FAKE_FOLLOWUP_CODE="${FAKE_FOLLOWUP_CODE:-200}" \
+    FMX_NOW_OVERRIDE="$now" "$PF" "$@"
 }
 
 tasks_in() {  # <home> <tasks-axi args...>
