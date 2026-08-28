@@ -728,21 +728,57 @@ test_branch_context_budget_rotation() {
     FM_BRANCH_CONTEXT_BUDGET_TOKENS=1000 DRIVER_PRELUDE="$DRIVER_PRELUDE" \
     node --input-type=module > "$TMP_ROOT/node-output" 2>&1 <<'EOF'
 const prelude = process.env.DRIVER_PRELUDE;
-await eval(`(async () => { ${prelude}; globalThis.__t = { dispatch, settle, home, sentToMain }; })()`);
-const { dispatch, settle, home, sentToMain } = globalThis.__t;
-import { readFileSync } from "node:fs";
+await eval(`(async () => { ${prelude}; globalThis.__t = { dispatch, settle, home, sentToMain, mainUserMessages }; })()`);
+const { dispatch, settle, home, sentToMain, mainUserMessages } = globalThis.__t;
+import { spawnSync } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
 
 globalThis.__fmContextTokens = 1500;
+let releaseTurn;
+globalThis.__fmRotationGate = new Promise((resolve) => { releaseTurn = resolve; });
+const leaseScript = `${process.env.FM_ROOT_OVERRIDE}/bin/fm-lease.sh`;
+const leaseEnv = {
+  ...process.env,
+  FM_HOME: home,
+  FM_STATE_OVERRIDE: `${home}/state`,
+  FM_LEASE_HOLDER_PID: String(process.pid),
+};
+globalThis.__fmPromptBehavior = async () => {
+  const claim = spawnSync("bash", [leaseScript, "claim", "task-rotation", "--actor", "branch"], {
+    encoding: "utf8",
+    env: { ...leaseEnv, FM_SUPERVISION_ACTOR: "branch" },
+  });
+  if (claim.status !== 0) throw new Error(`branch lease claim failed: ${claim.stderr}`);
+  globalThis.__fmRotationLeaseClaimed = true;
+  await globalThis.__fmRotationGate;
+};
 if (!dispatch("signal: rotate over budget").accepted) throw new Error("over-budget wake was not accepted");
-await settle(() => globalThis.__fmSessions?.[0]?.disposed === true, "over-budget rotation");
+await settle(() => globalThis.__fmRotationLeaseClaimed === true, "rotation lease claim");
 const firstFile = globalThis.__fmSessionManagers[0].getSessionFile();
+writeFileSync(firstFile, "preserved session bytes\n");
 const firstBytes = readFileSync(firstFile);
+releaseTurn();
+await settle(
+  () => globalThis.__fmSessions?.[0]?.disposed === true && mainUserMessages.length === 1,
+  "over-budget rotation fallback",
+);
 if (readFileSync(`${home}/state/.branch-session`, "utf8") !== "\n") {
   throw new Error("rotation did not clear the current-session pointer");
 }
+const mainClaim = spawnSync("bash", [leaseScript, "claim", "task-rotation", "--actor", "main"], {
+  encoding: "utf8",
+  env: { ...leaseEnv, FM_SUPERVISION_ACTOR: "main" },
+});
+if (mainClaim.status !== 0) throw new Error(`rotation left main blocked by a branch lease: ${mainClaim.stderr}`);
+const mainRelease = spawnSync("bash", [leaseScript, "release", "task-rotation", "--actor", "main"], {
+  encoding: "utf8",
+  env: { ...leaseEnv, FM_SUPERVISION_ACTOR: "main" },
+});
+if (mainRelease.status !== 0) throw new Error(`main lease release failed: ${mainRelease.stderr}`);
+globalThis.__fmPromptBehavior = undefined;
 globalThis.__fmContextTokens = 500;
 if (!dispatch("signal: create after rotation").accepted) throw new Error("post-rotation wake was not accepted");
-await settle(() => globalThis.__fmSessions?.length === 2 && sentToMain.length === 2, "fresh session after rotation");
+await settle(() => globalThis.__fmSessions?.length === 2 && sentToMain.length === 1, "fresh session after rotation");
 const secondFile = readFileSync(`${home}/state/.branch-session`, "utf8").trim();
 if (globalThis.__fmCreateCount !== 2) throw new Error(`rotation did not create a fresh session: ${globalThis.__fmCreateCount}`);
 if (secondFile === firstFile) throw new Error("rotation reused the over-budget session file");
@@ -863,8 +899,33 @@ for (let i = 1; i <= 3; i += 1) {
   await settle(() => mainUserMessages.length === i + 2, `post-reset fallback ${i}`);
 }
 if (dispatch("signal: breaker must decline").accepted) throw new Error("branch accepted a fourth wake after three strikes");
+fire("session_shutdown", {});
 fire("session_start", {});
-if (!dispatch("signal: accepted after replacement").accepted) throw new Error("session replacement did not reset breaker");
+let releaseFirstQueued;
+const firstQueuedGate = new Promise((resolve) => { releaseFirstQueued = resolve; });
+let queuedAttempts = 0;
+globalThis.__fmPromptBehavior = async () => {
+  queuedAttempts += 1;
+  if (queuedAttempts === 1) {
+    globalThis.__fmFirstQueuedPromptStarted = true;
+    await firstQueuedGate;
+  }
+};
+const promptsBeforeQueue = globalThis.__fmPrompts.length;
+const fallbacksBeforeQueue = mainUserMessages.length;
+if (!dispatch("signal: queued failure 1").accepted) throw new Error("session replacement did not reset breaker");
+await settle(() => globalThis.__fmFirstQueuedPromptStarted === true, "first queued prompt");
+for (let i = 2; i <= 4; i += 1) {
+  if (!dispatch(`signal: queued failure ${i}`).accepted) throw new Error(`queued failure ${i} was not accepted`);
+}
+releaseFirstQueued();
+await settle(() => mainUserMessages.length === fallbacksBeforeQueue + 4, "queued wake fallbacks");
+if (globalThis.__fmPrompts.length !== promptsBeforeQueue + 3 || queuedAttempts !== 3) {
+  throw new Error(`queued wakes bypassed the breaker: prompts=${globalThis.__fmPrompts.length - promptsBeforeQueue}`);
+}
+if (dispatch("signal: queued breaker must decline").accepted) {
+  throw new Error("branch accepted a new wake after queued failures tripped the breaker");
+}
 process.exit(0);
 EOF
   status=$?

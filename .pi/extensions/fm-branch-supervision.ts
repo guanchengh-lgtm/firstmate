@@ -365,6 +365,9 @@ export default function (pi: ExtensionAPI) {
     if (!actingAsOwner(expectedGeneration) || branch !== session) {
       throw new Error("supervision session was replaced or lost lock ownership before branch rotation");
     }
+    if (!releaseBranchLeases(expectedGeneration)) {
+      throw new Error("could not release supervision branch leases during rotation");
+    }
     session.dispose();
     branch = null;
     if (!writeSessionPointer("")) {
@@ -583,8 +586,8 @@ ${context.command}
 
   async function ensureBranch(expectedGeneration: number): Promise<AgentSession> {
     if (!actingAsOwner(expectedGeneration)) throw new Error("supervision session was replaced or lost lock ownership");
-    if (branch) return branch;
     if (branchBroken) throw new Error(branchBroken);
+    if (branch) return branch;
     try {
       const created = await createBranch(expectedGeneration);
       if (!actingAsOwner(expectedGeneration)) {
