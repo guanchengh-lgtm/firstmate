@@ -1,0 +1,9 @@
+not ok - real-SDK Pi branch guard failed against pi-coding-agent 0.84.3: file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M13TCH3GZKFAWGRFMPE8REMG/[eval1]:93
+  throw new Error(`recorded branch session pointer is misplaced: ${pointer}`);
+        ^
+
+Error: recorded branch session pointer is misplaced: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-pi-branch-live.z5z4yN/home/state/branch-sessions/2026-08-28T10-55-18-104Z_01a04802-7e58-7ef8-ae45-a4ba98027de6.jsonl
+    at file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M13TCH3GZKFAWGRFMPE8REMG/[eval1]:93:9
+
+Node.js v24.18.0
+manufactured_breakage_exit=1

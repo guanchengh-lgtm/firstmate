@@ -1,0 +1,14 @@
+ok - branch owns accepted wakes with a stable prefix contract and verdict-driven merge delivery
+ok - branch prompt_cache_key is stable per home across sessions and distinct between homes
+ok - branch default-on eligibility (task-scoped, heartbeat, afk) binds and a broken branch falls back to main
+ok - branch uses successful report delivery as the wake-completion handshake
+ok - branch rotates on model-derived token budgets and reuses sessions below budget
+not ok - three consecutive unreported wakes must break until session replacement: file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M13TCH3GZKFAWGRFMPE8REMG/[eval1]:31
+if (dispatch("signal: breaker must decline").accepted) throw new Error("branch accepted a fourth wake after three strikes");
+                                                             ^
+
+Error: branch accepted a fourth wake after three strikes
+    at file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M13TCH3GZKFAWGRFMPE8REMG/[eval1]:31:62
+
+Node.js v24.18.0: expected exit 0, got 1
+manufactured_breakage_exit=1
