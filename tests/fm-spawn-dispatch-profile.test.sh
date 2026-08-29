@@ -38,10 +38,13 @@ make_spawn_fakebin() {
 set -u
 case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
+  *"#{pane_id}"*) printf '%s\n' '%1'; exit 0 ;;
+  *"#{pane_tty}"*) exit 1 ;;
+  *"#{pane_current_command}"*) printf '%s\n' "${FM_FAKE_OV_COMMAND:-firstmate}"; exit 0 ;;
 esac
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
-  list-windows) exit 0 ;;
+  list-windows) [ -z "${FM_FAKE_OV_WINDOW:-}" ] || printf '%s\n' "$FM_FAKE_OV_WINDOW"; exit 0 ;;
   has-session|new-session|new-window|kill-window) exit 0 ;;
   send-keys)
     if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then
@@ -143,6 +146,7 @@ run_spawn() {
     FM_FAKE_LAUNCH_LOG="$launchlog" FM_FAKE_PI_VERSION="${FM_TEST_PI_VERSION:-0.84.0}" \
     FM_FAKE_CURSOR_MODELS="${FM_TEST_CURSOR_MODELS:-}" \
     FM_FAKE_CURSOR_LIST_STATUS="${FM_TEST_CURSOR_LIST_STATUS:-0}" \
+    FM_FAKE_OV_WINDOW="${FM_TEST_OV_WINDOW:-}" FM_FAKE_OV_COMMAND="${FM_TEST_OV_COMMAND:-}" \
     GROK_HOME="$home/grok-home" PATH="$fakebin:$PATH" \
     "$SPAWN" "$@" 2>&1
 }
@@ -981,6 +985,26 @@ test_spawn_refuses_filled_ship_without_ov() {
   assert_absent "$HOME_DIR/state/$id.meta" \
     "unloaded skill refusal wrote task metadata"
   [ ! -s "$LAUNCH_LOG" ] || fail "unloaded skill refusal still launched an endpoint"
+
+  id=profile-ship-ov-live-no-report-z29
+  rec=$(make_spawn_case profile-ship-ov-live-no-report claude "$id")
+  read_case_record "$rec"
+  brief="$HOME_DIR/data/$id/brief.md"
+  printf '# Task\nStart Spec compile-check. The next act is obvious.\n\n# Setup\nfixture\nDelivery contract: mode=no-mistakes\n' > "$brief"
+  printf '%s\n' 'kind=scout' 'harness=claude' 'window=firstmate:fm-ov-live' \
+    > "$HOME_DIR/state/spec-compile-check-ov.meta"
+  out=$(FM_TEST_OV_WINDOW=fm-ov-live FM_TEST_OV_COMMAND=claude \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --ov spec-compile-check-ov)
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn accepted a live OV without a report"
+  assert_contains "$out" 'R-ov-missing-report' \
+    "live OV refusal did not name the missing report rule"
+  assert_contains "$out" 'report is required before ship spawn' \
+    "live OV refusal did not explain OV-first sequencing"
+  assert_absent "$HOME_DIR/state/$id.meta" \
+    "live OV missing report refusal wrote task metadata"
+  [ ! -s "$LAUNCH_LOG" ] || fail "live OV missing report refusal still launched an endpoint"
 
   id=profile-ship-ov-torn-down-z26
   rec=$(make_spawn_case profile-ship-ov-torn-down claude "$id")

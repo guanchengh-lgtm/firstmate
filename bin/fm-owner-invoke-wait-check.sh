@@ -25,9 +25,10 @@
 #   R-held-locked-next      a held ticket is a map_next target or its until
 #                           date has passed, and it has no worker meta
 #   R-ov-missing            spawn --input with task: no distinct OV worker;
-#                           hook/brief ladder: review worker gone with no
-#                           data/<ov>/report.md (live worker without report
-#                           is in-progress and passes)
+#                           hook/stored-brief ladder: review worker gone with
+#                           no data/<ov>/report.md (live worker without report
+#                           is in-progress and passes); --brief --ov requires
+#                           the report before spawn
 #   R-owner-node-open       a harness <command-name> token from the header
 #                           node table opened a node, a later real captain
 #                           turn arrived, and no ordinary file matching any
@@ -38,7 +39,7 @@
 #                           turn.owner_nodes.
 # Default --brief rules: R-ov-missing,R-skill-unloaded on durable OV records
 # (state/<ship>.meta ov=/ov_harness=, data/<ov>/report.md, data/<ov>/skills,
-# live endpoint). No brief-body parse.
+# live endpoint). Explicit --ov requires a completed report. No brief-body parse.
 #
 # Owner-invoke node rows (header-owned; not a skill picker; not a home file).
 # Each row is token<TAB>artifact_glob relative to FM_HOME or FM_ROOT, with
@@ -75,9 +76,9 @@
 # back to target_exists so unverified backends do not wedge. A shell husk
 # after the agent exits is not in-progress.
 # A gathered ship with no ov= passes at turn-end; spawn-time R-ov-missing is
-# the empty-ov start gate. Spawn-time brief evaluation retains
-# R-skill-unloaded. fm-spawn.sh writes session= and ov_harness= (from the OV
-# worker's harness= at ship spawn) and exports FM_TASK_ID/FM_HOME; Claude
+# the empty-ov start gate. Spawn-time brief evaluation requires the OV report
+# and retains R-skill-unloaded. fm-spawn.sh writes session= and ov_harness=
+# (from the OV worker's harness= at ship spawn) and exports FM_TASK_ID/FM_HOME; Claude
 # PostToolUse Skill (crewmate settings.local.json absolute $FM_ROOT path, plus
 # tracked settings.json) runs bin/fm-skill-load-record.sh to append normalized
 # loads (strip gstack-, lowercase) into data/<id>/skills. Matcher is exact
@@ -347,6 +348,8 @@ evaluate_turn() {  # <json-file>
               elif ($s | has("ov_report")) then
                 if $s.ov_report == true then
                   empty
+                elif $s.ov_report_required == true then
+                  "R-ov-missing-report: \($id) OV \($ov) report is required before ship spawn"
                 elif $s.ov_alive == true then
                   empty
                 else
@@ -472,6 +475,7 @@ if [ -n "$brief" ]; then
     brief_ov=$(sed -n 's/^ov=//p' "$brief_meta" 2>/dev/null | tail -1)
   fi
   brief_ov_report=false
+  brief_ov_report_required=false
   brief_ov_alive=false
   brief_skills='[]'
   brief_ov_harness=""
@@ -494,11 +498,13 @@ if [ -n "$brief" ]; then
       fi
     fi
   fi
+  [ "$brief_ov_arg_set" -eq 0 ] || brief_ov_report_required=true
   if [ -n "$brief_ov" ]; then
     jq -n --arg id "$brief_id" --arg ov "$brief_ov" --arg ov_harness "$brief_ov_harness" \
       --argjson skills "$brief_skills" \
-      --argjson ov_report "$brief_ov_report" --argjson ov_alive "$brief_ov_alive" \
-      '{ships:[{id:$id, ov:$ov, ov_harness:$ov_harness, skills:$skills, ov_report:$ov_report, ov_alive:$ov_alive}], owned_meta:[]}' > "$turn" \
+      --argjson ov_report "$brief_ov_report" --argjson ov_report_required "$brief_ov_report_required" \
+      --argjson ov_alive "$brief_ov_alive" \
+      '{ships:[{id:$id, ov:$ov, ov_harness:$ov_harness, skills:$skills, ov_report:$ov_report, ov_report_required:$ov_report_required, ov_alive:$ov_alive}], owned_meta:[]}' > "$turn" \
       || structural "could not encode brief records"
   else
     printf '%s\n' '{"ships":[],"owned_meta":[]}' > "$turn"
