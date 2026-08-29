@@ -1,0 +1,7 @@
+bash=3.2.57(1)-release
+parent_owner_pid_matches_frame=yes
+child_refused=yes owner_unchanged=yes pid_unchanged=yes
+parent_release_removed_lock=yes
+fresh_missing_pid_refused=yes owner_unchanged=yes
+stale_missing_pid_reclaimed_after_grace=yes owner_replaced=yes
+autoarm_identity_matches_owner=yes
