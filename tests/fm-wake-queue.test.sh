@@ -938,11 +938,96 @@ test_self_held_lock_reclaims_instead_of_deadlocking() {
     . "$1"
     lock="$2/.fixture2.lock"
     fm_lock_acquire_wait "$lock" || exit 10
+    owner_before=$(readlink "$lock" 2>/dev/null) || exit 16
     ( fm_lock_try_acquire "$lock" && exit 13; exit 0 ) || exit 13
+    [ "$(cat "$lock/pid" 2>/dev/null)" = "$$" ] || exit 14
+    [ "$(readlink "$lock" 2>/dev/null)" = "$owner_before" ] || exit 15
     fm_lock_release "$lock"
+    [ ! -e "$lock" ] && [ ! -L "$lock" ] || exit 12
   ' _ "$ROOT/bin/fm-wake-lib.sh" "$state" || rc=$?
-  [ "$rc" -eq 0 ] || fail "a subshell reclaimed its parent's live hold (rc=$rc)"
-  pass "an abandoned same-process lock hold is reclaimed; a parent's live hold is not"
+  case "$rc" in
+    0) : ;;
+    12) fail "the parent could not release its live hold" ;;
+    13) fail "a subshell reclaimed its parent's live hold (rc=$rc)" ;;
+    14) fail "a failed child lock attempt changed the parent's owner pid" ;;
+    15) fail "a failed child lock attempt changed the parent's owner link" ;;
+    16) fail "the parent lock owner link could not be read before the child attempt" ;;
+    *) fail "the child lock refusal regression failed (rc=$rc)" ;;
+  esac
+  rc=0
+  FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    lock="$2/.fixture3.lock"
+    owner="$2/.fixture3.owner"
+    mkdir "$owner" || exit 20
+    ln -s "$owner" "$lock" || exit 21
+    [ ! -e "$owner/pid" ] || exit 22
+    fm_lock_claim "$lock" "$owner" || exit 23
+    fm_current_pid_into current || exit 24
+    [ "$(cat "$owner/pid" 2>/dev/null)" = "$current" ] || exit 25
+    fm_lock_release "$lock"
+    [ ! -e "$lock" ] && [ ! -L "$lock" ] || exit 26
+
+    lock="$2/.fixture4.lock"
+    owner="$2/.fixture4.owner"
+    mkdir "$owner" || exit 30
+    ln -s "$owner" "$lock" || exit 31
+    fm_lock_try_acquire "$lock" && exit 32
+    [ ! -e "$owner/pid" ] || exit 33
+    [ "$(readlink "$lock" 2>/dev/null)" = "$owner" ] || exit 34
+    touch -h -t 200001010000 "$lock" 2>/dev/null || sleep 2
+    fm_lock_try_acquire "$lock" || exit 35
+    new_owner=$(fm_lock_link_owner "$lock" 2>/dev/null) || exit 36
+    [ "$new_owner" != "$owner" ] || exit 37
+    [ ! -e "$owner" ] || exit 38
+    fm_current_pid_into current || exit 39
+    [ "$(cat "$new_owner/pid" 2>/dev/null)" = "$current" ] || exit 40
+    fm_lock_release "$lock"
+    [ ! -e "$lock" ] && [ ! -L "$lock" ] || exit 41
+
+    lock="$2/.claude-autoarm.lock"
+    fm_lock_try_acquire "$lock" || exit 50
+    fm_autoarm_claim_record_identity "$2" || exit 51
+    owner=$(fm_lock_link_owner "$lock" 2>/dev/null) || exit 52
+    pid=$(cat "$owner/pid" 2>/dev/null) || exit 53
+    recorded=$(cat "$owner/pid-identity" 2>/dev/null) || exit 54
+    expected=$(fm_pid_identity "$pid" 2>/dev/null) || exit 55
+    [ -n "$recorded" ] && [ "$recorded" = "$expected" ] || exit 56
+    fm_lock_release "$lock"
+    [ ! -e "$lock" ] && [ ! -L "$lock" ] || exit 57
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$state" || rc=$?
+  case "$rc" in
+    0) : ;;
+    20) fail "the direct claim owner directory could not be created" ;;
+    21) fail "the direct claim owner link could not be created" ;;
+    22) fail "the direct claim unexpectedly started with an owner pid" ;;
+    23) fail "the direct claim without an owner pid was refused" ;;
+    24) fail "the direct claim owner pid probe failed" ;;
+    25) fail "the direct claim owner pid write or readback was lost" ;;
+    26) fail "the direct claim owner could not release its lock" ;;
+    30) fail "the missing-pid owner directory could not be created" ;;
+    31) fail "the missing-pid owner link could not be created" ;;
+    32) fail "an existing owner with no pid was guessed or stolen" ;;
+    33) fail "a refused missing-pid owner gained a pid" ;;
+    34) fail "a refused missing-pid owner link changed" ;;
+    35) fail "the stale missing-pid owner was not reclaimed after grace" ;;
+    36) fail "the reclaimed missing-pid owner link could not be read" ;;
+    37) fail "the stale missing-pid owner link was not replaced" ;;
+    38) fail "the stale missing-pid owner directory was not removed" ;;
+    39) fail "the replacement owner pid probe failed" ;;
+    40) fail "the replacement owner did not publish the current pid" ;;
+    41) fail "the replacement owner could not release its lock" ;;
+    50) fail "the real auto-arm claim could not acquire its lock" ;;
+    51) fail "the real auto-arm claim could not record its pid identity" ;;
+    52) fail "the real auto-arm claim owner link could not be read" ;;
+    53) fail "the real auto-arm claim owner pid could not be read" ;;
+    54) fail "the real auto-arm claim pid identity was not written" ;;
+    55) fail "the real auto-arm claim pid identity could not be computed" ;;
+    56) fail "the real auto-arm claim pid identity did not match its owner" ;;
+    57) fail "the real auto-arm claim could not release its lock" ;;
+    *) fail "the claim owner pid regression failed (rc=$rc)" ;;
+  esac
+  pass "same-frame reclaim, child refusal, grace recovery, owner publication, and auto-arm identity stay safe"
 }
 
 # Drain-time historical annotation staleness: a turn-ended-only wake row must

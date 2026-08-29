@@ -15,8 +15,23 @@ FM_LOCK_STALE_AFTER="${FM_LOCK_STALE_AFTER:-2}"
 _FM_UNAME=$(uname 2>/dev/null || echo unknown)
 mkdir -p "$STATE"
 
+fm_current_pid_into() {  # <variable-name>
+  # Bash 3.2 has no BASHPID and a subshell inherits its parent's $$, so ask a
+  # child for its parent pid; exec inside $() guarantees the child is this frame.
+  local _fm_current_pid_value
+  if [ -n "${BASHPID:-}" ]; then
+    _fm_current_pid_value=$BASHPID
+  else
+    _fm_current_pid_value=$(exec /bin/sh -c 'printf "%s" "$PPID"') || return 1
+  fi
+  case "$_fm_current_pid_value" in ''|*[!0-9]*) return 1 ;; esac
+  printf -v "$1" '%s' "$_fm_current_pid_value"
+}
+
 fm_current_pid() {
-  printf '%s\n' "${BASHPID:-$$}"
+  local current
+  fm_current_pid_into current || return 1
+  printf '%s\n' "$current"
 }
 
 fm_pid_alive() {
@@ -302,7 +317,7 @@ fm_lock_set_role() {
     autoarm|terminal-check) : ;;
     *) return 1 ;;
   esac
-  current=${BASHPID:-$$}
+  fm_current_pid_into current || return 1
   pid=$(cat "$lockdir/pid" 2>/dev/null || true)
   [ "$pid" = "$current" ] || return 1
   printf '%s\n' "$role" > "$lockdir/role" 2>/dev/null || return 1
@@ -330,7 +345,7 @@ fm_lock_owner_dir() {
 
 fm_lock_prepare_owner() {
   local ownerdir=$1 mypid back
-  mypid=${BASHPID:-$$}
+  fm_current_pid_into mypid || return 1
   printf '%s\n' "$mypid" > "$ownerdir/pid" 2>/dev/null || return 1
   back=$(cat "$ownerdir/pid" 2>/dev/null || true)
   [ "$back" = "$mypid" ]
@@ -379,7 +394,10 @@ fm_lock_claim_blocked_by_steal() {
 
 fm_lock_claim() {
   local lockdir=$1 ownerdir=$2 allowed_steal_owner=${3:-} mypid back
-  mypid=${BASHPID:-$$}
+  fm_current_pid_into mypid || {
+    fm_lock_discard_owner "$ownerdir"
+    return 1
+  }
   if ! { printf '%s\n' "$mypid" > "$ownerdir/pid"; } 2>/dev/null; then
     fm_lock_discard_owner "$ownerdir"
     return 1
@@ -783,7 +801,7 @@ fm_recovery_marker_reopen_announced() {
 }
 
 fm_lock_try_acquire() {
-  local lockdir=$1 pid steal cur rc steal_owner primary_owner
+  local lockdir=$1 pid steal cur rc steal_owner primary_owner current
   FM_LOCK_HELD_PID=
   FM_LOCK_OWNER_DIR=
   FM_LOCK_RECOVERED_PID=
@@ -792,10 +810,11 @@ fm_lock_try_acquire() {
     return 0
   fi
 
-  # Compare against ${BASHPID:-$$} inline, never via a command substitution:
-  # $() forks a subshell whose BASHPID is not this frame's pid.
+  # Resolve this frame's real pid before comparing: a Bash 3.2 subshell
+  # inherits its parent's $$ and must never read as the parent holder.
   pid=$(cat "$lockdir/pid" 2>/dev/null || true)
-  if [ -n "$pid" ] && [ "$pid" = "${BASHPID:-$$}" ]; then
+  fm_current_pid_into current || return 1
+  if [ -n "$pid" ] && [ "$pid" = "$current" ]; then
     # The recorded holder is THIS very process. Single-threaded bash can only
     # observe that when an interrupting trap abandoned the frame that held the
     # lock mid-critical-section (e.g. TERM inside a recovery-marker section,
@@ -892,7 +911,7 @@ fm_lock_acquire_wait() {
 
 fm_lock_release() {
   local lockdir=$1 pid current ownerdir
-  current=${BASHPID:-$$}
+  fm_current_pid_into current || return 0
   if [ -L "$lockdir" ]; then
     ownerdir=$(fm_lock_link_owner "$lockdir" 2>/dev/null || true)
     [ -n "$ownerdir" ] || return 0
@@ -954,7 +973,7 @@ fm_failure_episode_reset() {
       acquired=1
       ;;
     held)
-      current=${BASHPID:-$$}
+      fm_current_pid_into current || return 1
       pid=$(cat "$lock/pid" 2>/dev/null || true)
       [ "$pid" = "$current" ] || return 1
       ;;
@@ -1048,11 +1067,9 @@ _fm_autoarm_epoch_field() {  # <epoch-file> <field>
 fm_autoarm_claim_record_identity() {  # <state-dir>
   local state=$1 lock pid held identity back
   lock="$state/.claude-autoarm.lock"
-  # Resolve the pid into a variable FIRST: expanding ${BASHPID:-$$} inside the
-  # command substitution below would resolve it in that subshell, recording the
-  # identity of a process that exits immediately and leaving every later reader
-  # with a permanent mismatch against the real owner.
-  pid=${BASHPID:-$$}
+  # Resolve the pid into a variable FIRST, outside any command substitution,
+  # so the record describes the lock owner rather than a short-lived child.
+  fm_current_pid_into pid || return 1
   # The identity must describe the pid the lock publishes, so record it only for a
   # lock this process actually holds (the same ownership test as fm_lock_set_role).
   held=$(cat "$lock/pid" 2>/dev/null || true)

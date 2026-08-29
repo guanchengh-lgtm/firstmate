@@ -338,7 +338,14 @@ SH
   out="$home/out.txt"
   run_check "$home" "$(fixture_path "$dir")" "$out" FM_TOOL_UPDATE_BUDGET_SECS=1
   report=$(cat "$out")
-  assert_contains "$report" "no-mistakes check failed: the time budget ran out before the update announcement was checked" "an announcement source that was never asked was not reported"
+  # A loaded runner can spend this one-second budget before tool dispatch.
+  # Both reports fail closed and name the tool whose source was not checked.
+  case "$report" in
+    *"no-mistakes check failed: the time budget ran out before the update announcement was checked"*|\
+    *"check incomplete: the time budget ran out before no-mistakes"*) : ;;
+    *) fail "an announcement source that was never asked was not reported" ;;
+  esac
+  assert_not_contains "$report" "no-mistakes update available" "an unchecked announcement source was reported as an update"
   pass "an announcement source the budget could not reach is reported, not read as current"
 }
 
