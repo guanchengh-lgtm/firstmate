@@ -1688,6 +1688,58 @@ test_class_repeat_prior_none_does_not_count() {
   pass "a prior none: measure is not a class occurrence"
 }
 
+test_scout_teardown_uses_report_and_captain_hold_gates() {
+  local case_dir rc report
+  case_dir=$(make_case scout-report-completion-gates)
+  write_meta "$case_dir" no-mistakes scout
+  add_compatible_tasks_axi "$case_dir"
+  mkdir -p "$case_dir/data/task-x1"
+  cat > "$case_dir/data/task-x1/brief.md" <<'EOF'
+# Task
+Read and compare the named sources.
+
+# Named sources
+- https://example.test/thread/42
+- data/prior-scout/report.md
+
+# Setup
+fixture
+EOF
+  report="$case_dir/data/task-x1/report.md"
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/missing.out" 2> "$case_dir/missing.err" || rc=$?
+  expect_code 1 "$rc" "scout teardown should refuse when its report is missing"
+  assert_grep 'has no report' "$case_dir/missing.err" \
+    "scout report-presence refusal did not name the missing report"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "scout report-presence refusal removed task metadata"
+
+  printf '%s\n' '# Findings' 'The completed analysis does not repeat either source literal.' > "$report"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/held.out" 2> "$case_dir/held.err" || rc=$?
+  expect_code 1 "$rc" "scout teardown should keep the captain-hold completion gate"
+  assert_grep 'has not passed the captain-call completion gate' "$case_dir/held.err" \
+    "scout teardown did not preserve the captain-hold completion refusal"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "captain-hold completion refusal removed task metadata"
+
+  FM_HOME="$case_dir" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_DATA_OVERRIDE="$case_dir/data" FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_CONFIG_OVERRIDE="$case_dir/config" PATH="$case_dir/fakebin:$PATH" \
+    "$ROOT/bin/fm-captain-hold.sh" complete task-x1 --none --no-ideas \
+    > "$case_dir/complete.out" 2> "$case_dir/complete.err" \
+    || fail "captain-hold completion failed: $(cat "$case_dir/complete.err")"
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/allowed.out" 2> "$case_dir/allowed.err" || rc=$?
+  expect_code 0 "$rc" \
+    "scout report should pass after the captain-hold gate without repeating source literals: $(cat "$case_dir/allowed.err")"
+  assert_absent "$case_dir/state/task-x1.meta" \
+    "completed scout with a report did not tear down"
+  pass "scout teardown requires its report and captain-hold completion, not source repetition"
+}
+
 test_superseded_product_lock_refuses_completion() {
   local case_dir rc
   case_dir=$(make_case superseded-product-lock)
@@ -3131,6 +3183,7 @@ test_class_repeat_absent_registry_allows
 test_class_repeat_invalid_registry_refuses
 test_class_repeat_map_next_does_not_discharge
 test_class_repeat_prior_none_does_not_count
+test_scout_teardown_uses_report_and_captain_hold_gates
 test_superseded_product_lock_refuses_completion
 test_map_next_requires_next_slice_in_backlog
 test_map_next_corrupt_metadata_takes_done_back
