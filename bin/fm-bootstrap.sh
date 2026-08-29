@@ -14,6 +14,7 @@
 #                 "SOT_GAP: registry invalid - <structural failure>",
 #                 "SOT_GAP: checker failed with status <n>",
 #                 "MAP_FOG: <map> - <count> finding(s); run bin/fm-map-fog-check.sh for details",
+#                 "MAP_FOG: <map> - <live unspecified item or closed pointer>",
 #                 "MAP_FOG: registry invalid - <structural failure>",
 #                 "MAP_FOG: checker failed with status <n>",
 #                 "FLEET_SYNC: <repo>: skipped|recovered|STUCK: <detail>",
