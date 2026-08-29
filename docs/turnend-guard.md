@@ -7,7 +7,7 @@ Harness hook files adapt each enabled primary harness integration's turn-end mec
 
 Related PreToolUse guards deny unsafe commands before execution rather than detecting a blind turn end afterward.
 Their separate owners are [`arm-pretool-check.md`](arm-pretool-check.md), [`cd-guard.md`](cd-guard.md), [`subagent-guard.md`](subagent-guard.md), and [`project-write-guard.md`](project-write-guard.md).
-Claude also registers `AskUserQuestion` PreToolUse hooks for the same `bin/fm-sot-speech-check.sh` helper as this guard's speech predicate and for `bin/fm-owner-invoke-wait-check.sh`; each helper's header owns its PreToolUse path.
+Claude also registers an `AskUserQuestion` PreToolUse hook for the same `bin/fm-sot-speech-check.sh` helper as this guard's speech predicate; that helper's header owns its PreToolUse path.
 Do not infer this guard's scope, loop safety, or compatibility tradeoffs for those other guards.
 
 ## Current invariant
@@ -81,8 +81,8 @@ If `jq` is missing after the spec compile adapter, the remaining predicates exit
   Both markers are required because Grok does not inject the same variables into every process kind: grok 0.2.73 set `GROK_AGENT` for child and tool processes, while grok 1.0.0 hook processes carry `GROK_HOOK_EVENT`, `GROK_HOOK_NAME`, `GROK_SESSION_ID`, and `GROK_WORKSPACE_ROOT` but no `GROK_AGENT`.
   A guard keyed on `GROK_AGENT` alone therefore stopped firing on grok 1.0.0, and the resulting Claude-only auto-arm ran synchronously under Grok - Grok has no `asyncRewake`, so it waited on the foregrounded watcher for the declared 28800-second timeout and the Grok turn never ended.
   Do NOT widen this guard to `GROK_SESSION_ID`: Grok injects that into every child process, so it can survive into a Claude session that Grok launched and would silently disable Claude's own continuity.
-  The same marker guard carries every tracked `.claude/settings.json` entry whose event Grok already covers through its own `.grok/hooks/` registration, which is both `Stop` entries, the `SessionStart` entry, both `AskUserQuestion` PreToolUse entries (SoT-speech and owner-invoke-wait), the `PostToolUse` Skill load recorder, and the two `PreToolUse` Bash entries; the two match-all `PreToolUse` entries are the deliberate unguarded exceptions, because no Grok registration covers the subagent-spawn or project-write events, recorded in [`subagent-guard.md`](subagent-guard.md) and [`project-write-guard.md`](project-write-guard.md) "Known residual gap".
-  `tests/fm-turnend-guard.test.sh` pins that inventory (8 grok-guarded entries, 2 unguarded exceptions) so neither the guarded set nor the exception can change silently.
+  The same marker guard carries every tracked `.claude/settings.json` entry whose event Grok already covers through its own `.grok/hooks/` registration, which is both `Stop` entries, the `SessionStart` entry, the SoT-speech `AskUserQuestion` PreToolUse entry, the `PostToolUse` Skill load recorder, and the two `PreToolUse` Bash entries; the two match-all `PreToolUse` entries are the deliberate unguarded exceptions, because no Grok registration covers the subagent-spawn or project-write events, recorded in [`subagent-guard.md`](subagent-guard.md) and [`project-write-guard.md`](project-write-guard.md) "Known residual gap".
+  `tests/fm-turnend-guard.test.sh` pins that inventory (7 grok-guarded entries, 2 unguarded exceptions) so neither the guarded set nor the exception can change silently.
 
 Claude and Codex can block a Stop directly with exit status 2 and stderr.
 Both payloads carry `stop_hook_active`.

@@ -320,7 +320,7 @@ grep -Eq 'reason=actionable-signal.*successor=started:[0-9]+' "$HOME_DIR/state/.
 wait_for_exact_line "HANDLED" 120 || fail "Pi did not drain and settle after its extension-owned successor started"
 
 pane=$(capture)
-guard_count=$(printf '%s\n' "$pane" | grep -Fc "TURN WOULD END BLIND - supervision is off." || true)
+guard_count=$(printf '%s\n' "$pane" | grep -Fc "TURN-END GUARD REFUSED." || true)
 [ "$guard_count" -eq 0 ] || fail "successor was not protecting Pi before its next turn end (guard count $guard_count)"
 foreground_arm='$ bin/fm-watch-arm.sh'
 if printf '%s\n' "$pane" | grep -Fq "$foreground_arm"; then

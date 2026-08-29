@@ -1203,8 +1203,7 @@ test_tracked_claude_entries_inert_under_grok() {
   mkdir -p "$dir/bin"
   for script in fm-turnend-guard.sh fm-claude-stop-autoarm.sh fm-sessionstart-run.sh \
     fm-arm-pretool-check.sh fm-cd-pretool-check.sh fm-sot-speech-check.sh \
-    fm-owner-invoke-wait-check.sh fm-skill-load-record.sh \
-    fm-subagent-pretool-check.sh \
+    fm-skill-load-record.sh fm-subagent-pretool-check.sh \
     fm-project-write-pretool-check.sh; do
     printf '#!/usr/bin/env bash\nprintf ran >> %q\n' "$dir/invoked" > "$dir/bin/$script"
     chmod +x "$dir/bin/$script"
@@ -1248,7 +1247,7 @@ test_tracked_claude_entries_inert_under_grok() {
       || fail "tracked entry for $target ran under a legacy GROK_AGENT environment"
   done < <(jq -r '.hooks[][].hooks[].command' "$ROOT/.claude/settings.json")
 
-  [ "$guarded" -eq 8 ] || fail "expected 8 grok-guarded tracked entries, saw $guarded"
+  [ "$guarded" -eq 7 ] || fail "expected 7 grok-guarded tracked entries, saw $guarded"
   [ "$unguarded" -eq 2 ] || fail "expected 2 documented unguarded tracked entries, saw $unguarded"
   pass "tracked .claude/settings.json entries: $guarded inert under grok, the 2 documented PreToolUse exceptions still armed, all live under Claude"
 }
@@ -1410,8 +1409,8 @@ const pi = {
   async sendUserMessage(message, options) {
     prompts += 1;
     if (!message.startsWith("\u2063FIRSTMATE_OP: v1 turn-end-guard: ")) throw new Error(`untyped operational prompt: ${message}`);
-    if (!message.includes("TURN WOULD END BLIND")) throw new Error(`unexpected prompt: ${message}`);
-    if (!message.includes("watcher cycle is missing, failed, or unhealthy")) throw new Error(`guard prompt omitted recovery-only state: ${message}`);
+    if (!message.includes("TURN-END GUARD REFUSED")) throw new Error(`unexpected prompt: ${message}`);
+    if (!message.includes("Follow the guard instruction below")) throw new Error(`guard prompt omitted neutral guidance: ${message}`);
     if (message.includes("Resume supervision according to the session-start operating block")) throw new Error(`guard prompt used ordinary continuity: ${message}`);
     if (options?.deliverAs !== "followUp") throw new Error("guard prompt was not a follow-up");
     await handlers.get("agent_settled")?.({ type: "agent_settled" }, {});
