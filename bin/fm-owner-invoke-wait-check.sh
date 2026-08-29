@@ -5,11 +5,13 @@
 # Usage: fm-owner-invoke-wait-check.sh --input <turn.json>
 #          [--expect-rule <rule-id> --expect-count <count>]
 #          [--rules <id,id>]
-#        fm-owner-invoke-wait-check.sh --brief <ship-brief.md>
+#        fm-owner-invoke-wait-check.sh --brief <ship-brief.md> [--ov <task-id>]
 #          [--expect-rule <rule-id> --expect-count <count>]
 #          [--rules <id,id>]
 #        fm-owner-invoke-wait-check.sh [--claude] [--pretool]
 #
+# --ov supplies the completed pre-publication OV record for a production ship spawn.
+# Without it, --brief reads ov= and durable ov_harness= from state/<ship>.meta.
 # --input and --brief are required in CLI modes. A missing or empty file,
 # claims that are not a JSON object, unknown rule ids, empty --rules, and
 # --expect-count 0 are structural failures, exit 2. Findings exit 1. Clean
@@ -23,12 +25,10 @@
 #   R-held-locked-next      a held ticket is a map_next target or its until
 #                           date has passed, and it has no worker meta
 #   R-ov-missing            spawn --input with task: no distinct OV worker;
-#                           hook/brief ladder: review worker gone with no
-#                           data/<ov>/report.md (live worker without report
-#                           is in-progress and passes)
-#   R-skill-unloaded        report present, ov_harness is claude/claude*, and
-#                           data/<ov>/skills never listed plan-eng-review
-#                           (completion-time; gated by report; Claude-only)
+#                           hook/stored-brief ladder: review worker gone with
+#                           no data/<ov>/report.md (live worker without report
+#                           is in-progress and passes); --brief --ov requires
+#                           the report before spawn
 #   R-owner-node-open       a harness <command-name> token from the header
 #                           node table opened a node, a later real captain
 #                           turn arrived, and no ordinary file matching any
@@ -39,7 +39,7 @@
 #                           turn.owner_nodes.
 # Default --brief rules: R-ov-missing,R-skill-unloaded on durable OV records
 # (state/<ship>.meta ov=/ov_harness=, data/<ov>/report.md, data/<ov>/skills,
-# live endpoint). No brief-body parse.
+# live endpoint). Explicit --ov requires a completed report. No brief-body parse.
 #
 # Owner-invoke node rows (header-owned; not a skill picker; not a home file).
 # Each row is token<TAB>artifact_glob relative to FM_HOME or FM_ROOT, with
@@ -60,16 +60,18 @@
 # do not clear the node.
 # plan-eng-review requires a separate OV worker. The builder's own plan note
 # is not OV. Split transcript windows stay as gather holes.
+# Hook-mode held gather calls tasks-axi ready --include-held once. It reads
+# only the first id field and the final hold_until field from each held row;
+# quoted commas or escaped newlines in intermediate fields cannot alter them.
+# It never calls tasks-axi show for individual held tickets.
 #
 # Production gather (hook mode, non-PreToolUse): every state/*.meta with
 # kind=ship whose session= equals the current state/.lock contents (ships
 # this session started). Prior-session ships fall out when a new lock pid is
 # written. No second session-ships list. Does not match cwd to worktree=.
 # For each gathered ship with ov=<ov>, Stop ladder in this order:
-#   a. data/<ov>/report.md non-empty -> if ov_harness is claude/claude*,
-#      require plan-eng-review in data/<ov>/skills (absent/empty = unloaded);
-#      non-Claude or missing ov_harness skips the skill rule (disclosed gap).
-#      No liveness check in this branch.
+#   a. data/<ov>/report.md non-empty -> PASS. No liveness or skill check in
+#      this branch.
 #   b. else if <ov>.meta exists and its agent is alive -> PASS
 #      (review in progress; never refuse merely for a missing report)
 #   c. else refuse: review worker gone with no report
@@ -77,14 +79,15 @@
 # passes; dead|missing fails; only unknown (zellij/orca/unreadable) falls
 # back to target_exists so unverified backends do not wedge. A shell husk
 # after the agent exits is not in-progress.
-# A gathered ship with no ov= passes at turn-end; spawn-time R-ov-missing is
-# the empty-ov start gate. Skills evaluation is completion-time, gated by
-# the report, even though it runs at turn-end. fm-spawn.sh writes session=
-# and ov_harness= (from the OV worker's harness= at ship spawn) and exports
-# FM_TASK_ID/FM_HOME; Claude PostToolUse Skill (crewmate settings.local.json
-# absolute $FM_ROOT path, plus tracked settings.json) runs
-# bin/fm-skill-load-record.sh to append normalized loads (strip gstack-,
-# lowercase) into data/<id>/skills. Matcher is exact element plan-eng-review.
+# A gathered ship with no ov= passes at turn-end. At spawn, fm-spawn.sh runs
+# the distinct-worker R-ov-missing check first for every explicit --ov, then
+# requires the OV report and retains R-skill-unloaded for every ship role.
+# fm-spawn.sh writes session= and ov_harness=
+# (from the OV worker's harness= at ship spawn) and exports FM_TASK_ID/FM_HOME; Claude
+# PostToolUse Skill (crewmate settings.local.json absolute $FM_ROOT path, plus
+# tracked settings.json) runs bin/fm-skill-load-record.sh to append normalized
+# loads (strip gstack-, lowercase) into data/<id>/skills. Matcher is exact
+# element plan-eng-review.
 #
 # Exact-count regression requires both --expect-rule and --expect-count and
 # exits 0 only when that rule count and the total finding count both equal
@@ -96,9 +99,10 @@
 # Builder self-review is not OV. In-flight ships already started without ov=
 # are not re-refused at turn end. A non-Claude review worker (grok, codex,
 # pi, kimi, opencode, muse) fires no PostToolUse hook, so its skills record
-# is never written; R-skill-unloaded runs only when durable ov_harness is
-# claude or claude*, and skips for any other harness or a missing/unreadable
-# ov_harness on older records - a disclosed gap, not a refusal.
+# is never written; brief or explicit R-skill-unloaded evaluation runs only
+# when durable ov_harness is claude or claude*, and skips for any other harness
+# or a missing/unreadable ov_harness on older records - a disclosed gap, not a
+# refusal.
 # R-owner-node-open sees only harness command-name records, not slash text
 # and not Skill tool loads. Non-Claude primaries emit no command-name
 # record (disclosed gap). Assistant or isMeta text that quotes the tag does
@@ -115,6 +119,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 
 input=
 brief=
+brief_ov_arg=
+brief_ov_arg_set=0
 expect_rule=
 expect_count=
 rules=
@@ -123,7 +129,7 @@ CLAUDE_MODE=0
 PRETOOL_MODE=0
 HOOK_MODE=0
 
-INPUT_RULES='R-held-locked-next,R-ov-missing,R-skill-unloaded,R-owner-node-open'
+INPUT_RULES='R-held-locked-next,R-ov-missing,R-owner-node-open'
 BRIEF_RULES='R-ov-missing,R-skill-unloaded'
 KNOWN_RULES='R-held-locked-next R-ov-missing R-skill-unloaded R-owner-node-open'
 # Header-owned default node table. Home file is not consulted.
@@ -159,6 +165,12 @@ while [ "$#" -gt 0 ]; do
       brief=$2
       shift 2
       ;;
+    --ov)
+      [ "$#" -ge 2 ] || structural "--ov requires a task id"
+      brief_ov_arg=$2
+      brief_ov_arg_set=1
+      shift 2
+      ;;
     --expect-rule)
       [ "$#" -ge 2 ] || structural "--expect-rule requires a rule id"
       expect_rule=$2
@@ -189,6 +201,11 @@ done
 
 if [ -n "$input" ] && [ -n "$brief" ]; then
   structural "--input and --brief cannot be combined"
+fi
+
+if [ "$brief_ov_arg_set" -eq 1 ]; then
+  [ -n "$brief" ] || structural "--ov requires --brief"
+  [ -n "$brief_ov_arg" ] || structural "--ov requires a non-empty task id"
 fi
 
 if [ -z "$input" ] && [ -z "$brief" ]; then
@@ -336,6 +353,8 @@ evaluate_turn() {  # <json-file>
               elif ($s | has("ov_report")) then
                 if $s.ov_report == true then
                   empty
+                elif $s.ov_report_required == true then
+                  "R-ov-missing-report: \($id) OV \($ov) report is required before ship spawn"
                 elif $s.ov_alive == true then
                   empty
                 else
@@ -455,16 +474,20 @@ if [ -n "$brief" ]; then
   brief_dir=$(CDPATH='' cd -- "$(dirname -- "$brief")" && pwd -P) || structural "brief directory unreadable"
   brief_id=$(basename "$brief_dir")
   turn="$TMP_DIR/turn.json"
-  brief_ov=""
+  brief_ov="$brief_ov_arg"
   brief_meta="$STATE/$brief_id.meta"
-  if [ -f "$brief_meta" ] && [ ! -L "$brief_meta" ]; then
+  if [ -z "$brief_ov" ] && [ -f "$brief_meta" ] && [ ! -L "$brief_meta" ]; then
     brief_ov=$(sed -n 's/^ov=//p' "$brief_meta" 2>/dev/null | tail -1)
   fi
   brief_ov_report=false
+  brief_ov_report_required=false
   brief_ov_alive=false
   brief_skills='[]'
   brief_ov_harness=""
-  if [ -f "$brief_meta" ] && [ ! -L "$brief_meta" ]; then
+  if [ "$brief_ov_arg_set" -eq 1 ] && [ -f "$STATE/$brief_ov.meta" ] \
+    && [ ! -L "$STATE/$brief_ov.meta" ]; then
+    brief_ov_harness=$(sed -n 's/^harness=//p' "$STATE/$brief_ov.meta" 2>/dev/null | tail -1)
+  elif [ -f "$brief_meta" ] && [ ! -L "$brief_meta" ]; then
     brief_ov_harness=$(sed -n 's/^ov_harness=//p' "$brief_meta" 2>/dev/null | tail -1)
   fi
   if [ -n "$brief_ov" ]; then
@@ -480,11 +503,13 @@ if [ -n "$brief" ]; then
       fi
     fi
   fi
+  [ "$brief_ov_arg_set" -eq 0 ] || brief_ov_report_required=true
   if [ -n "$brief_ov" ]; then
     jq -n --arg id "$brief_id" --arg ov "$brief_ov" --arg ov_harness "$brief_ov_harness" \
       --argjson skills "$brief_skills" \
-      --argjson ov_report "$brief_ov_report" --argjson ov_alive "$brief_ov_alive" \
-      '{ships:[{id:$id, ov:$ov, ov_harness:$ov_harness, skills:$skills, ov_report:$ov_report, ov_alive:$ov_alive}], owned_meta:[]}' > "$turn" \
+      --argjson ov_report "$brief_ov_report" --argjson ov_report_required "$brief_ov_report_required" \
+      --argjson ov_alive "$brief_ov_alive" \
+      '{ships:[{id:$id, ov:$ov, ov_harness:$ov_harness, skills:$skills, ov_report:$ov_report, ov_report_required:$ov_report_required, ov_alive:$ov_alive}], owned_meta:[]}' > "$turn" \
       || structural "could not encode brief records"
   else
     printf '%s\n' '{"ships":[],"owned_meta":[]}' > "$turn"
@@ -533,27 +558,28 @@ if [ -f "$CONFIG/backlog-backend" ]; then
 fi
 
 gather_held() {
-  local backlog="$DATA/backlog.md" output id kind reason until show
+  local backlog="$DATA/backlog.md" output id until
   [ -f "$backlog" ] && [ ! -L "$backlog" ] || return 0
   [ "$backend" != manual ] || return 0
   command -v tasks-axi >/dev/null 2>&1 || return 0
   output=$(tasks-axi ready --file "$backlog" --include-held 2>/dev/null) || return 0
-  while IFS= read -r id; do
+  while IFS=$'\t' read -r id until; do
     [ -n "$id" ] || continue
-    show=$(tasks-axi show --file "$backlog" "$id" 2>/dev/null) || continue
-    kind=$(printf '%s\n' "$show" | sed -n 's/^  hold_kind: //p' | tail -1)
-    reason=$(printf '%s\n' "$show" | sed -n 's/^  hold_reason: //p' | tail -1)
-    until=$(printf '%s\n' "$show" | sed -n 's/^  hold_until: //p' | tail -1)
-    held_json=$(jq -n -c --arg id "$id" --arg kind "$kind" --arg reason "$reason" --arg until "$until" \
+    held_json=$(jq -n -c --arg id "$id" --arg until "$until" \
       --argjson acc "$held_json" \
-      '$acc + [{id:$id, hold_kind:$kind, hold_reason:$reason, hold_until:$until}]')
+      '$acc + [{id:$id, hold_until:$until}]')
   done < <(printf '%s\n' "$output" | awk '
     /^held\[[0-9]+\]/ { in_held = 1; next }
     in_held && /^[[:space:]]/ {
       row = $0
       sub(/^[[:space:]]*/, "", row)
-      split(row, fields, ",")
-      if (fields[1] != "") print fields[1]
+      id = row
+      sub(/,.*/, "", id)
+      until = row
+      sub(/^.*,/, "", until)
+      sub(/^[[:space:]]*/, "", until)
+      sub(/[[:space:]]*$/, "", until)
+      if (id != "") print id "\t" until
     }
     in_held && /^[^[:space:]]/ { exit }
   ')

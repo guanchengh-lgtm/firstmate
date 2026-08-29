@@ -38,10 +38,13 @@ make_spawn_fakebin() {
 set -u
 case "$*" in
   *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
+  *"#{pane_id}"*) printf '%s\n' '%1'; exit 0 ;;
+  *"#{pane_tty}"*) exit 1 ;;
+  *"#{pane_current_command}"*) printf '%s\n' "${FM_FAKE_OV_COMMAND:-firstmate}"; exit 0 ;;
 esac
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
-  list-windows) exit 0 ;;
+  list-windows) [ -z "${FM_FAKE_OV_WINDOW:-}" ] || printf '%s\n' "$FM_FAKE_OV_WINDOW"; exit 0 ;;
   has-session|new-session|new-window|kill-window) exit 0 ;;
   send-keys)
     if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then
@@ -143,6 +146,7 @@ run_spawn() {
     FM_FAKE_LAUNCH_LOG="$launchlog" FM_FAKE_PI_VERSION="${FM_TEST_PI_VERSION:-0.84.0}" \
     FM_FAKE_CURSOR_MODELS="${FM_TEST_CURSOR_MODELS:-}" \
     FM_FAKE_CURSOR_LIST_STATUS="${FM_TEST_CURSOR_LIST_STATUS:-0}" \
+    FM_FAKE_OV_WINDOW="${FM_TEST_OV_WINDOW:-}" FM_FAKE_OV_COMMAND="${FM_TEST_OV_COMMAND:-}" \
     GROK_HOME="$home/grok-home" PATH="$fakebin:$PATH" \
     "$SPAWN" "$@" 2>&1
 }
@@ -942,6 +946,9 @@ test_spawn_refuses_filled_ship_without_ov() {
   brief="$HOME_DIR/data/$id/brief.md"
   printf '# Task\nStart Spec compile-check. The next act is obvious.\n\n# Setup\nfixture\nDelivery contract: mode=no-mistakes\n' > "$brief"
   printf '%s\n' 'kind=scout' 'harness=claude' > "$HOME_DIR/state/spec-compile-check-ov.meta"
+  mkdir -p "$HOME_DIR/data/spec-compile-check-ov"
+  printf 'OV complete\n' > "$HOME_DIR/data/spec-compile-check-ov/report.md"
+  printf 'plan-eng-review\n' > "$HOME_DIR/data/spec-compile-check-ov/skills"
   printf '7777\n' > "$HOME_DIR/state/.lock"
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
     "$id" "$PROJ_DIR" --ov spec-compile-check-ov)
@@ -961,12 +968,70 @@ test_spawn_refuses_filled_ship_without_ov() {
   assert_grep 'export FM_HOME=' "$LAUNCH_LOG.exports" \
     "spawn did not export FM_HOME into the worker pane"
 
+  id=profile-ship-ov-unloaded-z25
+  rec=$(make_spawn_case profile-ship-ov-unloaded claude "$id")
+  read_case_record "$rec"
+  brief="$HOME_DIR/data/$id/brief.md"
+  printf '# Task\nStart Spec compile-check. The next act is obvious.\n\n# Setup\nfixture\nDelivery contract: mode=no-mistakes\n' > "$brief"
+  printf '%s\n' 'kind=scout' 'harness=claude' > "$HOME_DIR/state/spec-compile-check-ov.meta"
+  mkdir -p "$HOME_DIR/data/spec-compile-check-ov"
+  printf 'OV complete\n' > "$HOME_DIR/data/spec-compile-check-ov/report.md"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --ov spec-compile-check-ov)
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn accepted a Claude OV without plan-eng-review"
+  assert_contains "$out" 'R-skill-unloaded-plan-eng-review' \
+    "spawn refusal did not name the exact unloaded skill rule"
+  assert_absent "$HOME_DIR/state/$id.meta" \
+    "unloaded skill refusal wrote task metadata"
+  [ ! -s "$LAUNCH_LOG" ] || fail "unloaded skill refusal still launched an endpoint"
+
+  id=profile-ship-ov-live-no-report-z29
+  rec=$(make_spawn_case profile-ship-ov-live-no-report claude "$id")
+  read_case_record "$rec"
+  brief="$HOME_DIR/data/$id/brief.md"
+  printf '# Task\nStart Spec compile-check. The next act is obvious.\n\n# Setup\nfixture\nDelivery contract: mode=no-mistakes\n' > "$brief"
+  printf '%s\n' 'kind=scout' 'harness=claude' 'window=firstmate:fm-ov-live' \
+    > "$HOME_DIR/state/spec-compile-check-ov.meta"
+  out=$(FM_TEST_OV_WINDOW=fm-ov-live FM_TEST_OV_COMMAND=claude \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --ov spec-compile-check-ov)
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn accepted a live OV without a report"
+  assert_contains "$out" 'R-ov-missing-report' \
+    "live OV refusal did not name the missing report rule"
+  assert_contains "$out" 'report is required before ship spawn' \
+    "live OV refusal did not explain OV-first sequencing"
+  assert_absent "$HOME_DIR/state/$id.meta" \
+    "live OV missing report refusal wrote task metadata"
+  [ ! -s "$LAUNCH_LOG" ] || fail "live OV missing report refusal still launched an endpoint"
+
+  id=profile-ship-ov-torn-down-z26
+  rec=$(make_spawn_case profile-ship-ov-torn-down claude "$id")
+  read_case_record "$rec"
+  brief="$HOME_DIR/data/$id/brief.md"
+  printf '# Task\nStart Spec compile-check. The next act is obvious.\n\n# Setup\nfixture\nDelivery contract: mode=no-mistakes\n' > "$brief"
+  mkdir -p "$HOME_DIR/data/spec-compile-check-ov"
+  printf 'OV complete\n' > "$HOME_DIR/data/spec-compile-check-ov/report.md"
+  printf 'plan-eng-review\n' > "$HOME_DIR/data/spec-compile-check-ov/skills"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --ov spec-compile-check-ov)
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn accepted a torn-down OV worker"
+  assert_contains "$out" 'no separate OV worker' \
+    "torn-down OV refusal did not preserve the worker requirement"
+  assert_absent "$HOME_DIR/state/$id.meta" \
+    "torn-down OV refusal wrote task metadata"
+  [ ! -s "$LAUNCH_LOG" ] || fail "torn-down OV refusal still launched an endpoint"
+
   id=profile-ship-ov-codex-z24
   rec=$(make_spawn_case profile-ship-ov-codex claude "$id")
   read_case_record "$rec"
   brief="$HOME_DIR/data/$id/brief.md"
   printf '# Task\nStart Spec compile-check. The next act is obvious.\n\n# Setup\nfixture\nDelivery contract: mode=no-mistakes\n' > "$brief"
   printf '%s\n' 'kind=scout' 'harness=codex' > "$HOME_DIR/state/spec-compile-check-ov.meta"
+  mkdir -p "$HOME_DIR/data/spec-compile-check-ov"
+  printf 'OV complete\n' > "$HOME_DIR/data/spec-compile-check-ov/report.md"
   printf '8888\n' > "$HOME_DIR/state/.lock"
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
     "$id" "$PROJ_DIR" --ov spec-compile-check-ov)
@@ -1099,6 +1164,49 @@ test_role_verifier_encodes_verifier_brief() {
   pass "fm-spawn: --role verifier encodes verifier-brief.md and records role=verifier"
 }
 
+test_role_verifier_enforces_explicit_ov() {
+  local rec id out status
+  id=profile-role-verifier-missing-ov-z27
+  rec=$(make_spawn_case profile-role-verifier-missing-ov claude "$id")
+  read_case_record "$rec"
+  printf '%s\n' 'Role: verifier' 'Delivery contract: mode=no-mistakes' '# Task' 'verify the task' \
+    > "$HOME_DIR/data/$id/verifier-brief.md"
+  printf '%s\n' verifier > "$HOME_DIR/data/$id/verifier-role"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --ov spec-compile-check-ov \
+    --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  [ "$status" -ne 0 ] || fail "verifier spawn accepted a missing OV worker"
+  assert_contains "$out" 'no separate OV worker' \
+    "verifier OV refusal did not preserve the worker requirement"
+  assert_absent "$HOME_DIR/state/$id.meta" \
+    "verifier missing OV refusal wrote task metadata"
+  [ ! -s "$LAUNCH_LOG" ] || fail "verifier missing OV refusal still launched an endpoint"
+
+  id=profile-role-verifier-unloaded-ov-z28
+  rec=$(make_spawn_case profile-role-verifier-unloaded-ov claude "$id")
+  read_case_record "$rec"
+  printf '%s\n' 'Role: verifier' 'Delivery contract: mode=no-mistakes' '# Task' 'verify the task' \
+    > "$HOME_DIR/data/$id/verifier-brief.md"
+  printf '%s\n' verifier > "$HOME_DIR/data/$id/verifier-role"
+  printf '%s\n' 'kind=scout' 'harness=claude' > "$HOME_DIR/state/spec-compile-check-ov.meta"
+  mkdir -p "$HOME_DIR/data/spec-compile-check-ov"
+  printf 'OV complete\n' > "$HOME_DIR/data/spec-compile-check-ov/report.md"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --ov spec-compile-check-ov \
+    --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  [ "$status" -ne 0 ] || fail "verifier spawn accepted a Claude OV without plan-eng-review"
+  assert_contains "$out" 'R-skill-unloaded-plan-eng-review' \
+    "verifier spawn did not apply the brief skill rule"
+  assert_absent "$HOME_DIR/state/$id.meta" \
+    "verifier unloaded skill refusal wrote task metadata"
+  [ ! -s "$LAUNCH_LOG" ] || fail "verifier unloaded skill refusal still launched an endpoint"
+  pass "fm-spawn: verifier ships enforce explicit OV worker and skill rules"
+}
+
 test_no_profile_keeps_claude_profile_defaults
 test_non_cursor_launch_clears_inherited_cursor_markers
 test_relative_home_overrides_launch_with_absolute_cross_process_paths
@@ -1134,5 +1242,6 @@ test_claude_omits_config_dir_prefix_when_unset
 test_non_claude_harness_ignores_config_dir
 test_active_dispatch_profile_does_not_block_secondmate_launch
 test_role_verifier_encodes_verifier_brief
+test_role_verifier_enforces_explicit_ov
 
 echo "# all fm-spawn-dispatch-profile tests passed"

@@ -20,7 +20,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-stow-open-lock-check.sh` | Refuse a reset-safe stow receipt that omits a still-open lock-file pick; `--list-open` feeds the fleet snapshot |
 | `fm-spec-compile-check.sh` | Assert every closed ticket id and every keep-row title appears in a spec as a tag or an explicit refusal, not grounding |
 | `fm-spec-compile-stop-check.sh` | Refuse a Stop that wrote Map 2 spec, tickets, or keep-list files while compile is red, or wrote `expected-reports:` while reduce is red; path-derived home, before primary-scope |
-| `fm-owner-invoke-wait-check.sh` | Refuse a locked next act, an owner-invoke node still open after the captain's next message with no matching artifact, or this session's ships whose OV review is gone without a report or (Claude ov_harness only) never loaded plan-eng-review |
+| `fm-owner-invoke-wait-check.sh` | Refuse a locked next act, an owner-invoke node still open after the captain's next message with no matching artifact, or this session's ships whose OV review is gone without a report; spawn checks require a completed report and retain the Claude plan-eng-review load rule |
 | `fm-skill-load-record.sh` | Claude PostToolUse Skill recorder (crewmate settings.local.json absolute path + tracked settings.json): append normalized skill loads into data/<task>/skills when FM_TASK_ID/FM_HOME are set |
 | `fm-reduce-check.sh` | Assert every expected wide-work report exists, is non-empty, and is cited; code writes the keep-list |
 | `fm-startup-network.sh`  | Run session start's network checks off its blocking path in a bounded detached worker, and publish the result inline or as a wake |
@@ -67,7 +67,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-remote-home-seed.sh` | Register and provision a whole secondmate home on an SSH-reachable host              |
 | `fm-remote-readiness-lib.sh` | Shared remote second-mate readiness gate: check and, when needed, repair then re-check through `fm-remote-doctor.sh` |
 | [`fm-project-origin-lib.sh`](../bin/fm-project-origin-lib.sh) | Accepted origin-form owner shared by both remote provisioning boundaries |
-| `fm-spawn.sh`            | Spawn crewmates, scouts, `id=repo` batches, and secondmates; require ship `--role` and a distinct filled-ship `--ov`; record optional `map` and locked `map_next`; refuse a ship `--map` while fog is live |
+| `fm-spawn.sh`            | Spawn crewmates, scouts, `id=repo` batches, and secondmates; require ship `--role` and enforce completed distinct OV records for each supplied `--ov`; record optional `map` and locked `map_next`; refuse a ship `--map` while fog is live |
 | `fm-backend.sh`          | Runtime-backend selection, meta helpers, selector resolution, and operation dispatch |
 | `fm-backend-hometag-lib.sh` | Shared per-installation home-tag derivation for zellij tab and cmux workspace titles |
 | `fm-composer-lib.sh`     | Single fleet-wide owner of composer shapes, capability-aware screen classification, and verdicts |

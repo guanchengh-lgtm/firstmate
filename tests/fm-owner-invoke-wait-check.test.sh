@@ -276,7 +276,8 @@ test_ov_report_and_skill_records() {
     "owned_meta": []
   }'
   set +e
-  out=$(run_check --input "$turn" --expect-rule R-skill-unloaded --expect-count 1)
+  out=$(run_check --input "$turn" --rules R-skill-unloaded \
+    --expect-rule R-skill-unloaded --expect-count 1)
   rc=$?
   set -e
   [ "$rc" -eq 0 ] || fail "unloaded plan-eng-review exact-count exited $rc: $out"
@@ -398,7 +399,7 @@ test_hook_gathers_session_ship_ov_ladder() {
   printf '4242\n' > "$home/state/.lock"
   printf '%s\n' 'kind=ship' 'ov=spec-compile-check-ov' 'ov_harness=claude' \
     'session=4242' "worktree=$ship_wt" > "$home/state/spec-compile-check.meta"
-  # Torn-down OV worker: report present, meta gone, skills missing -> skill refuse.
+  # Torn-down OV worker: report present proves completion without a Stop skill check.
   printf 'OV done\n' > "$home/data/spec-compile-check-ov/report.md"
   transcript="$home/transcript.jsonl"
   : > "$transcript"
@@ -410,20 +411,9 @@ test_hook_gathers_session_ship_ov_ladder() {
     "$CHECK" 2>&1)
   rc=$?
   set -e
-  [ "$rc" -eq 2 ] || fail "hook report-gated skill refuse exited $rc with: $out"
-  assert_contains "$out" 'R-skill-unloaded-plan-eng-review' \
-    "hook did not refuse unloaded plan-eng-review after OV report"
-  printf '%s\n' 'plan-eng-review' > "$home/data/spec-compile-check-ov/skills"
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "hook torn-down OV with report+skill exited $rc with: $out"
-  [ -z "$out" ] || fail "hook torn-down OV with report+skill printed: $out"
-  rm -f "$home/data/spec-compile-check-ov/report.md" \
-    "$home/data/spec-compile-check-ov/skills"
+  [ "$rc" -eq 0 ] || fail "hook torn-down OV with report exited $rc with: $out"
+  [ -z "$out" ] || fail "hook torn-down OV with report printed: $out"
+  rm -f "$home/data/spec-compile-check-ov/report.md"
   set +e
   out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
@@ -528,31 +518,6 @@ test_hook_ignores_prior_session_ships() {
   pass "owner-invoke-wait: hook scopes ship gather to this session only"
 }
 
-test_missing_skills_record_counts_as_unloaded() {
-  local home out rc payload transcript ship_wt
-  home=$(make_primary_home "$TMP_ROOT/hook-missing-skills")
-  ship_wt="$home/ships/spec-compile-check"
-  mkdir -p "$home/data/spec-compile-check" "$home/data/spec-compile-check-ov" "$ship_wt"
-  printf '6161\n' > "$home/state/.lock"
-  printf '%s\n' 'kind=ship' 'ov=spec-compile-check-ov' 'ov_harness=claude' \
-    'session=6161' "worktree=$ship_wt" > "$home/state/spec-compile-check.meta"
-  printf 'OV done\n' > "$home/data/spec-compile-check-ov/report.md"
-  transcript="$home/transcript.jsonl"
-  : > "$transcript"
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
-    "$transcript" "$home")
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 2 ] || fail "missing skills record exited $rc with: $out"
-  assert_contains "$out" 'R-skill-unloaded-plan-eng-review' \
-    "missing skills record did not count as unloaded"
-  pass "owner-invoke-wait: missing skills record counts as unloaded"
-}
-
 test_finished_non_claude_review_without_skills_passes() {
   local home out rc payload transcript ship_wt
   home=$(make_primary_home "$TMP_ROOT/hook-non-claude-ov")
@@ -577,7 +542,7 @@ test_finished_non_claude_review_without_skills_passes() {
   pass "owner-invoke-wait: finished non-Claude review without skills passes"
 }
 
-test_finished_claude_review_without_skills_refuses() {
+test_finished_claude_review_without_skills_passes_at_stop() {
   local home out rc payload transcript ship_wt
   home=$(make_primary_home "$TMP_ROOT/hook-claude-ov-no-skill")
   ship_wt="$home/ships/spec-compile-check"
@@ -596,10 +561,9 @@ test_finished_claude_review_without_skills_refuses() {
     "$CHECK" 2>&1)
   rc=$?
   set -e
-  [ "$rc" -eq 2 ] || fail "finished Claude OV without skills exited $rc with: $out"
-  assert_contains "$out" 'R-skill-unloaded-plan-eng-review' \
-    "finished Claude OV without skills did not refuse"
-  pass "owner-invoke-wait: finished Claude review without skills refuses"
+  [ "$rc" -eq 0 ] || fail "finished Claude OV without skills exited $rc with: $out"
+  [ -z "$out" ] || fail "finished Claude OV without skills printed: $out"
+  pass "owner-invoke-wait: finished Claude review skips duplicate Stop skill check"
 }
 
 test_skill_load_record_appends_normalized_token() {
@@ -975,9 +939,8 @@ test_unrelated_rule_does_not_satisfy_exact_count
 test_hook_gathers_session_ship_ov_ladder
 test_hook_does_not_rerefuse_inflight_ship_without_ov
 test_hook_ignores_prior_session_ships
-test_missing_skills_record_counts_as_unloaded
 test_finished_non_claude_review_without_skills_passes
-test_finished_claude_review_without_skills_refuses
+test_finished_claude_review_without_skills_passes_at_stop
 test_skill_load_record_appends_normalized_token
 test_hook_refuses_husk_ov_worker_without_report
 test_hook_live_ov_agent_without_report_passes
