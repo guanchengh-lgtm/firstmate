@@ -1,0 +1,129 @@
+
+=== explicit ship builder without measure ===
+metadata before teardown:
+kind=ship
+role=builder
+measure before teardown: absent
+command: bin/fm-teardown.sh task-x1
+exit_code: 1 (expected 1)
+output:
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 1s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REFUSED: task task-x1 has no non-empty measure at /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-teardown-tests.X3Bu1T/evidence-builder/data/task-x1/measure.md.
+Write the five-line measure described by fm-teardown.sh --help; non-forced ship builders cannot bypass this gate.
+task metadata after teardown: preserved
+
+=== legacy ship without role or measure ===
+metadata before teardown:
+kind=ship
+measure before teardown: absent
+command: bin/fm-teardown.sh task-x1
+exit_code: 1 (expected 1)
+output:
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 1s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REFUSED: task task-x1 has no non-empty measure at /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-teardown-tests.X3Bu1T/evidence-legacy/data/task-x1/measure.md.
+Write the five-line measure described by fm-teardown.sh --help; non-forced ship builders cannot bypass this gate.
+task metadata after teardown: preserved
+
+=== ship verifier without measure ===
+metadata before teardown:
+kind=ship
+role=verifier
+measure before teardown: absent
+command: bin/fm-teardown.sh task-x1
+exit_code: 0 (expected 0)
+output:
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 0s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown task-x1 complete (window firstmate:fm-task-x1, worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-teardown-tests.X3Bu1T/evidence-verifier/wt)
+Backlog: task-x1 just finished. Run tasks-axi done task-x1 --note "local main", then run tasks-axi ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.
+task metadata after teardown: removed
+
+=== scout without measure ===
+metadata before teardown:
+kind=scout
+measure before teardown: absent
+command: bin/fm-teardown.sh task-x1
+exit_code: 0 (expected 0)
+output:
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 0s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown task-x1 complete (window firstmate:fm-task-x1, worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-teardown-tests.X3Bu1T/evidence-scout/wt)
+Backlog: task-x1 just finished. Run tasks-axi done task-x1 --report data/task-x1/report.md, then run tasks-axi ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.
+task metadata after teardown: removed
+
+=== secondmate without measure ===
+metadata before teardown:
+kind=secondmate
+measure before teardown: absent
+command: bin/fm-teardown.sh task-x1
+exit_code: 0 (expected 0)
+output:
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 0s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown task-x1 complete (window firstmate:fm-task-x1, worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-teardown-tests.X3Bu1T/evidence-secondmate/wt)
+task metadata after teardown: removed
+
+=== forced ship builder without measure ===
+metadata before teardown:
+kind=ship
+role=builder
+measure before teardown: absent
+command: bin/fm-teardown.sh task-x1 --force
+exit_code: 0 (expected 0)
+output:
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 1s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown task-x1 complete (window firstmate:fm-task-x1, worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-teardown-tests.X3Bu1T/evidence-force/wt)
+Backlog: task-x1 just finished. Run tasks-axi done task-x1 --note "local main", then run tasks-axi ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.
+task metadata after teardown: removed
+
+=== forced ship with a repeated defect class and a measure ===
+metadata before teardown:
+kind=ship
+role=builder
+measure before teardown: present
+command: bin/fm-teardown.sh task-x1 --force
+exit_code: 1 (expected 1)
+output:
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 0s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REFUSED: task task-x1 is a second occurrence of class repeat-defect; cleanup requires an enforcing-file change on this branch (bin/, tests/, .github/workflows/, or a registered hook).
+A queued next slice does not discharge this gate. --force does not bypass it.
+task metadata after teardown: preserved
