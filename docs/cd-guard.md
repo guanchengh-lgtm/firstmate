@@ -74,7 +74,7 @@ Every deny carries one stable code in square brackets before its prose reason.
 
 | Code | Meaning |
 | --- | --- |
-| `persistent-cd` | A top-level `cd`/`pushd`/`popd` would persistently change the primary shell away from its active home. |
+| `persistent-cd` | A denied top-level `cd`, `pushd`, or `popd` would persist in the primary shell; only `cd` can use the active-home exception. |
 
 The reason permits only a canonical return to the active home.
 It directs other commands to use `git -C <dir>`, an absolute target path, or a subshell-scoped `cd`.
@@ -95,7 +95,7 @@ The prefilter removes ordinary single quotes, double quotes, backslashes, carria
 The quoting-decoder marker set is coupled to the classifier's decoder set in `bin/fm-arm-command-policy.mjs`: adding any new quote or expansion form the classifier decodes requires extending the prefilter marker set in the same change, or it stops being a strict superset.
 
 The transport resolves `${FM_HOME:-$FM_ROOT}` to a physical path and passes it to the policy.
-If this active-home resolution fails, only the return-home exception fails closed and persistent directory changes remain denied.
+If this active-home resolution fails, only the return-home exception fails closed and classified persistent directory changes remain denied.
 Empty stdin, unparseable JSON, missing `jq` on the stdin path, missing Node, a missing policy owner, or an invalid policy response all fail open with exit 0 and no output.
 A broken hook must never deny every shell tool call.
 
