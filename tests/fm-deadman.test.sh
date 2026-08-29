@@ -27,6 +27,7 @@ new_case() {
   local name=$1 dir="$TMP_ROOT/$1"
   mkdir -p "$dir/install" "$dir/home/state"
   : > "$dir/home/state/.last-watcher-beat"
+  : > "$dir/home/state/task.meta"
   cat > "$dir/install/deadman.env" <<EOF
 FM_HOME=$dir/home
 STALE_AFTER_SECS=600
@@ -73,14 +74,8 @@ test_age_boundary_and_double_sample() {
   pass "staleness is age > N and requires two samples 60-120 seconds apart"
 }
 
-test_missing_future_and_unreadable() {
-  local missing future unreadable fakebin
-  missing=$(new_case missing)
-  rm -rf "${missing:?}/home"
-  run_probe "$missing" 1000
-  run_probe "$missing" 1060
-  [ "$(notify_count "$missing/notify.log")" -eq 1 ] || fail "missing FM_HOME did not page after confirmation"
-
+test_future_and_unreadable() {
+  local future unreadable fakebin
   future=$(new_case future)
   set_mtime "$future/home/state/.last-watcher-beat" 1200
   run_probe "$future" 1000
@@ -98,7 +93,61 @@ SH
   PATH="$fakebin:$PATH" run_probe "$unreadable" 1000
   PATH="$fakebin:$PATH" run_probe "$unreadable" 1060
   [ "$(notify_count "$unreadable/notify.log")" -eq 1 ] || fail "unreadable beacon mtime did not page after confirmation"
-  pass "missing, unreadable, and future beacon inputs are unhealthy"
+  pass "unreadable and future beacon inputs are unhealthy while work is live"
+}
+
+test_live_work_gate() {
+  local idle task relay unavailable reset
+
+  idle=$(new_case idle-stale)
+  rm -f "$idle/home/state/task.meta"
+  : > "$idle/home/state/unrelated"
+  mkdir -p "$idle/home/state/nested" "$idle/home/state/directory.meta"
+  : > "$idle/home/state/nested/task.meta"
+  : > "$idle/home/state/link-target"
+  ln -s link-target "$idle/home/state/symlink.meta"
+  ln -s link-target "$idle/home/state/x-watch.check.sh"
+  set_mtime "$idle/home/state/.last-watcher-beat" 0
+  run_probe "$idle" 1000
+  run_probe "$idle" 1060
+  [ "$(notify_count "$idle/notify.log")" -eq 0 ] || fail "non-ordinary or unrelated state enabled a stale page"
+  [ ! -e "$idle/install/first-stale" ] || fail "idle stale home retained a first sample"
+
+  task=$(new_case task-meta)
+  set_mtime "$task/home/state/.last-watcher-beat" 0
+  run_probe "$task" 1000
+  run_probe "$task" 1060
+  [ "$(notify_count "$task/notify.log")" -eq 1 ] || fail "task metadata did not enable a stale page"
+
+  relay=$(new_case relay-poll)
+  rm -f "$relay/home/state/task.meta"
+  : > "$relay/home/state/x-watch.check.sh"
+  set_mtime "$relay/home/state/.last-watcher-beat" 0
+  run_probe "$relay" 1000
+  run_probe "$relay" 1060
+  [ "$(notify_count "$relay/notify.log")" -eq 1 ] || fail "Relay poll did not enable a stale page"
+
+  unavailable=$(new_case idle-unavailable)
+  rm -rf "${unavailable:?}/home"
+  printf '940|home-unavailable\n' > "$unavailable/install/first-stale"
+  run_probe "$unavailable" 1000
+  [ "$(notify_count "$unavailable/notify.log")" -eq 0 ] || fail "unavailable idle home paged"
+  [ ! -e "$unavailable/install/first-stale" ] || fail "unavailable idle home retained a first sample"
+
+  reset=$(new_case idle-reset)
+  set_mtime "$reset/home/state/.last-watcher-beat" 0
+  run_probe "$reset" 1000
+  [ -f "$reset/install/first-stale" ] || fail "live stale work did not record a first sample"
+  rm -f "$reset/home/state/task.meta"
+  run_probe "$reset" 1060
+  [ ! -e "$reset/install/first-stale" ] || fail "idle transition did not clear the first sample"
+  : > "$reset/home/state/task.meta"
+  run_probe "$reset" 1120
+  [ "$(notify_count "$reset/notify.log")" -eq 0 ] || fail "new live work reused the pre-idle sample"
+  run_probe "$reset" 1180
+  [ "$(notify_count "$reset/notify.log")" -eq 1 ] || fail "new live work did not page after two fresh samples"
+
+  pass "deadman pages only for task or Relay work and resets sampling while idle"
 }
 
 test_flap_resets_confirmation() {
@@ -458,7 +507,8 @@ PY
 }
 
 test_age_boundary_and_double_sample
-test_missing_future_and_unreadable
+test_future_and_unreadable
+test_live_work_gate
 test_flap_resets_confirmation
 test_cooldown_and_failed_delivery
 test_first_arm_and_sleep_wake_grace

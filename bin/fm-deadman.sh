@@ -116,6 +116,14 @@ beacon_mtime() {
   printf '%s\n' "$value"
 }
 
+live_work_exists() {
+  local meta
+  for meta in "$FM_HOME"/state/*.meta; do
+    [ -f "$meta" ] && [ ! -L "$meta" ] && return 0
+  done
+  [ -f "$FM_HOME/state/x-watch.check.sh" ] && [ ! -L "$FM_HOME/state/x-watch.check.sh" ]
+}
+
 probe_status() {
   local beat="$FM_HOME/state/.last-watcher-beat" mtime age
   if [ ! -d "$FM_HOME" ] || [ ! -r "$FM_HOME" ] || [ ! -x "$FM_HOME" ]; then
@@ -278,6 +286,10 @@ main() {
   fi
 
   apply_sleep_wake_grace || exit 0
+  if ! live_work_exists; then
+    rm -f "$INSTALL_DIR/first-stale"
+    exit 0
+  fi
   arm_if_ready || exit 0
   if probe_status; then
     rm -f "$INSTALL_DIR/first-stale"

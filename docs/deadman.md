@@ -5,9 +5,14 @@ It runs a stable installed copy outside the git checkout and never starts, stops
 
 ## Guarantee
 
-The probe reads one configured `FM_HOME` and checks only `state/.last-watcher-beat`.
+The probe reads one configured `FM_HOME`.
+It checks watcher health only while an ordinary `state/*.meta` file or `state/x-watch.check.sh` exists.
+An idle home stays silent when its watcher beacon, state directory, or home is stale, missing, or unreadable.
+An idle observation clears an unfinished stale confirmation, so new live work always starts with a new first sample.
+The canary notification path does not require live work.
+For live work, the probe checks only `state/.last-watcher-beat`.
 A beacon age greater than 600 seconds is unhealthy by default.
-A missing or unreadable home or beacon and a beacon timestamp in the future are also unhealthy.
+A missing or unreadable beacon and a beacon timestamp in the future are also unhealthy.
 The deadman pages only after the same unhealthy class is observed twice, with the observations 60 to 120 seconds apart.
 The first installation window defaults to 660 seconds of grace, and a run gap greater than 180 seconds starts a 300-second sleep/wake grace before paging.
 A healthy observation clears an unfinished stale confirmation.
@@ -55,6 +60,7 @@ bin/fm-deadman-install.sh \
 
 If the canary fails, the installer exits without bootstrapping launchd.
 The LaunchAgent always executes the installed script path, so later checkout changes cannot silently change a running deadman.
+After a deadman source update lands, run the installer again to refresh the stable installed copy.
 `deadman.env` accepts only these keys; unknown keys and invalid values are self-faults:
 
 - `FM_HOME` - absolute path of the single monitored Firstmate home
@@ -69,7 +75,12 @@ The LaunchAgent always executes the installed script path, so later checkout cha
 An update preserves the existing deadman configuration unless `--fm-home` is supplied, in which case only that key is replaced and the timing values remain intact.
 Edit `deadman.conf` to change channels without reinstalling, or pass all desired `--channel` values on the next install.
 
-After installation, verify four operator cases manually: the canary arrives, a healthy watcher stays silent, a stopped watcher pages after the stale threshold and confirmation sample, and waking the Studio does not page during grace.
+After installation, verify five operator cases manually.
+Confirm that the canary arrives.
+Confirm that an idle home stays silent.
+Confirm that a healthy watcher with live work stays silent.
+Confirm that a stopped watcher with live work pages after the stale threshold and confirmation sample.
+Confirm that waking the Studio does not page during grace.
 
 ## Uninstall
 
@@ -87,4 +98,6 @@ It exits one when delivery fails or another invocation holds the probe lock.
 Invalid configuration, missing installed components, and corrupt deadman-owned state exit two as self-faults for launchd diagnostics.
 The bounded journal is `deadman.journal`, and launchd standard output and error logs are stored beside it.
 
-The source behavior is covered by `tests/fm-deadman.test.sh`, including age boundaries, confirmation timing, cooldown, flaps, hostile configuration, failed delivery, concurrent invocation, no-spawn behavior, installation, and plist linting.
+The source behavior is covered by `tests/fm-deadman.test.sh`.
+The suite includes live-work gating, idle reset, unavailable homes, age boundaries, confirmation timing, cooldown, flaps, hostile configuration, and failed delivery.
+It also includes concurrent invocation, no-spawn behavior, installation, and plist linting.
