@@ -18,6 +18,7 @@
 #
 # Default detect-only mode prints ordinary findings as
 # "MAP_FOG: <map><TAB><finding text>" and exits 0.
+# Map paths containing tabs are unsupported and retain the raw legacy finding format.
 # --strict exits 1 when any live fog remains. Structural failures always exit 2.
 # This script never writes `[parked]` or `[closed]` tokens.
 #
@@ -58,7 +59,7 @@ while [ "$#" -gt 0 ]; do
       shift 2
       ;;
     --help|-h)
-      sed -n '2,24p' "$0" | sed 's/^# \?//'
+      sed -n '2,26p' "$0" | sed 's/^# \?//'
       exit 0
       ;;
     --)
@@ -104,7 +105,10 @@ fatal() {
 }
 
 report_finding() {
-  printf 'MAP_FOG: %s\t%s\n' "$1" "$2" >> "$FINDINGS"
+  case "$1" in
+    *$'\t'*) printf 'MAP_FOG: %s - %s\n' "$1" "$2" >> "$FINDINGS" ;;
+    *) printf 'MAP_FOG: %s\t%s\n' "$1" "$2" >> "$FINDINGS" ;;
+  esac
 }
 
 trim_space() {

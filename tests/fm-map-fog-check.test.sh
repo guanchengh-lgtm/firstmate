@@ -320,6 +320,41 @@ EOF
   pass "bootstrap: relative data override aggregates fog findings"
 }
 
+test_bootstrap_preserves_tabbed_map_paths() {
+  local home fakebin tab out count
+  home=$(new_home bootstrap-tabbed-maps)
+  fakebin=$(make_fake_toolchain "$TMP_ROOT/bootstrap-tabbed-maps")
+  tab=$'\t'
+  mkdir -p "$home/data/p${tab}one" "$home/data/p${tab}two"
+  cat > "$home/data/p${tab}one/map.md" <<'EOF'
+# One
+
+## Not yet specified
+
+- One hole.
+EOF
+  cat > "$home/data/p${tab}two/map.md" <<'EOF'
+# Two
+
+## Not yet specified
+
+- Two hole.
+EOF
+
+  out=$(run_bootstrap "$home" "$fakebin")
+  assert_contains "$out" \
+    "MAP_FOG: data/p${tab}one/map.md - live unspecified item: - One hole." \
+    "bootstrap changed the first raw tabbed-path finding"
+  assert_contains "$out" \
+    "MAP_FOG: data/p${tab}two/map.md - live unspecified item: - Two hole." \
+    "bootstrap changed the second raw tabbed-path finding"
+  assert_not_contains "$out" 'run bin/fm-map-fog-check.sh for details' \
+    "bootstrap aggregated an unsupported tabbed map path"
+  count=$(printf '%s\n' "$out" | grep -c '^MAP_FOG:' || true)
+  [ "$count" -eq 2 ] || fail "bootstrap printed $count MAP_FOG lines for tabbed maps"
+  pass "bootstrap: tabbed map paths retain raw findings"
+}
+
 test_bootstrap_preserves_structural_failure() {
   local home fakebin out expected count
   home=$(new_home bootstrap-structural)
@@ -372,6 +407,7 @@ test_bootstrap_aggregates_findings_per_map
 test_bootstrap_aggregates_each_map_separately
 test_bootstrap_keeps_colliding_map_paths_separate
 test_bootstrap_aggregates_relative_data_override
+test_bootstrap_preserves_tabbed_map_paths
 test_bootstrap_preserves_structural_failure
 test_bootstrap_preserves_checker_failure_output
 

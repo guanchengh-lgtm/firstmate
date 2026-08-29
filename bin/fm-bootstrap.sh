@@ -1298,23 +1298,24 @@ detect_local_config() {
             case "$fog_detail" in
               *$'\t'*)
                 fog_map=${fog_detail%%$'\t'*}
-                if [ -z "$fog_map" ]; then
-                  printf '%s\n' "$fog_line"
-                  continue
-                fi
-                fog_index=
-                for fog_existing_index in "${!fog_maps[@]}"; do
-                  if [ "${fog_maps[fog_existing_index]}" = "$fog_map" ]; then
-                    fog_index=$fog_existing_index
-                    break
-                  fi
-                done
-                if [ -n "$fog_index" ]; then
-                  fog_counts[fog_index]=$((fog_counts[fog_index] + 1))
-                else
-                  fog_maps+=("$fog_map")
-                  fog_counts+=(1)
-                fi
+                case "$fog_map" in
+                  map.md|*/map.md)
+                    fog_index=
+                    for fog_existing_index in "${!fog_maps[@]}"; do
+                      if [ "${fog_maps[fog_existing_index]}" = "$fog_map" ]; then
+                        fog_index=$fog_existing_index
+                        break
+                      fi
+                    done
+                    if [ -n "$fog_index" ]; then
+                      fog_counts[fog_index]=$((fog_counts[fog_index] + 1))
+                    else
+                      fog_maps+=("$fog_map")
+                      fog_counts+=(1)
+                    fi
+                    ;;
+                  *) printf '%s\n' "$fog_line" ;;
+                esac
                 ;;
               *) printf '%s\n' "$fog_line" ;;
             esac
