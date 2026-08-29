@@ -269,7 +269,7 @@ PR-based task merges go through `bin/fm-pr-merge.sh`, which records `pr=` and an
 The helper requires a full `https://github.com/<owner>/<repo>/pull/<n>` URL, invokes `gh pr merge <n> --repo <owner>/<repo>`, defaults to `--squash`, preserves explicit merge-method flags (translating `--method=` to the gh shorthand), pins `--match-head-commit` to the live forge head so GitHub enforces `expectedHeadOid`, refuses a red or pending check rollup, and rejects malformed URLs or repo override flags before recording merge state; a well-formed GitLab merge request URL (see [docs/gitlab-merge-watch.md](gitlab-merge-watch.md)) is refused too, explicitly, rather than sent to the wrong forge.
 [`bin/fm-validation-truth-lib.sh`](../bin/fm-validation-truth-lib.sh) owns the no-mistakes arm, merge, and non-force cleanup refusal, including the crew-state first proof and the PR-URL run-record second proof; unreadable validation truth fails closed with that wording rather than restarting the shared no-mistakes daemon.
 Teardown is fail-closed for ship worktrees: dirty worktrees refuse, and committed work must be landed before the worktree is returned.
-[`bin/fm-teardown.sh`](../bin/fm-teardown.sh)'s header owns the measure gate, class-repeat refuse-hook, landed-work proofs, PR-discovery fallback, and stale-lock recovery procedure.
+[`bin/fm-teardown.sh`](../bin/fm-teardown.sh)'s header owns the ship-builder measure gate, class-repeat refuse-hook, landed-work proofs, PR-discovery fallback, and stale-lock recovery procedure.
 
 ## Optional Relay
 

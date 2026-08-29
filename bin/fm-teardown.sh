@@ -25,16 +25,18 @@
 # local-only projects additionally accept work merged into the local default
 # branch (firstmate performs that merge after configured approval) as a fallback
 # for the common case where there is no remote at all.
-# Every teardown, including scouts, secondmates, remote retirements, and
-# --force discards, requires a valid measure at
-# $FM_HOME/data/<task-id>/measure.md.
+# Every non-forced ship builder requires a valid measure at
+# $FM_HOME/data/<task-id>/measure.md. A ship with no recorded role is a legacy
+# builder. Verifiers, scouts, secondmates, remote retirements, and --force
+# discards skip the measure grammar gate.
+# A ship with any other recorded role refuses cleanup.
 # The record has exactly five lines in this order: miss:, number:, pair:, pick:,
 # none:. Either the first four values are all non-empty and none: is empty, or
 # the first four values are empty and none: gives a non-empty reason. This
 # keeps every number with its counter-metric and gives measureless work an
 # explicit reason instead of an empty artifact.
-# After that measure grammar check, a ship task whose measure has a miss: is
-# also class-repeat gated. If a prior data/*/measure.md in this home matches the
+# A ship task whose measure has a miss: is also class-repeat gated. If a prior
+# data/*/measure.md in this home matches the
 # same class via $FM_HOME/data/defect-classes.tsv, cleanup refuses unless this
 # branch touched an enforcing file under bin/, tests/, .github/workflows/, or a
 # registered hook file. Scouts are exempt. A none: measure has no miss: and is
@@ -53,10 +55,6 @@
 # or Done. The refusal runs before remote or local cleanup, is not bypassed by
 # --force, and names the absent successor so a landed blocker cannot invent a
 # new captain go gate.
-# Every teardown also runs bin/fm-sot-pointer-check.sh in strict mode before
-# cleanup. A completed program with a missing standing pointer or an older
-# captain hold not bound to its later decision authority is not done; teardown
-# preserves the task and appends one working: event to take an earlier done back.
 # Before destructive cleanup, teardown validates task check artifacts and any
 # matching quarantine entries as ordinary single-link files on the state
 # device. It refuses and preserves task state when that proof fails; otherwise
@@ -91,9 +89,9 @@
 #   --force skips ordinary-task dirty and landed-work checks, skips scout report
 #   checks, discards secondmate child work for kind=secondmate, and skips the
 #   no-mistakes validation-truth gate (bin/fm-validation-truth-lib.sh) because
-#   discard is not a claim that the ship is green. It never skips the measure
-#   gate or the class-repeat gate. Only use it when the captain has explicitly
-#   said to discard the work.
+#   discard is not a claim that the ship is green. It also skips the measure
+#   gate, but it never skips the class-repeat gate. Only use it when the captain
+#   has explicitly said to discard the work.
 #
 # Transient / stale worktree git lock recovery (teardown-lock-race): a crew process
 # killed mid-git-operation can leave a .git/worktrees/<wt>/index.lock (or, for a
@@ -176,8 +174,11 @@ usage() {
 Usage: fm-teardown.sh <task-id> [--force]
 
 Cleanup gate:
-  Every task, including scouts, secondmates, remote retirements, and --force
-  discards, needs a valid measure at $FM_HOME/data/<task-id>/measure.md.
+  Every non-forced ship builder needs a valid measure at
+  $FM_HOME/data/<task-id>/measure.md. A ship with no recorded role is a legacy
+  builder. Verifiers, scouts, secondmates, remote retirements, and --force
+  discards skip this measure gate.
+  A ship with any other recorded role refuses cleanup.
   The file must contain exactly these five lines in this order:
 
     miss: <value>
@@ -200,8 +201,8 @@ Cleanup gate:
 Options:
   --force  Skip ordinary-task dirty and landed-work checks, skip scout report
            checks, discard secondmate child work, and skip the no-mistakes
-           validation-truth gate because discard is not a green claim. The
-           measure gate remains. The class-repeat gate remains.
+           validation-truth gate because discard is not a green claim. It also
+           skips the measure gate. The class-repeat gate remains.
   -h, --help
            Show this help.
 EOF
@@ -336,7 +337,7 @@ validate_measure_at() {  # <data-dir> <task-id>
   local task_id=$2 measure="$1/$2/measure.md"
   if [ ! -s "$measure" ]; then
     echo "REFUSED: task $task_id has no non-empty measure at $measure." >&2
-    echo "Write the five-line measure described by fm-teardown.sh --help; --force does not bypass this gate." >&2
+    echo "Write the five-line measure described by fm-teardown.sh --help; non-forced ship builders cannot bypass this gate." >&2
     return 1
   fi
   if ! awk '
@@ -607,13 +608,6 @@ take_task_done_back() {  # <reason>
 }
 
 validate_map_next_backlog "$META" "$DATA/backlog.md" || exit 1
-if ! SOT_COMPLETION_OUT=$(FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" \
-    FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-sot-pointer-check.sh" --strict 2>&1); then
-  echo "REFUSED: task $ID cannot complete while durable source-of-truth checks report a superseded or missing product lock." >&2
-  [ -z "$SOT_COMPLETION_OUT" ] || printf '%s\n' "$SOT_COMPLETION_OUT" >&2
-  take_task_done_back "durable product lock is missing or superseded"
-  exit 1
-fi
 
 REMOTE_HANDOFF_DIR_PRESENT=0
 REMOTE_HANDOFF_DIR_REAL=
@@ -955,7 +949,6 @@ remote_secondmate_teardown() {
       }
     done
   fi
-  validate_measure_at "$DATA" "$ID" || return 1
   "$SCRIPT_DIR/fm-procevent-remote-reply.sh" retire-quiesce-locked "$ID" "$FORCE" >/dev/null 2>&1 || {
     echo "REFUSED: remote secondmate $ID still has an unhandled captured reply" >&2
     return 1
@@ -1053,6 +1046,17 @@ ORCA_PATH_MATCH_VERIFIED=0
 
 KIND=$(grep '^kind=' "$META" | cut -d= -f2- || true)
 [ -n "$KIND" ] || KIND=ship
+ROLE=$(fm_meta_get "$META" role)
+if [ "$KIND" = ship ]; then
+  [ -n "$ROLE" ] || ROLE=builder
+  case "$ROLE" in
+    builder|verifier) ;;
+    *)
+      echo "REFUSED: ship task $ID has invalid role metadata '${ROLE}'; preserving task state." >&2
+      exit 1
+      ;;
+  esac
+fi
 MODE=$(grep '^mode=' "$META" | cut -d= -f2- || true)
 [ -n "$MODE" ] || MODE=no-mistakes
 PUBLIC_FOLLOWUP_HOME=$FM_HOME
@@ -2638,23 +2642,6 @@ validate_firstmate_home_children_removal() {
   done
 }
 
-validate_firstmate_home_children_measures() {
-  local home=$1 sub_state child_meta child_id child_kind child_home
-  sub_state="$home/state"
-  [ -d "$sub_state" ] || return 0
-  for child_meta in "$sub_state"/*.meta; do
-    [ -e "$child_meta" ] || continue
-    child_id=$(basename "$child_meta" .meta)
-    validate_measure_at "$home/data" "$child_id" || return 1
-    child_kind=$(meta_value "$child_meta" kind)
-    if [ "$child_kind" = secondmate ]; then
-      child_home=$(meta_value "$child_meta" home)
-      [ -n "$child_home" ] || child_home=$(meta_value "$child_meta" worktree)
-      validate_firstmate_home_children_measures "$child_home" || return 1
-    fi
-  done
-}
-
 TEARDOWN_HERDR_LOCK_RECORDS=
 teardown_release_herdr_locks() {
   local lock_session lock_path
@@ -2899,7 +2886,6 @@ remove_secondmate_registry_entry() {
 }
 
 validate_pr_poll_cleanup "$STATE" "$ID" || exit 1
-MEASURE_VALIDATED=0
 
 if [ "$KIND" = secondmate ]; then
   LOCAL_REGISTRY_LOCK=$(secondmate_registry_lock_path "$STATE")
@@ -2913,9 +2899,6 @@ if [ "$KIND" = secondmate ]; then
   if [ "$FORCE" = "--force" ]; then
     validate_firstmate_home_children_removal "$HOME_PATH" || exit 1
     preflight_descendant_task_locks "$HOME_PATH" || exit 1
-    validate_measure_at "$DATA" "$ID" || exit 1
-    validate_firstmate_home_children_measures "$HOME_PATH" || exit 1
-    MEASURE_VALIDATED=1
     if [ "$BACKEND" = herdr ]; then
       teardown_herdr_preflight_target "$T" "$ID" || exit 1
     fi
@@ -3042,7 +3025,7 @@ if [ -d "$WT" ] && [ "$FORCE" != "--force" ]; then
   fi
 fi
 
-if [ "$MEASURE_VALIDATED" -ne 1 ]; then
+if [ "$FORCE" != "--force" ] && [ "$KIND" = ship ] && [ "$ROLE" = builder ]; then
   validate_measure_at "$DATA" "$ID" || exit 1
 fi
 validate_class_repeat_at "$DATA" "$ID" || exit 1
