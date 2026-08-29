@@ -205,7 +205,7 @@ test_teardown_force_skips_validation_truth() {
   pass "validation-truth: --force teardown skips validation-truth on discard"
 }
 
-test_teardown_force_still_requires_measure() {
+test_teardown_force_skips_measure() {
   local dir out rc
   dir=$(make_task_home td-force-measure no-mistakes)
   prepare_teardown_home "$dir" 'state: failed · source: run-step · failed'
@@ -219,9 +219,10 @@ test_teardown_force_still_requires_measure() {
     "$TEARDOWN" task-a --force 2>&1)
   rc=$?
   set -e
-  [ "$rc" -ne 0 ] || fail "--force teardown skipped the measure gate"
-  assert_contains "$out" 'no non-empty measure' "--force measure refusal missing"
-  pass "validation-truth: --force teardown still requires a measure"
+  [ "$rc" -eq 0 ] || fail "--force teardown did not skip the measure gate: $out"
+  assert_absent "$dir/home/state/task-a.meta" \
+    "--force measure skip left task meta in place"
+  pass "validation-truth: --force teardown skips the measure gate"
 }
 
 write_real_nm_fakebin() {  # <fakebin-dir>
@@ -692,7 +693,7 @@ test_run_step_working_refuses
 test_pr_check_refuses_pane_truth
 test_teardown_non_force_refuses_pane_truth
 test_teardown_force_skips_validation_truth
-test_teardown_force_still_requires_measure
+test_teardown_force_skips_measure
 test_missing_object_lag_allows_validation_truth
 test_diverged_rebase_allows_validation_truth
 test_pr_url_proof_cancelled_run_refuses

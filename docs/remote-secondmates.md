@@ -232,7 +232,8 @@ bin/fm-teardown.sh <id>
 Retirement is executed on the configured host and refuses while the remote home has child work, while the primary has an unfinished backlog outbox, or while a routed reply remains unresolved.
 It closes only the retiring secondmate's panes or `2ndmate-<id>` workspace in `fm-remote`; it never stops the shared session or removes a sibling secondmate's workspace or panes.
 SSH exit 255 preserves both the route and local records because completion is unknown.
-`--force` remains the explicit discard path after the measure gate still passes, and it requires the same captain authority as local secondmate discard; `bin/fm-teardown.sh --help` owns that gate.
+`--force` remains the explicit discard path and requires the same captain authority as local secondmate discard.
+Secondmate retirement does not require a measure; `bin/fm-teardown.sh --help` owns the measure scope.
 No generic remote delete or write surface exists: remote writes are confined to inherited allowlist files and backlog handoff scratch files, and remote home removal is reachable only through guarded secondmate retirement.
 
 ## Verification
