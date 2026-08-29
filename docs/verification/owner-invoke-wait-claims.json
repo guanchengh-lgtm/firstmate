@@ -3,7 +3,7 @@
   "size_reason": "Wait detector on durable records. Widen the landed go-gate / ready-action owner. Full adversary rounds are a later ship if the light refuse is trusted.",
   "shape": "A node owns a next act. This seat proceeds without starting that act.",
   "form": "refuse-hook",
-  "structure": "bin/fm-owner-invoke-wait-check.sh on map_next and date-cleared holds, and production ships[] gather for kind=ship metas whose session= matches state/.lock, with Stop ladder on data/<ov>/report.md then live endpoint then refuse. Brief and explicit evaluation retain report-gated data/<ov>/skills for plan-eng-review only when durable ov_harness is claude/claude*. Split transcript windows stay as gather holes. Does not parse brief-body Role or Delivery contract lines.",
+  "structure": "bin/fm-owner-invoke-wait-check.sh reads one tasks-axi ready --include-held listing per held gather and parses only id plus the final hold_until field. It evaluates map_next and date-cleared holds, then gathers production ships[] for kind=ship metas whose session= matches state/.lock, with a Stop ladder on data/<ov>/report.md then live endpoint then refuse. fm-spawn preserves the distinct-worker check before explicit --brief --ov evaluation, which requires a completed report and data/<ov>/skills containing plan-eng-review when durable ov_harness is claude/claude*. The explicit checks apply to builder and verifier ships. Split transcript windows stay as gather holes. It does not parse brief-body Role or Delivery contract lines.",
   "rules": [
     "R-held-locked-next",
     "R-ov-missing",
@@ -11,6 +11,7 @@
   ],
   "instances": [
     "Started Spec compile-check with no separate OV report. The builder's own plan note is not OV.",
+    "A ship reached spawn with a live OV but no completed report.",
     "A ship brief reached spawn while its Claude OV instructions never loaded plan-eng-review."
   ],
   "fixture": "reconstructed-historical",
@@ -21,9 +22,11 @@
   },
   "regression": {
     "test": "tests/fm-owner-invoke-wait-check.test.sh",
-    "exact_counts": [1]
+    "exact_counts": [1],
+    "held_gather_test": "tests/fm-turnend-guard.test.sh",
+    "spawn_test": "tests/fm-spawn-dispatch-profile.test.sh"
   },
-  "ci_gate": ".github/workflows/ci.yml runs bin/fm-test-run.sh --check-coverage and all portable lanes; the test inventory includes tests/fm-owner-invoke-wait-check.test.sh and tests/fm-turnend-guard.test.sh",
+  "ci_gate": ".github/workflows/ci.yml runs bin/fm-test-run.sh --check-coverage and all portable lanes; the test inventory includes tests/fm-owner-invoke-wait-check.test.sh, tests/fm-turnend-guard.test.sh, and tests/fm-spawn-dispatch-profile.test.sh",
   "structural_failure_exit": 2,
   "findings_exit": 1,
   "adversary_rounds": 0,
@@ -33,7 +36,7 @@
     "A real captain hold is invisible.",
     "Empty or placeholder task fields skip ship rules.",
     "Builder self-review is not OV.",
-    "ov= without report.md is not a review while the worker is gone.",
+    "At turn end, ov= without report.md passes only while the OV agent is alive; an explicit ship spawn never accepts it.",
     "Non-Claude or missing ov_harness skips brief or explicit R-skill-unloaded evaluation because those harnesses write no skills record."
   ],
   "skipped": [

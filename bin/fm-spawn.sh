@@ -12,8 +12,11 @@
 #   fm-teardown.sh refuses completion until that id exists in the active backlog
 #   as queued, in flight, or done, so a landed blocker cannot invent a new go gate.
 #   --ov records a distinct already-spawned outside-voice worker as ov= in
-#   ship meta. A filled ship Task requires it; builder self-review is not OV.
-#   bin/fm-owner-invoke-wait-check.sh owns the rule. --ov is ship-only. Spawn
+#   ship meta. Every supplied --ov must still have worker metadata and a
+#   completed report before any builder or verifier launch. A Claude OV must
+#   also have recorded plan-eng-review. A filled builder Task requires --ov;
+#   builder self-review is not OV. bin/fm-owner-invoke-wait-check.sh owns these
+#   rules. --ov is ship-only. Spawn
 #   writes session=<state/.lock contents> into meta so turn-end can gather
 #   ships this session started, and ov_harness=<harness= from state/<ov>.meta>
 #   so the skill-load rule can honor the non-Claude gap after OV teardown.
@@ -1842,8 +1845,9 @@ if [ "$KIND" = ship ]; then
     echo "notice: $ID ships mode=$MODE while the standing posture for $PROJ_NAME is $STANDING_MODE - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state" >&2
   fi
 
-  # After role/mode markers agree: a filled ship Task needs a distinct OV worker.
-  # Role-marker refusals must win first so prose Role: lines never look accepted.
+  # After role/mode markers agree, a filled builder Task needs a distinct OV
+  # worker. Every explicit verifier OV gets the same worker check. Role-marker
+  # refusals must win first so prose Role: lines never look accepted.
   if [ -x "$FM_ROOT/bin/fm-owner-invoke-wait-check.sh" ] \
     && { [ "${ROLE:-}" != verifier ] || [ -n "${OV:-}" ]; }; then
     ov_task=$(awk '
@@ -1878,6 +1882,8 @@ if [ "$KIND" = ship ]; then
       exit 2
     }
   fi
+  # Preserve the distinct-worker check above, then require a completed report
+  # and the Claude skill record for every ship role with an explicit OV.
   if [ -x "$FM_ROOT/bin/fm-owner-invoke-wait-check.sh" ] && [ -n "${OV:-}" ]; then
     if ! ov_check_out=$("$FM_ROOT/bin/fm-owner-invoke-wait-check.sh" \
       --brief "$BRIEF" --ov "$OV" 2>&1); then

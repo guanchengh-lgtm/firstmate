@@ -10,7 +10,7 @@
 #          [--rules <id,id>]
 #        fm-owner-invoke-wait-check.sh [--claude] [--pretool]
 #
-# --ov supplies the pre-publication OV record for a production ship spawn.
+# --ov supplies the completed pre-publication OV record for a production ship spawn.
 # Without it, --brief reads ov= and durable ov_harness= from state/<ship>.meta.
 # --input and --brief are required in CLI modes. A missing or empty file,
 # claims that are not a JSON object, unknown rule ids, empty --rules, and
@@ -60,6 +60,10 @@
 # do not clear the node.
 # plan-eng-review requires a separate OV worker. The builder's own plan note
 # is not OV. Split transcript windows stay as gather holes.
+# Hook-mode held gather calls tasks-axi ready --include-held once. It reads
+# only the first id field and the final hold_until field from each held row;
+# quoted commas or escaped newlines in intermediate fields cannot alter them.
+# It never calls tasks-axi show for individual held tickets.
 #
 # Production gather (hook mode, non-PreToolUse): every state/*.meta with
 # kind=ship whose session= equals the current state/.lock contents (ships
@@ -75,9 +79,10 @@
 # passes; dead|missing fails; only unknown (zellij/orca/unreadable) falls
 # back to target_exists so unverified backends do not wedge. A shell husk
 # after the agent exits is not in-progress.
-# A gathered ship with no ov= passes at turn-end; spawn-time R-ov-missing is
-# the empty-ov start gate. Spawn-time brief evaluation requires the OV report
-# and retains R-skill-unloaded. fm-spawn.sh writes session= and ov_harness=
+# A gathered ship with no ov= passes at turn-end. At spawn, fm-spawn.sh runs
+# the distinct-worker R-ov-missing check first for every explicit --ov, then
+# requires the OV report and retains R-skill-unloaded for every ship role.
+# fm-spawn.sh writes session= and ov_harness=
 # (from the OV worker's harness= at ship spawn) and exports FM_TASK_ID/FM_HOME; Claude
 # PostToolUse Skill (crewmate settings.local.json absolute $FM_ROOT path, plus
 # tracked settings.json) runs bin/fm-skill-load-record.sh to append normalized
