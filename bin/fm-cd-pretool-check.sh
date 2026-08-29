@@ -163,7 +163,11 @@ POLICY="$FM_ROOT/bin/fm-cd-command-policy.mjs"
 command -v node >/dev/null 2>&1 || exit 0
 [ -f "$POLICY" ] || exit 0
 
-POLICY_OUTPUT=$(node "$POLICY" --command "$CMD" 2>/dev/null) || exit 0
+# Canonical resolution owns only the active-home carveout. A failure leaves the
+# value empty so the policy keeps every persistent cwd change denied instead of
+# turning a resolver failure into a broad transport allow.
+ACTIVE_HOME=$(CDPATH='' cd -- "${FM_HOME:-$FM_ROOT}" 2>/dev/null && pwd -P) || ACTIVE_HOME=
+POLICY_OUTPUT=$(node "$POLICY" --active-home "$ACTIVE_HOME" --command "$CMD" 2>/dev/null) || exit 0
 [ -n "$POLICY_OUTPUT" ] || exit 0
 
 TAB=$(printf '\t')
