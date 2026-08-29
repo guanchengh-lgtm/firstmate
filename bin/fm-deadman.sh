@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Probe one Firstmate watcher's liveness from an installed launchd copy.
+# Probe one Firstmate watcher's liveness while task or Relay work is live.
 #
 # The monitored FM_HOME is read-only probe input. All deadman configuration and
 # state live beside this installed script. Normal healthy and unhealthy probe

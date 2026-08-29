@@ -6,7 +6,8 @@ It runs a stable installed copy outside the git checkout and never starts, stops
 ## Guarantee
 
 The probe reads one configured `FM_HOME`.
-It checks watcher health only while an ordinary `state/*.meta` file or `state/x-watch.check.sh` exists.
+The probe treats an ordinary `state/*.meta` file or `state/x-watch.check.sh` as live work.
+It checks watcher health only while live work exists and checks again immediately before a page.
 An idle home stays silent when its watcher beacon, state directory, or home is stale, missing, or unreadable.
 An idle observation clears an unfinished stale confirmation, so new live work always starts with a new first sample.
 The canary notification path does not require live work.
