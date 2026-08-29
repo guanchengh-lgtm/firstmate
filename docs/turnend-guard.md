@@ -18,7 +18,6 @@ When work, a process-event source, or Relay polling needs supervision at that bo
 Separately, the same script refuses ending a turn as prose-only waiting when a ready queued ticket has no worker owner; `bin/fm-turnend-guard.sh`'s header owns that ready-action contract.
 The same family refuses a held locked next act with no worker, an owner-invoke node still open after the captain's next message with no matching artifact, and session-scoped durable ship records whose OV review worker is gone without a report; `bin/fm-owner-invoke-wait-check.sh` owns those rules.
 It does not hunt free English. Split transcript windows stay as gather holes.
-It also refuses ending a turn on an unchecked yen126/TradingView login or session-death block from a `tradingview-tools` task; that same header owns the session-diagnosis contract.
 The mid-turn pull warning uses the model-aware supervision verdict described below, while the turn-end guard keeps the PID-strict watcher predicate.
 The guard remains a backstop; [`watcher-continuity.md`](watcher-continuity.md) owns normal continuity.
 
@@ -31,13 +30,12 @@ An unmarked checkout or invalid marker falls through to the git-dir check.
 That check keeps crewmate and scout linked worktrees inert for supervision because their git dir differs from their git common dir.
 It also requires `AGENTS.md`, `bin/`, and the effective state directory.
 
-For an in-scope primary, before the supervision check, the guard runs `bin/fm-sot-speech-check.sh` against `speech-claim:` lines on ordinary `data/decisions/*.md` locks, then `bin/fm-answer-lock-check.sh` against `data/wf-map2-v2/tickets/*.md`, then refuses an unchecked yen126/TradingView login or session-death block from a `tradingview-tools` task, then refuses a ready queued ticket that still lacks matching `state/<id>.meta` worker ownership, then runs `bin/fm-owner-invoke-wait-check.sh`.
+For an in-scope primary, before the supervision check, the guard runs `bin/fm-sot-speech-check.sh` against `speech-claim:` lines on ordinary `data/decisions/*.md` locks, then `bin/fm-answer-lock-check.sh` against `data/wf-map2-v2/tickets/*.md`, then refuses a ready queued ticket that still lacks matching `state/<id>.meta` worker ownership, then runs `bin/fm-owner-invoke-wait-check.sh`.
 The speech helper's header owns the `speech-claim:` lock rows, read window, declared-unread escape, fail-open cases, and residual coverage.
 The answer-lock helper's header owns gather, rules, the `## Answer` lock-token seat, the two escapes, and residual coverage.
 The owner-invoke helper's header owns the single-listing held gather, held locked-next, owner-node-open one-message-late completion, the header node table, session-scoped ship gather (`session=` matching `state/.lock`), the Stop ladder on `data/<ov>/report.md` then live OV *agent* (not bare pane husk) then refuse, fail-closed CLI input, and residual coverage.
 Spawn checks keep the distinct-worker rule first for each explicit `--ov`, then require a completed report and the Claude plan-eng-review skill record for builders and verifiers.
 Claude crewmate `settings.local.json` wires absolute-path PostToolUse Skill recording through `bin/fm-skill-load-record.sh`.
-`bin/fm-turnend-guard.sh`'s header owns the yen126 session-diagnosis contract and still blocks under Claude `--claude` when `stop_hook_active` is true.
 A spawn or steer leaves that metadata; recording a concrete backlog blocker removes the ticket from `tasks-axi ready`.
 The ready-action check and the owner-invoke held-locked-next gather fail open when the tasks-axi backend cannot be read, honor `config/backlog-backend=manual`, have no skip flag, and still block under Claude `--claude` when `stop_hook_active` is true.
 
@@ -84,7 +82,7 @@ If `jq` is missing, the guard exits 0 because it cannot safely read loop-guard f
 
 Claude and Codex can block a Stop directly with exit status 2 and stderr.
 Both payloads carry `stop_hook_active`.
-In the default Codex mode, a true value lets the second stop finish after one forced continuation for every predicate that runs after that allow, including SoT speech, answer-time lock, ready-action, owner-invoke wait, session-diagnosis, and supervision.
+In the default Codex mode, a true value lets the second stop finish after one forced continuation for every predicate that runs after that allow, including SoT speech, answer-time lock, ready-action, owner-invoke wait, and supervision.
 
 Claude runs the guard with `--claude`, which ignores `stop_hook_active` and cooperates with the Stop-owned auto-arm.
 Claude Code sets `stop_hook_active=true` on every stop after any stop-hook continuation, including `asyncRewake` rewakes, which re-opened the 2026-07-21 blind window under the default one-shot behavior.
@@ -169,7 +167,7 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 
 ## Regression coverage
 
-`tests/fm-turnend-guard.test.sh` covers the predicate, main and secondmate primary scope, child-worktree exclusion, treehouse-leased linked secondmate inclusion, `FM_HOME` and `FM_STATE_OVERRIDE` precedence, the ready-action refusal for ownerless queued tickets, every-ready-id checking, matching-worker acceptance, Claude `stop_hook_active` non-bypass of ready-action, answer-time lock refuse after primary scope, its Codex loop-guard allow, Claude non-bypass, crewmate inertness, held locked-next listing parsing and call count, open owner-node refusals, the TradingView session-diagnosis refusal for missing evidence and failing checker findings, passing-checker acceptance, unrelated-blocker negative controls, Claude `stop_hook_active` non-bypass of that session gate, the live-lock and fresh-beacon guard predicate, the cooperative `--claude` claim wait, monotonic failed-epoch progression, bounded attended fail-open, post-alarm continuation suppression, positive recovery reset, Pi logical-run latching, missing-`jq` behavior, all five primary registrations, Grok native and legacy selection, typed field precedence, malformed input, and exactly-one-path safety.
+`tests/fm-turnend-guard.test.sh` covers the predicate, main and secondmate primary scope, child-worktree exclusion, treehouse-leased linked secondmate inclusion, `FM_HOME` and `FM_STATE_OVERRIDE` precedence, the ready-action refusal for ownerless queued tickets, every-ready-id checking, matching-worker acceptance, Claude `stop_hook_active` non-bypass of ready-action, answer-time lock refuse after primary scope, its Codex loop-guard allow, Claude non-bypass, crewmate inertness, held locked-next listing parsing and call count, open owner-node refusals, the live-lock and fresh-beacon guard predicate, the cooperative `--claude` claim wait, monotonic failed-epoch progression, bounded attended fail-open, post-alarm continuation suppression, positive recovery reset, Pi logical-run latching, missing-`jq` behavior, all five primary registrations, Grok native and legacy selection, typed field precedence, malformed input, and exactly-one-path safety.
 `tests/fm-answer-lock-check.test.sh` covers the Map 2 answer-time lock matcher rules, `## Answer` lock-token seat, undated close, pick-still-open, and absent-gather inertness.
 `tests/fm-owner-invoke-wait-check.test.sh` covers the helper's fail-closed input, exact-count fixtures, held locked-next, owner-node-open one-message-late refusal with no home file, same-turn owner-node acceptance, duplicate-token OR-merge and recursive `**` artifact credit, slash-without-command-name non-arming, malformed test-override registry structural failure, session-scoped ship gather, live-agent-no-report pass, husk-pane-without-report refuse, torn-down workers with reports, brief-mode Claude skills refusal, skill-load recorder normalization, and crewmate Skill PostToolUse wiring.
 `tests/fm-spawn-dispatch-profile.test.sh` covers spawn refusal for a missing worker record, a live OV without a report, and a Claude OV without plan-eng-review, including explicit verifier OVs.
