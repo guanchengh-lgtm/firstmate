@@ -1844,7 +1844,8 @@ if [ "$KIND" = ship ]; then
 
   # After role/mode markers agree: a filled ship Task needs a distinct OV worker.
   # Role-marker refusals must win first so prose Role: lines never look accepted.
-  if [ "${ROLE:-}" != verifier ] && [ -x "$FM_ROOT/bin/fm-owner-invoke-wait-check.sh" ]; then
+  if [ -x "$FM_ROOT/bin/fm-owner-invoke-wait-check.sh" ] \
+    && { [ "${ROLE:-}" != verifier ] || [ -n "${OV:-}" ]; }; then
     ov_task=$(awk '
       /^# Task[[:space:]]*$/ { in_task = 1; next }
       in_task && /^# / { exit }
@@ -1877,8 +1878,7 @@ if [ "$KIND" = ship ]; then
       exit 2
     }
   fi
-  if [ "${ROLE:-}" != verifier ] && [ -x "$FM_ROOT/bin/fm-owner-invoke-wait-check.sh" ] \
-    && [ -n "${OV:-}" ]; then
+  if [ -x "$FM_ROOT/bin/fm-owner-invoke-wait-check.sh" ] && [ -n "${OV:-}" ]; then
     if ! ov_check_out=$("$FM_ROOT/bin/fm-owner-invoke-wait-check.sh" \
       --brief "$BRIEF" --ov "$OV" 2>&1); then
       printf '%s\n' "$ov_check_out" >&2

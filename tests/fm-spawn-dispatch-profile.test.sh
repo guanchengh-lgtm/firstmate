@@ -1140,6 +1140,49 @@ test_role_verifier_encodes_verifier_brief() {
   pass "fm-spawn: --role verifier encodes verifier-brief.md and records role=verifier"
 }
 
+test_role_verifier_enforces_explicit_ov() {
+  local rec id out status
+  id=profile-role-verifier-missing-ov-z27
+  rec=$(make_spawn_case profile-role-verifier-missing-ov claude "$id")
+  read_case_record "$rec"
+  printf '%s\n' 'Role: verifier' 'Delivery contract: mode=no-mistakes' '# Task' 'verify the task' \
+    > "$HOME_DIR/data/$id/verifier-brief.md"
+  printf '%s\n' verifier > "$HOME_DIR/data/$id/verifier-role"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --ov spec-compile-check-ov \
+    --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  [ "$status" -ne 0 ] || fail "verifier spawn accepted a missing OV worker"
+  assert_contains "$out" 'no separate OV worker' \
+    "verifier OV refusal did not preserve the worker requirement"
+  assert_absent "$HOME_DIR/state/$id.meta" \
+    "verifier missing OV refusal wrote task metadata"
+  [ ! -s "$LAUNCH_LOG" ] || fail "verifier missing OV refusal still launched an endpoint"
+
+  id=profile-role-verifier-unloaded-ov-z28
+  rec=$(make_spawn_case profile-role-verifier-unloaded-ov claude "$id")
+  read_case_record "$rec"
+  printf '%s\n' 'Role: verifier' 'Delivery contract: mode=no-mistakes' '# Task' 'verify the task' \
+    > "$HOME_DIR/data/$id/verifier-brief.md"
+  printf '%s\n' verifier > "$HOME_DIR/data/$id/verifier-role"
+  printf '%s\n' 'kind=scout' 'harness=claude' > "$HOME_DIR/state/spec-compile-check-ov.meta"
+  mkdir -p "$HOME_DIR/data/spec-compile-check-ov"
+  printf 'OV complete\n' > "$HOME_DIR/data/spec-compile-check-ov/report.md"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --ov spec-compile-check-ov \
+    --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  [ "$status" -ne 0 ] || fail "verifier spawn accepted a Claude OV without plan-eng-review"
+  assert_contains "$out" 'R-skill-unloaded-plan-eng-review' \
+    "verifier spawn did not apply the brief skill rule"
+  assert_absent "$HOME_DIR/state/$id.meta" \
+    "verifier unloaded skill refusal wrote task metadata"
+  [ ! -s "$LAUNCH_LOG" ] || fail "verifier unloaded skill refusal still launched an endpoint"
+  pass "fm-spawn: verifier ships enforce explicit OV worker and skill rules"
+}
+
 test_no_profile_keeps_claude_profile_defaults
 test_non_cursor_launch_clears_inherited_cursor_markers
 test_relative_home_overrides_launch_with_absolute_cross_process_paths
@@ -1175,5 +1218,6 @@ test_claude_omits_config_dir_prefix_when_unset
 test_non_claude_harness_ignores_config_dir
 test_active_dispatch_profile_does_not_block_secondmate_launch
 test_role_verifier_encodes_verifier_brief
+test_role_verifier_enforces_explicit_ov
 
 echo "# all fm-spawn-dispatch-profile tests passed"
