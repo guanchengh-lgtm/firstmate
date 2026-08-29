@@ -1,0 +1,16 @@
+Firstmate cd-guard end-user transport transcript
+Allowed returns to the canonical active home:
+adapter=codex    case=absolute               observed=ALLOW exit=0 stdout=<empty> stderr=<empty>
+adapter=claude   case=quoted                 observed=ALLOW exit=0 stdout=<empty> stderr=<empty>
+adapter=grok     case=normalized             observed=ALLOW exit=0 stdout=<empty> stderr=<empty>
+adapter=opencode case=cd-double-dash         observed=ALLOW exit=0 stdout=<empty> stderr=<empty>
+adapter=pi       case=symlink                observed=ALLOW exit=0 stdout=<empty> stderr=<empty>
+
+Denied persistent directory changes:
+adapter=codex    case=other-absolute         observed=DENY  exit=2 reason=persistent-cd stdout.decision=deny stderr.permissionDecision=deny
+adapter=claude   case=pushd-active-home      observed=DENY  exit=2 reason=persistent-cd stdout.decision=<empty> stderr.permissionDecision=deny
+adapter=grok     case=popd                   observed=DENY  exit=2 reason=persistent-cd stdout.decision=deny stderr.permissionDecision=deny
+adapter=opencode case=parent-relative        observed=DENY  exit=2 reason=persistent-cd stdout.decision=deny stderr.permissionDecision=deny
+adapter=pi       case=resolver-failure       observed=DENY  exit=2 reason=persistent-cd stdout.decision=deny stderr.permissionDecision=deny
+
+All observed results matched the required policy.
