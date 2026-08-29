@@ -55,22 +55,13 @@
 # worktrees are exempt. It must therefore scope itself at runtime to a real
 # primary checkout - the main home or a genuinely marked secondmate home - and
 # stay a silent, fast no-op inside child task worktrees.
-# Spec compile is the exception to that skip: bin/fm-spec-compile-stop-check.sh
-# runs before primary-scope so a child firstmate worktree that wrote Map 2
-# spec, tickets, or keep-list files cannot end while the matcher is red.
-# That adapter's header owns write detection and home derivation from the
-# written path; it never uses FM_HOME as an implicit compile home.
-# The compile call is also before the Codex/Grok stop_hook_active allow below,
-# so a still-red this-turn write can exit 2 again on the bounded continuation;
-# docs/turnend-guard.md Known residual gap owns that seat.
-#
 # Loop-guard, codex/Grok (default) mode: never block twice in the same turn for
 # every predicate after the allow (SoT speech, answer-time lock, ready-action,
 # owner-invoke wait, session-diagnosis, supervision). Codex uses
 # stop_hook_active and Grok uses stopHookActive; typed
 # camel-case takes precedence when both spellings are present. A true value
 # means the current stop attempt already follows a block, so those later
-# predicates always allow it. Spec compile is the seated exception above.
+# predicates always allow it.
 # Passive harness adapters provide their own one-follow-up guard before calling
 # this script.
 # That bounds those harnesses to at most one forced continuation per turn for
@@ -138,19 +129,6 @@ done
 PAYLOAD=$(cat 2>/dev/null || true)
 [ -n "$PAYLOAD" ] || exit 0
 
-# Spec compile refuse is independent of primary-scope: compile scouts run in
-# child worktrees, and defaulting --home to FM_HOME/FM_ROOT would either miss
-# the operating spec or freeze those scouts on empty worktree input.
-if [ -x "$SCRIPT_DIR/fm-spec-compile-stop-check.sh" ]; then
-  if [ "$CLAUDE_MODE" -eq 1 ]; then
-    printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-spec-compile-stop-check.sh" --claude
-  else
-    printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-spec-compile-stop-check.sh"
-  fi
-  compile_rc=$?
-  [ "$compile_rc" -ne 2 ] || exit 2
-fi
-
 # jq is the repo's established JSON dependency (bin/fm-x-poll.sh uses the same
 # "missing jq -> silent no-op" degrade). Without it we cannot safely read the
 # loop-guard field, so we must never block - fail open, not noisy.
@@ -208,8 +186,8 @@ if [ -x "$SCRIPT_DIR/fm-sot-speech-check.sh" ]; then
 fi
 
 # Answer-time lock: Map 2 ticket status must agree with dated lock files.
-# Child scouts stay inert because this runs after primary-scope, unlike
-# spec compile. Same loop-guard seat as SoT speech. Always --claude so
+# Child scouts stay inert because this runs after primary-scope.
+# Same loop-guard seat as SoT speech. Always --claude so
 # findings are Stop exit 2; bin/fm-answer-lock-check.sh owns gather, rules,
 # and the two escapes.
 if [ -x "$SCRIPT_DIR/fm-answer-lock-check.sh" ]; then
