@@ -942,6 +942,9 @@ test_spawn_refuses_filled_ship_without_ov() {
   brief="$HOME_DIR/data/$id/brief.md"
   printf '# Task\nStart Spec compile-check. The next act is obvious.\n\n# Setup\nfixture\nDelivery contract: mode=no-mistakes\n' > "$brief"
   printf '%s\n' 'kind=scout' 'harness=claude' > "$HOME_DIR/state/spec-compile-check-ov.meta"
+  mkdir -p "$HOME_DIR/data/spec-compile-check-ov"
+  printf 'OV complete\n' > "$HOME_DIR/data/spec-compile-check-ov/report.md"
+  printf 'plan-eng-review\n' > "$HOME_DIR/data/spec-compile-check-ov/skills"
   printf '7777\n' > "$HOME_DIR/state/.lock"
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
     "$id" "$PROJ_DIR" --ov spec-compile-check-ov)
@@ -961,12 +964,32 @@ test_spawn_refuses_filled_ship_without_ov() {
   assert_grep 'export FM_HOME=' "$LAUNCH_LOG.exports" \
     "spawn did not export FM_HOME into the worker pane"
 
+  id=profile-ship-ov-unloaded-z25
+  rec=$(make_spawn_case profile-ship-ov-unloaded claude "$id")
+  read_case_record "$rec"
+  brief="$HOME_DIR/data/$id/brief.md"
+  printf '# Task\nStart Spec compile-check. The next act is obvious.\n\n# Setup\nfixture\nDelivery contract: mode=no-mistakes\n' > "$brief"
+  printf '%s\n' 'kind=scout' 'harness=claude' > "$HOME_DIR/state/spec-compile-check-ov.meta"
+  mkdir -p "$HOME_DIR/data/spec-compile-check-ov"
+  printf 'OV complete\n' > "$HOME_DIR/data/spec-compile-check-ov/report.md"
+  out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" --ov spec-compile-check-ov)
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn accepted a Claude OV without plan-eng-review"
+  assert_contains "$out" 'R-skill-unloaded-plan-eng-review' \
+    "spawn refusal did not name the exact unloaded skill rule"
+  assert_absent "$HOME_DIR/state/$id.meta" \
+    "unloaded skill refusal wrote task metadata"
+  [ ! -s "$LAUNCH_LOG" ] || fail "unloaded skill refusal still launched an endpoint"
+
   id=profile-ship-ov-codex-z24
   rec=$(make_spawn_case profile-ship-ov-codex claude "$id")
   read_case_record "$rec"
   brief="$HOME_DIR/data/$id/brief.md"
   printf '# Task\nStart Spec compile-check. The next act is obvious.\n\n# Setup\nfixture\nDelivery contract: mode=no-mistakes\n' > "$brief"
   printf '%s\n' 'kind=scout' 'harness=codex' > "$HOME_DIR/state/spec-compile-check-ov.meta"
+  mkdir -p "$HOME_DIR/data/spec-compile-check-ov"
+  printf 'OV complete\n' > "$HOME_DIR/data/spec-compile-check-ov/report.md"
   printf '8888\n' > "$HOME_DIR/state/.lock"
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
     "$id" "$PROJ_DIR" --ov spec-compile-check-ov)

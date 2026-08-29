@@ -5,11 +5,13 @@
 # Usage: fm-owner-invoke-wait-check.sh --input <turn.json>
 #          [--expect-rule <rule-id> --expect-count <count>]
 #          [--rules <id,id>]
-#        fm-owner-invoke-wait-check.sh --brief <ship-brief.md>
+#        fm-owner-invoke-wait-check.sh --brief <ship-brief.md> [--ov <task-id>]
 #          [--expect-rule <rule-id> --expect-count <count>]
 #          [--rules <id,id>]
 #        fm-owner-invoke-wait-check.sh [--claude] [--pretool]
 #
+# --ov supplies the pre-publication OV record for a production ship spawn.
+# Without it, --brief reads ov= and durable ov_harness= from state/<ship>.meta.
 # --input and --brief are required in CLI modes. A missing or empty file,
 # claims that are not a JSON object, unknown rule ids, empty --rules, and
 # --expect-count 0 are structural failures, exit 2. Findings exit 1. Clean
@@ -111,6 +113,8 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 
 input=
 brief=
+brief_ov_arg=
+brief_ov_arg_set=0
 expect_rule=
 expect_count=
 rules=
@@ -155,6 +159,12 @@ while [ "$#" -gt 0 ]; do
       brief=$2
       shift 2
       ;;
+    --ov)
+      [ "$#" -ge 2 ] || structural "--ov requires a task id"
+      brief_ov_arg=$2
+      brief_ov_arg_set=1
+      shift 2
+      ;;
     --expect-rule)
       [ "$#" -ge 2 ] || structural "--expect-rule requires a rule id"
       expect_rule=$2
@@ -185,6 +195,11 @@ done
 
 if [ -n "$input" ] && [ -n "$brief" ]; then
   structural "--input and --brief cannot be combined"
+fi
+
+if [ "$brief_ov_arg_set" -eq 1 ]; then
+  [ -n "$brief" ] || structural "--ov requires --brief"
+  [ -n "$brief_ov_arg" ] || structural "--ov requires a non-empty task id"
 fi
 
 if [ -z "$input" ] && [ -z "$brief" ]; then
@@ -451,16 +466,19 @@ if [ -n "$brief" ]; then
   brief_dir=$(CDPATH='' cd -- "$(dirname -- "$brief")" && pwd -P) || structural "brief directory unreadable"
   brief_id=$(basename "$brief_dir")
   turn="$TMP_DIR/turn.json"
-  brief_ov=""
+  brief_ov="$brief_ov_arg"
   brief_meta="$STATE/$brief_id.meta"
-  if [ -f "$brief_meta" ] && [ ! -L "$brief_meta" ]; then
+  if [ -z "$brief_ov" ] && [ -f "$brief_meta" ] && [ ! -L "$brief_meta" ]; then
     brief_ov=$(sed -n 's/^ov=//p' "$brief_meta" 2>/dev/null | tail -1)
   fi
   brief_ov_report=false
   brief_ov_alive=false
   brief_skills='[]'
   brief_ov_harness=""
-  if [ -f "$brief_meta" ] && [ ! -L "$brief_meta" ]; then
+  if [ "$brief_ov_arg_set" -eq 1 ] && [ -f "$STATE/$brief_ov.meta" ] \
+    && [ ! -L "$STATE/$brief_ov.meta" ]; then
+    brief_ov_harness=$(sed -n 's/^harness=//p' "$STATE/$brief_ov.meta" 2>/dev/null | tail -1)
+  elif [ -f "$brief_meta" ] && [ ! -L "$brief_meta" ]; then
     brief_ov_harness=$(sed -n 's/^ov_harness=//p' "$brief_meta" 2>/dev/null | tail -1)
   fi
   if [ -n "$brief_ov" ]; then
