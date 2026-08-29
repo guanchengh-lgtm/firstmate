@@ -1,0 +1,16 @@
+
+$ fm-spawn evidence-live-no-report <project> --ov evidence-ov --mode no-mistakes --role builder
+R-ov-missing-report: evidence-live-no-report OV evidence-ov report is required before ship spawn
+exit=1
+
+$ fm-spawn evidence-skill-unloaded <project> --ov evidence-ov --mode no-mistakes --role builder
+R-skill-unloaded-plan-eng-review: evidence-skill-unloaded instructions never loaded plan-eng-review
+exit=1
+
+$ fm-spawn evidence-complete-ov <project> --ov evidence-ov --mode no-mistakes --role builder
+spawned evidence-complete-ov harness=claude kind=ship mode=no-mistakes yolo=off role=builder window=firstmate:fm-evidence-complete-ov worktree=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-dispatch-profile.5pknDJ/complete-ov/wt
+exit=0
+
+$ fm-spawn evidence-torn-down-ov <project> --ov evidence-ov --mode no-mistakes --role builder
+REFUSED: ship evidence-torn-down-ov has no separate OV worker; builder self-review is not OV. Spawn the OV worker first and pass --ov <id>.
+exit=1

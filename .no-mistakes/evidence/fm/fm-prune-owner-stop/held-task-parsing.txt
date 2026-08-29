@@ -1,0 +1,24 @@
+$ fm-turnend-guard.sh  # dated hold, quoted commas, and escaped newline
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  OWNER-OWNED NEXT ACT WAS NOT STARTED
+●  R-held-locked-next-unowned: dated-slice is a locked next act still held without a worker
+●  Start that act now. A yes-ask or omission is not done.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+exit=2
+
+$ fm-turnend-guard.sh  # dated hold now owned; map-next hold remains
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  OWNER-OWNED NEXT ACT WAS NOT STARTED
+●  R-held-locked-next-unowned: map-s2 is a locked next act still held without a worker
+●  Start that act now. A yes-ask or omission is not done.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+exit=2
+
+tasks-axi calls:
+ready --file <backlog>
+ready --file <backlog> --include-held
+ready --file <backlog>
+ready --file <backlog> --include-held
+
+include-held calls=2
+show calls=0

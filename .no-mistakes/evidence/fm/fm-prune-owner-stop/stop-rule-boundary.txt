@@ -1,0 +1,7 @@
+$ fm-owner-invoke-wait-check.sh --input <turn.json>
+
+exit=0
+
+$ fm-owner-invoke-wait-check.sh --input <turn.json> --rules R-skill-unloaded
+R-skill-unloaded-plan-eng-review: ship-1 instructions never loaded plan-eng-review
+exit=1
