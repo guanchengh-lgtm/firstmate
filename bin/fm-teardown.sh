@@ -29,6 +29,7 @@
 # $FM_HOME/data/<task-id>/measure.md. A ship with no recorded role is a legacy
 # builder. Verifiers, scouts, secondmates, remote retirements, and --force
 # discards skip the measure grammar gate.
+# A ship with any other recorded role refuses cleanup.
 # The record has exactly five lines in this order: miss:, number:, pair:, pick:,
 # none:. Either the first four values are all non-empty and none: is empty, or
 # the first four values are empty and none: gives a non-empty reason. This
@@ -177,6 +178,7 @@ Cleanup gate:
   $FM_HOME/data/<task-id>/measure.md. A ship with no recorded role is a legacy
   builder. Verifiers, scouts, secondmates, remote retirements, and --force
   discards skip this measure gate.
+  A ship with any other recorded role refuses cleanup.
   The file must contain exactly these five lines in this order:
 
     miss: <value>
