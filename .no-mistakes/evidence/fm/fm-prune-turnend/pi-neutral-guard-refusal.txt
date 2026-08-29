@@ -1,0 +1,16 @@
+Pi version: 0.84.4
+Interface: interactive terminal session
+Guard follow-ups: 1
+Assistant turns: 2
+
+Command:
+FM_HOME=../home FM_ROOT_OVERRIDE=. bash -lc 'printf "%s\n" "$$" > "$FM_HOME/state/.lock"; printf "%s\n" "task=evidence" > "$FM_HOME/state/evidence.meta"; exec pi --approve --session-dir ../sessions --no-context-files --no-extensions --no-skills -e "/Users/AI/.no-mistakes/worktrees/edb446952c22/01M16VB8W5DHJEQ7C16WT46XBB/.pi/extensions/fm-primary-turnend-guard.ts" --tools read --model xai/grok-4.3 --thinking low "Reply exactly DONE."'
+
+Observed operational follow-up:
+⁣FIRSTMATE_OP: v1 turn-end-guard: TURN-END GUARD REFUSED. Follow the guard instruction below before ending the turn.
+
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END BLIND - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher holds this home lock (last beat: never).
+●  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e ./.pi/extensions/fm-primary-turnend-guard.ts -e ./.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
