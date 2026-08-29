@@ -12,12 +12,13 @@
 # captain-facing text. Name-only mentions and a declared-unread sentence
 # stay outside the refusal when they do not also state registered content.
 #
-# Stop mode reads the latest assistant text from transcript_path. PreToolUse
-# mode reads every string under tool_input for an AskUserQuestion call. Both
-# modes scan the whole session transcript for Read or shell-tool evidence that
-# names the exact lock path. A session-start command credits only the files
-# that digest actually prints, and only when those files exist. Digest credit
-# cannot satisfy a product-lock row.
+# Stop mode reads last_assistant_message from the hook payload. PreToolUse mode
+# reads every string under tool_input for an AskUserQuestion call. Both modes
+# match registered speech rows before they scan the session transcript. A
+# matching claim then scans for Read or shell-tool evidence that names the
+# exact lock path. A session-start command credits only the files that digest
+# actually prints, and only when those files exist. Digest credit cannot
+# satisfy a product-lock row.
 #
 # Missing decisions directory, no matching speech-claim lines, unreadable
 # transcript, missing jq/node, or malformed JSONL stay inert (exit 0). A
@@ -66,8 +67,6 @@ fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
 [ -d "$DECISIONS" ] && [ ! -L "$DECISIONS" ] || exit 0
 
 TRANSCRIPT=$(printf '%s' "$PAYLOAD" | jq -r '(.transcript_path // .transcriptPath // empty)' 2>/dev/null) || exit 0
-[ -n "$TRANSCRIPT" ] || exit 0
-[ -f "$TRANSCRIPT" ] && [ ! -L "$TRANSCRIPT" ] && [ -r "$TRANSCRIPT" ] || exit 0
 
 TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/fm-sot-speech.XXXXXX") || exit 0
 # shellcheck disable=SC2329 # Invoked by trap handlers below.
@@ -136,13 +135,6 @@ function message(record) {
   return { role, content: value.content };
 }
 
-function textParts(content) {
-  if (typeof content === "string") return [content];
-  if (!Array.isArray(content)) return [];
-  return content.flatMap((part) => part && typeof part === "object"
-    && part.type === "text" && typeof part.text === "string" ? [part.text] : []);
-}
-
 function toolReads(content) {
   if (!Array.isArray(content)) return [];
   const reads = [];
@@ -202,9 +194,35 @@ function creditStartupFromDigest(text, into) {
   }
 }
 
+function strings(value, output = []) {
+  if (typeof value === "string") output.push(value);
+  else if (Array.isArray(value)) value.forEach((item) => strings(item, output));
+  else if (value && typeof value === "object") Object.values(value).forEach((item) => strings(item, output));
+  return output;
+}
+
+let speech = String(payload.last_assistant_message || payload.lastAssistantMessage || "");
+if (mode === "pretool") {
+  const tool = String(payload.tool_name || payload.toolName || "");
+  if (tool !== "AskUserQuestion") process.exit(0);
+  speech = strings(payload.tool_input || payload.toolInput || {}).join("\n");
+}
+if (!speech) process.exit(0);
+
+const matchingRows = rows.filter((row) => row.regex.test(speech));
+if (matchingRows.length === 0) process.exit(0);
+if (/\b(unopened|not opened|have not opened|has not opened|unread|not read|have not read|has not read)\b/i.test(speech)) {
+  process.exit(0);
+}
+try {
+  const transcriptStat = fs.lstatSync(transcript);
+  if (!transcriptStat.isFile() || transcriptStat.isSymbolicLink()) process.exit(0);
+} catch (err) {
+  process.exit(0);
+}
+
 const sessionReads = [];
 const creditedStartup = new Set();
-let latestAssistantText = "";
 let expectSessionStartResult = false;
 try {
   for (const line of fs.readFileSync(transcript, "utf8").split("\n")) {
@@ -224,8 +242,6 @@ try {
       if (reads.some((evidence) => /fm-session-start\.sh\b/.test(String(evidence)))) {
         expectSessionStartResult = true;
       }
-      const text = textParts(value.content).join("\n").trim();
-      if (text) latestAssistantText = text;
       continue;
     }
     const resultRole = String(role || "");
@@ -249,21 +265,6 @@ try {
   process.exit(0);
 }
 
-function strings(value, output = []) {
-  if (typeof value === "string") output.push(value);
-  else if (Array.isArray(value)) value.forEach((item) => strings(item, output));
-  else if (value && typeof value === "object") Object.values(value).forEach((item) => strings(item, output));
-  return output;
-}
-
-let speech = latestAssistantText;
-if (mode === "pretool") {
-  const tool = String(payload.tool_name || payload.toolName || "");
-  if (tool !== "AskUserQuestion") process.exit(0);
-  speech = strings(payload.tool_input || payload.toolInput || {}).join("\n");
-}
-if (!speech) process.exit(0);
-
 function fileExists(relative) {
   try {
     const absolute = path.resolve(home, relative);
@@ -284,13 +285,8 @@ function hasRead(relative) {
   return creditedStartup.has(relative) && fileExists(relative);
 }
 
-function declaredUnread() {
-  return /\b(unopened|not opened|have not opened|has not opened|unread|not read|have not read|has not read)\b/i.test(speech);
-}
-
-for (const row of rows) {
-  if (!row.regex.test(speech)) continue;
-  if (hasRead(row.relative) || declaredUnread()) continue;
+for (const row of matchingRows) {
+  if (hasRead(row.relative)) continue;
   process.stdout.write(row.relative);
   process.exit(3);
 }

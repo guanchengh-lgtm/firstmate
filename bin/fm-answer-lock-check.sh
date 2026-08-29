@@ -31,10 +31,10 @@
 #                       with A-Z, optional ".", then end or whitespace:
 #                       **A.**, **D.**, **A**, **A. No ship.**) and
 #                       status: is OPEN.
-#   R-lock-still-open   the pointed-to lock has no **Pick:** line, or
-#                       fm-stow-open-lock-check.sh --list-open reports it.
-#                       That reader is the only still-open check; this
-#                       matcher does not add a second still-open regex.
+#   R-lock-still-open   a CLOSED ticket's ordinary pointed-to lock has no
+#                       **Pick:** line, or the open-lock reader reports it.
+#                       Every ticket is scanned. The reader loads at most
+#                       once, only for a CLOSED ticket with a valid pointer.
 #
 # Exact-count regression requires both --expect-rule and --expect-count and
 # exits 0 only when that rule count and the total finding count both equal
@@ -224,18 +224,21 @@ ticket_rel() {
 
 lock_listed_open() {
   local pointer=$1
-  [ -n "$open_json" ] || return 1
+  load_open_json
   printf '%s' "$open_json" | jq -e --arg f "$pointer" 'any(.[]; .file == $f)' >/dev/null
 }
 
 open_json=
-if rule_wanted R-lock-still-open; then
+open_json_loaded=0
+load_open_json() {
+  [ "$open_json_loaded" -eq 0 ] || return 0
   [ -x "$OPEN_LOCK_READER" ] || structural "missing open-lock reader $OPEN_LOCK_READER"
   open_json=$("$OPEN_LOCK_READER" --list-open --decisions-dir "$decisions_dir") \
     || structural "open-lock reader failed"
   printf '%s' "$open_json" | jq -e 'type == "array"' >/dev/null \
     || structural "open-lock reader did not return a JSON array"
-fi
+  open_json_loaded=1
+}
 
 findings=()
 shopt -s nullglob
@@ -282,7 +285,7 @@ for file in "${tickets[@]+"${tickets[@]}"}"; do
     && first_bold_is_pick "$file"; then
     findings+=("R-pick-still-open-status: $rel has a pick in ## Answer while status: is OPEN")
   fi
-  if rule_wanted R-lock-still-open && [ "$lock_ok" -eq 1 ]; then
+  if rule_wanted R-lock-still-open && [ "$closed" -eq 1 ] && [ "$lock_ok" -eq 1 ]; then
     still=0
     grep -qF -- '**Pick:**' "$lock_path" || still=1
     if [ "$still" -eq 0 ] && lock_listed_open "$pointer"; then

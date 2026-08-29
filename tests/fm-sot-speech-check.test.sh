@@ -38,6 +38,20 @@ write_transcript() {
   done
 }
 
+write_transcript_read_probe() {
+  local file=$1
+  printf '%s\n' \
+    'const fs = require("fs");' \
+    'const original = fs.readFileSync.bind(fs);' \
+    'fs.readFileSync = function(file, ...args) {' \
+    '  if (String(file) === process.env.FM_SOT_TRANSCRIPT_TARGET) {' \
+    '    fs.appendFileSync(process.env.FM_SOT_TRANSCRIPT_READ_LOG, "read\n");' \
+    '  }' \
+    '  return original(file, ...args);' \
+    '};' \
+    > "$file"
+}
+
 run_check() {
   local home=$1 payload=$2
   shift 2
@@ -65,7 +79,7 @@ test_claim_without_read_is_refused() {
   transcript="$home/transcript.jsonl"
   write_transcript "$transcript" \
     '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"F1 is the locked north star."}]}}'
-  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  payload=$(printf '{"transcript_path":"%s","last_assistant_message":"F1 is the locked north star."}' "$transcript")
   set +e
   out=$(run_check "$home" "$payload")
   rc=$?
@@ -84,7 +98,7 @@ test_read_evidence_allows_claim() {
   write_transcript "$transcript" \
     "$(printf '{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Read","input":{"file_path":"%s"}}]}}' "$abs")" \
     '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"F1 is the locked north star."}]}}'
-  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  payload=$(printf '{"transcript_path":"%s","last_assistant_message":"F1 is the locked north star."}' "$transcript")
   set +e
   out=$(run_check "$home" "$payload")
   rc=$?
@@ -101,7 +115,7 @@ test_declared_unread_allows_naming() {
   transcript="$home/transcript.jsonl"
   write_transcript "$transcript" \
     '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"I have not opened the Map 2 spec this session."}]}}'
-  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  payload=$(printf '{"transcript_path":"%s","last_assistant_message":"I have not opened the Map 2 spec this session."}' "$transcript")
   set +e
   out=$(run_check "$home" "$payload")
   rc=$?
@@ -122,7 +136,7 @@ test_midline_decoy_and_empty_prefix_are_inert() {
   transcript="$home/transcript.jsonl"
   write_transcript "$transcript" \
     '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"decoy-token and indented-token still hold."}]}}'
-  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  payload=$(printf '{"transcript_path":"%s","last_assistant_message":"decoy-token and indented-token still hold."}' "$transcript")
   set +e
   out=$(run_check "$home" "$payload")
   rc=$?
@@ -140,7 +154,7 @@ test_malformed_registry_is_structural() {
   transcript="$home/transcript.jsonl"
   write_transcript "$transcript" \
     '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"hello"}]}}'
-  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  payload=$(printf '{"transcript_path":"%s","last_assistant_message":"hello"}' "$transcript")
   set +e
   out=$(run_check "$home" "$payload")
   rc=$?
@@ -174,7 +188,7 @@ test_decision_lock_claim_without_read_is_refused() {
   transcript="$home/transcript.jsonl"
   write_transcript "$transcript" \
     '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"The north star still says 0DTE is deferred."}]}}'
-  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  payload=$(printf '{"transcript_path":"%s","last_assistant_message":"The north star still says 0DTE is deferred."}' "$transcript")
   set +e
   out=$(run_check "$home" "$payload")
   rc=$?
@@ -194,7 +208,7 @@ test_decision_lock_read_allows_claim() {
   write_transcript "$transcript" \
     "$(printf '{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Read","input":{"file_path":"%s"}}]}}' "$abs")" \
     '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"The north star still says 0DTE is deferred."}]}}'
-  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  payload=$(printf '{"transcript_path":"%s","last_assistant_message":"The north star still says 0DTE is deferred."}' "$transcript")
   set +e
   out=$(run_check "$home" "$payload")
   rc=$?
@@ -229,7 +243,7 @@ test_session_start_digest_does_not_credit_decision_lock() {
     '{"type":"message","message":{"role":"assistant","content":[{"type":"tool_use","name":"Bash","input":{"command":"bin/fm-session-start.sh"}}]}}' \
     "$(printf '{"type":"message","message":{"role":"user","content":[{"type":"tool_result","content":%s}]}}' "$(printf '%s' "$digest" | jq -Rs .)")" \
     '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"The north star still says 0DTE is deferred."}]}}'
-  payload=$(printf '{"transcript_path":"%s"}' "$transcript")
+  payload=$(printf '{"transcript_path":"%s","last_assistant_message":"The north star still says 0DTE is deferred."}' "$transcript")
   set +e
   out=$(run_check "$home" "$payload")
   rc=$?
@@ -238,6 +252,38 @@ test_session_start_digest_does_not_credit_decision_lock() {
   assert_contains "$out" 'open data/decisions/example-product-lock.md' \
     "digest credit of captain.md should not satisfy the lock row"
   pass "sot-speech: session-start digest does not credit a data/decisions lock"
+}
+
+test_transcript_scan_runs_only_for_matching_speech() {
+  local home transcript payload probe log out rc reads
+  home=$(make_primary_home "$TMP_ROOT/scan-count")
+  write_lock "$home"
+  transcript="$home/transcript.jsonl"
+  write_transcript "$transcript" \
+    '{"type":"message","message":{"role":"assistant","content":[{"type":"text","text":"ordinary update"}]}}'
+  probe="$home/read-probe.js"
+  log="$home/transcript-reads.log"
+  write_transcript_read_probe "$probe"
+
+  payload=$(printf '{"transcript_path":"%s","last_assistant_message":"ordinary update"}' "$transcript")
+  set +e
+  out=$(FM_SOT_TRANSCRIPT_TARGET="$transcript" FM_SOT_TRANSCRIPT_READ_LOG="$log" \
+    NODE_OPTIONS="--require=$probe" run_check "$home" "$payload")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "nonmatching speech exited $rc: $out"
+  [ ! -e "$log" ] || fail "nonmatching speech read the transcript"
+
+  payload=$(printf '{"transcript_path":"%s","last_assistant_message":"F1 is the locked north star."}' "$transcript")
+  set +e
+  out=$(FM_SOT_TRANSCRIPT_TARGET="$transcript" FM_SOT_TRANSCRIPT_READ_LOG="$log" \
+    NODE_OPTIONS="--require=$probe" run_check "$home" "$payload")
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "matching speech exited $rc: $out"
+  reads=$(wc -l < "$log" | tr -d ' ')
+  [ "$reads" -eq 1 ] || fail "matching speech transcript reads=$reads, want 1"
+  pass "sot-speech: transcript scan runs only for registered matching speech"
 }
 
 test_absent_locks_are_inert
@@ -250,5 +296,6 @@ test_pretool_askuser_is_refused
 test_decision_lock_claim_without_read_is_refused
 test_decision_lock_read_allows_claim
 test_session_start_digest_does_not_credit_decision_lock
+test_transcript_scan_runs_only_for_matching_speech
 
 echo "# all fm-sot-speech-check tests passed"
