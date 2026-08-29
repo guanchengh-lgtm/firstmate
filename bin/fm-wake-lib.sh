@@ -18,14 +18,14 @@ mkdir -p "$STATE"
 fm_current_pid_into() {  # <variable-name>
   # Bash 3.2 has no BASHPID and a subshell inherits its parent's $$, so ask a
   # child for its parent pid; exec inside $() guarantees the child is this frame.
-  local var=$1 pid
+  local _fm_current_pid_value
   if [ -n "${BASHPID:-}" ]; then
-    printf -v "$var" '%s' "$BASHPID"
-    return 0
+    _fm_current_pid_value=$BASHPID
+  else
+    _fm_current_pid_value=$(exec /bin/sh -c 'printf "%s" "$PPID"') || return 1
   fi
-  pid=$(exec /bin/sh -c 'printf "%s" "$PPID"') || return 1
-  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
-  printf -v "$var" '%s' "$pid"
+  case "$_fm_current_pid_value" in ''|*[!0-9]*) return 1 ;; esac
+  printf -v "$1" '%s' "$_fm_current_pid_value"
 }
 
 fm_current_pid() {
