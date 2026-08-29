@@ -343,7 +343,9 @@ It ships in the tracked checkout and reaches a running home only after that home
 
 ## Build-map fog check
 
-Session-start bootstrap runs [`bin/fm-map-fog-check.sh`](../bin/fm-map-fog-check.sh) in detect-only mode over ordinary `map.md` files under `data/`, printing `MAP_FOG` lines without blocking start, while structural failures remain loud.
+Session-start bootstrap runs [`bin/fm-map-fog-check.sh`](../bin/fm-map-fog-check.sh) in detect-only mode over ordinary `map.md` files under `data/`.
+For ordinary findings from map paths without tabs, it prints one `MAP_FOG` line for each map with the finding count and a pointer to the checker for full details.
+The summary does not block startup, while structural and checker failures remain unchanged and loud.
 A ship spawn with `--map` runs the same checker in `--strict` and refuses while fog is live or the map structure fails; scout `--map` records the path without that refuse.
 The checker never writes `[parked]` or `[closed]` tokens; those remain captain-only.
 The script header owns live-fog tokens, `MAP_FOG` lines, structural missing-section failure, `--strict`, and residual coverage.

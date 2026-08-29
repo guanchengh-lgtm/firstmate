@@ -13,6 +13,7 @@
 #                 "SOT_GAP: <program_id> - <missing pointer or superseded hold detail>",
 #                 "SOT_GAP: registry invalid - <structural failure>",
 #                 "SOT_GAP: checker failed with status <n>",
+#                 "MAP_FOG: <map> - <count> finding(s); run bin/fm-map-fog-check.sh for details",
 #                 "MAP_FOG: <map> - <live unspecified item or closed pointer>",
 #                 "MAP_FOG: registry invalid - <structural failure>",
 #                 "MAP_FOG: checker failed with status <n>",
@@ -1284,7 +1285,52 @@ detect_local_config() {
     fi
   fi
   if fog_output=$("$SCRIPT_DIR/fm-map-fog-check.sh" 2>&1); then
-    [ -z "$fog_output" ] || printf '%s\n' "$fog_output"
+    if [ -n "$fog_output" ]; then
+      fog_maps=()
+      fog_counts=()
+      while IFS= read -r fog_line || [ -n "$fog_line" ]; do
+        case "$fog_line" in
+          'MAP_FOG: registry invalid - '*)
+            printf '%s\n' "$fog_line"
+            continue
+            ;;
+          'MAP_FOG: '*)
+            fog_detail=${fog_line#MAP_FOG: }
+            case "$fog_detail" in
+              *$'\t'*)
+                fog_map=${fog_detail%%$'\t'*}
+                case "$fog_map" in
+                  map.md|*/map.md)
+                    fog_index=
+                    for fog_existing_index in "${!fog_maps[@]}"; do
+                      if [ "${fog_maps[fog_existing_index]}" = "$fog_map" ]; then
+                        fog_index=$fog_existing_index
+                        break
+                      fi
+                    done
+                    if [ -n "$fog_index" ]; then
+                      fog_counts[fog_index]=$((fog_counts[fog_index] + 1))
+                    else
+                      fog_maps+=("$fog_map")
+                      fog_counts+=(1)
+                    fi
+                    ;;
+                  *) printf '%s\n' "$fog_line" ;;
+                esac
+                ;;
+              *) printf '%s\n' "$fog_line" ;;
+            esac
+            ;;
+          *) printf '%s\n' "$fog_line" ;;
+        esac
+      done <<< "$fog_output"
+      for fog_index in "${!fog_maps[@]}"; do
+        fog_noun=finding
+        [ "${fog_counts[fog_index]}" -eq 1 ] || fog_noun=findings
+        printf 'MAP_FOG: %s - %d %s; run bin/fm-map-fog-check.sh for details\n' \
+          "${fog_maps[fog_index]}" "${fog_counts[fog_index]}" "$fog_noun"
+      done
+    fi
   else
     fog_rc=$?
     [ -z "$fog_output" ] || printf '%s\n' "$fog_output"
