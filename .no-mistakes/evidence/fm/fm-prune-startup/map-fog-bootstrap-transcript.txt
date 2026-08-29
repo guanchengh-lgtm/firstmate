@@ -1,0 +1,14 @@
+CASE: ordinary findings from two maps
+MAP_FOG: data/beta/map.md - 1 finding; run bin/fm-map-fog-check.sh for details
+MAP_FOG: data/alpha/map.md - 2 findings; run bin/fm-map-fog-check.sh for details
+
+CASE: structural failure
+MAP_FOG: registry invalid - data/broken/map.md is missing a ## Not yet specified section
+
+CASE: unsupported tabbed map paths
+MAP_FOG: data/p	one/map.md - live unspecified item: - One gap.
+MAP_FOG: data/p	two/map.md - live unspecified item: - Two gap.
+
+CASE: checker failure
+MAP_FOG: raw checker failure output
+MAP_FOG: checker failed with status 7
