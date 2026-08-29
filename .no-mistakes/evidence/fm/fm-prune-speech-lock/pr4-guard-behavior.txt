@@ -1,0 +1,62 @@
+PR-4 guard behavior evidence
+============================
+
+[answer-lock: CLOSED answered ticket without pointer]
+exit=1
+R-close-no-lock-missing: data/wf-map2-v2/tickets/answered.md has ## Answer but no ordinary lock file
+open_lock_reader_calls=0
+
+[answer-lock: two valid CLOSED pointers share one cached reader load]
+exit=1
+R-lock-still-open-file: data/wf-map2-v2/tickets/one.md lock data/decisions/one.md has no **Pick:** or is still open
+R-lock-still-open-file: data/wf-map2-v2/tickets/two.md lock data/decisions/two.md has no **Pick:** or is still open
+open_lock_reader_calls=1
+
+[sot-speech: nonmatching current speech]
+exit=0
+output=<silent>
+transcript_reads=0
+
+[sot-speech: matching current speech without read evidence]
+exit=2
+[sot-speech] open data/decisions/product-lock.md in this session before stating what it says; otherwise name it only or state that it is unopened without describing its contents. This check proves an open, not reading fidelity.
+transcript_reads=1
+
+[sot-speech: matching speech with exact-file read evidence]
+exit=0
+output=<silent>
+transcript_reads=1
+
+[sot-speech: declared unread statement]
+exit=0
+output=<silent>
+transcript_reads=0
+
+[sot-speech: AskUserQuestion matching claim]
+exit=2
+{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny"},"systemMessage":"[sot-speech] open data/decisions/product-lock.md in this session before stating what it says; otherwise name it only or state that it is unopened without describing its contents. This check proves an open, not reading fidelity."}
+transcript_reads=1
+
+[sot-speech: malformed registered regex]
+exit=2
+SOT_SPEECH_REFUSED: registry invalid - content_claim_ERE is not a usable JavaScript regex
+transcript_reads=0
+
+[answer-lock: newer state/.lock does not skip an older valid pointer]
+ticket_and_pointer_mtime=2020-01-01T00:00
+session_lock_mtime=2030-01-01T00:00
+exit=1
+R-lock-still-open-file: data/wf-map2-v2/tickets/older-ticket.md lock data/decisions/older-lock.md has no **Pick:** or is still open
+open_lock_reader_calls=1
+
+[answer-lock: OPEN ticket with a valid pointer]
+exit=0
+output=<silent>
+open_lock_reader_calls=0
+
+
+[base replay: new invocation tests against 52bb558]
+answer_lock_test_exit=1
+not ok - ticket without a lock pointer invoked the open-lock reader
+sot_speech_test_exit=1
+not ok - nonmatching speech read the transcript
