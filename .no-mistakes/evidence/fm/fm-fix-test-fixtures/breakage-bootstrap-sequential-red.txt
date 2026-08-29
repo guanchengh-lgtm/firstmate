@@ -1,0 +1,37 @@
+not ok - clone refresh and liveness probes never met at the barrier
+START fleet-fetch git fetch
+TIMEOUT fleet-fetch waiting for liveness probe
+END fleet-fetch git fetch
+START host-bravo fm-remote-doctor.sh 
+START host-alpha fm-remote-doctor.sh 
+START host-charlie fm-remote-doctor.sh 
+END host-charlie fm-remote-doctor.sh 
+START host-charlie fm-remote-secondmate-control.sh state
+END host-charlie fm-remote-secondmate-control.sh state
+END host-alpha fm-remote-doctor.sh 
+END host-bravo fm-remote-doctor.sh 
+QUICK host-charlie fm-remote-secondmate-control.sh route
+START host-alpha fm-remote-secondmate-control.sh state
+END host-alpha fm-remote-secondmate-control.sh state
+QUICK host-alpha fm-remote-secondmate-control.sh route
+START host-alpha fm-remote-secondmate-control.sh sync
+START host-bravo fm-remote-secondmate-control.sh sync
+START host-charlie fm-remote-secondmate-control.sh sync
+END host-bravo fm-remote-secondmate-control.sh sync
+END host-alpha fm-remote-secondmate-control.sh sync
+END host-charlie fm-remote-secondmate-control.sh sync
+QUICK host-bravo fm-remote-inherit.sh absent
+QUICK host-alpha fm-remote-inherit.sh absent
+QUICK host-charlie fm-remote-inherit.sh absent
+QUICK host-alpha fm-remote-inherit.sh absent
+QUICK host-charlie fm-remote-inherit.sh absent
+QUICK host-alpha fm-remote-inherit.sh absent
+QUICK host-charlie fm-remote-inherit.sh absent
+QUICK host-alpha fm-remote-inherit.sh absent
+QUICK host-charlie fm-remote-inherit.sh absent
+QUICK host-alpha fm-remote-inherit.sh absent
+QUICK host-charlie fm-remote-inherit.sh absent
+QUICK host-alpha fm-remote-inherit.sh absent
+QUICK host-charlie fm-remote-inherit.sh absent
+QUICK host-alpha fm-remote-inherit.sh absent
+QUICK host-charlie fm-remote-inherit.sh absent
