@@ -62,7 +62,14 @@ make_child_worktree_fixture() {
 }
 
 PRIMARY=$(make_primary_fixture "$TMP_ROOT/primary")
+PRIMARY_CANONICAL=$(CDPATH='' cd -- "$PRIMARY" && pwd -P)
 CHECK="$PRIMARY/bin/fm-cd-pretool-check.sh"
+ACTIVE_HOME_LINK="$TMP_ROOT/active-home-link"
+OTHER_HOME="$TMP_ROOT/other-home"
+OTHER_HOME_LINK="$TMP_ROOT/other-home-link"
+mkdir -p "$OTHER_HOME"
+ln -s "$PRIMARY" "$ACTIVE_HOME_LINK"
+ln -s "$OTHER_HOME" "$OTHER_HOME_LINK"
 
 # --- full cross-harness acceptance matrix ----------------------------------
 
@@ -104,6 +111,12 @@ matrix_case B24 deny 'command builtin cd projects/foo'
 matrix_case B25 deny 'builtin command cd projects/foo'
 matrix_case B26 deny 'command -p cd projects/foo'
 matrix_case B27 deny 'command -- cd projects/foo'
+matrix_case B28 deny "cd '$OTHER_HOME'"
+matrix_case B29 deny "cd '$TMP_ROOT/missing-target'"
+matrix_case B30 deny "cd -- '$OTHER_HOME'"
+matrix_case B31 deny "cd '$OTHER_HOME_LINK'"
+matrix_case B32 deny "pushd '$PRIMARY'"
+matrix_case B33 deny "cd '$PRIMARY' extra"
 
 # ALLOW: not a persistent top-level cwd change (scoped, data, or non-cd).
 matrix_case A01 allow 'git -C projects/foo status'
@@ -142,6 +155,11 @@ matrix_case A33 allow 'command -v cd'
 matrix_case A34 allow 'command -V cd'
 matrix_case A35 allow 'command -pv cd'
 matrix_case A36 allow 'command -vp cd'
+matrix_case A37 allow "cd $PRIMARY"
+matrix_case A38 allow "cd '$PRIMARY'"
+matrix_case A39 allow "cd '$PRIMARY/bin/..'"
+matrix_case A40 allow "cd -- '$PRIMARY'"
+matrix_case A41 allow "cd '$ACTIVE_HOME_LINK'"
 
 MATRIX_TMP=$(mktemp -d "${TMPDIR:-/tmp}/fm-cd-policy-matrix.XXXXXX")
 FM_TEST_CLEANUP_DIRS+=("$MATRIX_TMP")
@@ -154,21 +172,21 @@ run_matrix_entry() {
   case "$entry" in
     codex)
       payload=$(jq -cn --arg command "$cmd" '{tool_name:"Bash",tool_input:{command:$command}}')
-      printf '%s' "$payload" | "$CHECK" >"$out_file" 2>"$err_file"
+      printf '%s' "$payload" | FM_HOME="$PRIMARY" "$CHECK" >"$out_file" 2>"$err_file"
       rc=$?
       ;;
     claude)
       payload=$(jq -cn --arg command "$cmd" '{tool_name:"Bash",tool_input:{command:$command}}')
-      printf '%s' "$payload" | "$CHECK" --claude >"$out_file" 2>"$err_file"
+      printf '%s' "$payload" | FM_HOME="$PRIMARY" "$CHECK" --claude >"$out_file" 2>"$err_file"
       rc=$?
       ;;
     grok)
       payload=$(jq -cn --arg command "$cmd" '{toolName:"run_terminal_command",toolInput:{command:$command}}')
-      printf '%s' "$payload" | "$CHECK" >"$out_file" 2>"$err_file"
+      printf '%s' "$payload" | FM_HOME="$PRIMARY" "$CHECK" >"$out_file" 2>"$err_file"
       rc=$?
       ;;
     opencode|pi)
-      "$CHECK" --command "$cmd" >"$out_file" 2>"$err_file"
+      FM_HOME="$PRIMARY" "$CHECK" --command "$cmd" >"$out_file" 2>"$err_file"
       rc=$?
       ;;
     *)
@@ -209,10 +227,13 @@ test_full_acceptance_matrix() {
 test_fires_in_secondmate_home() {
   local dir out rc
   dir=$(make_secondmate_fixture "$TMP_ROOT/secondmate")
-  out=$("$dir/bin/fm-cd-pretool-check.sh" --claude --command 'cd projects/foo' 2>&1); rc=$?
+  out=$(FM_HOME="$dir" "$dir/bin/fm-cd-pretool-check.sh" --claude --command 'cd projects/foo' 2>&1); rc=$?
   expect_code 2 "$rc" "cd-guard must fire in a secondmate's own primary session (unlike the turn-end guard)"
   assert_contains "$out" '[persistent-cd]' "secondmate-home block must carry the reason code"
-  pass "cd-guard: fires in a secondmate home (its own primary session is a primary)"
+  out=$(FM_HOME="$dir" "$dir/bin/fm-cd-pretool-check.sh" --claude --command "cd '$dir'" 2>&1); rc=$?
+  expect_code 0 "$rc" "cd-guard must allow a secondmate to return to its own active home"
+  [ -z "$out" ] || fail "secondmate active-home allow produced output: $out"
+  pass "cd-guard: fires in a secondmate home and allows return to its active home"
 }
 
 test_inert_in_child_worktree() {
@@ -328,6 +349,14 @@ test_fail_open_missing_jq_on_stdin() {
   pass "cd-guard: fails open on the stdin path when jq is missing"
 }
 
+test_active_home_resolver_failure_denies() {
+  local out rc
+  out=$(FM_HOME="$TMP_ROOT/missing-active-home" "$CHECK" --claude --command "cd '$PRIMARY'" 2>&1); rc=$?
+  expect_code 2 "$rc" "active-home resolver failure must keep a persistent cd denied"
+  assert_contains "$out" '[persistent-cd]' "active-home resolver failure must retain the deny reason"
+  pass "cd-guard: active-home resolver failure disables only the carveout"
+}
+
 # --- prefilter fast path ----------------------------------------------------
 
 test_prefilter_skips_node_without_cd_substring() {
@@ -366,6 +395,10 @@ test_policy_cli_direct() {
     || fail "policy CLI must allow git -C"
   [ "$(node "$policy" --command '(cd projects/foo && pwd)')" = allow ] \
     || fail "policy CLI must allow a subshell-local cd"
+  [ "$(node "$policy" --active-home "$PRIMARY_CANONICAL" --command "cd '$ACTIVE_HOME_LINK'")" = allow ] \
+    || fail "policy CLI must allow a canonical active-home destination"
+  [ "$(node "$policy" --active-home "$PRIMARY_CANONICAL" --command "cd '$TMP_ROOT/missing-target'" | cut -f1)" = deny ] \
+    || fail "policy CLI must deny a destination that cannot be resolved"
   [ "$(node "$policy")" = allow ] \
     || fail "policy CLI must allow when no command is supplied"
   pass "cd-guard: fm-cd-command-policy.mjs CLI honors the deny/allow output contract"
@@ -395,6 +428,7 @@ test_fail_open_empty_stdin
 test_fail_open_unparseable_json
 test_fail_open_missing_node
 test_fail_open_missing_jq_on_stdin
+test_active_home_resolver_failure_denies
 test_prefilter_skips_node_without_cd_substring
 test_policy_cli_direct
 test_scripts_are_shellcheck_clean
