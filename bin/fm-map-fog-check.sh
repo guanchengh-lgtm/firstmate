@@ -16,7 +16,8 @@
 # `## Not yet specified` section is a structural failure, exit 2, never a pass.
 # Backtick paths ending in `map.md` named by a checked map are followed once.
 #
-# Default detect-only mode prints MAP_FOG findings and exits 0.
+# Default detect-only mode prints ordinary findings as
+# "MAP_FOG: <map><TAB><finding text>" and exits 0.
 # --strict exits 1 when any live fog remains. Structural failures always exit 2.
 # This script never writes `[parked]` or `[closed]` tokens.
 #
@@ -100,6 +101,10 @@ esac
 fatal() {
   echo "MAP_FOG: registry invalid - $*" >&2
   exit 2
+}
+
+report_finding() {
+  printf 'MAP_FOG: %s\t%s\n' "$1" "$2" >> "$FINDINGS"
 }
 
 trim_space() {
@@ -199,7 +204,7 @@ check_map() {
   [ "$section_rc" -eq 0 ] || fatal "$display could not be parsed"
 
   if [ ! -s "$bullets_file" ]; then
-    printf '%s\n' "MAP_FOG: $display - ## Not yet specified has no bullets (use - none when empty)" >> "$FINDINGS"
+    report_finding "$display" "## Not yet specified has no bullets (use - none when empty)"
     return 0
   fi
 
@@ -214,7 +219,7 @@ check_map() {
         ;;
       \[open\]*)
         live_here=1
-        printf '%s\n' "MAP_FOG: $display - live unspecified item: $bullet" >> "$FINDINGS"
+        report_finding "$display" "live unspecified item: $bullet"
         continue
         ;;
       \[parked\ [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\]*)
@@ -227,12 +232,12 @@ check_map() {
           continue
         fi
         live_here=1
-        printf '%s\n' "MAP_FOG: $display - closed pointer does not resolve: $token" >> "$FINDINGS"
+        report_finding "$display" "closed pointer does not resolve: $token"
         continue
         ;;
       *)
         live_here=1
-        printf '%s\n' "MAP_FOG: $display - live unspecified item: $bullet" >> "$FINDINGS"
+        report_finding "$display" "live unspecified item: $bullet"
         ;;
     esac
   done < "$bullets_file"

@@ -102,7 +102,9 @@ EOF
   rc=$?
   set -e
   [ "$rc" -eq 1 ] || fail "live fog exited $rc"
-  assert_contains "$out" 'live unspecified item' "live fog was not reported"
+  assert_contains "$out" \
+    $'MAP_FOG: data/prog/map.md\tlive unspecified item: - Whether Cursor becomes a verified harness.' \
+    "live fog did not keep the map in its own field"
   pass "map-fog: untokenized bullet is live fog"
 }
 
@@ -254,6 +256,70 @@ EOF
   pass "bootstrap: separate maps keep separate fog summaries"
 }
 
+test_bootstrap_keeps_colliding_map_paths_separate() {
+  local home fakebin marker_root out count
+  home=$(new_home bootstrap-colliding-maps)
+  fakebin=$(make_fake_toolchain "$TMP_ROOT/bootstrap-colliding-maps")
+  marker_root="$home/data/p - live unspecified item:"
+  mkdir -p "$marker_root/map.md - live unspecified item:/child"
+  cat > "$marker_root/map.md" <<'EOF'
+# Parent
+
+## Not yet specified
+
+- Parent hole.
+EOF
+  cat > "$marker_root/map.md - live unspecified item:/child/map.md" <<'EOF'
+# Child
+
+## Not yet specified
+
+- Child hole.
+EOF
+
+  out=$(run_bootstrap "$home" "$fakebin")
+  assert_contains "$out" \
+    'MAP_FOG: data/p - live unspecified item:/map.md - 1 finding; run bin/fm-map-fog-check.sh for details' \
+    "bootstrap omitted the colliding parent map summary"
+  assert_contains "$out" \
+    'MAP_FOG: data/p - live unspecified item:/map.md - live unspecified item:/child/map.md - 1 finding; run bin/fm-map-fog-check.sh for details' \
+    "bootstrap omitted the colliding child map summary"
+  count=$(printf '%s\n' "$out" | grep -c '^MAP_FOG:' || true)
+  [ "$count" -eq 2 ] || fail "bootstrap printed $count MAP_FOG lines for colliding maps"
+  pass "bootstrap: colliding map paths keep separate fog summaries"
+}
+
+test_bootstrap_aggregates_relative_data_override() {
+  local home fakebin lab out count
+  home=$(new_home bootstrap-relative-data)
+  fakebin=$(make_fake_toolchain "$TMP_ROOT/bootstrap-relative-data")
+  lab="$TMP_ROOT/bootstrap-relative-data/lab"
+  mkdir -p "$lab/alt-data/prog"
+  cat > "$lab/alt-data/prog/map.md" <<'EOF'
+# Relative data
+
+## Not yet specified
+
+- First hole.
+- Second hole.
+EOF
+
+  out=$(
+    cd "$lab" || exit 1
+    PATH="$fakebin:$BASE_PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+      FM_DATA_OVERRIDE=alt-data FM_BACKEND=tmux FM_BOOTSTRAP_DETECT_ONLY=1 \
+      FM_BOOTSTRAP_NETWORK=skip "$BOOTSTRAP" 2>&1
+  )
+  assert_contains "$out" \
+    'MAP_FOG: alt-data/prog/map.md - 2 findings; run bin/fm-map-fog-check.sh for details' \
+    "bootstrap did not aggregate a relative data override"
+  assert_not_contains "$out" 'First hole.' "bootstrap exposed a relative-data fog detail"
+  assert_not_contains "$out" 'Second hole.' "bootstrap exposed a relative-data fog detail"
+  count=$(printf '%s\n' "$out" | grep -c '^MAP_FOG:' || true)
+  [ "$count" -eq 1 ] || fail "bootstrap printed $count MAP_FOG lines for relative data"
+  pass "bootstrap: relative data override aggregates fog findings"
+}
+
 test_bootstrap_preserves_structural_failure() {
   local home fakebin out expected count
   home=$(new_home bootstrap-structural)
@@ -304,6 +370,8 @@ test_closed_missing_pointer_is_finding
 test_expect_rule_pins_live_count
 test_bootstrap_aggregates_findings_per_map
 test_bootstrap_aggregates_each_map_separately
+test_bootstrap_keeps_colliding_map_paths_separate
+test_bootstrap_aggregates_relative_data_override
 test_bootstrap_preserves_structural_failure
 test_bootstrap_preserves_checker_failure_output
 

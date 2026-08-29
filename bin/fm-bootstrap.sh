@@ -1295,46 +1295,29 @@ detect_local_config() {
             ;;
           'MAP_FOG: '*)
             fog_detail=${fog_line#MAP_FOG: }
-            fog_map=
-            fog_candidate=
-            while [[ "$fog_detail" == *' - '* ]]; do
-              fog_segment=${fog_detail%%' - '*}
-              fog_detail=${fog_detail#*' - '}
-              if [ -n "$fog_candidate" ]; then
-                fog_candidate="$fog_candidate - $fog_segment"
-              else
-                fog_candidate=$fog_segment
-              fi
-              case "$fog_candidate" in
-                /*) fog_path=$fog_candidate ;;
-                *) fog_path="$FM_HOME/$fog_candidate" ;;
-              esac
-              case "$fog_candidate" in
-                map.md|*/map.md)
-                  if [ -f "$fog_path" ] && [ ! -L "$fog_path" ] && [ -r "$fog_path" ]; then
-                    fog_map=$fog_candidate
+            case "$fog_detail" in
+              *$'\t'*)
+                fog_map=${fog_detail%%$'\t'*}
+                if [ -z "$fog_map" ]; then
+                  printf '%s\n' "$fog_line"
+                  continue
+                fi
+                fog_index=
+                for fog_existing_index in "${!fog_maps[@]}"; do
+                  if [ "${fog_maps[fog_existing_index]}" = "$fog_map" ]; then
+                    fog_index=$fog_existing_index
                     break
                   fi
-                  ;;
-              esac
-            done
-            if [ -z "$fog_map" ]; then
-              printf '%s\n' "$fog_line"
-              continue
-            fi
-            fog_index=
-            for fog_existing_index in "${!fog_maps[@]}"; do
-              if [ "${fog_maps[fog_existing_index]}" = "$fog_map" ]; then
-                fog_index=$fog_existing_index
-                break
-              fi
-            done
-            if [ -n "$fog_index" ]; then
-              fog_counts[fog_index]=$((fog_counts[fog_index] + 1))
-            else
-              fog_maps+=("$fog_map")
-              fog_counts+=(1)
-            fi
+                done
+                if [ -n "$fog_index" ]; then
+                  fog_counts[fog_index]=$((fog_counts[fog_index] + 1))
+                else
+                  fog_maps+=("$fog_map")
+                  fog_counts+=(1)
+                fi
+                ;;
+              *) printf '%s\n' "$fog_line" ;;
+            esac
             ;;
           *) printf '%s\n' "$fog_line" ;;
         esac
