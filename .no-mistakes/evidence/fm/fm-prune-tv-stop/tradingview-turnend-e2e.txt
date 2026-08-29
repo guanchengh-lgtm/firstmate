@@ -1,0 +1,14 @@
+CASE 1: TradingView blocker has no session-diagnosis evidence and the watcher is healthy.
+guard exit: 0
+guard output: <empty>
+
+CASE 2: The same blocker has no live watcher.
+guard exit: 2
+guard output:
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END BLIND - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher holds this home lock (last beat: 2s ago).
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+RESULT: The shared TradingView diagnosis gate is absent, and watcher supervision still blocks an unsafe turn end.
