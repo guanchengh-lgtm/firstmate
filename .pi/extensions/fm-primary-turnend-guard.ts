@@ -239,8 +239,8 @@ export default function (pi: ExtensionAPI) {
     try {
       const content = encodeFirstmateOperationalInput(
         "turn-end-guard",
-        "TURN WOULD END BLIND - supervision is off. " +
-          "The watcher cycle is missing, failed, or unhealthy. Follow the harness recovery instruction below before ending the turn.\n\n" +
+        "TURN-END GUARD REFUSED. " +
+          "Follow the guard instruction below before ending the turn.\n\n" +
           result.stderr,
       );
       await pi.sendUserMessage(content, { deliverAs: "followUp" });
