@@ -73,7 +73,16 @@ case "$command_name" in
 esac
 if [ "$slow" -eq 1 ]; then
   printf 'START %s %s %s\n' "$host" "$command_name" "$subcommand" >> "$log"
-  sleep "$sleep_s"
+  if [ "$subcommand" = state ]; then
+    i=0
+    while ! grep -q '^START fleet-fetch ' "$log"; do
+      i=$((i + 1))
+      [ "$i" -le "${FM_FAKE_BARRIER_POLLS:-200}" ] || { printf 'TIMEOUT %s waiting for fleet-fetch\n' "$host" >> "$log"; break; }
+      sleep 0.05
+    done
+  else
+    sleep "$sleep_s"
+  fi
   printf 'END %s %s %s\n' "$host" "$command_name" "$subcommand" >> "$log"
 else
   printf 'QUICK %s %s %s\n' "$host" "$command_name" "$subcommand" >> "$log"
@@ -137,7 +146,12 @@ for arg in "\$@"; do
 done
 if [ "\$slow" -eq 1 ]; then
   printf 'START fleet-fetch git fetch\n' >> '$log'
-  sleep "\${FM_FAKE_GIT_FETCH_SLEEP:-0.4}"
+  i=0
+  while ! grep -q '^START host-.* fm-remote-secondmate-control.sh state\$' '$log'; do
+    i=\$((i + 1))
+    [ "\$i" -le "\${FM_FAKE_BARRIER_POLLS:-200}" ] || { printf 'TIMEOUT fleet-fetch waiting for liveness probe\n' >> '$log'; break; }
+    sleep 0.05
+  done
   printf 'END fleet-fetch git fetch\n' >> '$log'
 fi
 exec '$real_git' "\$@"
@@ -219,7 +233,6 @@ SH
     FM_FAKE_SSH_UNREACHABLE_HOST=host-bravo \
     FM_FAKE_SSH_FAIL_HOST=host-alpha \
     FM_FAKE_SSH_DIRTY_HOST=host-charlie \
-    FM_FAKE_GIT_FETCH_SLEEP=0.4 \
     FM_INHERITABLE_CONFIG='' \
     FM_FAKE_TREEHOUSE_LEASE_HELP=1 \
     "$ROOT/bin/fm-bootstrap.sh" 2>&1
@@ -282,6 +295,9 @@ EOF
   liveness_starts=$(grep -c '^START .* fm-remote-secondmate-control.sh state$' "$log" || true)
   [ "$liveness_starts" -ge 2 ] \
     || fail "expected concurrent remote state probes, got $liveness_starts"$'\n'"$(cat "$log")"
+
+  ! grep -q '^TIMEOUT ' "$log" \
+    || fail "clone refresh and liveness probes never met at the barrier"$'\n'"$(cat "$log")"
 
   fetch_starts=$(grep -c '^START fleet-fetch ' "$log" || true)
   [ "$fetch_starts" -ge 1 ] \
