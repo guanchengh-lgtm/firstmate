@@ -202,6 +202,30 @@ test_ticket_without_pointer_skips_open_lock_reader() {
   pass "answer-lock: ticket without a lock pointer skips open-lock reader"
 }
 
+test_open_ticket_with_valid_pointer_skips_open_lock_reader() {
+  local home local_bin log out rc
+  home="$TMP_ROOT/lazy-open-pointer"
+  local_bin="$home/bin"
+  log="$home/open-lock-reader.log"
+  mkdir -p "$home/data/wf-map2-v2/tickets" "$home/data/decisions"
+  make_counted_check "$local_bin"
+  # shellcheck disable=SC2016 # Backticks are literal Markdown lock tokens.
+  write_ticket "$home/data/wf-map2-v2/tickets/open-with-pointer.md" \
+    "$(printf '%s\n' 'status: OPEN' '' '## Answer' \
+      '**Context.** Lock `data/decisions/open-pointer.md`.')"
+  write_lock "$home/data/decisions/open-pointer.md" \
+    "$(printf '%s\n' '**Pick:** A. locked.')"
+  set +e
+  out=$(FM_HOME="$home" FM_TEST_OPEN_LOCK_LOG="$log" \
+    "$local_bin/fm-answer-lock-check.sh" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "OPEN ticket with valid pointer exited $rc: $out"
+  [ -z "$out" ] || fail "OPEN ticket with valid pointer printed findings: $out"
+  [ ! -e "$log" ] || fail "OPEN ticket with valid pointer invoked the open-lock reader"
+  pass "answer-lock: OPEN ticket with a valid pointer skips open-lock reader"
+}
+
 test_valid_pointer_invokes_open_lock_reader_once() {
   local home local_bin log pointer open_json out rc calls
   home="$TMP_ROOT/lazy-valid-pointer"
@@ -229,6 +253,39 @@ test_valid_pointer_invokes_open_lock_reader_once() {
   calls=$(wc -l < "$log" | tr -d ' ')
   [ "$calls" -eq 1 ] || fail "valid pointer reader calls=$calls, want 1"
   pass "answer-lock: valid pointer invokes open-lock reader once"
+}
+
+test_session_lock_mtime_does_not_skip_valid_pointer() {
+  local home local_bin log pointer open_json out rc calls
+  home="$TMP_ROOT/session-lock-mtime"
+  local_bin="$home/bin"
+  log="$home/open-lock-reader.log"
+  pointer="data/decisions/older-ticket-lock.md"
+  mkdir -p "$home/state" "$home/data/wf-map2-v2/tickets" "$home/data/decisions"
+  make_counted_check "$local_bin"
+  # shellcheck disable=SC2016 # Backticks are literal Markdown lock tokens.
+  write_ticket "$home/data/wf-map2-v2/tickets/older-ticket.md" \
+    "$(printf '%s\n' 'status: CLOSED 2026-08-22' '' '## Answer' \
+      '**A.** Lock `data/decisions/older-ticket-lock.md`.')"
+  write_lock "$home/data/decisions/older-ticket-lock.md" \
+    "$(printf '%s\n' '**Pick:** A. locked.')"
+  printf '%s\n' 4242 > "$home/state/.lock"
+  touch -t 202001010000 "$home/data/wf-map2-v2/tickets/older-ticket.md" \
+    "$home/data/decisions/older-ticket-lock.md"
+  touch -t 203001010000 "$home/state/.lock"
+  open_json=$(jq -cn --arg file "$pointer" '[{file:$file}]')
+  set +e
+  out=$(FM_HOME="$home" FM_TEST_OPEN_LOCK_LOG="$log" \
+    FM_TEST_OPEN_LOCK_JSON="$open_json" \
+    "$local_bin/fm-answer-lock-check.sh" --rules R-lock-still-open 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "newer session lock suppressed older valid pointer: $rc: $out"
+  assert_contains "$out" "R-lock-still-open-file" \
+    "newer session lock suppressed the still-open refusal"
+  calls=$(wc -l < "$log" | tr -d ' ')
+  [ "$calls" -eq 1 ] || fail "session lock mtime changed reader calls=$calls, want 1"
+  pass "answer-lock: session lock mtime does not skip an older valid pointer"
 }
 
 test_lock_still_open_uses_list_open_reader() {
@@ -438,7 +495,9 @@ test_clothes_close_no_lock_ship_ticket_is_exempt
 test_clothes_close_undated_fires_exact_count
 test_answered_close_without_lock_fires
 test_ticket_without_pointer_skips_open_lock_reader
+test_open_ticket_with_valid_pointer_skips_open_lock_reader
 test_valid_pointer_invokes_open_lock_reader_once
+test_session_lock_mtime_does_not_skip_valid_pointer
 test_lock_still_open_uses_list_open_reader
 test_lock_without_pick_fires
 test_gather_skips_loops_and_other_data
