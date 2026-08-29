@@ -389,7 +389,7 @@ test_scout_named_sources_are_manifested() {
     "scout brief omitted the URL source"
   assert_grep '- data/prior-scout/report.md' "$brief" \
     "scout brief omitted the report source"
-  pass "fm-brief.sh: scout sources become a durable report-gate manifest"
+  pass "fm-brief.sh: scout sources become a durable informational manifest"
 }
 
 test_worker_brief_check_refuses_fake_skill_slashes() {

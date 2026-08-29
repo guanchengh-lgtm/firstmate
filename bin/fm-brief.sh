@@ -14,10 +14,9 @@
 #   --scout writes the scout contract instead: the deliverable is a report at
 #   data/<task-id>/report.md (no branch, no push, no PR) and the worktree is scratch.
 #   Pass every URL, lock path, or report path named for full reading through one
-#   --source flag. The generated # Named sources manifest is the exact report
-#   gate: non-forced scout teardown refuses until report.md contains every
-#   literal. This proves naming, not reading fullness; fullness remains in the
-#   scout task contract and captain corrections remain its residual measure.
+#   --source flag. The generated # Named sources manifest records those inputs
+#   for the worker and later reviewers. The scout task contract still requires
+#   full reading, and captain corrections remain its residual measure.
 #   --check-worker is the spawn-time brief lint. It refuses slash invocation of
 #   firstmate-only skills, /wayfinder, /last30days, /wiki, and
 #   /design-sync while allowing the same words as plain names. For scout tasks

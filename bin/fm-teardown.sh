@@ -43,12 +43,8 @@
 # this script owns the predicate; docs/class-repeat-gate.md names the residuals.
 # Scout tasks (kind=scout in meta) carve out of the landed-work check: their worktree is
 # declared scratch and the report at data/<task-id>/report.md is the work
-# product. A # Named sources manifest in the task brief is an exact-literal
-# report gate: every source must appear in report.md. The gate proves naming,
-# not full reading; fullness remains the scout brief contract. A failed report
-# gate appends one working: event so an earlier done: is mechanically taken back.
-# Teardown proceeds only once the report exists, its named sources pass, and the shared
-# captain-hold completion gate verifies its captain-held and product-idea inventory.
+# product. Teardown proceeds only once the report exists and the shared captain-hold
+# completion gate verifies its captain-held and product-idea inventory.
 # When this task is ov= for a ship, a present scout report is also copied to
 # data/<ship>/ov-report.md. The owner-invoke Stop ladder reads
 # data/<ov>/report.md, not that ship-side copy.
@@ -608,24 +604,6 @@ take_task_done_back() {  # <reason>
   local reason=$1 status="$STATE/$ID.status" line
   line="working: completion gate reopened - $reason"
   [ "$(tail -n 1 "$status" 2>/dev/null || true)" = "$line" ] || printf '%s\n' "$line" >> "$status"
-}
-
-validate_scout_named_sources() {  # <brief> <report>
-  local brief=$1 report=$2 source missing=0
-  [ -f "$brief" ] || return 0
-  while IFS= read -r source; do
-    [ -n "$source" ] || continue
-    if ! grep -F -- "$source" "$report" >/dev/null 2>&1; then
-      echo "REFUSED: scout task $ID report does not name source: $source" >&2
-      take_task_done_back "scout report missing named source $source"
-      missing=1
-    fi
-  done < <(awk '
-  /^# Named sources[[:space:]]*$/ { in_sources = 1; next }
-  in_sources && /^# / { exit }
-  in_sources && /^- / { source = $0; sub(/^- /, "", source); print source }
-' "$brief")
-  [ "$missing" -eq 0 ]
 }
 
 validate_map_next_backlog "$META" "$DATA/backlog.md" || exit 1
@@ -2973,7 +2951,6 @@ if [ "$KIND" = scout ] && [ "$FORCE" != "--force" ]; then
     echo "The report is the work product. Have the crewmate write it, or use --force after explicit discard approval." >&2
     exit 1
   fi
-  validate_scout_named_sources "$DATA/$ID/brief.md" "$REPORT" || exit 1
   if ! FM_HOME="$FM_HOME" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" \
       FM_CONFIG_OVERRIDE="$CONFIG" "$SCRIPT_DIR/fm-captain-hold.sh" verify "$ID" >/dev/null; then
     echo "REFUSED: scout task $ID has not passed the captain-call completion gate." >&2

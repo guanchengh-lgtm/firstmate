@@ -1688,47 +1688,6 @@ test_class_repeat_prior_none_does_not_count() {
   pass "a prior none: measure is not a class occurrence"
 }
 
-test_scout_named_sources_must_all_appear_in_report() {
-  local case_dir rc brief report
-  case_dir=$(make_case scout-source-report-gate)
-  write_meta "$case_dir" no-mistakes scout
-  printf '%s\n' 'decisions_reviewed=1' >> "$case_dir/state/task-x1.meta"
-  mkdir -p "$case_dir/data/task-x1"
-  brief="$case_dir/data/task-x1/brief.md"
-  report="$case_dir/data/task-x1/report.md"
-  cat > "$brief" <<'EOF'
-# Task
-Read and compare the named sources.
-
-# Named sources
-- https://example.test/thread/42
-- data/prior-scout/report.md
-
-# Setup
-fixture
-EOF
-  printf '%s\n' '# Findings' 'Opened https://example.test/thread/42.' > "$report"
-
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/refused.out" 2> "$case_dir/refused.err" || rc=$?
-  expect_code 1 "$rc" "scout source gate should refuse a report that omits one named source"
-  assert_grep 'data/prior-scout/report.md' "$case_dir/refused.err" \
-    "scout source refusal did not name the missing source"
-  assert_grep 'working: completion gate reopened' "$case_dir/state/task-x1.status" \
-    "scout source refusal did not mechanically take done back"
-  assert_present "$case_dir/state/task-x1.meta" \
-    "scout source refusal removed task metadata"
-
-  printf '%s\n' 'Opened data/prior-scout/report.md.' >> "$report"
-  add_compatible_tasks_axi "$case_dir"
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/allowed.out" 2> "$case_dir/allowed.err" || rc=$?
-  expect_code 0 "$rc" "scout report naming every source should pass teardown: $(cat "$case_dir/allowed.err")"
-  assert_absent "$case_dir/state/task-x1.meta" \
-    "complete named-source scout did not tear down"
-  pass "scout teardown takes done back until report names every source"
-}
-
 test_superseded_product_lock_refuses_completion() {
   local case_dir rc
   case_dir=$(make_case superseded-product-lock)
@@ -3172,7 +3131,6 @@ test_class_repeat_absent_registry_allows
 test_class_repeat_invalid_registry_refuses
 test_class_repeat_map_next_does_not_discharge
 test_class_repeat_prior_none_does_not_count
-test_scout_named_sources_must_all_appear_in_report
 test_superseded_product_lock_refuses_completion
 test_map_next_requires_next_slice_in_backlog
 test_map_next_corrupt_metadata_takes_done_back
