@@ -322,6 +322,10 @@ main() {
     fi
   fi
 
+  if ! live_work_exists; then
+    rm -f "$first_sample"
+    exit 0
+  fi
   summary="FIRSTMATE DEADMAN: $PROBE_DETAIL; scheduling path may be stopped"
   if notify "$summary"; then
     atomic_write "$INSTALL_DIR/last-success-at" "$NOW" || self_fault "cannot record successful page"

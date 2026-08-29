@@ -97,7 +97,7 @@ SH
 }
 
 test_live_work_gate() {
-  local idle task relay unavailable reset
+  local idle process_event task relay unavailable reset
 
   idle=$(new_case idle-stale)
   rm -f "$idle/home/state/task.meta"
@@ -112,6 +112,18 @@ test_live_work_gate() {
   run_probe "$idle" 1060
   [ "$(notify_count "$idle/notify.log")" -eq 0 ] || fail "non-ordinary or unrelated state enabled a stale page"
   [ ! -e "$idle/install/first-stale" ] || fail "idle stale home retained a first sample"
+
+  process_event=$(new_case process-event-only)
+  rm -f "$process_event/home/state/task.meta"
+  mkdir -p "$process_event/home/state/procevent"
+  : > "$process_event/home/state/procevent/source-only.source"
+  set_mtime "$process_event/home/state/.last-watcher-beat" 0
+  run_probe "$process_event" 1000
+  run_probe "$process_event" 1060
+  [ "$(notify_count "$process_event/notify.log")" -eq 0 ] \
+    || fail "process-event-only state enabled a stale page"
+  [ ! -e "$process_event/install/first-stale" ] \
+    || fail "process-event-only state retained a first sample"
 
   task=$(new_case task-meta)
   set_mtime "$task/home/state/.last-watcher-beat" 0
@@ -148,6 +160,46 @@ test_live_work_gate() {
   [ "$(notify_count "$reset/notify.log")" -eq 1 ] || fail "new live work did not page after two fresh samples"
 
   pass "deadman pages only for task or Relay work and resets sampling while idle"
+}
+
+test_work_ends_before_notification() {
+  local dir ready release writer probe i
+  dir=$(new_case work-ends-before-notification)
+  set_mtime "$dir/home/state/.last-watcher-beat" 0
+  run_probe "$dir" 1940
+
+  ready="$dir/last-success-reader-ready"
+  release="$dir/release-last-success-reader"
+  mkfifo "$dir/install/last-success-at"
+  (
+    : > "$ready"
+    while [ ! -e "$release" ]; do
+      sleep 0.01
+    done
+    printf '0\n'
+  ) > "$dir/install/last-success-at" & writer=$!
+  FM_DEADMAN_INSTALL_DIR="$dir/install" \
+    FM_DEADMAN_NOW=2000 \
+    FM_DEADMAN_NOTIFY_EXEC="$NOTIFIER" \
+    FM_TEST_NOTIFY_LOG="$dir/notify.log" \
+    "$ROOT/bin/fm-deadman.sh" & probe=$!
+
+  i=0
+  while [ ! -e "$ready" ] && [ "$i" -lt 100 ]; do
+    sleep 0.01
+    i=$((i + 1))
+  done
+  [ -e "$ready" ] || fail "probe did not reach the notification boundary"
+  rm -f "$dir/home/state/task.meta"
+  : > "$release"
+  wait "$writer" || fail "notification-boundary fixture writer failed"
+  wait "$probe" || fail "notification-boundary probe failed"
+
+  [ "$(notify_count "$dir/notify.log")" -eq 0 ] \
+    || fail "probe paged after the final live-work marker disappeared"
+  [ ! -e "$dir/install/first-stale" ] \
+    || fail "probe retained a first sample after live work disappeared"
+  pass "deadman rechecks live work at the notification boundary"
 }
 
 test_flap_resets_confirmation() {
@@ -509,6 +561,7 @@ PY
 test_age_boundary_and_double_sample
 test_future_and_unreadable
 test_live_work_gate
+test_work_ends_before_notification
 test_flap_resets_confirmation
 test_cooldown_and_failed_delivery
 test_first_arm_and_sleep_wake_grace
