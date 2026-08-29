@@ -224,15 +224,17 @@ test_bootstrap_aggregates_each_map_separately() {
   local home fakebin out count
   home=$(new_home bootstrap-two-maps)
   fakebin=$(make_fake_toolchain "$TMP_ROOT/bootstrap-two-maps")
-  mkdir -p "$home/data/alpha - beta" "$home/data/gamma"
-  cat > "$home/data/alpha - beta/map.md" <<'EOF'
+  mkdir -p \
+    "$home/data/shared - live unspecified item:/alpha" \
+    "$home/data/shared - live unspecified item:/beta"
+  cat > "$home/data/shared - live unspecified item:/alpha/map.md" <<'EOF'
 # Alpha
 
 ## Not yet specified
 
 - Alpha hole.
 EOF
-  cat > "$home/data/gamma/map.md" <<'EOF'
+  cat > "$home/data/shared - live unspecified item:/beta/map.md" <<'EOF'
 # Beta
 
 ## Not yet specified
@@ -242,10 +244,10 @@ EOF
 
   out=$(run_bootstrap "$home" "$fakebin")
   assert_contains "$out" \
-    'MAP_FOG: data/alpha - beta/map.md - 1 finding; run bin/fm-map-fog-check.sh for details' \
+    'MAP_FOG: data/shared - live unspecified item:/alpha/map.md - 1 finding; run bin/fm-map-fog-check.sh for details' \
     "bootstrap omitted the alpha map summary"
   assert_contains "$out" \
-    'MAP_FOG: data/gamma/map.md - 1 finding; run bin/fm-map-fog-check.sh for details' \
+    'MAP_FOG: data/shared - live unspecified item:/beta/map.md - 1 finding; run bin/fm-map-fog-check.sh for details' \
     "bootstrap omitted the beta map summary"
   count=$(printf '%s\n' "$out" | grep -c '^MAP_FOG:' || true)
   [ "$count" -eq 2 ] || fail "bootstrap printed $count MAP_FOG lines for two maps"

@@ -1285,32 +1285,66 @@ detect_local_config() {
   fi
   if fog_output=$("$SCRIPT_DIR/fm-map-fog-check.sh" 2>&1); then
     if [ -n "$fog_output" ]; then
-      printf '%s\n' "$fog_output" | awk '
-        /^MAP_FOG: registry invalid - / { print; next }
-        /^MAP_FOG: / {
-          detail = substr($0, 10)
-          separator = match(detail, / - (live unspecified item:|closed pointer does not resolve:|## Not yet specified has no bullets)/)
-          if (separator == 0) {
-            print
-            next
-          }
-          map = substr(detail, 1, separator - 1)
-          if (!(map in findings)) {
-            order[++map_count] = map
-          }
-          findings[map]++
-          next
-        }
-        { print }
-        END {
-          for (i = 1; i <= map_count; i++) {
-            map = order[i]
-            noun = findings[map] == 1 ? "finding" : "findings"
-            printf "MAP_FOG: %s - %d %s; run bin/fm-map-fog-check.sh for details\n", \
-              map, findings[map], noun
-          }
-        }
-      '
+      fog_maps=()
+      fog_counts=()
+      while IFS= read -r fog_line || [ -n "$fog_line" ]; do
+        case "$fog_line" in
+          'MAP_FOG: registry invalid - '*)
+            printf '%s\n' "$fog_line"
+            continue
+            ;;
+          'MAP_FOG: '*)
+            fog_detail=${fog_line#MAP_FOG: }
+            fog_map=
+            fog_candidate=
+            while [[ "$fog_detail" == *' - '* ]]; do
+              fog_segment=${fog_detail%%' - '*}
+              fog_detail=${fog_detail#*' - '}
+              if [ -n "$fog_candidate" ]; then
+                fog_candidate="$fog_candidate - $fog_segment"
+              else
+                fog_candidate=$fog_segment
+              fi
+              case "$fog_candidate" in
+                /*) fog_path=$fog_candidate ;;
+                *) fog_path="$FM_HOME/$fog_candidate" ;;
+              esac
+              case "$fog_candidate" in
+                map.md|*/map.md)
+                  if [ -f "$fog_path" ] && [ ! -L "$fog_path" ] && [ -r "$fog_path" ]; then
+                    fog_map=$fog_candidate
+                    break
+                  fi
+                  ;;
+              esac
+            done
+            if [ -z "$fog_map" ]; then
+              printf '%s\n' "$fog_line"
+              continue
+            fi
+            fog_index=
+            for fog_existing_index in "${!fog_maps[@]}"; do
+              if [ "${fog_maps[fog_existing_index]}" = "$fog_map" ]; then
+                fog_index=$fog_existing_index
+                break
+              fi
+            done
+            if [ -n "$fog_index" ]; then
+              fog_counts[fog_index]=$((fog_counts[fog_index] + 1))
+            else
+              fog_maps+=("$fog_map")
+              fog_counts+=(1)
+            fi
+            ;;
+          *) printf '%s\n' "$fog_line" ;;
+        esac
+      done <<< "$fog_output"
+      for fog_index in "${!fog_maps[@]}"; do
+        fog_noun=finding
+        [ "${fog_counts[fog_index]}" -eq 1 ] || fog_noun=findings
+        printf 'MAP_FOG: %s - %d %s; run bin/fm-map-fog-check.sh for details\n' \
+          "${fog_maps[fog_index]}" "${fog_counts[fog_index]}" "$fog_noun"
+      done
     fi
   else
     fog_rc=$?
