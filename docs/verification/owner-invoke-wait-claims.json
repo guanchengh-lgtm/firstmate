@@ -3,7 +3,7 @@
   "size_reason": "Wait detector on durable records. Widen the landed go-gate / ready-action owner. Full adversary rounds are a later ship if the light refuse is trusted.",
   "shape": "A node owns a next act. This seat proceeds without starting that act.",
   "form": "refuse-hook",
-  "structure": "bin/fm-owner-invoke-wait-check.sh on map_next and date-cleared holds, and production ships[] gather for kind=ship metas whose session= matches state/.lock, with Stop ladder on data/<ov>/report.md then live endpoint then refuse, and report-gated data/<ov>/skills for plan-eng-review only when durable ov_harness is claude/claude*. Split transcript windows stay as gather holes. Does not parse brief-body Role or Delivery contract lines.",
+  "structure": "bin/fm-owner-invoke-wait-check.sh on map_next and date-cleared holds, and production ships[] gather for kind=ship metas whose session= matches state/.lock, with Stop ladder on data/<ov>/report.md then live endpoint then refuse. Brief and explicit evaluation retain report-gated data/<ov>/skills for plan-eng-review only when durable ov_harness is claude/claude*. Split transcript windows stay as gather holes. Does not parse brief-body Role or Delivery contract lines.",
   "rules": [
     "R-held-locked-next",
     "R-ov-missing",
@@ -11,7 +11,7 @@
   ],
   "instances": [
     "Started Spec compile-check with no separate OV report. The builder's own plan note is not OV.",
-    "Ship instructions never loaded plan-eng-review."
+    "A ship brief reached spawn while its Claude OV instructions never loaded plan-eng-review."
   ],
   "fixture": "reconstructed-historical",
   "fixture_artifact": "tests/fixtures/fm-owner-invoke-wait-check/",
@@ -34,7 +34,7 @@
     "Empty or placeholder task fields skip ship rules.",
     "Builder self-review is not OV.",
     "ov= without report.md is not a review while the worker is gone.",
-    "Non-Claude or missing ov_harness skips R-skill-unloaded (disclosed gap; those harnesses write no skills record)."
+    "Non-Claude or missing ov_harness skips brief or explicit R-skill-unloaded evaluation because those harnesses write no skills record."
   ],
   "skipped": [
     "Adversarial rounds because size is light: one fresh reader via the test suite is enough.",

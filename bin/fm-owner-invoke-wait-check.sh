@@ -26,9 +26,6 @@
 #                           hook/brief ladder: review worker gone with no
 #                           data/<ov>/report.md (live worker without report
 #                           is in-progress and passes)
-#   R-skill-unloaded        report present, ov_harness is claude/claude*, and
-#                           data/<ov>/skills never listed plan-eng-review
-#                           (completion-time; gated by report; Claude-only)
 #   R-owner-node-open       a harness <command-name> token from the header
 #                           node table opened a node, a later real captain
 #                           turn arrived, and no ordinary file matching any
@@ -66,10 +63,8 @@
 # this session started). Prior-session ships fall out when a new lock pid is
 # written. No second session-ships list. Does not match cwd to worktree=.
 # For each gathered ship with ov=<ov>, Stop ladder in this order:
-#   a. data/<ov>/report.md non-empty -> if ov_harness is claude/claude*,
-#      require plan-eng-review in data/<ov>/skills (absent/empty = unloaded);
-#      non-Claude or missing ov_harness skips the skill rule (disclosed gap).
-#      No liveness check in this branch.
+#   a. data/<ov>/report.md non-empty -> PASS. No liveness or skill check in
+#      this branch.
 #   b. else if <ov>.meta exists and its agent is alive -> PASS
 #      (review in progress; never refuse merely for a missing report)
 #   c. else refuse: review worker gone with no report
@@ -78,13 +73,13 @@
 # back to target_exists so unverified backends do not wedge. A shell husk
 # after the agent exits is not in-progress.
 # A gathered ship with no ov= passes at turn-end; spawn-time R-ov-missing is
-# the empty-ov start gate. Skills evaluation is completion-time, gated by
-# the report, even though it runs at turn-end. fm-spawn.sh writes session=
-# and ov_harness= (from the OV worker's harness= at ship spawn) and exports
-# FM_TASK_ID/FM_HOME; Claude PostToolUse Skill (crewmate settings.local.json
-# absolute $FM_ROOT path, plus tracked settings.json) runs
-# bin/fm-skill-load-record.sh to append normalized loads (strip gstack-,
-# lowercase) into data/<id>/skills. Matcher is exact element plan-eng-review.
+# the empty-ov start gate. Spawn-time brief evaluation retains
+# R-skill-unloaded. fm-spawn.sh writes session= and ov_harness= (from the OV
+# worker's harness= at ship spawn) and exports FM_TASK_ID/FM_HOME; Claude
+# PostToolUse Skill (crewmate settings.local.json absolute $FM_ROOT path, plus
+# tracked settings.json) runs bin/fm-skill-load-record.sh to append normalized
+# loads (strip gstack-, lowercase) into data/<id>/skills. Matcher is exact
+# element plan-eng-review.
 #
 # Exact-count regression requires both --expect-rule and --expect-count and
 # exits 0 only when that rule count and the total finding count both equal
@@ -96,9 +91,10 @@
 # Builder self-review is not OV. In-flight ships already started without ov=
 # are not re-refused at turn end. A non-Claude review worker (grok, codex,
 # pi, kimi, opencode, muse) fires no PostToolUse hook, so its skills record
-# is never written; R-skill-unloaded runs only when durable ov_harness is
-# claude or claude*, and skips for any other harness or a missing/unreadable
-# ov_harness on older records - a disclosed gap, not a refusal.
+# is never written; brief or explicit R-skill-unloaded evaluation runs only
+# when durable ov_harness is claude or claude*, and skips for any other harness
+# or a missing/unreadable ov_harness on older records - a disclosed gap, not a
+# refusal.
 # R-owner-node-open sees only harness command-name records, not slash text
 # and not Skill tool loads. Non-Claude primaries emit no command-name
 # record (disclosed gap). Assistant or isMeta text that quotes the tag does
@@ -123,7 +119,7 @@ CLAUDE_MODE=0
 PRETOOL_MODE=0
 HOOK_MODE=0
 
-INPUT_RULES='R-held-locked-next,R-ov-missing,R-skill-unloaded,R-owner-node-open'
+INPUT_RULES='R-held-locked-next,R-ov-missing,R-owner-node-open'
 BRIEF_RULES='R-ov-missing,R-skill-unloaded'
 KNOWN_RULES='R-held-locked-next R-ov-missing R-skill-unloaded R-owner-node-open'
 # Header-owned default node table. Home file is not consulted.
@@ -533,27 +529,28 @@ if [ -f "$CONFIG/backlog-backend" ]; then
 fi
 
 gather_held() {
-  local backlog="$DATA/backlog.md" output id kind reason until show
+  local backlog="$DATA/backlog.md" output id until
   [ -f "$backlog" ] && [ ! -L "$backlog" ] || return 0
   [ "$backend" != manual ] || return 0
   command -v tasks-axi >/dev/null 2>&1 || return 0
   output=$(tasks-axi ready --file "$backlog" --include-held 2>/dev/null) || return 0
-  while IFS= read -r id; do
+  while IFS=$'\t' read -r id until; do
     [ -n "$id" ] || continue
-    show=$(tasks-axi show --file "$backlog" "$id" 2>/dev/null) || continue
-    kind=$(printf '%s\n' "$show" | sed -n 's/^  hold_kind: //p' | tail -1)
-    reason=$(printf '%s\n' "$show" | sed -n 's/^  hold_reason: //p' | tail -1)
-    until=$(printf '%s\n' "$show" | sed -n 's/^  hold_until: //p' | tail -1)
-    held_json=$(jq -n -c --arg id "$id" --arg kind "$kind" --arg reason "$reason" --arg until "$until" \
+    held_json=$(jq -n -c --arg id "$id" --arg until "$until" \
       --argjson acc "$held_json" \
-      '$acc + [{id:$id, hold_kind:$kind, hold_reason:$reason, hold_until:$until}]')
+      '$acc + [{id:$id, hold_until:$until}]')
   done < <(printf '%s\n' "$output" | awk '
     /^held\[[0-9]+\]/ { in_held = 1; next }
     in_held && /^[[:space:]]/ {
       row = $0
       sub(/^[[:space:]]*/, "", row)
-      split(row, fields, ",")
-      if (fields[1] != "") print fields[1]
+      id = row
+      sub(/,.*/, "", id)
+      until = row
+      sub(/^.*,/, "", until)
+      sub(/^[[:space:]]*/, "", until)
+      sub(/[[:space:]]*$/, "", until)
+      if (id != "") print id "\t" until
     }
     in_held && /^[^[:space:]]/ { exit }
   ')

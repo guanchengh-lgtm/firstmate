@@ -325,29 +325,22 @@ test_hook_claude_ready_action_ignores_stop_hook_active() {
   pass "fm-turnend-guard --claude: stop_hook_active cannot skip unowned ready-action"
 }
 
-write_fake_held_tasks_axi() {  # <dir> <held-id> <hold_kind> <hold_reason> <hold_until>
-  local dir=$1 id=$2 kind=$3 reason=$4 until=$5
+write_fake_held_tasks_axi() {  # <dir>
+  local dir=$1
   mkdir -p "$dir/fakebin" "$dir/data"
   printf '%s\n' '# backlog fixture' > "$dir/data/backlog.md"
-  cat > "$dir/fakebin/tasks-axi" <<SH
+  cat > "$dir/fakebin/tasks-axi" <<'SH'
 #!/usr/bin/env bash
-id='$id'
-kind='$kind'
-reason='$reason'
-until='$until'
-if [ "\${1:-}" = ready ]; then
-  printf 'count: 0\\nready: 0 unblocked queued tasks\\n'
-  printf 'held[1]{id,state,kind,repo,title,hold_reason,hold_kind,hold_until}:\\n'
-  printf '  %s,queued,ship,firstmate,Held slice,%s,%s,%s\\n' "\$id" "\$reason" "\$kind" "\$until"
+printf '%s\n' "$*" >> "${FM_FAKE_TASKS_LOG:?}"
+if [ "${1:-}" = ready ]; then
+  printf 'count: 0\nready: 0 unblocked queued tasks\n'
+  printf 'held[2]{id,state,kind,repo,title,hold_reason,hold_kind,hold_until}:\n'
+  printf '%s\n' '  dated-slice,queued,ship,firstmate,"Dated, slice","timer, elapsed",date,2000-01-01'
+  printf '%s\n' '  map-s2,queued,ship,firstmate,"Held, slice","waiting for captain, go\nsecond line",captain,-'
   exit 0
 fi
-if [ "\${1:-}" = show ]; then
-  printf 'task:\\n'
-  printf '  id: %s\\n' "\$id"
-  printf '  hold_reason: %s\\n' "\$reason"
-  printf '  hold_kind: %s\\n' "\$kind"
-  printf '  hold_until: %s\\n' "\$until"
-  exit 0
+if [ "${1:-}" = show ]; then
+  exit 99
 fi
 exit 1
 SH
@@ -355,16 +348,27 @@ SH
 }
 
 test_hook_refuses_held_map_next_without_worker() {
-  local dir out status
+  local dir log out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-held-map-next")
-  write_fake_held_tasks_axi "$dir" map-s2 captain "waiting for captain go" "-"
+  write_fake_held_tasks_axi "$dir"
+  log="$dir/tasks-axi.log"
   printf '%s\n' 'kind=ship' 'map_next=map-s2' > "$dir/state/blocker.meta"
-  out=$(PATH="$dir/fakebin:$PATH" run_hook "$dir" false); status=$?
+  out=$(PATH="$dir/fakebin:$PATH" FM_FAKE_TASKS_LOG="$log" run_hook "$dir" false); status=$?
   expect_code 2 "$status" "turn end must refuse a held locked next slice with no worker"
   assert_contains "$out" 'OWNER-OWNED NEXT ACT WAS NOT STARTED' \
     "held map_next refusal did not use the owner-invoke banner"
+  assert_contains "$out" 'dated-slice is a locked next act still held without a worker' \
+    "dated hold_until refusal did not survive quoted commas and escaped newline"
+  printf '%s\n' 'kind=ship' > "$dir/state/dated-slice.meta"
+  out=$(PATH="$dir/fakebin:$PATH" FM_FAKE_TASKS_LOG="$log" run_hook "$dir" false); status=$?
+  expect_code 2 "$status" "turn end must still refuse the held map_next after owning the dated hold"
   assert_contains "$out" 'map-s2 is a locked next act still held without a worker' \
     "held map_next refusal did not name the locked id"
+  [ "$(grep -Fc 'ready --file' "$log")" -eq 4 ] \
+    || fail "ready-action plus owner-invoke must each use one ready listing"
+  [ "$(grep -Fc -- '--include-held' "$log")" -eq 2 ] \
+    || fail "owner-invoke did not use exactly one include-held listing per invocation"
+  ! grep -q '^show ' "$log" || fail "owner-invoke still called tasks-axi show per held id"
   pass "fm-turnend-guard: a held map_next ticket cannot end as a yes-ask"
 }
 
