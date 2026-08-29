@@ -1,0 +1,22 @@
+$ bin/fm-spec-compile-check.sh --home <fixture>  # missing D1
+R-ticket-lock-missing: D1
+exit_status=1
+
+# Add D1 to the explicit spec input.
+$ bin/fm-spec-compile-check.sh --home <fixture>
+exit_status=0
+
+$ bin/fm-reduce-check.sh --expect <report> --cited-by <lock>
+id: ov-a
+keep: Node contract: bounded job
+exit_status=0
+
+$ bin/fm-turnend-guard.sh  # linked child worktree, transcript wrote a spec
+exit_status=0
+output=<silent>
+
+$ test ! -e bin/fm-spec-compile-stop-check.sh
+exit_status=0
+
+$ rg fm-spec-compile-stop-check . --hidden --glob !.git
+exit_status=1 (1 means no matches)
