@@ -207,16 +207,42 @@ tests/fm-crew-state.test.sh
 
 ## Turn-end guard
 
-The blocking and bounded-follow-up mechanisms were validated across six harnesses on 2026-07-08 through 2026-08-13, with Claude's replacement Stop-owned path revalidated on 2026-07-24 and Cursor's stop-hook park validated on 2026-08-13.
+The blocking and bounded-follow-up mechanisms were validated across six harnesses on 2026-07-08 through 2026-08-29, with Claude's replacement Stop-owned path revalidated on 2026-07-24, Cursor's stop-hook park validated on 2026-08-13, and Pi's neutral wrapper revalidated on 2026-08-29.
 
 | Harness | Version verified | Mechanism | Observed result |
 | --- | --- | --- | --- |
 | Claude | 2.1.219 | Cooperative blocking `Stop` guard plus `asyncRewake` auto-arm | A fresh unsupervised session ran session start first, reclaimed a stale dead-owner lock, completed two tokenless rewake cycles with no model arm command or guard continuation, and left a competing live owner unchanged. |
 | Codex | 0.142.1 | Blocking `Stop` hook | Hook process root stayed anchored to the trusted checkout and one continuation ran. |
 | OpenCode | 1.17.6 | Passive `session.idle` callback | Throwing could not block, while `promptAsync` scheduled one TUI follow-up; headless remained fail-open. |
-| Pi | 0.80.5 | Passive `agent_settled` callback | Exactly one guard follow-up ran for an unhealthy cycle, with no recursion across tool turns. |
+| Pi | 0.84.4 | Passive `agent_settled` callback | Exactly one neutral guard follow-up ran for an unhealthy cycle, with no recursive second follow-up. |
 | Grok | 0.2.112 native and 0.2.73 pre-native | Running-payload adaptive `Stop` | Native false-to-true continuation stayed in one process with two model turns and zero resume launches; the field-absent pre-native process launched exactly one guarded resume. |
 | Cursor | 2026.08.11-e8db854 | Awaited `stop` hook park returning one `followup_message` | Exit 2 ended the turn normally, proving it cannot block; a returned follow-up ran a genuine second turn; a sleeping hook held the boundary open and the wake landed after it; `loop_limit` stopped the hook being invoked at its ceiling. |
+
+### Pi neutral guard refusal, 2026-08-29
+
+Pi 0.84.4 was validated with the changed tracked extension in an isolated plain Git checkout and scratch home.
+The scratch state contained one task metadata entry and no watcher, so the real `agent_settled` callback forced one follow-up.
+
+```sh
+pi --version
+repo=$(git rev-parse --show-toplevel)
+cd .pi-turnend-evidence/project
+REPO="$repo" FM_HOME=../home FM_ROOT_OVERRIDE=. bash -lc 'printf "%s\n" "$$" > "$FM_HOME/state/.lock"; printf "%s\n" "task=evidence" > "$FM_HOME/state/evidence.meta"; exec pi --approve --session-dir ../sessions-relative --no-context-files --no-extensions --no-skills -e "$REPO/.pi/extensions/fm-primary-turnend-guard.ts" --tools read --model xai/grok-4.3 --thinking low "Reply exactly DONE."'
+jq -r 'select(.type == "message") | .message.content[]?.text // empty | select(startswith("⁣FIRSTMATE_OP: v1 turn-end-guard:"))' ../sessions-relative/*.jsonl
+```
+
+Observed output:
+
+```text
+0.84.4
+⁣FIRSTMATE_OP: v1 turn-end-guard: TURN-END GUARD REFUSED. Follow the guard instruction below before ending the turn.
+
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  TURN WOULD END BLIND - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher holds this home lock (last beat: never).
+●  repair a missing or failed watcher cycle with the Pi tool fm_watch_arm_pi, or restart Pi with -e ./.pi/extensions/fm-primary-turnend-guard.ts -e ./.pi/extensions/fm-primary-pi-watch.ts if the extensions are not loaded.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
 
 ### Cursor primary park, 2026-08-13
 
