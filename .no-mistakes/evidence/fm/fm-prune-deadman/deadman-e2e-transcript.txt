@@ -1,0 +1,7 @@
+case=idle pages=0 notification=none
+case=process pages=0 notification=none
+case=task pages=1 notification=command|FIRSTMATE DEADMAN: watcher beacon stale for 211970655s: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//deadman-e2e.FfbcpN/task/home/state/.last-watcher-beat; scheduling path may be stopped
+case=relay pages=1 notification=command|FIRSTMATE DEADMAN: watcher beacon stale for 211970654s: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//deadman-e2e.FfbcpN/relay/home/state/.last-watcher-beat; scheduling path may be stopped
+case=unavailable pages=0 first_stale=cleared
+case=reset pages_after_first_new_sample=0 pages_after_second_new_sample=1
+case=canary notification=command|FIRSTMATE DEADMAN CANARY - notification path is working for /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//deadman-e2e.FfbcpN/canary/home

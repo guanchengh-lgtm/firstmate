@@ -1,0 +1,14 @@
+ok - staleness is age > N and requires two samples 60-120 seconds apart
+ok - unreadable and future beacon inputs are unhealthy while work is live
+ok - deadman pages only for task or Relay work and resets sampling while idle
+ok - deadman rechecks live work at the notification boundary
+ok - a healthy flap resets stale confirmation
+fm-notify: notifier override exited 1 for channel 'command'
+ok - only successful delivery consumes the page cooldown
+ok - first-arm and inferred sleep/wake gaps defer pages
+ok - configuration is parsed as allowlisted data, never sourced
+ok - corrupt deadman timestamps self-fault in the main shell
+ok - probe is notify-only; concurrent probes serialize; canary fails closed on lock
+ok - TERM cleanup reaps notifier, releases lock, exits nonzero; normal exit stays zero
+ok - installer writes a valid stable-copy LaunchAgent and sends a canary
+ok - default no-channel install writes auto and pins installer PATH in plist
