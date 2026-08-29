@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Probe one Firstmate watcher's liveness from an installed launchd copy.
+# Probe one Firstmate watcher's liveness while task or Relay work is live.
 #
 # The monitored FM_HOME is read-only probe input. All deadman configuration and
 # state live beside this installed script. Normal healthy and unhealthy probe
@@ -114,6 +114,14 @@ beacon_mtime() {
   value=$(stat -f %m "$path" 2>/dev/null) || value=$(stat -c %Y "$path" 2>/dev/null) || return 1
   valid_uint "$value" || return 1
   printf '%s\n' "$value"
+}
+
+live_work_exists() {
+  local meta
+  for meta in "$FM_HOME"/state/*.meta; do
+    [ -f "$meta" ] && [ ! -L "$meta" ] && return 0
+  done
+  [ -f "$FM_HOME/state/x-watch.check.sh" ] && [ ! -L "$FM_HOME/state/x-watch.check.sh" ]
 }
 
 probe_status() {
@@ -278,6 +286,10 @@ main() {
   fi
 
   apply_sleep_wake_grace || exit 0
+  if ! live_work_exists; then
+    rm -f "$INSTALL_DIR/first-stale"
+    exit 0
+  fi
   arm_if_ready || exit 0
   if probe_status; then
     rm -f "$INSTALL_DIR/first-stale"
@@ -310,6 +322,10 @@ main() {
     fi
   fi
 
+  if ! live_work_exists; then
+    rm -f "$first_sample"
+    exit 0
+  fi
   summary="FIRSTMATE DEADMAN: $PROBE_DETAIL; scheduling path may be stopped"
   if notify "$summary"; then
     atomic_write "$INSTALL_DIR/last-success-at" "$NOW" || self_fault "cannot record successful page"
