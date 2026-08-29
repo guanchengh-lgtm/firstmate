@@ -13,7 +13,7 @@
 #                 "SOT_GAP: <program_id> - <missing pointer or superseded hold detail>",
 #                 "SOT_GAP: registry invalid - <structural failure>",
 #                 "SOT_GAP: checker failed with status <n>",
-#                 "MAP_FOG: <map> - <live unspecified item or closed pointer>",
+#                 "MAP_FOG: <map> - <count> finding(s); run bin/fm-map-fog-check.sh for details",
 #                 "MAP_FOG: registry invalid - <structural failure>",
 #                 "MAP_FOG: checker failed with status <n>",
 #                 "FLEET_SYNC: <repo>: skipped|recovered|STUCK: <detail>",
@@ -1284,7 +1284,34 @@ detect_local_config() {
     fi
   fi
   if fog_output=$("$SCRIPT_DIR/fm-map-fog-check.sh" 2>&1); then
-    [ -z "$fog_output" ] || printf '%s\n' "$fog_output"
+    if [ -n "$fog_output" ]; then
+      printf '%s\n' "$fog_output" | awk '
+        /^MAP_FOG: registry invalid - / { print; next }
+        /^MAP_FOG: / {
+          detail = substr($0, 10)
+          separator = match(detail, / - (live unspecified item:|closed pointer does not resolve:|## Not yet specified has no bullets)/)
+          if (separator == 0) {
+            print
+            next
+          }
+          map = substr(detail, 1, separator - 1)
+          if (!(map in findings)) {
+            order[++map_count] = map
+          }
+          findings[map]++
+          next
+        }
+        { print }
+        END {
+          for (i = 1; i <= map_count; i++) {
+            map = order[i]
+            noun = findings[map] == 1 ? "finding" : "findings"
+            printf "MAP_FOG: %s - %d %s; run bin/fm-map-fog-check.sh for details\n", \
+              map, findings[map], noun
+          }
+        }
+      '
+    fi
   else
     fog_rc=$?
     [ -z "$fog_output" ] || printf '%s\n' "$fog_output"
