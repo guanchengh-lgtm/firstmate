@@ -19,14 +19,10 @@ Separately, the same script refuses ending a turn as prose-only waiting when a r
 The same family refuses a held locked next act with no worker, an owner-invoke node still open after the captain's next message with no matching artifact, and session-scoped durable ship records whose OV review worker is gone without a report; `bin/fm-owner-invoke-wait-check.sh` owns those rules.
 It does not hunt free English. Split transcript windows stay as gather holes.
 It also refuses ending a turn on an unchecked yen126/TradingView login or session-death block from a `tradingview-tools` task; that same header owns the session-diagnosis contract.
-Before primary scope, it also refuses a Stop that wrote Map 2 spec, tickets, or keep-list files this turn while `bin/fm-spec-compile-check.sh` is red; `bin/fm-spec-compile-stop-check.sh`'s header owns that adapter.
 The mid-turn pull warning uses the model-aware supervision verdict described below, while the turn-end guard keeps the PID-strict watcher predicate.
 The guard remains a backstop; [`watcher-continuity.md`](watcher-continuity.md) owns normal continuity.
 
 ## Guard predicates
-
-Before primary scope and before the Codex/Grok `stop_hook_active` allow, the guard runs `bin/fm-spec-compile-stop-check.sh` so a child firstmate worktree that wrote Map 2 spec, tickets, or keep-list files cannot end while the matcher is red.
-That adapter's header owns the write window and home derivation from the written path; it never uses `FM_HOME` as an implicit compile or reduce home.
 
 The guard then calls the shared primary scope.
 A secondmate home runs its own primary Firstmate session, so a genuine `.fm-secondmate-home` marker includes it whether the home is a linked worktree or plain clone.
@@ -65,7 +61,7 @@ Its banner names the true failing condition, either a missing live watcher proce
 `FM_STATE_OVERRIDE` wins over `FM_HOME/state`, and `FM_HOME` wins over repository-root `state/`.
 `FM_GUARD_GRACE` controls beacon freshness and defaults to 300 seconds.
 If hook stdin is empty, the guard exits 0 before any predicate.
-If `jq` is missing after the spec compile adapter, the remaining predicates exit 0 because they cannot safely read loop-guard fields.
+If `jq` is missing, the guard exits 0 because it cannot safely read loop-guard fields.
 
 ## Harness integrations
 
@@ -89,7 +85,6 @@ If `jq` is missing after the spec compile adapter, the remaining predicates exit
 Claude and Codex can block a Stop directly with exit status 2 and stderr.
 Both payloads carry `stop_hook_active`.
 In the default Codex mode, a true value lets the second stop finish after one forced continuation for every predicate that runs after that allow, including SoT speech, answer-time lock, ready-action, owner-invoke wait, session-diagnosis, and supervision.
-The spec compile-check adapter is seated before that allow; see Known residual gap.
 
 Claude runs the guard with `--claude`, which ignores `stop_hook_active` and cooperates with the Stop-owned auto-arm.
 Claude Code sets `stop_hook_active=true` on every stop after any stop-hook continuation, including `asyncRewake` rewakes, which re-opened the 2026-07-21 blind window under the default one-shot behavior.
@@ -156,7 +151,7 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 
 ## Compatibility limits
 
-- Child crewmate and scout worktrees are outside supervision scope. The spec compile-check adapter is the exception; its header owns that seat.
+- Child crewmate and scout worktrees are outside supervision scope.
 - A valid secondmate home is in scope; an idle secondmate endpoint with no Relay poll remains healthy because it has no supervision need.
 - The blocking and bounded-follow-up mechanisms are limited to the primary integrations listed above.
 - OpenCode headless mode and untrusted Grok project hooks remain fail-open at the host boundary.
@@ -172,24 +167,10 @@ That warning uses `bin/fm-supervision-instructions.sh --repair-line`, so it alwa
 - Unreadable hook input remains fail-open.
 - No harness adapter uses a shell ampersand to manufacture supervision.
 
-## Known residual gap
-
-The spec compile-check Stop adapter is inert on Pi, OpenCode, and pi-signed primaries because those adapters feed the guard `{"stop_hook_active":false}` with no transcript path.
-It also cannot see writes that are not a Stop (an editor save or `git checkout`) or Bash writes through variables or `cd` that leave no literal `data/wf-map2-loops/`, `data/decisions/`, or cited `data/<id>/report.md` suffix in the command string.
-On Codex and Grok default mode it also runs before the `stop_hook_active` / `stopHookActive` allow, so a still-red this-turn write can exit 2 again on the bounded continuation and break that harness's never-block-twice loop contract until the matcher is green or the write leaves the this-turn window.
-`bin/fm-spec-compile-stop-check.sh`'s header owns the write-window residual; `bin/fm-turnend-guard.sh`'s header owns the pre-loop-guard seat.
-
-The same adapter refuses a declared wide-work count miss when a this-turn write to the spec, a Map 2 ticket, or `data/decisions/<name>.md` carries an `expected-reports:` line and `bin/fm-reduce-check.sh` is red.
-N is the id list firstmate wrote at dispatch; the matcher never waits for reports and never reads `FM_HOME`.
-It cannot catch a wrong or absent declaration, a cited-but-unread report, harness-internal fan-outs that drop a failed child with no file, non-Map-2 synthesis that never writes those paths, or Pi / OpenCode / pi-signed primaries with no transcript.
-A scout declared `id(failed: reason)` is an explicit escape, not a finding.
-`bin/fm-spec-compile-stop-check.sh`'s header owns that write window and the child-path home derivation.
-
 ## Regression coverage
 
 `tests/fm-turnend-guard.test.sh` covers the predicate, main and secondmate primary scope, child-worktree exclusion, treehouse-leased linked secondmate inclusion, `FM_HOME` and `FM_STATE_OVERRIDE` precedence, the ready-action refusal for ownerless queued tickets, every-ready-id checking, matching-worker acceptance, Claude `stop_hook_active` non-bypass of ready-action, answer-time lock refuse after primary scope, its Codex loop-guard allow, Claude non-bypass, crewmate inertness, held locked-next listing parsing and call count, open owner-node refusals, the TradingView session-diagnosis refusal for missing evidence and failing checker findings, passing-checker acceptance, unrelated-blocker negative controls, Claude `stop_hook_active` non-bypass of that session gate, the live-lock and fresh-beacon guard predicate, the cooperative `--claude` claim wait, monotonic failed-epoch progression, bounded attended fail-open, post-alarm continuation suppression, positive recovery reset, Pi logical-run latching, missing-`jq` behavior, all five primary registrations, Grok native and legacy selection, typed field precedence, malformed input, and exactly-one-path safety.
 `tests/fm-answer-lock-check.test.sh` covers the Map 2 answer-time lock matcher rules, `## Answer` lock-token seat, undated close, pick-still-open, and absent-gather inertness.
-`tests/fm-spec-compile-stop-check.test.sh` covers the Stop adapter's this-turn write window, path-derived home, child-worktree seat before primary-scope, no-write and no-transcript inertness, red compile refuse, and reduce `expected-reports` refuse.
 `tests/fm-owner-invoke-wait-check.test.sh` covers the helper's fail-closed input, exact-count fixtures, held locked-next, owner-node-open one-message-late refusal with no home file, same-turn owner-node acceptance, duplicate-token OR-merge and recursive `**` artifact credit, slash-without-command-name non-arming, malformed test-override registry structural failure, session-scoped ship gather, live-agent-no-report pass, husk-pane-without-report refuse, torn-down workers with reports, brief-mode Claude skills refusal, skill-load recorder normalization, and crewmate Skill PostToolUse wiring.
 `tests/fm-spawn-dispatch-profile.test.sh` covers spawn refusal for a missing worker record, a live OV without a report, and a Claude OV without plan-eng-review, including explicit verifier OVs.
 `tests/fm-sot-speech-check.test.sh` covers `speech-claim:` lock rows under `data/decisions/`, and digest credit that cannot satisfy a product-lock row.

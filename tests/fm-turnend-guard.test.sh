@@ -122,13 +122,12 @@ install_guard_scripts() {
   cp "$ROOT/bin/fm-answer-lock-check.sh" "$dir/bin/fm-answer-lock-check.sh"
   cp "$ROOT/bin/fm-stow-open-lock-check.sh" "$dir/bin/fm-stow-open-lock-check.sh"
   cp "$ROOT/bin/fm-spec-compile-check.sh" "$dir/bin/fm-spec-compile-check.sh"
-  cp "$ROOT/bin/fm-spec-compile-stop-check.sh" "$dir/bin/fm-spec-compile-stop-check.sh"
   cp "$ROOT/bin/fm-owner-invoke-wait-check.sh" "$dir/bin/fm-owner-invoke-wait-check.sh"
   cp "$ROOT/bin/fm-keep-rows.py" "$dir/bin/fm-keep-rows.py"
   cp "$ROOT/bin/fm-reduce-check.sh" "$dir/bin/fm-reduce-check.sh"
   mkdir -p "$dir/docs"
   cp -R "$ROOT/docs/supervision-protocols" "$dir/docs/supervision-protocols"
-  chmod +x "$dir/bin/fm-turnend-guard.sh" "$dir/bin/fm-turnend-guard-grok.sh" "$dir/bin/fm-operational-input.sh" "$dir/bin/fm-supervision-instructions.sh" "$dir/bin/fm-harness.sh" "$dir/bin/fm-sot-speech-check.sh" "$dir/bin/fm-answer-lock-check.sh" "$dir/bin/fm-stow-open-lock-check.sh" "$dir/bin/fm-spec-compile-check.sh" "$dir/bin/fm-spec-compile-stop-check.sh" "$dir/bin/fm-owner-invoke-wait-check.sh" "$dir/bin/fm-reduce-check.sh"
+  chmod +x "$dir/bin/fm-turnend-guard.sh" "$dir/bin/fm-turnend-guard-grok.sh" "$dir/bin/fm-operational-input.sh" "$dir/bin/fm-supervision-instructions.sh" "$dir/bin/fm-harness.sh" "$dir/bin/fm-sot-speech-check.sh" "$dir/bin/fm-answer-lock-check.sh" "$dir/bin/fm-stow-open-lock-check.sh" "$dir/bin/fm-spec-compile-check.sh" "$dir/bin/fm-owner-invoke-wait-check.sh" "$dir/bin/fm-reduce-check.sh"
 }
 
 mark_codex_hook_root() {

@@ -144,7 +144,6 @@ family_for_basename() {
     fm-stow-open-lock-check.test.sh|\
     fm-answer-lock-check.test.sh|\
     fm-spec-compile-check.test.sh|\
-    fm-spec-compile-stop-check.test.sh|\
     fm-owner-invoke-wait-check.test.sh|\
     fm-reduce-check.test.sh|\
     fm-kimi-harness.test.sh|fm-muse-harness.test.sh|fm-herdr-lab.test.sh|fm-lint.test.sh|\
@@ -951,7 +950,6 @@ families_for_changed_path() {
       ;;
     bin/fm-turnend-guard.sh|bin/fm-turnend-guard-grok.sh)
       printf '%s\n' watcher-wake-lock
-      printf '%s\n' "__script__:fm-spec-compile-stop-check.test.sh"
       ;;
     bin/fm-watch*|bin/fm-wake*|\
     bin/fm-classify-lib.sh|bin/fm-daemon*|bin/fm-guard.sh)
@@ -1046,8 +1044,7 @@ families_for_changed_path() {
       printf '%s\n' pure-contract-unit
       printf '%s\n' watcher-wake-lock
       ;;
-    bin/fm-spec-compile-check.sh|bin/fm-spec-compile-stop-check.sh|\
-    bin/fm-reduce-check.sh|bin/fm-keep-rows.py)
+    bin/fm-spec-compile-check.sh|bin/fm-reduce-check.sh|bin/fm-keep-rows.py)
       printf '%s\n' pure-contract-unit
       ;;
     bin/fm-owner-invoke-wait-check.sh)
