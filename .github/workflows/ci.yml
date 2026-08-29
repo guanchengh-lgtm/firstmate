@@ -398,6 +398,14 @@ jobs:
             exit 1
           }
 
+          wake_output=$(/bin/bash tests/fm-wake-queue.test.sh)
+          printf '%s\n' "$wake_output"
+          wake_count=$(printf '%s\n' "$wake_output" | grep -c '^ok - ')
+          [ "$wake_count" -eq 23 ] || {
+            echo "::error::expected 23 wake-queue tests, got $wake_count"
+            exit 1
+          }
+
   invariants:
     name: Repo invariants
     runs-on: ubuntu-latest

@@ -938,11 +938,41 @@ test_self_held_lock_reclaims_instead_of_deadlocking() {
     . "$1"
     lock="$2/.fixture2.lock"
     fm_lock_acquire_wait "$lock" || exit 10
+    owner_before=$(readlink "$lock" 2>/dev/null) || exit 16
     ( fm_lock_try_acquire "$lock" && exit 13; exit 0 ) || exit 13
+    [ "$(cat "$lock/pid" 2>/dev/null)" = "$$" ] || exit 14
+    [ "$(readlink "$lock" 2>/dev/null)" = "$owner_before" ] || exit 15
     fm_lock_release "$lock"
+    [ ! -e "$lock" ] && [ ! -L "$lock" ] || exit 12
   ' _ "$ROOT/bin/fm-wake-lib.sh" "$state" || rc=$?
-  [ "$rc" -eq 0 ] || fail "a subshell reclaimed its parent's live hold (rc=$rc)"
-  pass "an abandoned same-process lock hold is reclaimed; a parent's live hold is not"
+  case "$rc" in
+    0) : ;;
+    12) fail "the parent could not release its live hold" ;;
+    13) fail "a subshell reclaimed its parent's live hold (rc=$rc)" ;;
+    14) fail "a failed child lock attempt changed the parent's owner pid" ;;
+    15) fail "a failed child lock attempt changed the parent's owner link" ;;
+    16) fail "the parent lock owner link could not be read before the child attempt" ;;
+    *) fail "the child lock refusal regression failed (rc=$rc)" ;;
+  esac
+  rc=0
+  FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    lock="$2/.fixture3.lock"
+    fm_lock_try_create "$lock" || exit 20
+    fm_current_pid > "$2/current-pid" || exit 21
+    [ "$(cat "$FM_LOCK_OWNER_DIR/pid" 2>/dev/null)" = "$(cat "$2/current-pid")" ] || exit 22
+    fm_lock_release "$lock"
+    [ ! -e "$lock" ] && [ ! -L "$lock" ] || exit 23
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$state" || rc=$?
+  case "$rc" in
+    0) : ;;
+    20) fail "the claim owner could not create its lock" ;;
+    21) fail "the claim owner pid probe failed" ;;
+    22) fail "the claim owner pid write or readback was lost" ;;
+    23) fail "the claim owner could not release its lock" ;;
+    *) fail "the claim owner pid regression failed (rc=$rc)" ;;
+  esac
+  pass "same-frame reclaim, child refusal, and claim owner publication stay safe"
 }
 
 # Drain-time historical annotation staleness: a turn-ended-only wake row must
