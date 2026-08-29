@@ -50,6 +50,19 @@ write_lock() {  # <path> <body>
   printf '%s\n' "$2" > "$path"
 }
 
+make_counted_check() {  # <dir>
+  local dir=$1
+  mkdir -p "$dir"
+  cp "$CHECK" "$dir/fm-answer-lock-check.sh"
+  # shellcheck disable=SC2016 # Variables expand when the generated stub runs.
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'printf "called\\n" >> "$FM_TEST_OPEN_LOCK_LOG"' \
+    'printf "%s\\n" "${FM_TEST_OPEN_LOCK_JSON:-[]}"' \
+    > "$dir/fm-stow-open-lock-check.sh"
+  chmod +x "$dir/fm-answer-lock-check.sh" "$dir/fm-stow-open-lock-check.sh"
+}
+
 test_missing_tickets_dir_is_inert() {
   local home out rc
   home="$TMP_ROOT/no-tickets"
@@ -166,6 +179,56 @@ test_answered_close_without_lock_fires() {
   assert_contains "$out" "R-close-no-lock-missing" \
     "answered close without lock did not report the rule"
   pass "answer-lock: CLOSED with ## Answer and no lock file fires R-close-no-lock"
+}
+
+test_ticket_without_pointer_skips_open_lock_reader() {
+  local home local_bin log out rc
+  home="$TMP_ROOT/lazy-no-pointer"
+  local_bin="$home/bin"
+  log="$home/open-lock-reader.log"
+  mkdir -p "$home/data/wf-map2-v2/tickets" "$home/data/decisions"
+  make_counted_check "$local_bin"
+  write_ticket "$home/data/wf-map2-v2/tickets/closed-answered.md" \
+    "$(printf '%s\n' 'status: CLOSED 2026-08-22' '' '## Answer' '**A.** no pointer')"
+  set +e
+  out=$(FM_HOME="$home" FM_TEST_OPEN_LOCK_LOG="$log" \
+    "$local_bin/fm-answer-lock-check.sh" 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "lazy no-pointer ticket exited $rc: $out"
+  assert_contains "$out" "R-close-no-lock-missing" \
+    "lazy no-pointer run skipped the unconditional ticket scan"
+  [ ! -e "$log" ] || fail "ticket without a lock pointer invoked the open-lock reader"
+  pass "answer-lock: ticket without a lock pointer skips open-lock reader"
+}
+
+test_valid_pointer_invokes_open_lock_reader_once() {
+  local home local_bin log pointer open_json out rc calls
+  home="$TMP_ROOT/lazy-valid-pointer"
+  local_bin="$home/bin"
+  log="$home/open-lock-reader.log"
+  pointer="data/decisions/still-open-2026-08-22.md"
+  mkdir -p "$home/data/wf-map2-v2/tickets" "$home/data/decisions"
+  make_counted_check "$local_bin"
+  # shellcheck disable=SC2016 # Backticks are literal Markdown lock tokens.
+  write_ticket "$home/data/wf-map2-v2/tickets/closed-open-lock.md" \
+    "$(printf '%s\n' 'status: CLOSED 2026-08-22' '' '## Answer' \
+      '**A.** Lock `data/decisions/still-open-2026-08-22.md`.')"
+  write_lock "$home/data/decisions/still-open-2026-08-22.md" \
+    "$(printf '%s\n' '# still open' '**Pick:** A. locked.' '- **Q1 Left.** Still open.')"
+  open_json=$(jq -cn --arg file "$pointer" '[{file:$file}]')
+  set +e
+  out=$(FM_HOME="$home" FM_TEST_OPEN_LOCK_LOG="$log" \
+    FM_TEST_OPEN_LOCK_JSON="$open_json" \
+    "$local_bin/fm-answer-lock-check.sh" --rules R-lock-still-open 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 1 ] || fail "lazy valid-pointer ticket exited $rc: $out"
+  assert_contains "$out" "R-lock-still-open-file" \
+    "valid pointer did not preserve the still-open refusal"
+  calls=$(wc -l < "$log" | tr -d ' ')
+  [ "$calls" -eq 1 ] || fail "valid pointer reader calls=$calls, want 1"
+  pass "answer-lock: valid pointer invokes open-lock reader once"
 }
 
 test_lock_still_open_uses_list_open_reader() {
@@ -374,6 +437,8 @@ test_clothes_pick_still_open_fires_exact_count
 test_clothes_close_no_lock_ship_ticket_is_exempt
 test_clothes_close_undated_fires_exact_count
 test_answered_close_without_lock_fires
+test_ticket_without_pointer_skips_open_lock_reader
+test_valid_pointer_invokes_open_lock_reader_once
 test_lock_still_open_uses_list_open_reader
 test_lock_without_pick_fires
 test_gather_skips_loops_and_other_data
