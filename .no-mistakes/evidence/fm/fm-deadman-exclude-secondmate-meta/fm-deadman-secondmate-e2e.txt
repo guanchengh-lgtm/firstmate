@@ -1,0 +1,23 @@
+Firstmate deadman secondmate live-work gate - executable evidence
+
+Method:
+- Ran the base and target fm-deadman.sh executables against isolated installed-state fixtures.
+- Each fixture had a stale watcher beacon and received probes at times 1000 and 1060.
+- The notifier override recorded each page as a notification.
+- first-stale records whether the probe retained a stale confirmation sample.
+
+BASE secondmate-only: notifications=1 first-stale=present
+TARGET secondmate-only: notifications=0 first-stale=absent
+TARGET mixed secondmate+task: notifications=1 first-stale=present
+TARGET two secondmates: notifications=0 first-stale=absent
+TARGET Relay-only: notifications=1 first-stale=present
+TARGET kind-less task: notifications=1 first-stale=present
+TARGET last kind=secondmate: notifications=0 first-stale=absent
+TARGET last kind=task: notifications=1 first-stale=present
+TARGET unreadable meta: notifications=1 first-stale=present
+
+Result:
+- The base executable reproduced the false notification for secondmate-only state.
+- The target executable ignored one or more secondmate registrations.
+- The target executable still notified for task metadata, Relay state, kind-less metadata, and unreadable metadata.
+- Duplicate kind fields used the last value.
