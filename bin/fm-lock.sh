@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Acquire or inspect the per-home firstmate session lock.
-# Writes the liveness PID selected by bin/fm-session-lock-lib.sh. Claude uses
-# its validated CLAUDE_PID with the ancestry PID as fallback; other harnesses
-# keep the ancestry PID. The PID outlives any one transient tool-call shell.
+# Writes the durable ancestry PID selected by bin/fm-session-lock-lib.sh.
+# CLAUDE_PID is only an additional liveness probe and is never persisted.
 # Usage: fm-lock.sh           acquire; exit 1 unless ownership is verified
 #        fm-lock.sh status    print holder and liveness; always exits 0
 set -u
@@ -36,7 +35,7 @@ fi
 
 fm_session_lock_identity || { echo "error: cannot locate harness process in ancestry" >&2; exit 1; }
 legacy_me=$FM_SESSION_ANCESTRY_PID
-me=$FM_SESSION_LIVENESS_PID
+me=$FM_SESSION_ANCESTRY_PID
 session_id=$FM_SESSION_ID
 probe=$(mktemp "$STATE/.lock-write.XXXXXX" 2>/dev/null) || {
   echo "error: cannot write session lock; operate read-only until resolved" >&2

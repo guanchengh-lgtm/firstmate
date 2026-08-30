@@ -401,18 +401,21 @@ test_e2e_daemon_parented_version_named_session_keeps_its_lock() {
   pass "session-lock e2e: a version-named session under a harness-named daemon keeps its own lock"
 }
 
-test_same_claude_session_reacquires_and_refreshes_pid() {
-  local dir contender_pid
+test_same_claude_session_reacquires_with_durable_pid() {
+  local dir contender_pid holder_pid
   dir="$TMP_ROOT/same-session"
   make_lock_identity_home "$dir"
   run_lock_pair "$dir" session-same session-same
   expect_code 0 "$(cat "$dir/state/contender.rc")" "the same Claude session id must reacquire the lock"
   contender_pid=$(cat "$dir/state/contender-pid")
-  [ "$(cat "$dir/state/.lock")" = "$contender_pid" ] \
-    || fail "same-session reacquire did not refresh the liveness pid"
+  holder_pid=$(cat "$dir/state/holder-pid")
+  [ "$contender_pid" != "$holder_pid" ] \
+    || fail "the same-session fixture did not separate CLAUDE_PID from the ancestry pid"
+  [ "$(cat "$dir/state/.lock")" = "$holder_pid" ] \
+    || fail "same-session reacquire did not preserve the durable ancestry pid"
   [ "$(cat "$dir/state/.lock.session")" = session-same ] \
     || fail "same-session reacquire changed the session discriminator"
-  pass "session-lock executable: same Claude session reacquires and refreshes its pid"
+  pass "session-lock executable: same Claude session reacquires with its durable pid"
 }
 
 test_background_claude_session_is_refused_under_live_holder() {
@@ -492,14 +495,17 @@ test_non_claude_ancestry_ignores_inherited_claude_environment() {
 }
 
 test_old_lock_without_sidecar_uses_pid_fallback() {
-  local dir contender_pid
+  local dir contender_pid holder_pid
   dir="$TMP_ROOT/old-lock-fallback"
   make_lock_identity_home "$dir"
   run_lock_pair "$dir" session-holder session-background 1
   expect_code 0 "$(cat "$dir/state/contender.rc")" "an old lock must use today's ancestry pid comparison"
   contender_pid=$(cat "$dir/state/contender-pid")
-  [ "$(cat "$dir/state/.lock")" = "$contender_pid" ] \
-    || fail "old-lock fallback did not refresh the liveness pid after acquisition"
+  holder_pid=$(cat "$dir/state/holder-pid")
+  [ "$contender_pid" != "$holder_pid" ] \
+    || fail "the old-lock fixture did not separate CLAUDE_PID from the ancestry pid"
+  [ "$(cat "$dir/state/.lock")" = "$holder_pid" ] \
+    || fail "old-lock fallback did not preserve the durable ancestry pid"
   [ "$(cat "$dir/state/.lock.session")" = session-background ] \
     || fail "old-lock fallback did not upgrade the acquired lock with a sidecar"
   pass "session-lock executable: old lock without a sidecar uses pid fallback"
@@ -623,7 +629,7 @@ test_competing_version_named_session_is_seen_as_live
 test_e2e_version_named_session_claims_the_home
 test_e2e_daemon_parented_session_claims_the_home
 test_e2e_daemon_parented_version_named_session_keeps_its_lock
-test_same_claude_session_reacquires_and_refreshes_pid
+test_same_claude_session_reacquires_with_durable_pid
 test_background_claude_session_is_refused_under_live_holder
 test_foreign_session_takes_over_dead_holder
 test_dead_claude_pid_falls_back_to_ancestry_pid

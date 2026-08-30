@@ -4,8 +4,9 @@
 # ONE owner of the "which verified-harness session holds this home's session
 # lock, and does the current process belong to that session?" decision. Claude
 # identity uses a valid CLAUDE_CODE_SESSION_ID only after the ancestry resolves
-# to Claude; CLAUDE_PID is only its liveness pid, with the ancestry pid as the
-# fallback. Other harnesses and uncertain Claude states use ancestry unchanged.
+# to Claude. state/.lock always records the durable ancestry pid. CLAUDE_PID is
+# only an additional liveness probe, with the ancestry pid as the fallback.
+# Other harnesses and uncertain Claude states use ancestry unchanged.
 # bin/fm-lock.sh uses it to acquire state/.lock and state/.lock.session;
 # bin/fm-claude-stop-autoarm.sh uses it to prove a Stop hook fires inside the
 # lock-owning primary session before it may arm or rewake.
