@@ -2183,20 +2183,28 @@ fm_backend_herdr_projection_cleanup_exact() {  # <session> <task-pane> <seeded-p
   fi
 }
 
-fm_backend_herdr_projection_abort_reclaimed_active() {  # <session> <journal> <task-id> <tab> <pane>
-  local session=$1 journal=$2 id=$3 tab=$4 pane=$5 state
+fm_backend_herdr_projection_abort_reclaim() {  # <session> <journal> <task-id> <old-tab> <old-pane> <new-tab> <new-pane> <active>
+  local session=$1 journal=$2 id=$3 old_tab=$4 old_pane=$5 new_tab=$6 new_pane=$7 active=$8 state
   fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
   [ "$FM_BACKEND_HERDR_JOURNAL_VERSION" = 2 ] \
     && [ "$FM_BACKEND_HERDR_JOURNAL_SESSION" = "$session" ] \
-    && [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" = "$tab" ] \
-    && [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" = "$pane" ] || return 1
-  state=$(fm_backend_herdr_pane_agent_state "$session" "$pane")
+    && { { [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" = "$old_tab" ] \
+        && [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" = "$old_pane" ]; } \
+      || { [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" = "$new_tab" ] \
+        && [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" = "$new_pane" ]; }; } || return 1
+  state=$(fm_backend_herdr_pane_agent_state "$session" "$new_pane")
   case "$state" in
     dead) ;;
-    no-agent) fm_backend_herdr_explicit_close_pane_confirmed "$session" "$pane" || return 1 ;;
+    no-agent)
+      if [ "$active" = 1 ]; then
+        fm_backend_herdr_explicit_close_pane_confirmed "$session" "$new_pane" || return 1
+      else
+        fm_backend_herdr_projection_close_pane_focus_preserving "$session" "$new_pane" no-agent || return 1
+      fi
+      ;;
     live|unknown) return 1 ;;
   esac
-  [ "$(fm_backend_herdr_pane_agent_state "$session" "$pane")" = dead ] || return 1
+  [ "$(fm_backend_herdr_pane_agent_state "$session" "$new_pane")" = dead ] || return 1
   rm -f -- "$journal" || return 1
   [ ! -e "$journal" ] && [ ! -L "$journal" ]
 }
@@ -2417,8 +2425,13 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
       close_status=1
     fi
     if [ "$close_status" -eq 0 ]; then
-      fm_backend_herdr_projection_focus_restore \
-        "$session" "$expected_focus" "active husk replacement close" || return 1
+      if ! fm_backend_herdr_projection_focus_restore \
+        "$session" "$expected_focus" "active husk replacement close"; then
+        fm_backend_herdr_projection_abort_reclaim \
+          "$session" "$journal" "$id" "$meta_tab" "$meta_pane" \
+          "$new_tab" "$new_pane" "$replace_active" || return 1
+        return 1
+      fi
     fi
   elif fm_backend_herdr_projection_close_pane_focus_preserving "$session" "$meta_pane" no-agent; then
     close_status=0
@@ -2442,6 +2455,11 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
   fi
   if [ "$close_status" -ne 0 ]; then
     if [ "$close_status" -eq 2 ]; then
+      if [ "$(fm_backend_herdr_pane_agent_state "$session" "$meta_pane")" = dead ]; then
+        fm_backend_herdr_projection_abort_reclaim \
+          "$session" "$journal" "$id" "$meta_tab" "$meta_pane" \
+          "$new_tab" "$new_pane" 1 || return 1
+      fi
       return 1
     fi
     state=$FM_BACKEND_HERDR_PROJECTION_CLOSE_AGENT_STATE
@@ -2456,6 +2474,9 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
     return 2
   fi
   if [ "$(fm_backend_herdr_pane_agent_state "$session" "$meta_pane")" != dead ]; then
+    if [ "$replace_active" -eq 1 ]; then
+      fm_backend_herdr_projection_focus_restore "$session" "$focus_before" "active husk replacement rollback" || return 1
+    fi
     fm_backend_herdr_projection_reclaim_rollback "$session" "$new_pane" || return 1
     return 1
   fi
@@ -2464,20 +2485,18 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
     "$meta_workspace" "$new_tab" "$new_pane" \
     "$FM_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID" "$parent_label" \
     "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" "$task_label"; then
-    [ "$replace_active" -eq 1 ] \
-      || fm_backend_herdr_projection_reclaim_rollback "$session" "$new_pane" \
-      || return 1
+    fm_backend_herdr_projection_abort_reclaim \
+      "$session" "$journal" "$id" "$meta_tab" "$meta_pane" \
+      "$new_tab" "$new_pane" "$replace_active" || return 1
     echo "warning: herdr presentation reclaim for $id did not converge exactly; spawning flat" >&2
-    [ "$replace_active" -ne 1 ] || return 1
     return 2
   fi
   if ! fm_backend_herdr_projection_journal_replace_endpoint \
     "$journal" "$id" "$meta_tab" "$meta_pane" "$new_tab" "$new_pane"; then
-    [ "$replace_active" -eq 1 ] \
-      || fm_backend_herdr_projection_reclaim_rollback "$session" "$new_pane" \
-      || return 1
+    fm_backend_herdr_projection_abort_reclaim \
+      "$session" "$journal" "$id" "$meta_tab" "$meta_pane" \
+      "$new_tab" "$new_pane" "$replace_active" || return 1
     echo "warning: herdr presentation reclaim for $id could not publish its replacement binding; spawning flat" >&2
-    [ "$replace_active" -ne 1 ] || return 1
     return 2
   fi
   FM_BACKEND_HERDR_PROJECTION_TAB_ID=$new_tab
