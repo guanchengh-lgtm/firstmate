@@ -1,0 +1,22 @@
+Verifier handoff end-to-end transcript
+command: bin/fm-spawn.sh evidence-verifier-handoff /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-dispatch-profile.eEKWy8/evidence-verifier-handoff/project --mode no-mistakes --yolo off --role verifier
+exit_code: 0
+spawn_output: spawned evidence-verifier-handoff harness=claude kind=ship mode=no-mistakes yolo=off role=verifier window=firstmate:fm-evidence-verifier-handoff worktree=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-dispatch-profile.eEKWy8/evidence-verifier-handoff/wt
+builder_worktree: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-dispatch-profile.eEKWy8/evidence-verifier-handoff/wt
+branch_before: fm/evidence-verifier-handoff
+branch_after: fm/evidence-verifier-handoff
+head_before: b4dcdcee9ecf01b184a84fd2a5de8bd6b4f6d4df
+head_after: b4dcdcee9ecf01b184a84fd2a5de8bd6b4f6d4df
+treehouse_get_calls: 0
+new_endpoint_calls: 1
+published_metadata:
+window=firstmate:fm-evidence-verifier-handoff
+worktree=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-dispatch-profile.eEKWy8/evidence-verifier-handoff/wt
+project=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-spawn-dispatch-profile.eEKWy8/evidence-verifier-handoff/project
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+role=verifier
+endpoint_state: new
+launch_command: env -u CURSOR_AGENT -u CURSOR_INVOKED_AS CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false claude --dangerously-skip-permissions "$('/Users/AI/.no-mistakes/worktrees/edb446952c22/01M18ZCADT4Y1FS47J1HE4WR0C/bin/fm-operational-input.sh' encode launch-brief < '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-dispatch-profile.eEKWy8/evidence-verifier-handoff/home/data/evidence-verifier-handoff/verifier-brief.md')"
