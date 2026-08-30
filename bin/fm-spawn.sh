@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> --role <builder|verifier> [--map <map-file>] [--map-next <task-id>] [--ov <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> --role <builder|verifier> [--surface <internal-only|product|mixed|uncertain>] [--map <map-file>] [--map-next <task-id>] [--ov <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
 #        fm-spawn.sh <task-id> <project-dir> --scout [--map <map-file>] [--map-next <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--map-next <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --map names one build map relative to FM_HOME and records map= in task meta.
@@ -45,6 +45,11 @@
 #   to pass. When the explicit mode carries less rigor than the project's
 #   standing posture, a loud one-line deviation notice is printed and the spawn
 #   continues.
+#   --surface names the task surface classified at intake. --mode direct-PR is
+#   legal only with --surface internal-only; product, mixed, uncertain, or an
+#   omitted surface is refused (bin/fm-delivery-surface-lib.sh). --mode
+#   no-mistakes and local-only accept any valid surface or none. --surface is
+#   refused on --scout, --secondmate, and --relaunch.
 #   no-mistakes-prod-only is a registry policy rather than a task mode and is
 #   refused as a flag value.
 #        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>]
@@ -291,6 +296,8 @@ SUB_HOME_MARKER=".fm-secondmate-home"
 . "$SCRIPT_DIR/fm-trace-context-lib.sh"
 # shellcheck source=bin/fm-remote-readiness-lib.sh
 . "$SCRIPT_DIR/fm-remote-readiness-lib.sh"
+# shellcheck source=bin/fm-delivery-surface-lib.sh
+. "$SCRIPT_DIR/fm-delivery-surface-lib.sh"
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
 # a direct report (see bin/fm-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
@@ -304,6 +311,7 @@ MODEL=
 EFFORT=
 BACKEND_ARG=
 MODE=
+SURFACE=
 YOLO=
 ROLE=
 TRACEPARENT_ARG=
@@ -315,6 +323,7 @@ MODEL_SET=0
 EFFORT_SET=0
 BACKEND_SET=0
 MODE_SET=0
+SURFACE_SET=0
 YOLO_SET=0
 ROLE_SET=0
 RELAUNCH=0
@@ -335,6 +344,7 @@ for a in "$@"; do
       effort) EFFORT=$a; EFFORT_SET=1 ;;
       backend) BACKEND_ARG=$a; BACKEND_SET=1 ;;
       mode) MODE=$a; MODE_SET=1 ;;
+      surface) SURFACE=$a; SURFACE_SET=1 ;;
       yolo) YOLO=$a; YOLO_SET=1 ;;
       role) ROLE=$a; ROLE_SET=1 ;;
       traceparent) TRACEPARENT_ARG=$a; TRACEPARENT_SET=1 ;;
@@ -360,6 +370,8 @@ for a in "$@"; do
     --backend=*) BACKEND_ARG=${a#--backend=}; BACKEND_SET=1 ;;
     --mode) want_value=mode ;;
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
+    --surface) want_value=surface ;;
+    --surface=*) SURFACE=${a#--surface=}; SURFACE_SET=1 ;;
     --yolo) want_value=yolo ;;
     --yolo=*) YOLO=${a#--yolo=}; YOLO_SET=1 ;;
     --role) want_value=role ;;
@@ -381,6 +393,7 @@ done
 [ "$EFFORT_SET" -eq 0 ] || [ -n "$EFFORT" ] || { echo "error: --effort requires a non-empty value" >&2; exit 1; }
 [ "$BACKEND_SET" -eq 0 ] || [ -n "$BACKEND_ARG" ] || { echo "error: --backend requires a non-empty value" >&2; exit 1; }
 [ "$MODE_SET" -eq 0 ] || [ -n "$MODE" ] || { echo "error: --mode requires a non-empty value" >&2; exit 1; }
+[ "$SURFACE_SET" -eq 0 ] || [ -n "$SURFACE" ] || { echo "error: --surface requires a non-empty value" >&2; exit 1; }
 [ "$YOLO_SET" -eq 0 ] || [ -n "$YOLO" ] || { echo "error: --yolo requires a non-empty value" >&2; exit 1; }
 [ "$ROLE_SET" -eq 0 ] || [ -n "$ROLE" ] || { echo "error: --role requires a non-empty value" >&2; exit 1; }
 [ "$TRACEPARENT_SET" -eq 0 ] || [ -n "$TRACEPARENT_ARG" ] || { echo "error: --traceparent requires a non-empty value" >&2; exit 1; }
@@ -413,6 +426,7 @@ if [ "$RELAUNCH" -eq 1 ]; then
   [ "$BACKEND_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded backend; --backend cannot override it" >&2; exit 1; }
   [ "$KIND_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded kind; --scout/--secondmate cannot override it" >&2; exit 1; }
   [ "$MODE_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded delivery mode; --mode cannot override it" >&2; exit 1; }
+  [ "$SURFACE_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded delivery mode; --surface cannot override it" >&2; exit 1; }
   [ "$YOLO_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded yolo posture; --yolo cannot override it" >&2; exit 1; }
   [ "$ROLE_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded role; --role cannot override it" >&2; exit 1; }
 elif [ "$KIND" = ship ]; then
@@ -451,9 +465,17 @@ elif [ "$KIND" = ship ]; then
     echo "error: --role verifier is legal only with --mode no-mistakes; $MODE has no second context" >&2
     exit 1
   fi
+  if [ "$SURFACE_SET" -eq 1 ]; then
+    fm_delivery_assert_surface_value "$SURFACE" || exit 1
+  fi
+  fm_delivery_assert_direct_pr_surface "$MODE" "$SURFACE" "$SURFACE_SET" || exit 1
 else
   [ "$MODE_SET" -eq 0 ] || {
     echo "error: --mode applies only to ship spawns; a scout delivers a report and a secondmate records its own fixed posture" >&2
+    exit 1
+  }
+  [ "$SURFACE_SET" -eq 0 ] || {
+    echo "error: --surface applies only to ship spawns; a scout delivers a report and a secondmate records its own fixed posture" >&2
     exit 1
   }
   [ "$YOLO_SET" -eq 0 ] || {
@@ -1000,6 +1022,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   # harness. Each pair still re-validates it against its own brief, so a batch
   # spanning several modes is two invocations rather than a silent mixed dispatch.
   [ "$MODE_SET" -eq 0 ] || shared_args+=(--mode "$MODE")
+  [ "$SURFACE_SET" -eq 0 ] || shared_args+=(--surface "$SURFACE")
   [ "$YOLO_SET" -eq 0 ] || shared_args+=(--yolo "$YOLO")
   [ "$ROLE_SET" -eq 0 ] || shared_args+=(--role "$ROLE")
   [ "$MAP_NEXT_SET" -eq 0 ] || shared_args+=(--map-next "$MAP_NEXT")

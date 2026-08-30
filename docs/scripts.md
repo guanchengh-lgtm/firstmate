@@ -38,7 +38,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-captain-hold.sh`    | Hold, answer, complete, verify, supersede, and read captain-held tasks plus product-idea completion attestations |
 | `fm-decision-hold.sh`    | One-release compatibility mapping from the retired decision command surface to `fm-captain-hold.sh` |
 | `fm-product-idea-lib.sh` | Shared product-idea ledger row and unscheduled-count grammar for completion and Bearings |
-| `fm-brief.sh`            | Scaffold ship (explicit `--mode`), scout, secondmate-charter, Herdr-lab, and no-mistakes verifier briefs; lint worker briefs |
+| `fm-brief.sh`            | Scaffold ship (explicit `--mode`; `--surface internal-only` required for `direct-PR`), scout, secondmate-charter, Herdr-lab, and no-mistakes verifier briefs; lint worker briefs |
 | `fm-herdr-lab.sh`        | Provision and guardedly operate an isolated, never-default Herdr lab session         |
 | `fm-install-herdr.sh`    | Install CI's exact-version Herdr pin with official asset URL, SHA-256, and protocol checks |
 | `fm-install-treehouse.sh`| Install CI's exact-version Treehouse pin for real-Herdr E2E that needs spawn worktrees |

@@ -124,8 +124,11 @@ Load `diagnostic-reasoning` before scoping a reported bug and before acting on a
 
 Resolve every ship task's concrete delivery mode and yolo posture at intake, and pass both explicitly to the brief, the spawn, and any scout promotion, which all refuse to guess.
 A ship spawn also requires explicit `--role` (`builder` at first dispatch; `verifier` only for the no-mistakes second context) and refuses an omitted role rather than defaulting it; script headers own the role/mode marker gate.
-A current explicit captain instruction wins; otherwise the project's registry entry is the captain's standing posture, and dropping below its rigor needs a reason you can state.
-On a `no-mistakes-prod-only` project, classify the task's surface: internal-only tooling, automation, contributor or operator process, and release or submission work ships `direct-PR`, while product-facing, mixed, and uncertain work ships `no-mistakes`; never infer internal-only from file location or project name.
+A current explicit captain `--mode` wins only inside the surface rule below; otherwise the project's registry entry is the captain's standing posture, and dropping below its rigor needs a reason you can state.
+Product-facing, mixed, and uncertain ships cannot use `direct-PR`, even when the captain passes `--mode direct-PR`.
+`direct-PR` is legal only when the registry standing posture, or a current explicit captain instruction, names the surface as internal-only tooling, automation, contributor or operator process, or release or submission work.
+On a `no-mistakes-prod-only` project, or any registered product project that was not given an explicit looser `direct-PR` or `local-only` standing posture, classify the task's surface: internal-only tooling, automation, contributor or operator process, and release or submission work ships `direct-PR`, while product-facing, mixed, and uncertain work ships `no-mistakes`; never infer internal-only from file location or project name.
+The brief, spawn, and promotion scripts refuse `--mode direct-PR` unless `--surface internal-only` is passed with it; their headers own the flag.
 An unregistered project or absent registry resolves to `no-mistakes` with yolo off, and the registration gap goes to the captain.
 Record the resulting mode, `yolo` merge posture, and the one-line reason for any deviation in the backlog item note.
 

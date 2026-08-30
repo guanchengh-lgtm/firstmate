@@ -178,7 +178,7 @@ test_direct_pr_and_scout_refresh_before_launch() {
     if [ "$contract" = scout ]; then
       out=$(run_spawn "$id" --scout)
     else
-      out=$(run_spawn "$id" --mode direct-PR --yolo off)
+      out=$(run_spawn "$id" --mode direct-PR --yolo off --surface internal-only)
     fi
     status=$?
     expect_code 0 "$status" "$contract spawn should refresh a stale pooled worktree"
