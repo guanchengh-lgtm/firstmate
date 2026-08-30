@@ -842,6 +842,16 @@ test_verifier_brief_leads_with_verifier_contract() {
   assert_grep "# Definition of done" "$verifier" "verifier-brief.md missing Definition of done"
   assert_grep "The fresh verifier drives no-mistakes by responding to its gates" "$verifier" \
     "verifier-brief.md did not lead with the verifier contract"
+  assert_grep "The verifier works on branch \`fm/$id\`." "$verifier" \
+    "verifier-brief.md did not name the task branch"
+  assert_grep "The first command in the worktree is \`git checkout fm/$id\`." "$verifier" \
+    "verifier-brief.md did not require the branch checkout first"
+  assert_grep "If Git says another worktree has this branch checked out, report a Firstmate handoff defect." "$verifier" \
+    "verifier-brief.md did not classify checked-out-elsewhere as a handoff defect"
+  assert_grep "blocked: task branch fm/$id is checked out in worktree <path>" "$verifier" \
+    "verifier-brief.md did not provide the branch and worktree blocker"
+  assert_grep "never ask the captain" "$verifier" \
+    "verifier-brief.md did not forbid a captain question for a handoff defect"
   # shellcheck disable=SC2016  # single quotes are deliberate: the backticks must stay literal
   assert_grep 'Carry verbatim into `--intent`:' "$verifier" \
     "verifier DoD must say to carry manufactured breakage verbatim into --intent"

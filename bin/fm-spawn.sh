@@ -171,6 +171,8 @@
 #   origin, resolves the current remote default branch, and resets to its tip.
 #   An unreachable origin, unresolved default branch, or non-clean worktree
 #   refuses the spawn rather than risking a PR based on stale history.
+#   A no-mistakes verifier is different: it reuses the stopped builder's clean
+#   worktree and committed head, while a fresh endpoint supplies context isolation.
 #   If treehouse reports that every pooled worktree is in use or dirty, spawn relays that reason immediately instead of waiting for the cwd poll timeout.
 # Batch dispatch: pass one or more `id=repo` pairs instead of a single <id> <project>, e.g.
 #     fm-spawn.sh fix-a-k3=projects/foo add-b-q7=projects/bar [--scout]
@@ -770,6 +772,9 @@ RELAUNCH_REPLACEMENT_BUSY_GEN=
 RELAUNCH_REPLACEMENT_HARNESS=
 RELAUNCH_REPLACEMENT_STATE=
 RELAUNCH_REPLACEMENT_WT=
+VERIFIER_HANDOFF_ABORT_ENDPOINT=0
+VERIFIER_HANDOFF_ABORT_BACKEND=
+VERIFIER_HANDOFF_ABORT_TARGET=
 CONFIG_INHERIT_LOCK=
 CONFIG_INHERIT_LOCK_HELD=0
 
@@ -814,6 +819,14 @@ spawn_abort_cleanup() {
           --gen "$RELAUNCH_REPLACEMENT_BUSY_GEN"; then
         echo "warning: could not retire replacement busy generation after aborted relaunch of $ID" >&2
       fi
+    fi
+  fi
+  if [ "$VERIFIER_HANDOFF_ABORT_ENDPOINT" = 1 ]; then
+    VERIFIER_HANDOFF_ABORT_ENDPOINT=0
+    if [ "$VERIFIER_HANDOFF_ABORT_BACKEND" != herdr ] \
+       || [ "$HERDR_PROJECTION_ABORT_CLEANUP" != 1 ]; then
+      fm_backend_kill "$VERIFIER_HANDOFF_ABORT_BACKEND" \
+        "$VERIFIER_HANDOFF_ABORT_TARGET" 2>/dev/null || true
     fi
   fi
   if [ "$HERDR_PROJECTION_ABORT_CLEANUP" = 1 ] \
@@ -2061,6 +2074,155 @@ herdr_projection_existing_meta_allows_flat() {  # <meta>
   esac
 }
 
+VERIFIER_HANDOFF=0
+VERIFIER_HANDOFF_META=
+VERIFIER_HANDOFF_PRIOR_BACKEND=
+VERIFIER_HANDOFF_PRIOR_TARGET=
+git_common_dir_real() {  # <worktree>
+  local worktree=$1 common
+  common=$(git -C "$worktree" rev-parse --git-common-dir 2>/dev/null) || return 1
+  case "$common" in
+    /*) ;;
+    *) common="$worktree/$common" ;;
+  esac
+  cd "$common" 2>/dev/null && pwd -P
+}
+
+verifier_handoff_preflight() {
+  local meta=$1 prior_kind prior_mode prior_role prior_project prior_project_real
+  local prior_state worktree_common project_common status tracked_status untracked_status
+  local rebase_merge rebase_apply head branch branch_status expected_branch branch_head branch_owner
+  [ -f "$meta" ] && [ ! -L "$meta" ] || {
+    echo "error: verifier handoff refused: no regular builder metadata at '$meta'" >&2
+    return 1
+  }
+  fm_backend_validate_task_endpoint "$meta" "$ID" || return 1
+  VERIFIER_HANDOFF_PRIOR_BACKEND=$FM_BACKEND_VALIDATED_BACKEND
+  VERIFIER_HANDOFF_PRIOR_TARGET=$FM_BACKEND_VALIDATED_TARGET
+  prior_kind=$(fm_backend_meta_exact_value "$meta" kind) || prior_kind=
+  prior_mode=$(fm_backend_meta_exact_value "$meta" mode) || prior_mode=
+  prior_role=$(fm_backend_meta_exact_value "$meta" role) || prior_role=
+  if [ "$prior_kind" != ship ] || [ "$prior_mode" != no-mistakes ] || [ "$prior_role" != builder ]; then
+    echo "error: verifier handoff refused: existing task must record kind=ship, mode=no-mistakes, role=builder" >&2
+    return 1
+  fi
+  prior_project=$(fm_backend_meta_exact_value "$meta" project) || prior_project=
+  prior_project_real=
+  if ! prior_project_real=$(cd "$prior_project" 2>/dev/null && pwd -P); then
+    prior_project_real=
+  fi
+  if [ -z "$prior_project_real" ] || [ "$prior_project_real" != "$PROJ_ABS_REAL" ]; then
+    echo "error: verifier handoff refused: builder project '${prior_project:-none}' does not match '$PROJ_ABS'" >&2
+    return 1
+  fi
+  fm_control_backend_state_verified "$VERIFIER_HANDOFF_PRIOR_BACKEND" || {
+    echo "error: verifier handoff refused: builder endpoint backend '$VERIFIER_HANDOFF_PRIOR_BACKEND' cannot prove the prior agent stopped" >&2
+    return 1
+  }
+  if [ "$VERIFIER_HANDOFF_PRIOR_BACKEND" != "$BACKEND" ]; then
+    echo "error: verifier handoff refused: builder backend '$VERIFIER_HANDOFF_PRIOR_BACKEND' does not match verifier backend '$BACKEND'" >&2
+    return 1
+  fi
+  prior_state=$(fm_backend_agent_state "$VERIFIER_HANDOFF_PRIOR_BACKEND" "$VERIFIER_HANDOFF_PRIOR_TARGET")
+  case "$prior_state" in
+    dead|missing) ;;
+    *)
+      echo "error: verifier handoff refused: builder endpoint reads '$prior_state', not positively stopped" >&2
+      return 1
+      ;;
+  esac
+  WT=$(fm_backend_meta_exact_value "$meta" worktree) || WT=
+  validate_spawn_worktree "verifier handoff builder metadata" "$VERIFIER_HANDOFF_PRIOR_TARGET"
+  worktree_common=$(git_common_dir_real "$WT") || {
+    echo "error: verifier handoff refused: builder worktree '$WT' has an unreadable Git repository" >&2
+    return 1
+  }
+  project_common=$(git_common_dir_real "$PROJ_ABS_REAL") || {
+    echo "error: verifier handoff refused: project '$PROJ_ABS' has an unreadable Git repository" >&2
+    return 1
+  }
+  if [ "$worktree_common" != "$project_common" ]; then
+    echo "error: verifier handoff refused: builder worktree '$WT' belongs to another project" >&2
+    return 1
+  fi
+  rebase_merge=$(git -C "$WT" rev-parse --git-path rebase-merge 2>/dev/null) || {
+    echo "error: verifier handoff refused: builder worktree '$WT' has unreadable rebase state" >&2
+    return 1
+  }
+  rebase_apply=$(git -C "$WT" rev-parse --git-path rebase-apply 2>/dev/null) || {
+    echo "error: verifier handoff refused: builder worktree '$WT' has unreadable rebase state" >&2
+    return 1
+  }
+  if [ -e "$rebase_merge" ] || [ -L "$rebase_merge" ] \
+     || [ -e "$rebase_apply" ] || [ -L "$rebase_apply" ]; then
+    echo "error: verifier handoff refused: builder worktree '$WT' has an in-progress rebase" >&2
+    return 1
+  fi
+  status=$(git -C "$WT" status --porcelain --untracked-files=all 2>/dev/null) || {
+    echo "error: verifier handoff refused: builder worktree '$WT' has unreadable status" >&2
+    return 1
+  }
+  untracked_status=$(printf '%s\n' "$status" | grep '^?? ' || true)
+  tracked_status=$(printf '%s\n' "$status" | grep -v '^?? ' || true)
+  if [ -n "$tracked_status" ]; then
+    echo "error: verifier handoff refused: builder worktree '$WT' has uncommitted changes" >&2
+    return 1
+  fi
+  if [ -n "$untracked_status" ]; then
+    echo "error: verifier handoff refused: builder worktree '$WT' has untracked files" >&2
+    return 1
+  fi
+  head=$(git -C "$WT" rev-parse --verify 'HEAD^{commit}' 2>/dev/null) || {
+    echo "error: verifier handoff refused: builder worktree '$WT' has an unreadable HEAD" >&2
+    return 1
+  }
+  [ -n "$head" ] || return 1
+  branch=
+  branch_status=0
+  branch=$(git -C "$WT" symbolic-ref --quiet --short HEAD 2>/dev/null) || branch_status=$?
+  case "$branch_status" in
+    0)
+      expected_branch="fm/$ID"
+      if [ "$branch" != "$expected_branch" ]; then
+        echo "error: verifier handoff refused: builder worktree '$WT' is on '$branch', expected '$expected_branch' or detached" >&2
+        return 1
+      fi
+      ;;
+    1)
+      expected_branch="fm/$ID"
+      branch_head=$(git -C "$WT" rev-parse --verify "refs/heads/$expected_branch^{commit}" 2>/dev/null) || {
+        echo "error: verifier handoff refused: detached builder worktree '$WT' has no '$expected_branch' branch" >&2
+        return 1
+      }
+      if [ "$branch_head" != "$head" ]; then
+        echo "error: verifier handoff refused: detached builder worktree '$WT' is at '$head', but '$expected_branch' is at '$branch_head'" >&2
+        return 1
+      fi
+      branch_owner=$(git -C "$WT" worktree list --porcelain 2>/dev/null | awk -v ref="refs/heads/$expected_branch" '
+        /^worktree / { path = substr($0, 10) }
+        $1 == "branch" && $2 == ref { print path; exit }
+      ') || {
+        echo "error: verifier handoff refused: builder worktree '$WT' has unreadable worktree ownership" >&2
+        return 1
+      }
+      if [ -n "$branch_owner" ]; then
+        echo "error: verifier handoff refused: task branch '$expected_branch' is checked out in worktree '$branch_owner'" >&2
+        return 1
+      fi
+      ;;
+    *)
+      echo "error: verifier handoff refused: builder worktree '$WT' has unreadable branch state" >&2
+      return 1
+      ;;
+  esac
+  VERIFIER_HANDOFF=1
+}
+
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ] && [ "$ROLE" = verifier ]; then
+  VERIFIER_HANDOFF_META="$STATE/$ID.meta"
+  verifier_handoff_preflight "$VERIFIER_HANDOFF_META" || exit 1
+fi
+
 W="fm-$ID"
 T=
 WT_TARGET=
@@ -2076,6 +2238,17 @@ if [ "$RELAUNCH" -eq 1 ]; then
   WT_TARGET=$T
   SES=${T%%:*}
 else
+if [ "$VERIFIER_HANDOFF" -eq 1 ] \
+   && { [ "$VERIFIER_HANDOFF_PRIOR_BACKEND" != herdr ] || [ "$BACKEND" != herdr ]; }; then
+  fm_backend_kill "$VERIFIER_HANDOFF_PRIOR_BACKEND" "$VERIFIER_HANDOFF_PRIOR_TARGET" || {
+    echo "error: verifier handoff refused: could not retire the stopped builder endpoint" >&2
+    exit 1
+  }
+  if fm_backend_target_exists "$VERIFIER_HANDOFF_PRIOR_BACKEND" "$VERIFIER_HANDOFF_PRIOR_TARGET" "fm-$ID"; then
+    echo "error: verifier handoff refused: stopped builder endpoint still exists after retirement" >&2
+    exit 1
+  fi
+fi
 case "$BACKEND" in
   tmux)
     SES=$(fm_backend_tmux_container_ensure)
@@ -2307,6 +2480,11 @@ EOF
     ;;
 esac
 fi
+if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+  VERIFIER_HANDOFF_ABORT_ENDPOINT=1
+  VERIFIER_HANDOFF_ABORT_BACKEND=$BACKEND
+  VERIFIER_HANDOFF_ABORT_TARGET=$T
+fi
 if [ "$KIND" = secondmate ]; then
   FM_INHERITABLE_CONFIG=trace-context \
     propagate_inheritable_config "$CONFIG" "$PROJ_ABS/config" \
@@ -2442,6 +2620,21 @@ if [ "$RELAUNCH" -eq 1 ]; then
     exit 1
   fi
   [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
+elif [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+  handoff_wt_real=$(real_path_or_raw "$WT")
+  spawn_send_text_line "$WT_TARGET" "cd $(shell_quote "$WT")"
+  handoff_seen=
+  for _ in $(seq 1 10); do
+    handoff_seen=$(spawn_current_path "$WT_TARGET" || true)
+    [ -z "$handoff_seen" ] || [ "$(real_path_or_raw "$handoff_seen")" != "$handoff_wt_real" ] || break
+    sleep 0.5
+  done
+  if [ -z "$handoff_seen" ] || [ "$(real_path_or_raw "$handoff_seen")" != "$handoff_wt_real" ]; then
+    echo "error: verifier handoff endpoint is in '${handoff_seen:-unknown}', not builder worktree '$WT'; refusing to launch outside the copy holding its work" >&2
+    exit 1
+  fi
+  validate_spawn_worktree "verifier handoff" "$T"
+  VERIFIER_HANDOFF_ABORT_ENDPOINT=0
 elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   spawn_send_text_line "$WT_TARGET" 'treehouse get'
 
@@ -2500,7 +2693,7 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
 
   validate_spawn_worktree "treehouse get" "$T"
 fi
-if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
+if [ "$RELAUNCH" -eq 0 ] && [ "$VERIFIER_HANDOFF" -eq 0 ] && [ "$KIND" != secondmate ]; then
   freshen_spawn_worktree_base "$WT" || exit 1
 fi
 

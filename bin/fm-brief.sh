@@ -360,6 +360,10 @@ if [ "$VERIFIER" -eq 1 ]; then
   IFS= read -r -d '' VERIFIER_DOD <<EOF || true
 # Definition of done
 Delivery contract: mode=no-mistakes
+The verifier works on branch \`fm/$ID\`.
+The first command in the worktree is \`git checkout fm/$ID\`.
+If Git says another worktree has this branch checked out, report a Firstmate handoff defect.
+Append \`blocked: task branch fm/$ID is checked out in worktree <path>\` and stop; never ask the captain.
 The fresh verifier drives no-mistakes by responding to its gates, not by implementing fixes.
 It follows the guidance no-mistakes itself provides for the mechanics: \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
 When starting no-mistakes, it makes \`--intent\` preserve all relevant content from this brief's \`# Task\` section plus every later accepted Firstmate requirement, clarification, constraint, exclusion, and supersession, carrying only each requirement's current accepted form; it retains direct requirements instead of substituting a diff summary, and excludes generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific.
