@@ -1,0 +1,32 @@
+ok - fm_backend_cmux_version_check: accepts the verified minimum (0.64.17)
+ok - fm_backend_cmux_version_check: accepts a newer version (0.70.0)
+ok - fm_backend_cmux_version_check: refuses an old version loudly
+ok - fm_backend_cmux_version_check: refuses loudly when cmux is not found on PATH or at the bundle path
+ok - fm_backend_cmux_password: reads the first non-empty line of config/cmux-socket-password
+ok - fm_backend_cmux_password: preserves spaces and tabs in config/cmux-socket-password
+ok - fm_backend_cmux_password: respects FM_CONFIG_OVERRIDE
+ok - fm_backend_cmux_password: empty when config/cmux-socket-password is absent
+ok - fm_backend_cmux_cli: exports CMUX_SOCKET_PASSWORD when config/cmux-socket-password is set
+ok - fm_backend_cmux_parse_target: splits '<workspace_uuid>:<surface_uuid>' on the first colon
+ok - fm_backend_cmux_normalize_key: Enter/Escape/C-c map to cmux's verified enter/escape/ctrl-c
+ok - fm_backend_cmux_scoped_title: scopes a primary task title with firstmate plus root hash
+ok - fm_backend_cmux_scoped_title: scopes a secondmate task title with the home marker plus root hash
+ok - fm_backend_cmux_scoped_title: includes the resolved FM_ROOT hash in the home label
+ok - fm_backend_validate: cmux is a known backend
+ok - fm_backend_busy_state: cmux (no native primitive) always reports unknown, same as tmux/zellij/orca
+ok - fm_backend_composer_state: routes cmux to the cmux composer classifier
+ok - fm_backend_cmux_ping_state: reports 'ok' on PONG
+ok - fm_backend_cmux_ping_state: reports 'denied' when socketControlMode=cmuxOnly rejects the connection
+ok - fm_backend_cmux_ping_state: reports 'unauth' when password mode rejects a missing/wrong password
+ok - fm_backend_cmux_ping_state: reports 'unauth' when password mode rejects a wrong password (Invalid password)
+ok - fm_backend_cmux_ping_state: reports 'down' when the app is not running yet
+ok - fm_backend_cmux_ensure_running: returns immediately when cmux is already reachable
+ok - fm_backend_cmux_ensure_running: fails fast on a denied socket without attempting to launch, naming every viable mode
+ok - fm_backend_cmux_ensure_running: fails fast on an unauthenticated socket, naming the password config and the Automation mode alternative
+ok - fm_backend_cmux_create_task: refuses a duplicate workspace title (cmux's own new-workspace has no uniqueness check)
+ok - fm_backend_cmux_create_task: creates a workspace and parses workspace_id/surface_id from list responses
+ok - fm_backend_cmux_create_task: surface discovery failure removes the partial workspace
+not ok - create_task reported an orphan after proving workspace absence (unexpected: 'partial-create cleanup')
+--- output ---
+error: cmux partial-create cleanup left workspace 'fm-firstmate-3a15a738-id-partial' (bbbbbbbb-3333-3333-3333-333333333333) present
+error: could not resolve a cmux workspace id for 'fm-firstmate-3a15a738-id-partial' after creation

@@ -1,0 +1,45 @@
+=== cmux: cleanup proves absence ===
+status=1
+error: could not resolve a cmux workspace id for 'fm-firstmate-3a15a738-evidence' after creation
+cleanup calls:
+CMUX_SOCKET_PASSWORD= workspace list --json --id-format uuids
+CMUX_SOCKET_PASSWORD= workspace list --json --id-format uuids
+CMUX_SOCKET_PASSWORD= workspace list --json --id-format uuids
+CMUX_SOCKET_PASSWORD= close-workspace --workspace bbbbbbbb-3333-3333-3333-333333333333
+CMUX_SOCKET_PASSWORD= workspace list --json --id-format uuids
+final strict list: {"workspaces":[]}
+
+=== cmux: failed cleanup names the orphan ===
+status=1
+error: cmux partial-create cleanup left workspace 'fm-firstmate-3a15a738-evidence-leak' (bbbbbbbb-4444-4444-4444-444444444444) present
+error: could not resolve the default surface for cmux workspace 'fm-firstmate-3a15a738-evidence-leak' (bbbbbbbb-4444-4444-4444-444444444444)
+final strict list: {"workspaces":[{"id":"bbbbbbbb-4444-4444-4444-444444444444","title":"fm-firstmate-3a15a738-evidence-leak"}]}
+
+=== Zellij: cleanup proves absence ===
+status=1
+error: could not find a terminal pane for zellij tab 4 (session 'firstmate')
+cleanup calls:
+ZELLIJ_SESSION_NAME=firstmate --session firstmate action list-tabs --json
+ZELLIJ_SESSION_NAME=firstmate --session firstmate action close-tab-by-id 4
+ZELLIJ_SESSION_NAME=firstmate --session firstmate action list-tabs --json
+final strict list: [{"tab_id":0,"name":"Tab #1","active":true}]
+
+
+=== Zellij: failed cleanup names the orphan ===
+status=1
+error: zellij partial-create cleanup could not prove tab 4 ('fm-firstmate-3a15a738-evidence-leak') absent from session 'firstmate'
+error: could not find a terminal pane for zellij tab 4 (session 'firstmate')
+final strict list: [{"tab_id":0,"name":"Tab #1","active":true},{"tab_id":4,"name":"fm-firstmate-3a15a738-evidence-leak","active":false}]
+
+
+=== Herdr: malformed response cleanup frees the label ===
+first status=1
+error: could not parse tab/pane id from herdr tab create output
+state after cleanup: {"matching_tabs":[]}
+retry status=0 target=w1:t2 w1:p2
+
+=== Herdr: failed cleanup names and retains the orphan ===
+status=1
+error: herdr partial-create cleanup could not prove absence (session 'fmtest', workspace 'w1', label 'fm-evidence-leak', tab 'w1:t1', pane 'unknown', candidates 'none')
+error: could not parse tab/pane id from herdr tab create output
+retained state: {"matching_tabs":[{"tab_id":"w1:t1","pane_id":"w1:p1","label":"fm-evidence-leak"}]}
