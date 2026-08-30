@@ -128,24 +128,54 @@ case "$cmd $sub" in
       "$wsid" "$label" "$wsid:t$dn" "$wsid:p$dn"
     ;;
   "tab list")
-    jq_state --arg w "$ws" '{result:{tabs:[.tabs[]|select(.workspace_id==$w)]}}'
+    if [ "${FM_HERDR_FAKE_TAB_LIST_MALFORMED_AFTER_CREATE:-0}" = 1 ] \
+       && [ "$(jq_state -r '.next')" -gt 1 ]; then
+      printf '{malformed\n'
+    else
+      jq_state --arg w "$ws" '{result:{tabs:[.tabs[]|select(.workspace_id==$w)]}}'
+    fi
     ;;
   "tab create")
     n=$(jq_state -r '.next'); tabid="$ws:t$n"; paneid="$ws:p$n"
     jq_state --arg w "$ws" --arg wlabel "$label" --arg tabid "$tabid" --arg paneid "$paneid" \
       '.tabs += [{tab_id:$tabid, label:$wlabel, workspace_id:$w, pane_id:$paneid}]
        | .next = (.next + 1)' | save
-    printf '{"result":{"tab":{"tab_id":"%s"},"root_pane":{"pane_id":"%s"}}}\n' "$tabid" "$paneid"
+    if [ "${FM_HERDR_FAKE_CREATE_EXTRA_TAB:-0}" = 1 ]; then
+      extraid="$ws:t$((n + 1))"; extrapane="$ws:p$((n + 1))"
+      jq_state --arg w "$ws" --arg wlabel "$label" --arg tabid "$extraid" --arg paneid "$extrapane" \
+        '.tabs += [{tab_id:$tabid, label:$wlabel, workspace_id:$w, pane_id:$paneid}]
+         | .next = (.next + 1)' | save
+    fi
+    case "${FM_HERDR_FAKE_CREATE_RESPONSE:-full}" in
+      full) printf '{"result":{"tab":{"tab_id":"%s"},"root_pane":{"pane_id":"%s"}}}\n' "$tabid" "$paneid" ;;
+      tab-only) printf '{"result":{"tab":{"tab_id":"%s"},"root_pane":{}}}\n' "$tabid" ;;
+      pane-only) printf '{"result":{"tab":{},"root_pane":{"pane_id":"%s"}}}\n' "${FM_HERDR_FAKE_CREATE_PANE_OVERRIDE:-$paneid}" ;;
+      empty) printf '{"result":{"tab":{},"root_pane":{}}}\n' ;;
+      malformed) printf '{malformed\n' ;;
+    esac
     ;;
   "pane list")
     jq_state --arg w "$ws" '{result:{panes:[.tabs[]|select(.workspace_id==$w)|{pane_id:.pane_id, tab_id:.tab_id}]}}'
     ;;
+  "pane get")
+    pane=${3:-}
+    pane_info=$(jq_state -c --arg p "$pane" 'first(.tabs[] | select(.pane_id == $p)) // empty')
+    if [ -n "$pane_info" ]; then
+      tabid=$(printf '%s' "$pane_info" | jq -r '.tab_id')
+      wsid=$(printf '%s' "$pane_info" | jq -r '.workspace_id')
+      printf '{"result":{"pane":{"pane_id":"%s","tab_id":"%s","workspace_id":"%s"}}}\n' "$pane" "$tabid" "$wsid"
+    else
+      printf '{"error":{"code":"pane_not_found","message":"pane target %s not found"}}\n' "$pane"
+    fi
+    ;;
   "pane close")
     pane=${3:-}
+    [ "${FM_HERDR_FAKE_PANE_CLOSE_FAIL:-0}" != 1 ] || exit 1
     jq_state --arg p "$pane" '.tabs |= [.[]|select(.pane_id != $p)]' | save
     ;;
   "tab close")
     tab=${3:-}
+    [ "${FM_HERDR_FAKE_TAB_CLOSE_FAIL:-0}" != 1 ] || exit 1
     jq_state --arg t "$tab" '.tabs |= [.[]|select(.tab_id != $t)]' | save
     ;;
   "agent get")
@@ -783,27 +813,191 @@ test_create_task_creates_and_parses_ids() {
 }
 
 test_create_task_removes_tab_when_postcreate_validation_fails() {
-  local dir out status
+  local dir fb out status retry
   dir="$TMP_ROOT/create-task-postcreate-failure"; mkdir -p "$dir"
-  out=$(FM_TEST_PARTIAL_LOG="$dir/partial.log" bash -c '
+  fb=$(make_herdr_statefake "$dir")
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$dir/log" FM_FAKE_HERDR_STATE="$dir/state.json" bash -c '
     . "$0/bin/backends/herdr.sh"
-    fm_backend_herdr_cli() {
-      shift
-      case "$1 $2" in
-        "tab list") printf "%s\n" "{\"result\":{\"tabs\":[]}}" ;;
-        "tab create") printf "%s\n" "{\"result\":{\"tab\":{\"tab_id\":\"w1:t2\"},\"root_pane\":{\"pane_id\":\"w1:p2\"}}}" ;;
-        *) return 1 ;;
-      esac
-    }
     fm_backend_herdr_workspace_prune_seeded_default_tab() { return 1; }
-    fm_backend_herdr_kill_serialized() { printf "%s %s\n" "$1" "$2" >> "$FM_TEST_PARTIAL_LOG"; }
     fm_backend_herdr_create_task fmtest:w1 fm-partial /tmp/proj w1:t1
   ' "$ROOT" 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "create_task accepted failed post-create validation"
-  [ "$(cat "$dir/partial.log")" = "fmtest w1:p2" ] \
-    || fail "create_task did not remove the partial Herdr pane: $out"
-  pass "fm_backend_herdr_create_task: post-create failure removes the partial pane"
+  [ "$(jq -r '[.tabs[] | select(.label == "fm-partial")] | length' "$dir/state.json")" = 0 ] \
+    || fail "create_task did not prove the partial Herdr tab absent: $out"
+  retry=$(PATH="$fb:$PATH" FM_HERDR_LOG="$dir/log" FM_FAKE_HERDR_STATE="$dir/state.json" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_create_task fmtest:w1 fm-partial /tmp/proj' "$ROOT") \
+    || fail "create_task did not free the label for retry"
+  [ -n "$retry" ] || fail "create_task retry returned no endpoint"
+  pass "fm_backend_herdr_create_task: post-create failure removes the partial endpoint and frees the label"
+}
+
+test_create_task_names_tab_when_cleanup_fails() {
+  local dir fb out status tab_id tab_line error_line
+  dir="$TMP_ROOT/create-task-cleanup-failure"; mkdir -p "$dir"
+  fb=$(make_herdr_statefake "$dir")
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$dir/log" FM_FAKE_HERDR_STATE="$dir/state.json" \
+    FM_HERDR_FAKE_CREATE_RESPONSE=tab-only FM_HERDR_FAKE_TAB_CLOSE_FAIL=1 \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_create_task fmtest:w1 fm-leaked /tmp/proj' "$ROOT" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "create_task accepted failed partial-tab cleanup"
+  tab_id=$(jq -r '.tabs[] | select(.label == "fm-leaked") | .tab_id' "$dir/state.json")
+  [ -n "$tab_id" ] || fail "stateful fake did not retain the orphan tab"
+  assert_contains "$out" "session 'fmtest', workspace 'w1', label 'fm-leaked', tab '$tab_id', pane 'unknown'" \
+    "create_task did not name every known orphan identity"
+  assert_contains "$out" "error: could not parse tab/pane id from herdr tab create output" \
+    "create_task did not keep the original parse error"
+  tab_line=$(printf '%s\n' "$out" | grep -n "partial-create cleanup" | cut -d: -f1)
+  error_line=$(printf '%s\n' "$out" | grep -n "could not parse tab/pane id" | cut -d: -f1)
+  [ "$tab_line" -lt "$error_line" ] || fail "orphan diagnostic did not precede the original create error"
+  pass "fm_backend_herdr_create_task: failed cleanup names the orphan and keeps the original error"
+}
+
+test_cleanup_created_task_closes_supplied_tab_without_label_candidate() {
+  local dir fb out
+  dir="$TMP_ROOT/cleanup-supplied-tab"; mkdir -p "$dir"
+  fb=$(make_herdr_statefake "$dir")
+  jq '.tabs += [{tab_id:"w1:t-known",label:"other",workspace_id:"w1",pane_id:"w1:p-known"}]' \
+    "$dir/state.json" > "$dir/state.next" && mv "$dir/state.next" "$dir/state.json"
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$dir/log" FM_FAKE_HERDR_STATE="$dir/state.json" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_cleanup_created_task fmtest w1 fm-missing "" w1:t-known ""' "$ROOT" 2>&1) \
+    || fail "cleanup rejected a supplied tab after proving it absent: $out"
+  [ "$(jq -r '[.tabs[] | select(.tab_id == "w1:t-known")] | length' "$dir/state.json")" = 0 ] \
+    || fail "cleanup left the supplied tab present when its label had no candidate"
+  pass "fm_backend_herdr_cleanup_created_task: supplied tab identity survives empty label discovery"
+}
+
+test_create_task_recovers_id_from_malformed_create_response() {
+  local dir fb out status retry
+  dir="$TMP_ROOT/create-task-malformed-response"; mkdir -p "$dir"
+  fb=$(make_herdr_statefake "$dir")
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$dir/log" FM_FAKE_HERDR_STATE="$dir/state.json" \
+    FM_HERDR_FAKE_CREATE_RESPONSE=malformed \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_create_task fmtest:w1 fm-malformed /tmp/proj' "$ROOT" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "create_task accepted a malformed create response"
+  assert_contains "$out" "could not parse tab/pane id from herdr tab create output" \
+    "create_task did not keep the original parse error"
+  assert_not_contains "$out" "partial-create cleanup" \
+    "create_task reported an orphan after proving malformed-response cleanup"
+  [ "$(jq -r '[.tabs[] | select(.label == "fm-malformed")] | length' "$dir/state.json")" = 0 ] \
+    || fail "create_task did not remove the tab created behind the malformed response"
+  retry=$(PATH="$fb:$PATH" FM_HERDR_LOG="$dir/log" FM_FAKE_HERDR_STATE="$dir/state.json" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_create_task fmtest:w1 fm-malformed /tmp/proj' "$ROOT") \
+    || fail "create_task did not free the malformed-response label for retry"
+  [ -n "$retry" ] || fail "create_task malformed-response retry returned no endpoint"
+  pass "fm_backend_herdr_create_task: malformed response recovers and removes exactly one new labeled tab"
+}
+
+test_create_task_names_pane_when_confirmed_close_fails() {
+  local dir fb out status tab_id pane_id diagnostic_line error_line
+  dir="$TMP_ROOT/create-task-pane-close-failure"; mkdir -p "$dir"
+  fb=$(make_herdr_statefake "$dir")
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$dir/log" FM_FAKE_HERDR_STATE="$dir/state.json" \
+    FM_HERDR_FAKE_CREATE_RESPONSE=pane-only FM_HERDR_FAKE_PANE_CLOSE_FAIL=1 \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_create_task fmtest:w1 fm-pane-leaked /tmp/proj' "$ROOT" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "create_task accepted failed confirmed pane cleanup"
+  tab_id=$(jq -r '.tabs[] | select(.label == "fm-pane-leaked") | .tab_id' "$dir/state.json")
+  pane_id=$(jq -r '.tabs[] | select(.label == "fm-pane-leaked") | .pane_id' "$dir/state.json")
+  assert_contains "$out" "session 'fmtest', workspace 'w1', label 'fm-pane-leaked', tab '$tab_id', pane '$pane_id'" \
+    "create_task did not name the known pane and recovered tab"
+  assert_contains "$out" "error: could not parse tab/pane id from herdr tab create output" \
+    "create_task did not keep the original parse error after pane-close failure"
+  diagnostic_line=$(printf '%s\n' "$out" | grep -n "partial-create cleanup" | cut -d: -f1)
+  error_line=$(printf '%s\n' "$out" | grep -n "could not parse tab/pane id" | cut -d: -f1)
+  [ "$diagnostic_line" -lt "$error_line" ] || fail "pane orphan diagnostic did not precede the original create error"
+  pass "fm_backend_herdr_create_task: confirmed pane-close failure names every known orphan identity"
+}
+
+test_create_task_cleans_mismatched_returned_pane_and_candidate() {
+  local dir fb out status candidate retry
+  dir="$TMP_ROOT/create-task-mismatched-pane"; mkdir -p "$dir"
+  fb=$(make_herdr_statefake "$dir")
+  jq '.tabs += [{tab_id:"w1:t-old",label:"captain",workspace_id:"w1",pane_id:"w1:p-old"}]' \
+    "$dir/state.json" > "$dir/state.next" && mv "$dir/state.next" "$dir/state.json"
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$dir/log" FM_FAKE_HERDR_STATE="$dir/state.json" \
+    FM_HERDR_FAKE_CREATE_RESPONSE=pane-only FM_HERDR_FAKE_CREATE_PANE_OVERRIDE=w1:p-old \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_create_task fmtest:w1 fm-mismatch /tmp/proj' "$ROOT" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "create_task accepted a pane that disagreed with the new exact-label tab"
+  candidate=w1:t1
+  assert_contains "$out" "error: could not parse tab/pane id from herdr tab create output" \
+    "create_task did not keep the original parse error after identity mismatch"
+  assert_not_contains "$out" "partial-create cleanup" \
+    "create_task reported an orphan after closing every known identity"
+  assert_contains "$(cat "$dir/log")" $'\x1f''pane'$'\x1f''close'$'\x1f''w1:p-old' \
+    "create_task did not close the supplied pane identity"
+  assert_contains "$(cat "$dir/log")" $'\x1f''tab'$'\x1f''close'$'\x1f'"$candidate" \
+    "create_task did not close the exact new candidate tab"
+  [ "$(jq -r '[.tabs[] | select(.tab_id == "w1:t-old" or .pane_id == "w1:p-old")] | length' "$dir/state.json")" = 0 ] \
+    || fail "create_task left the supplied pane identity present"
+  [ "$(jq -r '[.tabs[] | select(.label == "fm-mismatch")] | length' "$dir/state.json")" = 0 ] \
+    || fail "create_task left the exact new candidate tab behind"
+  retry=$(PATH="$fb:$PATH" FM_HERDR_LOG="$dir/log" FM_FAKE_HERDR_STATE="$dir/state.json" \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_create_task fmtest:w1 fm-mismatch /tmp/proj' "$ROOT") \
+    || fail "create_task did not free the mismatched-response label for retry"
+  [ -n "$retry" ] || fail "create_task mismatched-response retry returned no endpoint"
+  pass "fm_backend_herdr_create_task: mismatched response removes the supplied pane and exact new tab"
+}
+
+test_create_task_names_mismatched_pane_when_pane_close_fails() {
+  local dir fb out status candidate
+  dir="$TMP_ROOT/create-task-mismatched-pane-close-failure"; mkdir -p "$dir"
+  fb=$(make_herdr_statefake "$dir")
+  jq '.tabs += [{tab_id:"w1:t-old",label:"captain",workspace_id:"w1",pane_id:"w1:p-old"}]' \
+    "$dir/state.json" > "$dir/state.next" && mv "$dir/state.next" "$dir/state.json"
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$dir/log" FM_FAKE_HERDR_STATE="$dir/state.json" \
+    FM_HERDR_FAKE_CREATE_RESPONSE=pane-only FM_HERDR_FAKE_CREATE_PANE_OVERRIDE=w1:p-old \
+    FM_HERDR_FAKE_PANE_CLOSE_FAIL=1 \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_create_task fmtest:w1 fm-mismatch-leak /tmp/proj' "$ROOT" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "create_task accepted failed exact-candidate cleanup"
+  candidate=$(jq -r '.tabs[] | select(.label == "fm-mismatch-leak") | .tab_id' "$dir/state.json")
+  assert_contains "$out" "tab '$candidate', pane 'w1:p-old', candidates '$candidate'" \
+    "create_task did not name the candidate and supplied pane"
+  assert_contains "$out" "error: could not parse tab/pane id from herdr tab create output" \
+    "create_task did not keep the original parse error after pane-close failure"
+  assert_contains "$(cat "$dir/log")" $'\x1f''pane'$'\x1f''close'$'\x1f''w1:p-old' \
+    "create_task did not try the confirmed close for the supplied pane"
+  [ "$(jq -r '[.tabs[] | select(.tab_id == "w1:t-old" and .pane_id == "w1:p-old")] | length' "$dir/state.json")" = 1 ] \
+    || fail "create_task did not retain the orphan after its pane close failed"
+  [ "$(jq -r '[.tabs[] | select(.label == "fm-mismatch-leak")] | length' "$dir/state.json")" = 1 ] \
+    || fail "create_task lost the named candidate after the pane close failed"
+  pass "fm_backend_herdr_create_task: failed supplied-pane close names every known identity"
+}
+
+test_create_task_refuses_malformed_cleanup_list() {
+  local dir fb out status
+  dir="$TMP_ROOT/create-task-malformed-cleanup-list"; mkdir -p "$dir"
+  fb=$(make_herdr_statefake "$dir")
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$dir/log" FM_FAKE_HERDR_STATE="$dir/state.json" \
+    FM_HERDR_FAKE_CREATE_RESPONSE=tab-only FM_HERDR_FAKE_TAB_LIST_MALFORMED_AFTER_CREATE=1 \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_create_task fmtest:w1 fm-list-unknown /tmp/proj' "$ROOT" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "create_task accepted malformed cleanup proof"
+  assert_contains "$out" "partial-create cleanup could not prove absence" \
+    "create_task did not diagnose malformed cleanup proof"
+  assert_contains "$(cat "$dir/log")" $'\x1f''tab'$'\x1f''close'$'\x1f''w1:t1' \
+    "create_task did not close the exact tab supplied by the create response"
+  pass "fm_backend_herdr_create_task: malformed final list keeps supplied-tab cleanup unproved"
+}
+
+test_create_task_refuses_multiple_new_label_matches() {
+  local dir fb out status ids
+  dir="$TMP_ROOT/create-task-multiple-new-tabs"; mkdir -p "$dir"
+  fb=$(make_herdr_statefake "$dir")
+  out=$(PATH="$fb:$PATH" FM_HERDR_LOG="$dir/log" FM_FAKE_HERDR_STATE="$dir/state.json" \
+    FM_HERDR_FAKE_CREATE_RESPONSE=empty FM_HERDR_FAKE_CREATE_EXTRA_TAB=1 \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_create_task fmtest:w1 fm-many-new /tmp/proj' "$ROOT" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "create_task accepted ambiguous multiple-tab creation"
+  ids=$(jq -r '[.tabs[] | select(.label == "fm-many-new") | .tab_id] | join(" ")' "$dir/state.json")
+  assert_contains "$out" "candidates '$ids'" \
+    "create_task did not name every ambiguous new tab"
+  assert_not_contains "$(cat "$dir/log")" $'\x1f''tab'$'\x1f''close' \
+    "create_task closed a tab when multiple new exact-label tabs were possible"
+  pass "fm_backend_herdr_create_task: multiple new exact-label tabs stay unknown and are all named"
 }
 
 # --- container_ensure / create_task: --no-focus and per-home label ----------
@@ -4704,6 +4898,14 @@ test_create_task_refuses_when_agent_state_ambiguous
 test_create_task_husk_replacement_creates_before_closing
 test_create_task_creates_and_parses_ids
 test_create_task_removes_tab_when_postcreate_validation_fails
+test_create_task_names_tab_when_cleanup_fails
+test_cleanup_created_task_closes_supplied_tab_without_label_candidate
+test_create_task_recovers_id_from_malformed_create_response
+test_create_task_names_pane_when_confirmed_close_fails
+test_create_task_cleans_mismatched_returned_pane_and_candidate
+test_create_task_names_mismatched_pane_when_pane_close_fails
+test_create_task_refuses_malformed_cleanup_list
+test_create_task_refuses_multiple_new_label_matches
 test_create_task_creates_with_no_focus_flag
 test_presentation_defaults_on_at_or_above_the_floor
 test_presentation_default_falls_back_below_the_floor

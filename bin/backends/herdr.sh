@@ -1832,6 +1832,30 @@ fm_backend_herdr_pane_presence_state() {  # <session> <pane_id>
   [ "$pid" = "$pane_id" ] && printf 'present' || printf 'unknown'
 }
 
+fm_backend_herdr_tab_presence_state() {  # <session> <workspace_id> <tab_id>
+  local session=$1 workspace_id=$2 tab_id=$3 out matches
+  out=$(fm_backend_herdr_cli "$session" tab list --workspace "$workspace_id" 2>/dev/null) || {
+    printf 'unknown'
+    return 0
+  }
+  matches=$(printf '%s' "$out" | jq -r --arg tab "$tab_id" --arg workspace "$workspace_id" '
+    if (.result.tabs | type) != "array" then error("missing result.tabs")
+    elif any(.result.tabs[]?;
+      type != "object"
+      or (.tab_id | type) != "string" or (.tab_id | length) == 0
+      or (.label | type) != "string"
+      or (.workspace_id | type) != "string" or .workspace_id != $workspace
+    ) then error("invalid tab")
+    else [.result.tabs[] | select(.tab_id == $tab)] | length
+    end
+  ' 2>/dev/null) || matches=
+  case "$matches" in
+    0) printf 'dead' ;;
+    1) printf 'present' ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
 fm_backend_herdr_workspace_presence_state() {  # <session> <workspace_id>
   local session=$1 workspace_id=$2 out matches
   out=$(fm_backend_herdr_cli "$session" workspace list 2>&1)
@@ -1947,6 +1971,77 @@ fm_backend_herdr_agent_alive() {  # <target>
   esac
 }
 
+# Clean a partially created task by exact identity. Strict follow-up reads
+# must prove each known pane and tab absent; unknown state returns failure.
+fm_backend_herdr_cleanup_created_task() {  # <session> <workspace> <label> <pre-label-tabs> <tab> <pane>
+  local session=$1 wsid=$2 label=$3 pre_tabs=$4 tab=$5 pane=$6
+  local list new_tabs new_count candidate candidates discovery_state tab_target
+  local pane_close_ok tab_close_ok tab_state
+
+  candidates=
+  discovery_state=known
+  tab_target=$tab
+  if [ -z "$tab_target" ]; then
+    list=$(fm_backend_herdr_cli "$session" tab list --workspace "$wsid" 2>/dev/null) || list=
+    new_tabs=$(printf '%s' "$list" | jq -r --arg want "$label" --arg pre "$pre_tabs" --arg workspace "$wsid" '
+      if (.result.tabs | type) != "array" then error("missing result.tabs")
+      elif any(.result.tabs[]?;
+        type != "object"
+        or (.tab_id | type) != "string" or (.tab_id | length) == 0
+        or (.label | type) != "string"
+        or (.workspace_id | type) != "string" or .workspace_id != $workspace
+      ) then error("invalid tab")
+      else ($pre | split("\n") | map(select(length > 0))) as $before
+        | .result.tabs[]
+        | select(.label == $want)
+        | .tab_id as $id
+        | select(($before | index($id)) == null)
+        | $id
+      end
+    ' 2>/dev/null) || new_tabs=__unknown__
+    new_count=0
+    if [ "$new_tabs" != __unknown__ ]; then
+      while IFS= read -r candidate; do
+        [ -n "$candidate" ] || continue
+        new_count=$((new_count + 1))
+        candidates="${candidates}${candidates:+ }${candidate}"
+      done <<EOF
+$new_tabs
+EOF
+    fi
+    if [ "$new_tabs" = __unknown__ ] || [ "$new_count" -gt 1 ]; then
+      discovery_state=unknown
+    elif [ "$new_count" -eq 0 ]; then
+      discovery_state=dead
+    else
+      tab_target=$candidates
+    fi
+  fi
+
+  pane_close_ok=1
+  if [ -n "$pane" ]; then
+    fm_backend_herdr_explicit_close_pane_confirmed "$session" "$pane" || pane_close_ok=0
+  fi
+
+  tab_close_ok=1
+  tab_state=$discovery_state
+  if [ -n "$tab_target" ]; then
+    if [ -n "$pane" ]; then
+      tab_state=$(fm_backend_herdr_tab_presence_state "$session" "$wsid" "$tab_target")
+    fi
+    if [ -z "$pane" ] || { [ "$pane_close_ok" -eq 1 ] && [ "$tab_state" != dead ]; }; then
+      fm_backend_herdr_cli "$session" tab close "$tab_target" >/dev/null 2>&1 || tab_close_ok=0
+      tab_state=$(fm_backend_herdr_tab_presence_state "$session" "$wsid" "$tab_target")
+    fi
+  fi
+
+  if [ "$pane_close_ok" -eq 1 ] && [ "$tab_close_ok" -eq 1 ] && [ "$tab_state" = dead ]; then
+    return 0
+  fi
+  echo "error: herdr partial-create cleanup could not prove absence (session '$session', workspace '$wsid', label '$label', tab '${tab_target:-unknown}', pane '${pane:-unknown}', candidates '${candidates:-none}')" >&2
+  return 1
+}
+
 # fm_backend_herdr_create_task: create the task's tab (one pane) in
 # <container> ("session:workspace_id"). Herdr does NOT enforce label
 # uniqueness itself (verified: two tabs can share a label), so the duplicate
@@ -1990,15 +2085,6 @@ fm_backend_herdr_agent_alive() {  # <target>
 # the safety argument). An ADOPTED workspace's caller always passes an empty
 # 4th arg, so this function never even queries for a prune candidate in that
 # case. Echoes "<tab_id> <pane_id>" on success.
-fm_backend_herdr_cleanup_created_task() {
-  local session=$1 tab=$2 pane=$3
-  if [ -n "$pane" ]; then
-    fm_backend_herdr_kill_serialized "$session" "$pane" >/dev/null 2>&1 || true
-  elif [ -n "$tab" ]; then
-    fm_backend_herdr_cli "$session" tab close "$tab" >/dev/null 2>&1 || true
-  fi
-}
-
 fm_backend_herdr_create_task() {  # <container> <label> <cwd> <seeded_default_tab_id>
   local container=$1 label=$2 cwd=$3 seeded_tab_id=${4:-} session wsid list dup_tabs dup dup_pane dup_tab_ids out tab_id pane_id remaining_dup_tabs
   session=${container%%:*}
@@ -2026,13 +2112,13 @@ EOF
   tab_id=$(printf '%s' "$out" | jq -r '.result.tab.tab_id // empty' 2>/dev/null)
   pane_id=$(printf '%s' "$out" | jq -r '.result.root_pane.pane_id // empty' 2>/dev/null)
   if [ -z "$tab_id" ] || [ -z "$pane_id" ]; then
-    fm_backend_herdr_cleanup_created_task "$session" "$tab_id" "$pane_id"
+    fm_backend_herdr_cleanup_created_task "$session" "$wsid" "$label" "$dup_tabs" "$tab_id" "$pane_id" || true
     echo "error: could not parse tab/pane id from herdr tab create output" >&2
     return 1
   fi
   if [ -n "$seeded_tab_id" ] \
      && ! fm_backend_herdr_workspace_prune_seeded_default_tab "$session" "$wsid" "$seeded_tab_id"; then
-    fm_backend_herdr_cleanup_created_task "$session" "$tab_id" "$pane_id"
+    fm_backend_herdr_cleanup_created_task "$session" "$wsid" "$label" "$dup_tabs" "$tab_id" "$pane_id" || true
     return 1
   fi
   if [ -n "$dup_tab_ids" ]; then
@@ -2043,12 +2129,12 @@ EOF
 $dup_tab_ids
 EOF
     list=$(fm_backend_herdr_cli "$session" tab list --workspace "$wsid" 2>/dev/null) || {
-      fm_backend_herdr_cleanup_created_task "$session" "$tab_id" "$pane_id"
+      fm_backend_herdr_cleanup_created_task "$session" "$wsid" "$label" "$dup_tabs" "$tab_id" "$pane_id" || true
       echo "error: could not verify herdr husk removal for tab '$label' in workspace $wsid (session $session)" >&2
       return 1
     }
     if ! printf '%s' "$list" | jq -e '(.result.tabs | type) == "array"' >/dev/null 2>&1; then
-      fm_backend_herdr_cleanup_created_task "$session" "$tab_id" "$pane_id"
+      fm_backend_herdr_cleanup_created_task "$session" "$wsid" "$label" "$dup_tabs" "$tab_id" "$pane_id" || true
       echo "error: could not parse herdr tab list output for workspace $wsid (session $session)" >&2
       return 1
     fi
@@ -2056,7 +2142,7 @@ EOF
       '.result.tabs[]? | select(.label == $want and .tab_id != $replacement) | .tab_id' 2>/dev/null)
     remaining_dup_tabs=${remaining_dup_tabs//$'\n'/ }
     if [ -n "$remaining_dup_tabs" ]; then
-      fm_backend_herdr_cleanup_created_task "$session" "$tab_id" "$pane_id"
+      fm_backend_herdr_cleanup_created_task "$session" "$wsid" "$label" "$dup_tabs" "$tab_id" "$pane_id" || true
       echo "error: failed to remove preexisting herdr tab(s) $remaining_dup_tabs for label '$label' in workspace $wsid (session $session)" >&2
       return 1
     fi
