@@ -456,7 +456,7 @@ test_foreign_session_takes_over_dead_holder() {
   pass "session-lock executable: foreign Claude session takes over a dead holder"
 }
 
-test_dead_claude_pid_falls_back_to_ancestry_pid() {
+test_dead_claude_pid_does_not_change_ancestry_pid() {
   local dir current_pid rc=0
   dir="$TMP_ROOT/dead-claude-pid"
   make_lock_identity_home "$dir"
@@ -467,13 +467,13 @@ test_dead_claude_pid_falls_back_to_ancestry_pid() {
     printf "%s\n" "$$" > "$FM_HOME/state/current-pid"
     "$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/current.out" 2>&1
   ' || rc=$?
-  expect_code 0 "$rc" "a dead CLAUDE_PID must fall back to the resolved ancestry pid"
+  expect_code 0 "$rc" "a dead CLAUDE_PID must not affect acquisition"
   current_pid=$(cat "$dir/state/current-pid")
   [ "$(cat "$dir/state/.lock")" = "$current_pid" ] \
-    || fail "a dead CLAUDE_PID did not publish the resolved ancestry pid"
+    || fail "a dead CLAUDE_PID changed the resolved ancestry pid"
   [ "$(cat "$dir/state/.lock.session")" = session-dead-claude-pid ] \
-    || fail "a dead CLAUDE_PID fallback did not publish the session discriminator"
-  pass "session-lock executable: a dead CLAUDE_PID falls back to the ancestry pid"
+    || fail "a dead CLAUDE_PID prevented session discriminator publication"
+  pass "session-lock executable: CLAUDE_PID does not change the ancestry pid"
 }
 
 test_non_claude_ancestry_ignores_inherited_claude_environment() {
@@ -589,6 +589,8 @@ snapshot() {
 case "$dest" in
   "$FM_HOME/state/.lock")
     snapshot
+    touch -t 200001010000 "$FM_HOME/state/.lock.acquire"
+    "$FM_OBSERVER_BIN" "$FM_HOME/observer.sh"
     /bin/mv "$@" || exit $?
     snapshot
     touch -t 200001010000 "$FM_HOME/state/.lock.acquire"
@@ -663,6 +665,92 @@ SH
   [ "$(cat "$dir/state/.lock.session")" = session-aged-claim-owner ] \
     || fail "the aged-claim real Stop hook lost its matching session sidecar"
   pass "session-lock e2e: real Stop hook ignores an aged acquisition claim"
+}
+
+test_real_stop_hook_uses_stable_identity_during_live_lease() {
+  local dir
+  dir="$TMP_ROOT/e2e-live-acquisition-lease"
+  make_primary_home "$dir"
+  cat > "$dir/session.sh" <<'SH'
+#!/usr/bin/env bash
+export CLAUDE_CODE_SESSION_ID=session-live-lease-owner
+export CLAUDE_PID=$$
+export CLAUDE_CODE_CHILD_SESSION=1
+"$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/lock.out" 2>&1 || exit $?
+mkdir "$FM_HOME/state/.lock.acquire"
+printf '%s\n' "$$" > "$FM_HOME/state/.lock.acquire/pid"
+"$FM_HOME/bin/fm-claude-stop-autoarm.sh" </dev/null > "$FM_HOME/state/hook.out" 2>&1
+printf '%s\n' "$?" > "$FM_HOME/state/hook.rc"
+SH
+  chmod +x "$dir/session.sh"
+  run_fixture_tree "$dir" "$NAMED_CLAUDE"
+  expect_code 2 "$(hook_rc "$dir")" "a live acquisition lease must not hide stable session ownership"
+  [ -e "$dir/state/arm-ran" ] || fail "the stable lock owner did not arm during a live acquisition lease"
+  pass "session-lock e2e: stable identity survives a live acquisition lease"
+}
+
+test_failed_sidecar_publication_rolls_back_lock() {
+  local dir fakebin rc=0
+  dir="$TMP_ROOT/failed-sidecar-publication"
+  make_lock_identity_home "$dir"
+  printf '9999999\n' > "$dir/state/.lock"
+  printf 'session-old\n' > "$dir/state/.lock.session"
+  fakebin=$(fm_fakebin "$dir/sidecar-failure")
+  cat > "$fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+set -u
+dest=
+for arg in "$@"; do dest=$arg; done
+if [ "$dest" = "$FM_HOME/state/.lock.session" ] \
+  && [ ! -e "$FM_HOME/state/sidecar-failure-fired" ]; then
+  : > "$FM_HOME/state/sidecar-failure-fired"
+  exit 1
+fi
+/bin/mv "$@"
+SH
+  chmod +x "$fakebin/mv"
+  FM_HOME="$dir" PATH="$fakebin:$PATH" "$NAMED_CLAUDE" -c '
+    export CLAUDE_CODE_SESSION_ID=session-current
+    export CLAUDE_PID=$$
+    export CLAUDE_CODE_CHILD_SESSION=1
+    "$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/current.out" 2>&1
+  ' || rc=$?
+  expect_code 1 "$rc" "a failed sidecar publication must fail acquisition"
+  [ "$(cat "$dir/state/.lock")" = 9999999 ] \
+    || fail "failed sidecar publication did not restore the prior lock pid"
+  [ "$(cat "$dir/state/.lock.session")" = session-old ] \
+    || fail "failed sidecar publication did not restore the prior session sidecar"
+  pass "session-lock executable: sidecar failure restores the prior identity"
+}
+
+test_failed_sidecar_removal_preserves_prior_identity() {
+  local dir fakebin rc=0
+  dir="$TMP_ROOT/failed-sidecar-removal"
+  make_lock_identity_home "$dir"
+  printf '9999999\n' > "$dir/state/.lock"
+  printf 'session-old\n' > "$dir/state/.lock.session"
+  fakebin=$(fm_fakebin "$dir/sidecar-removal-failure")
+  cat > "$fakebin/rm" <<'SH'
+#!/usr/bin/env bash
+set -u
+dest=
+for arg in "$@"; do dest=$arg; done
+[ "$dest" != "$FM_HOME/state/.lock.session" ] || exit 1
+/bin/rm "$@"
+SH
+  chmod +x "$fakebin/rm"
+  FM_HOME="$dir" PATH="$fakebin:$PATH" "$NAMED_CLAUDE" -c '
+    export CLAUDE_CODE_SESSION_ID=session-current
+    export CLAUDE_PID=$$
+    export CLAUDE_CODE_CHILD_SESSION=1
+    "$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/current.out" 2>&1
+  ' || rc=$?
+  expect_code 1 "$rc" "a failed sidecar removal must fail acquisition"
+  [ "$(cat "$dir/state/.lock")" = 9999999 ] \
+    || fail "failed sidecar removal changed the prior lock pid"
+  [ "$(cat "$dir/state/.lock.session")" = session-old ] \
+    || fail "failed sidecar removal changed the prior session sidecar"
+  pass "session-lock executable: sidecar removal failure preserves prior identity"
 }
 
 test_foreign_stop_hook_stands_down_with_session_reason() {
@@ -740,12 +828,15 @@ test_e2e_daemon_parented_version_named_session_keeps_its_lock
 test_same_claude_session_reacquires_with_durable_pid
 test_background_claude_session_is_refused_under_live_holder
 test_foreign_session_takes_over_dead_holder
-test_dead_claude_pid_falls_back_to_ancestry_pid
+test_dead_claude_pid_does_not_change_ancestry_pid
 test_non_claude_ancestry_ignores_inherited_claude_environment
 test_old_lock_without_sidecar_uses_pid_fallback
 test_real_stop_hook_owns_matching_claude_session
 test_real_stop_hook_refreshes_dead_matching_session
 test_identity_publication_exposes_only_stable_pairs
 test_real_stop_hook_ignores_aged_acquisition_claim
+test_real_stop_hook_uses_stable_identity_during_live_lease
+test_failed_sidecar_publication_rolls_back_lock
+test_failed_sidecar_removal_preserves_prior_identity
 test_foreign_stop_hook_stands_down_with_session_reason
 test_real_stop_hook_recovers_dead_foreign_sidecar

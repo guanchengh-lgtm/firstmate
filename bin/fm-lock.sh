@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Acquire or inspect the per-home firstmate session lock.
 # Writes the durable ancestry PID selected by bin/fm-session-lock-lib.sh.
-# CLAUDE_PID is only an additional liveness probe and is never persisted.
 # Usage: fm-lock.sh           acquire; exit 1 unless ownership is verified
 #        fm-lock.sh status    print holder and liveness; always exits 0
 set -u
@@ -47,17 +46,58 @@ if ! { printf '%s\n' "$me" > "$lock_tmp"; } 2>/dev/null; then
   exit 1
 fi
 session_tmp=''
+rollback_tmp=''
+rollback_session_tmp=''
+rollback_remove_lock=0
+publication_changed=0
+publication_complete=0
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 CLAIM_LOCK="$STATE/.lock.acquire"
 CLAIM_LOCK_HELD=0
 release_claim_lock() {
+  local prior_pair_intact=0 rollback_lock_ok=0
+  if [ "$publication_changed" -eq 1 ] && [ "$publication_complete" -eq 0 ]; then
+    if [ "$rollback_remove_lock" -eq 0 ] && [ -n "$rollback_tmp" ] \
+      && cmp -s "$rollback_tmp" "$LOCK" 2>/dev/null; then
+      if [ -n "$rollback_session_tmp" ]; then
+        cmp -s "$rollback_session_tmp" "$LOCK_SESSION" 2>/dev/null && prior_pair_intact=1
+      elif [ ! -e "$LOCK_SESSION" ] && [ ! -L "$LOCK_SESSION" ]; then
+        prior_pair_intact=1
+      fi
+    fi
+    if [ "$prior_pair_intact" -eq 0 ]; then
+      if ! rm -f "$LOCK_SESSION" 2>/dev/null; then
+        rm -f "$LOCK" 2>/dev/null || true
+      elif [ "$rollback_remove_lock" -eq 1 ]; then
+        rm -f "$LOCK" 2>/dev/null && rollback_lock_ok=1
+      elif [ -n "$rollback_tmp" ]; then
+        if mv "$rollback_tmp" "$LOCK" 2>/dev/null; then
+          rollback_tmp=''
+          rollback_lock_ok=1
+        else
+          rm -f "$LOCK" 2>/dev/null || true
+        fi
+      fi
+      if [ "$rollback_lock_ok" -eq 1 ] && [ "$rollback_remove_lock" -eq 0 ] \
+        && [ -n "$rollback_session_tmp" ]; then
+        if mv "$rollback_session_tmp" "$LOCK_SESSION" 2>/dev/null; then
+          rollback_session_tmp=''
+        else
+          rm -f "$LOCK_SESSION" 2>/dev/null || true
+        fi
+      fi
+    fi
+    publication_changed=0
+  fi
   if [ "$CLAIM_LOCK_HELD" -eq 1 ]; then
     fm_lock_release "$CLAIM_LOCK"
     CLAIM_LOCK_HELD=0
   fi
   [ -z "$lock_tmp" ] || rm -f "$lock_tmp" 2>/dev/null || true
   [ -z "$session_tmp" ] || rm -f "$session_tmp" 2>/dev/null || true
+  [ -z "$rollback_tmp" ] || rm -f "$rollback_tmp" 2>/dev/null || true
+  [ -z "$rollback_session_tmp" ] || rm -f "$rollback_session_tmp" 2>/dev/null || true
 }
 trap release_claim_lock EXIT
 trap 'exit 1' HUP INT TERM
@@ -112,6 +152,26 @@ if [ -e "$LOCK" ] || [ -L "$LOCK" ]; then
   if lock_refuses_current_session "$old"; then
     exit 1
   fi
+  rollback_tmp=$(mktemp "$STATE/.lock-rollback.XXXXXX" 2>/dev/null) || {
+    echo "error: cannot prepare session lock rollback; operate read-only until resolved" >&2
+    exit 1
+  }
+  if ! { cat "$LOCK" > "$rollback_tmp"; } 2>/dev/null; then
+    echo "error: cannot prepare session lock rollback; operate read-only until resolved" >&2
+    exit 1
+  fi
+else
+  rollback_remove_lock=1
+fi
+if [ -f "$LOCK_SESSION" ] && [ ! -L "$LOCK_SESSION" ]; then
+  rollback_session_tmp=$(mktemp "$STATE/.lock-session-rollback.XXXXXX" 2>/dev/null) || {
+    echo "error: cannot prepare session lock rollback; operate read-only until resolved" >&2
+    exit 1
+  }
+  if ! { cat "$LOCK_SESSION" > "$rollback_session_tmp"; } 2>/dev/null; then
+    echo "error: cannot prepare session lock rollback; operate read-only until resolved" >&2
+    exit 1
+  fi
 fi
 if [ -n "$session_id" ]; then
   session_tmp=$(mktemp "$STATE/.lock-session-write.XXXXXX" 2>/dev/null) || {
@@ -125,6 +185,7 @@ if [ -n "$session_id" ]; then
   fi
 fi
 existing_session=$(fm_session_lock_read_session_id "$STATE" 2>/dev/null || true)
+publication_changed=1
 if { [ -z "$session_id" ] || [ "$existing_session" != "$session_id" ]; } \
   && ! rm -f "$LOCK_SESSION" 2>/dev/null; then
   echo "error: cannot replace session lock identity; operate read-only until resolved" >&2
@@ -158,5 +219,6 @@ elif [ -e "$LOCK_SESSION" ] || [ -L "$LOCK_SESSION" ]; then
   echo "error: stale session lock identity remains; operate read-only until resolved" >&2
   exit 1
 fi
+publication_complete=1
 release_claim_lock
 echo "lock acquired: harness pid $me"

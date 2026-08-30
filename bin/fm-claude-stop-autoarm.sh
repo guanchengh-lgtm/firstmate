@@ -108,6 +108,10 @@ fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
 # uncertainty rather than stale-owner evidence and remain inert.
 RECOVER_SESSION_LOCK=0
 if ! fm_session_lock_owned_by_self "$STATE"; then
+  if [ "$FM_SESSION_LOCK_OWNER_REASON" = 'session lock identity update in progress' ]; then
+    printf 'firstmate watcher auto-arm standing down: %s\n' "$FM_SESSION_LOCK_OWNER_REASON" >&2
+    exit 0
+  fi
   LOCK_PID=$(cat "$STATE/.lock" 2>/dev/null || true)
   case "$LOCK_PID" in
     ''|*[!0-9]*) exit 0 ;;

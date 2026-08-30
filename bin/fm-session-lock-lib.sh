@@ -4,9 +4,9 @@
 # ONE owner of the "which verified-harness session holds this home's session
 # lock, and does the current process belong to that session?" decision. Claude
 # identity uses a valid CLAUDE_CODE_SESSION_ID only after the ancestry resolves
-# to Claude. state/.lock always records the durable ancestry pid. CLAUDE_PID is
-# only an additional liveness probe, with the ancestry pid as the fallback.
-# Other harnesses and uncertain Claude states use ancestry unchanged.
+# to Claude. state/.lock records the durable ancestry pid, which is also the
+# only liveness input. CLAUDE_PID is not part of the decision. Other harnesses
+# and uncertain Claude states use ancestry unchanged.
 # bin/fm-lock.sh uses it to acquire state/.lock and state/.lock.session;
 # bin/fm-claude-stop-autoarm.sh uses it to prove a Stop hook fires inside the
 # lock-owning primary session before it may arm or rewake.
@@ -181,14 +181,12 @@ fm_session_lock_read_session_id() {  # <state>
 # FM_SESSION_ANCESTRY_PIDS: current contiguous harness run, innermost first
 # FM_SESSION_ANCESTRY_PID:  today's lock pid, outermost for Claude
 # FM_SESSION_ID:            valid Claude session id, or empty for fallback
-# FM_SESSION_LIVENESS_PID:  Claude liveness pid, or the ancestry pid fallback
 # shellcheck disable=SC2034 # Globals are outputs consumed by sourcing scripts.
 fm_session_lock_identity() {
-  local pids pid innermost='' outermost='' comm args session_id claude_pid
+  local pids pid innermost='' outermost='' comm args session_id
   FM_SESSION_ANCESTRY_PIDS=''
   FM_SESSION_ANCESTRY_PID=''
   FM_SESSION_ID=''
-  FM_SESSION_LIVENESS_PID=''
 
   pids=$(fm_harness_ancestry_pids) || return 1
   while IFS= read -r pid; do
@@ -202,7 +200,6 @@ EOF
 
   FM_SESSION_ANCESTRY_PIDS=$pids
   FM_SESSION_ANCESTRY_PID=$outermost
-  FM_SESSION_LIVENESS_PID=$outermost
 
   comm=$(ps -o comm= -p "$innermost" 2>/dev/null) || return 0
   args=$(ps -o args= -p "$innermost" 2>/dev/null)
@@ -212,14 +209,6 @@ EOF
   session_id=${CLAUDE_CODE_SESSION_ID:-}
   fm_session_id_valid "$session_id" || return 0
   FM_SESSION_ID=$session_id
-
-  claude_pid=${CLAUDE_PID:-}
-  case "$claude_pid" in
-    ''|*[!0-9]*) return 0 ;;
-  esac
-  if fm_harness_pid_alive "$claude_pid"; then
-    FM_SESSION_LIVENESS_PID=$claude_pid
-  fi
   return 0
 }
 
@@ -259,30 +248,38 @@ fm_session_lock_claim_is_fresh() {
 }
 
 fm_session_lock_owned_by_self() {
-  local state=$1 lock_pid lock_session pid
+  local state=$1 lock_pid lock_session='' pid
   FM_SESSION_LOCK_OWNER_REASON=''
-  if fm_session_lock_claim_is_fresh "$state/.lock.acquire"; then
-    # shellcheck disable=SC2034 # The auto-arm reads this sourced output.
-    FM_SESSION_LOCK_OWNER_REASON='session lock identity update in progress'
-    return 1
-  fi
   lock_pid=$(cat "$state/.lock" 2>/dev/null || true)
   case "$lock_pid" in
     ''|*[!0-9]*) return 1 ;;
   esac
   fm_session_lock_identity || return 1
-  if [ -n "$FM_SESSION_ID" ] && lock_session=$(fm_session_lock_read_session_id "$state"); then
+  if [ -n "$FM_SESSION_ID" ]; then
+    lock_session=$(fm_session_lock_read_session_id "$state" 2>/dev/null || true)
+  fi
+  if [ -n "$lock_session" ]; then
     if [ "$lock_session" = "$FM_SESSION_ID" ]; then
-      fm_harness_pid_alive "$lock_pid" || return 1
-      if fm_session_lock_claim_is_fresh "$state/.lock.acquire"; then
-        # shellcheck disable=SC2034 # The auto-arm reads this sourced output.
-        FM_SESSION_LOCK_OWNER_REASON='session lock identity update in progress'
-        return 1
-      fi
-      return 0
+      fm_harness_pid_alive "$lock_pid" && return 0
+    elif fm_harness_pid_alive "$lock_pid"; then
+      # shellcheck disable=SC2034 # The auto-arm reads this sourced output.
+      FM_SESSION_LOCK_OWNER_REASON="lock belongs to Claude session $lock_session, not $FM_SESSION_ID"
+      return 1
     fi
+    if fm_session_lock_claim_is_fresh "$state/.lock.acquire"; then
+      # shellcheck disable=SC2034 # The auto-arm reads this sourced output.
+      FM_SESSION_LOCK_OWNER_REASON='session lock identity update in progress'
+      return 1
+    fi
+    if [ "$lock_session" != "$FM_SESSION_ID" ]; then
+      # shellcheck disable=SC2034 # The auto-arm reads this sourced output.
+      FM_SESSION_LOCK_OWNER_REASON="lock belongs to Claude session $lock_session, not $FM_SESSION_ID"
+    fi
+    return 1
+  fi
+  if fm_session_lock_claim_is_fresh "$state/.lock.acquire"; then
     # shellcheck disable=SC2034 # The auto-arm reads this sourced output.
-    FM_SESSION_LOCK_OWNER_REASON="lock belongs to Claude session $lock_session, not $FM_SESSION_ID"
+    FM_SESSION_LOCK_OWNER_REASON='session lock identity update in progress'
     return 1
   fi
   while IFS= read -r pid; do
