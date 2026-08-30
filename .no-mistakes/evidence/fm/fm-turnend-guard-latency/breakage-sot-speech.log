@@ -1,0 +1,3 @@
+ok - sot-speech: absent speech-claim locks are inert
+not ok - claim without read exited 0
+exit_code=1

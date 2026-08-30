@@ -1,0 +1,3 @@
+ok - stow open-lock: missing and empty input exit 2
+not ok - historical fixture exact-count exited 1: regression: expected 1 finding(s) and 1 total, observed 0 and 0 total
+exit_code=1

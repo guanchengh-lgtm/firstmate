@@ -1,0 +1,21 @@
+ok - owner-invoke-wait: missing and empty input, expect-count 0, empty rules exit 2
+ok - owner-invoke-wait: 2026-08-22 compile-check with no OV fires exact count 1
+ok - owner-invoke-wait: 2026-08-23 reconstructed owner-node-open fires exact count 1
+ok - owner-invoke-wait: same-turn Stop and matching artifact are clean
+ok - owner-invoke-wait: held map_next, date-cleared, future, and real captain holds
+ok - owner-invoke-wait: placeholder and no-task briefs are clean
+ok - owner-invoke-wait: builder self-review is not OV
+ok - owner-invoke-wait: distinct spawned OV worker is required
+ok - owner-invoke-wait: OV report ladder and report-gated skills own the wait
+ok - owner-invoke-wait: unrelated rule fire is not exact-count success
+ok - owner-invoke-wait: hook session gather runs OV report ladder
+ok - owner-invoke-wait: turn-end does not re-refuse in-flight ships without ov=
+ok - owner-invoke-wait: hook scopes ship gather to this session only
+ok - owner-invoke-wait: finished non-Claude review without skills passes
+ok - owner-invoke-wait: finished Claude review skips duplicate Stop skill check
+ok - owner-invoke-wait: skill-load recorder appends normalized token
+ok - owner-invoke-wait: husk OV pane without report refuses
+ok - owner-invoke-wait: live OV agent without report passes
+ok - owner-invoke-wait: crewmate settings wire Skill load recorder
+not ok - brief with OV report+skill exited 1 with: R-skill-unloaded-plan-eng-review: spec-compile-check instructions never loaded plan-eng-review
+exit_code=1

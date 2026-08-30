@@ -1,0 +1,21 @@
+fixture ordinary_decisions=216 symlinks=1 transcript_bytes=3145967 watcher=healthy
+run check=answer-lock sample=1 elapsed_ms=67 rc=0 output=silent
+run check=answer-lock sample=2 elapsed_ms=79 rc=0 output=silent
+run check=answer-lock sample=3 elapsed_ms=84 rc=0 output=silent
+result check=answer-lock median_ms=79 threshold_ms=100 verdict=PASS
+run check=sot-speech sample=1 elapsed_ms=148 rc=0 output=silent
+run check=sot-speech sample=2 elapsed_ms=156 rc=0 output=silent
+run check=sot-speech sample=3 elapsed_ms=151 rc=0 output=silent
+result check=sot-speech median_ms=151 threshold_ms=200 verdict=PASS
+run check=owner-invoke-wait sample=1 elapsed_ms=183 rc=0 output=silent
+run check=owner-invoke-wait sample=2 elapsed_ms=179 rc=0 output=silent
+run check=owner-invoke-wait sample=3 elapsed_ms=204 rc=0 output=silent
+result check=owner-invoke-wait median_ms=183 threshold_ms=800 verdict=PASS
+run check=stow-open-lock sample=1 elapsed_ms=87 rc=0 output=1
+run check=stow-open-lock sample=2 elapsed_ms=70 rc=0 output=1
+run check=stow-open-lock sample=3 elapsed_ms=70 rc=0 output=1
+result check=stow-open-lock median_ms=70 threshold_ms=200 verdict=PASS
+run check=full-turnend-claude sample=1 elapsed_ms=852 rc=0 output=silent
+run check=full-turnend-claude sample=2 elapsed_ms=491 rc=0 output=silent
+run check=full-turnend-claude sample=3 elapsed_ms=500 rc=0 output=silent
+result check=full-turnend-claude median_ms=500 threshold_ms=1000 verdict=PASS

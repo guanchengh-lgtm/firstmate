@@ -1,0 +1,28 @@
+ok - stow open-lock: missing and empty input exit 2
+ok - stow open-lock: historical Q2-open fixture fires exact count 1
+ok - stow open-lock: listed remaining pick and locked Q2 are clean
+ok - stow open-lock: omitted snapshot fires exact count 1; listed snapshot is clean
+ok - stow open-lock: --list-open is public JSON; expect-count 0 and empty rules exit 2
+ok - stow open-lock: locked Q-item with quoted Still open is not a marker
+ok - stow open-lock: summary substring remaining picks are not clean
+ok - stow open-lock: decision file-stem remaining picks are not clean
+ok - stow open-lock: snapshot key collision is not clean; mate-prefixed ids cover
+not ok - scoped selection included a hidden decision file: [
+  {
+    "id": ".hidden/Q1",
+    "key": "Q1",
+    "verb": "lock-open",
+    "summary": "Hidden scope. Still open.",
+    "source": "decision-lock",
+    "file": "data/decisions/.hidden.md"
+  },
+  {
+    "id": "visible/Q2",
+    "key": "Q2",
+    "verb": "lock-open",
+    "summary": "Visible scope. Still open.",
+    "source": "decision-lock",
+    "file": "data/decisions/visible.md"
+  }
+]
+exit_code=1

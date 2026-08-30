@@ -1,0 +1,12 @@
+ok - answer-lock: missing tickets dir is inert
+ok - answer-lock: expect-count 0, empty rules, unknown rule exit 2
+ok - answer-lock: clothes pick-still-open fires exact count 1
+ok - answer-lock: clothes close-no-lock ship ticket without ## Answer is exempt
+ok - answer-lock: clothes close-undated fires exact count 1
+ok - answer-lock: CLOSED with ## Answer and no lock file fires R-close-no-lock
+ok - answer-lock: ticket without a lock pointer skips open-lock reader
+ok - answer-lock: OPEN ticket with a valid pointer skips open-lock reader
+tests/fm-answer-lock-check.test.sh: line 253: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-answer-lock-check.QlGanq/lazy-valid-pointer/open-lock-reader.log: No such file or directory
+tests/fm-answer-lock-check.test.sh: line 254: [: : integer expression expected
+not ok - valid pointer reader calls=, want 1
+exit_code=1
