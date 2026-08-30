@@ -2105,6 +2105,7 @@ VERIFIER_HANDOFF=0
 VERIFIER_HANDOFF_META=
 VERIFIER_HANDOFF_PRIOR_BACKEND=
 VERIFIER_HANDOFF_PRIOR_HARNESS=
+VERIFIER_HANDOFF_PRIOR_BUSY_GEN=
 VERIFIER_HANDOFF_PRIOR_TARGET=
 VERIFIER_HANDOFF_PRIOR_RETIRED=0
 VERIFIER_HANDOFF_RETIRED_STATE=
@@ -2121,7 +2122,7 @@ git_common_dir_real() {  # <worktree>
 verifier_handoff_preflight() {
   local meta=$1 prior_kind prior_mode prior_role prior_project prior_project_real
   local prior_state worktree_common project_common status tracked_status untracked_status
-  local rebase_merge rebase_apply head branch branch_status expected_branch branch_head branch_owner
+  local rebase_merge rebase_apply head branch branch_status expected_branch branch_head branch_owner worktree_list
   [ -f "$meta" ] && [ ! -L "$meta" ] || {
     echo "error: verifier handoff refused: no regular builder metadata at '$meta'" >&2
     return 1
@@ -2131,6 +2132,8 @@ verifier_handoff_preflight() {
   VERIFIER_HANDOFF_PRIOR_TARGET=$FM_BACKEND_VALIDATED_TARGET
   VERIFIER_HANDOFF_PRIOR_HARNESS=$(fm_backend_meta_exact_value "$meta" harness) \
     || VERIFIER_HANDOFF_PRIOR_HARNESS=
+  VERIFIER_HANDOFF_PRIOR_BUSY_GEN=$(fm_backend_meta_exact_value "$meta" busy_gen) \
+    || VERIFIER_HANDOFF_PRIOR_BUSY_GEN=
   prior_kind=$(fm_backend_meta_exact_value "$meta" kind) || prior_kind=
   prior_mode=$(fm_backend_meta_exact_value "$meta" mode) || prior_mode=
   prior_role=$(fm_backend_meta_exact_value "$meta" role) || prior_role=
@@ -2230,13 +2233,14 @@ verifier_handoff_preflight() {
         echo "error: verifier handoff refused: detached builder worktree '$WT' is at '$head', but '$expected_branch' is at '$branch_head'" >&2
         return 1
       fi
-      branch_owner=$(git -C "$WT" worktree list --porcelain 2>/dev/null | awk -v ref="refs/heads/$expected_branch" '
-        /^worktree / { path = substr($0, 10) }
-        $1 == "branch" && $2 == ref { print path; exit }
-      ') || {
+      worktree_list=$(git -C "$WT" worktree list --porcelain 2>/dev/null) || {
         echo "error: verifier handoff refused: builder worktree '$WT' has unreadable worktree ownership" >&2
         return 1
       }
+      branch_owner=$(printf '%s\n' "$worktree_list" | awk -v ref="refs/heads/$expected_branch" '
+        /^worktree / { path = substr($0, 10) }
+        $1 == "branch" && $2 == ref { print path; exit }
+      ')
       if [ -n "$branch_owner" ]; then
         echo "error: verifier handoff refused: task branch '$expected_branch' is checked out in worktree '$branch_owner'" >&2
         return 1
@@ -2251,17 +2255,34 @@ verifier_handoff_preflight() {
 }
 
 verifier_handoff_retire_herdr_projection() {  # <journal>
-  local journal=$1 session status=1
+  local journal=$1 session status=1 canonical_home
   fm_backend_source herdr || return 1
-  herdr_projection_existing_meta_allows_flat "$VERIFIER_HANDOFF_META" || return 1
-  fm_backend_herdr_parse_target "$VERIFIER_HANDOFF_PRIOR_TARGET" || return 1
-  session=$FM_BACKEND_HERDR_SESSION
+  if [ "$VERIFIER_HANDOFF_PRIOR_BACKEND" = herdr ]; then
+    herdr_projection_existing_meta_allows_flat "$VERIFIER_HANDOFF_META" || return 1
+    fm_backend_herdr_parse_target "$VERIFIER_HANDOFF_PRIOR_TARGET" || return 1
+    session=$FM_BACKEND_HERDR_SESSION
+  else
+    fm_backend_herdr_projection_journal_snapshot "$journal" "$ID" || return 1
+    if [ "$FM_BACKEND_HERDR_JOURNAL_VERSION" != 2 ]; then
+      echo "error: verifier handoff refused: version 1 Herdr presentation journal has no exact builder binding" >&2
+      return 1
+    fi
+    canonical_home=$(fm_backend_herdr_projection_home_identity "$FM_HOME") || return 1
+    [ "$FM_BACKEND_HERDR_JOURNAL_HOME" = "$canonical_home" ] || return 1
+    session=$FM_BACKEND_HERDR_JOURNAL_SESSION
+    fm_backend_herdr_server_ensure "$session" || return 1
+  fi
   spawn_herdr_presentation_order_lock_acquire "$session" || return 1
-  if fm_backend_herdr_projection_recovery_allows_flat "$session" "$journal" "$ID" \
-     && fm_backend_herdr_projection_retire_handoff_binding \
-       "$session" "$journal" "$ID" \
-       "$HERDR_RECOVERY_WORKSPACE_ID" "$HERDR_RECOVERY_TAB_ID" "$HERDR_RECOVERY_PANE_ID"; then
-    status=0
+  if fm_backend_herdr_projection_recovery_allows_flat "$session" "$journal" "$ID"; then
+    if [ "$VERIFIER_HANDOFF_PRIOR_BACKEND" = herdr ]; then
+      if fm_backend_herdr_projection_retire_handoff_binding \
+        "$session" "$journal" "$ID" \
+        "$HERDR_RECOVERY_WORKSPACE_ID" "$HERDR_RECOVERY_TAB_ID" "$HERDR_RECOVERY_PANE_ID"; then
+        status=0
+      fi
+    elif fm_backend_herdr_projection_retire_quarantine "$session" "$journal" "$ID"; then
+      status=0
+    fi
   fi
   spawn_herdr_presentation_order_lock_release
   return "$status"
@@ -2288,15 +2309,13 @@ if [ "$RELAUNCH" -eq 1 ]; then
   SES=${T%%:*}
 else
 if [ "$VERIFIER_HANDOFF" -eq 1 ] \
-   && [ "$VERIFIER_HANDOFF_PRIOR_BACKEND" = herdr ] \
-   && [ "$BACKEND" != herdr ] \
    && { [ -e "$STATE/$ID.herdr-presentation" ] \
      || [ -L "$STATE/$ID.herdr-presentation" ]; }; then
   verifier_handoff_retire_herdr_projection "$STATE/$ID.herdr-presentation" || {
-    echo "error: verifier handoff refused: could not retire the stopped projected builder endpoint" >&2
+    echo "error: verifier handoff refused: could not retire the quarantined Herdr presentation" >&2
     exit 1
   }
-  VERIFIER_HANDOFF_PRIOR_RETIRED=1
+  [ "$VERIFIER_HANDOFF_PRIOR_BACKEND" != herdr ] || VERIFIER_HANDOFF_PRIOR_RETIRED=1
 fi
 if [ "$VERIFIER_HANDOFF" -eq 1 ] \
    && [ "$VERIFIER_HANDOFF_PRIOR_RETIRED" -ne 1 ] \
@@ -2314,6 +2333,13 @@ if [ "$VERIFIER_HANDOFF" -eq 1 ] \
     echo "error: verifier handoff refused: stopped builder endpoint reads '$VERIFIER_HANDOFF_RETIRED_STATE' after retirement, not missing" >&2
     exit 1
   fi
+fi
+if [ "$VERIFIER_HANDOFF" -eq 1 ] && [ -n "$VERIFIER_HANDOFF_PRIOR_BUSY_GEN" ]; then
+  "$FM_ROOT/bin/fm-busy-event.sh" retire "$STATE" "$ID" \
+    --gen "$VERIFIER_HANDOFF_PRIOR_BUSY_GEN" || {
+      echo "error: verifier handoff refused: could not retire the builder busy generation" >&2
+      exit 1
+    }
 fi
 case "$BACKEND" in
   tmux)

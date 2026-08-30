@@ -232,6 +232,23 @@ SH
   chmod +x "$fakebin/mv"
 }
 
+make_spawn_git_failure_stub() {
+  local fakebin=$1
+  cat > "$fakebin/git" <<'SH'
+#!/usr/bin/env bash
+set -u
+if [ "${1:-}" = -C ] \
+   && [ "${2:-}" = "${FM_FAKE_GIT_WORKTREE:-}" ] \
+   && [ "${3:-}" = worktree ] \
+   && [ "${4:-}" = list ] \
+   && [ "${5:-}" = --porcelain ]; then
+  exit 1
+fi
+exec "$FM_REAL_GIT" "$@"
+SH
+  chmod +x "$fakebin/git"
+}
+
 make_spawn_case() {
   local name=$1 harness=$2 case_dir home proj wt fakebin launchlog id
   shift 2
@@ -300,6 +317,7 @@ run_spawn() {
     FM_FAKE_CURSOR_MODELS="${FM_TEST_CURSOR_MODELS:-}" \
     FM_FAKE_CURSOR_LIST_STATUS="${FM_TEST_CURSOR_LIST_STATUS:-0}" \
     FM_FAKE_OV_WINDOW="${FM_TEST_OV_WINDOW:-}" FM_FAKE_OV_COMMAND="${FM_TEST_OV_COMMAND:-}" \
+    FM_REAL_GIT="${FM_REAL_GIT:-}" FM_FAKE_GIT_WORKTREE="${FM_FAKE_GIT_WORKTREE:-}" \
     GROK_HOME="$home/grok-home" PATH="$fakebin:$PATH" \
     "$SPAWN" "$@" 2>&1
 }
@@ -1416,8 +1434,38 @@ test_verifier_handoff_retires_builder_wiring() {
   pass "fm-spawn: verifier handoff retires builder wiring before replacement"
 }
 
+test_verifier_handoff_retires_builder_busy_generation() {
+  local rec id out status gen verdict
+  id=profile-verifier-busy-generation-z56
+  rec=$(make_spawn_case profile-verifier-busy-generation grok "$id")
+  read_case_record "$rec"
+  prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  gen=$("$ROOT/bin/fm-busy-event.sh" arm "$HOME_DIR/state" "$id") \
+    || fail "could not arm builder busy generation"
+  printf 'busy_gen=%s\n' "$gen" >> "$HOME_DIR/state/$id.meta"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  expect_code 0 "$status" "verifier handoff to Grok should retire the builder busy generation"
+  assert_absent "$HOME_DIR/state/$id.busy-gen" \
+    "verifier handoff retained the builder busy generation"
+  assert_absent "$HOME_DIR/state/$id.busy-state" \
+    "verifier handoff retained the builder busy record"
+  assert_no_grep '^busy_gen=' "$HOME_DIR/state/$id.meta" \
+    "verifier metadata retained the builder busy generation"
+  verdict=$(bash -c '
+    . "$0/bin/fm-busy-lib.sh"
+    fm_busy_classify tmux firstmate:fm-test grok "$1" "$2" ""
+  ' "$ROOT" "$id" "$HOME_DIR/state")
+  [ "$verdict" != "unknown source-mismatch" ] \
+    || fail "verifier handoff exposed the builder busy source to Grok"
+  pass "fm-spawn: verifier handoff retires builder busy generation"
+}
+
 test_verifier_handoff_refuses_dirty_builder_worktrees() {
   local rec id out status meta_before endpoint_before status_before status_after
+  local head_before head_after branch_before branch_after file_before file_after
 
   id=profile-verifier-staged-z29
   rec=$(make_spawn_case profile-verifier-staged claude "$id")
@@ -1426,6 +1474,9 @@ test_verifier_handoff_refuses_dirty_builder_worktrees() {
   printf 'staged change\n' >> "$WT_DIR/builder-result.txt"
   git -C "$WT_DIR" add builder-result.txt
   status_before=$(git -C "$WT_DIR" status --porcelain --untracked-files=all)
+  head_before=$(git -C "$WT_DIR" rev-parse HEAD)
+  branch_before=$(git -C "$WT_DIR" symbolic-ref --quiet --short HEAD)
+  file_before=$(cat "$WT_DIR/builder-result.txt")
   meta_before=$(cat "$HOME_DIR/state/$id.meta")
   endpoint_before=$(cat "$HOME_DIR/state/.fake-endpoint-state")
   out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
@@ -1436,6 +1487,12 @@ test_verifier_handoff_refuses_dirty_builder_worktrees() {
     "$meta_before" "$endpoint_before" "$id"
   status_after=$(git -C "$WT_DIR" status --porcelain --untracked-files=all)
   [ "$status_after" = "$status_before" ] || fail "staged verifier refusal changed builder worktree state"
+  head_after=$(git -C "$WT_DIR" rev-parse HEAD)
+  branch_after=$(git -C "$WT_DIR" symbolic-ref --quiet --short HEAD)
+  file_after=$(cat "$WT_DIR/builder-result.txt")
+  [ "$head_after" = "$head_before" ] || fail "staged verifier refusal changed builder HEAD"
+  [ "$branch_after" = "$branch_before" ] || fail "staged verifier refusal changed branch attachment"
+  [ "$file_after" = "$file_before" ] || fail "staged verifier refusal changed builder file content"
 
   id=profile-verifier-unstaged-z30
   rec=$(make_spawn_case profile-verifier-unstaged claude "$id")
@@ -1443,6 +1500,9 @@ test_verifier_handoff_refuses_dirty_builder_worktrees() {
   prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
   printf 'unstaged change\n' >> "$WT_DIR/builder-result.txt"
   status_before=$(git -C "$WT_DIR" status --porcelain --untracked-files=all)
+  head_before=$(git -C "$WT_DIR" rev-parse HEAD)
+  branch_before=$(git -C "$WT_DIR" symbolic-ref --quiet --short HEAD)
+  file_before=$(cat "$WT_DIR/builder-result.txt")
   meta_before=$(cat "$HOME_DIR/state/$id.meta")
   endpoint_before=$(cat "$HOME_DIR/state/.fake-endpoint-state")
   out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
@@ -1453,6 +1513,12 @@ test_verifier_handoff_refuses_dirty_builder_worktrees() {
     "$meta_before" "$endpoint_before" "$id"
   status_after=$(git -C "$WT_DIR" status --porcelain --untracked-files=all)
   [ "$status_after" = "$status_before" ] || fail "unstaged verifier refusal changed builder worktree state"
+  head_after=$(git -C "$WT_DIR" rev-parse HEAD)
+  branch_after=$(git -C "$WT_DIR" symbolic-ref --quiet --short HEAD)
+  file_after=$(cat "$WT_DIR/builder-result.txt")
+  [ "$head_after" = "$head_before" ] || fail "unstaged verifier refusal changed builder HEAD"
+  [ "$branch_after" = "$branch_before" ] || fail "unstaged verifier refusal changed branch attachment"
+  [ "$file_after" = "$file_before" ] || fail "unstaged verifier refusal changed builder file content"
 
   id=profile-verifier-untracked-z31
   rec=$(make_spawn_case profile-verifier-untracked claude "$id")
@@ -1460,6 +1526,9 @@ test_verifier_handoff_refuses_dirty_builder_worktrees() {
   prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
   printf 'untracked change\n' > "$WT_DIR/untracked-builder-file.txt"
   status_before=$(git -C "$WT_DIR" status --porcelain --untracked-files=all)
+  head_before=$(git -C "$WT_DIR" rev-parse HEAD)
+  branch_before=$(git -C "$WT_DIR" symbolic-ref --quiet --short HEAD)
+  file_before=$(cat "$WT_DIR/untracked-builder-file.txt")
   meta_before=$(cat "$HOME_DIR/state/$id.meta")
   endpoint_before=$(cat "$HOME_DIR/state/.fake-endpoint-state")
   out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
@@ -1470,6 +1539,12 @@ test_verifier_handoff_refuses_dirty_builder_worktrees() {
     "$meta_before" "$endpoint_before" "$id"
   status_after=$(git -C "$WT_DIR" status --porcelain --untracked-files=all)
   [ "$status_after" = "$status_before" ] || fail "untracked verifier refusal changed builder worktree state"
+  head_after=$(git -C "$WT_DIR" rev-parse HEAD)
+  branch_after=$(git -C "$WT_DIR" symbolic-ref --quiet --short HEAD)
+  file_after=$(cat "$WT_DIR/untracked-builder-file.txt")
+  [ "$head_after" = "$head_before" ] || fail "untracked verifier refusal changed builder HEAD"
+  [ "$branch_after" = "$branch_before" ] || fail "untracked verifier refusal changed branch attachment"
+  [ "$file_after" = "$file_before" ] || fail "untracked verifier refusal changed untracked file content"
   pass "fm-spawn: verifier handoff preserves staged, unstaged, and untracked builder work"
 }
 
@@ -1555,6 +1630,33 @@ test_verifier_handoff_accepts_detached_builder_head() {
   assert_contains "$out" "$(basename "$owner_worktree")" \
     "detached verifier refusal did not name branch-owning worktree"
   pass "fm-spawn: verifier handoff reuses detached builder HEAD exactly"
+}
+
+test_verifier_handoff_refuses_unreadable_worktree_ownership() {
+  local rec id out status meta_before endpoint_before real_git head_before branch
+  id=profile-verifier-worktree-list-failure-z55
+  rec=$(make_spawn_case profile-verifier-worktree-list-failure claude "$id")
+  read_case_record "$rec"
+  prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  head_before=$(git -C "$WT_DIR" rev-parse HEAD)
+  git -C "$WT_DIR" checkout -q --detach "$head_before"
+  meta_before=$(cat "$HOME_DIR/state/$id.meta")
+  endpoint_before=$(cat "$HOME_DIR/state/.fake-endpoint-state")
+  real_git=$(command -v git)
+  make_spawn_git_failure_stub "$FAKEBIN_DIR"
+
+  out=$(FM_REAL_GIT="$real_git" FM_FAKE_GIT_WORKTREE="$WT_DIR" run_spawn \
+    "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  assert_verifier_handoff_refusal_preserved "$out" "$status" \
+    "error: verifier handoff refused: builder worktree '$WT_DIR' has unreadable worktree ownership" \
+    "$meta_before" "$endpoint_before" "$id"
+  [ "$(git -C "$WT_DIR" rev-parse HEAD)" = "$head_before" ] \
+    || fail "worktree ownership refusal changed detached builder HEAD"
+  branch=$(git -C "$WT_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  [ -z "$branch" ] || fail "worktree ownership refusal attached the builder branch"
+  pass "fm-spawn: verifier handoff refuses unreadable worktree ownership"
 }
 
 test_verifier_handoff_adoption_failure_retires_new_endpoint() {
@@ -1754,40 +1856,86 @@ test_verifier_handoff_allows_backend_change() {
   pass "fm-spawn: verifier handoff follows resolved backend selection"
 }
 
-test_verifier_handoff_retires_stale_herdr_journal_on_transition() {
-  local rec id out status meta meta_before journal token stale_state herdrlog
-  id=profile-verifier-stale-herdr-z54
-  rec=$(make_spawn_case profile-verifier-stale-herdr claude "$id")
+test_verifier_handoff_refuses_unbound_herdr_quarantine() {
+  local rec id out status meta_before endpoint_before journal token stale_state herdrlog
+  id=profile-verifier-unbound-herdr-z54
+  rec=$(make_spawn_case profile-verifier-unbound-herdr claude "$id")
   read_case_record "$rec"
   prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
-  meta="$HOME_DIR/state/$id.meta"
-  meta_before=$(cat "$meta")
+  meta_before=$(cat "$HOME_DIR/state/$id.meta")
+  endpoint_before=$(cat "$HOME_DIR/state/.fake-endpoint-state")
   token=$(FM_HOME="$HOME_DIR" bash -c '
     . "$0/bin/backends/herdr.sh"
     fm_backend_herdr_projection_journal_create "$1" "$2"
-  ' "$ROOT" "$HOME_DIR/state" "$id") || fail "could not create stale Herdr journal"
+  ' "$ROOT" "$HOME_DIR/state" "$id") || fail "could not create unbound Herdr journal"
   journal="$HOME_DIR/state/$id.herdr-presentation"
   stale_state="$HOME_DIR/state/.fake-herdr-stale-state"
   printf '%s\n' no-agent > "$stale_state"
   herdrlog="$HOME_DIR/state/.fake-herdr.log"; : > "$herdrlog"
 
-  out=$(FM_TEST_HERDR_SESSION=fmtest FM_FAKE_HERDR_LOG="$herdrlog" \
+  out=$(FM_FAKE_HERDR_LOG="$herdrlog" \
     FM_FAKE_HERDR_STALE_STATE="$stale_state" FM_FAKE_HERDR_TOKEN="$token" \
     run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
-      --backend herdr --mode no-mistakes --yolo off --role verifier)
+      --mode no-mistakes --yolo off --role verifier)
   status=$?
-  [ "$status" -ne 0 ] || fail "stale Herdr transition fixture unexpectedly completed endpoint creation"
-  assert_contains "$out" "could not read herdr client protocol" \
-    "stale Herdr transition did not reach fresh endpoint creation"
-  [ "$(cat "$meta")" = "$meta_before" ] \
-    || fail "stale Herdr transition failure mutated builder metadata"
+  assert_verifier_handoff_refusal_preserved "$out" "$status" \
+    "error: verifier handoff refused: version 1 Herdr presentation journal has no exact builder binding" \
+    "$meta_before" "$endpoint_before" "$id"
+  [ -f "$journal" ] || fail "unbound Herdr refusal removed the journal"
+  [ "$(cat "$stale_state")" = no-agent ] \
+    || fail "unbound Herdr refusal changed the stale pane"
+  assert_no_grep 'pane close' "$herdrlog" \
+    "unbound Herdr refusal closed a token-correlated pane"
+  pass "fm-spawn: verifier handoff refuses an unbound Herdr quarantine"
+}
+
+test_verifier_handoff_retires_bound_herdr_quarantine_for_tmux() {
+  local rec id out status meta journal token stale_state herdrlog home_real label tmuxlog
+  id=profile-verifier-bound-herdr-z57
+  rec=$(make_spawn_case profile-verifier-bound-herdr claude "$id")
+  read_case_record "$rec"
+  prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  meta="$HOME_DIR/state/$id.meta"
+  token=$(FM_HOME="$HOME_DIR" bash -c '
+    . "$0/bin/backends/herdr.sh"
+    fm_backend_herdr_projection_journal_create "$1" "$2"
+  ' "$ROOT" "$HOME_DIR/state" "$id") || fail "could not create bound Herdr journal"
+  journal="$HOME_DIR/state/$id.herdr-presentation"
+  home_real=$(cd "$HOME_DIR" && pwd -P)
+  label=$(bash -c '
+    . "$0/bin/backends/herdr.sh"
+    fm_backend_herdr_projection_workspace_label "$1" "$2"
+  ' "$ROOT" "$id" "$token") || fail "could not create Herdr projection label"
+  FM_HOME="$HOME_DIR" bash -c '
+    . "$0/bin/backends/herdr.sh"
+    fm_backend_herdr_projection_journal_bind \
+      "$1" "$2" "$3" fmtest w9 w9:t9 w9:p9 w1 firstmate "$4" "fm-$2"
+  ' "$ROOT" "$journal" "$id" "$home_real" "$label" \
+    || fail "could not bind the Herdr quarantine"
+  stale_state="$HOME_DIR/state/.fake-herdr-stale-state"
+  printf '%s\n' no-agent > "$stale_state"
+  herdrlog="$HOME_DIR/state/.fake-herdr.log"; : > "$herdrlog"
+
+  out=$(FM_FAKE_HERDR_LOG="$herdrlog" \
+    FM_FAKE_HERDR_STALE_STATE="$stale_state" FM_FAKE_HERDR_TOKEN="$token" \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+      --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  expect_code 0 "$status" "tmux verifier should retire an exact Herdr quarantine"
   [ ! -e "$journal" ] && [ ! -L "$journal" ] \
-    || fail "backend transition retained the stale Herdr journal"
+    || fail "tmux verifier retained the bound Herdr journal"
   [ "$(cat "$stale_state")" = missing ] \
-    || fail "backend transition retained the stale Herdr pane"
+    || fail "tmux verifier retained the bound Herdr pane"
   assert_grep 'pane close w9:p9' "$herdrlog" \
-    "backend transition did not retire the stale token-bound pane"
-  pass "fm-spawn: backend transition retires stale Herdr presentation"
+    "tmux verifier did not retire the exact Herdr pane"
+  tmuxlog="$HOME_DIR/state/.fake-tmux.log"
+  [ "$(grep -c '^new-window ' "$tmuxlog" || true)" -eq 1 ] \
+    || fail "tmux verifier did not create one fresh endpoint"
+  assert_grep 'role=verifier' "$meta" \
+    "tmux verifier did not publish verifier metadata"
+  assert_grep "worktree=$WT_DIR" "$meta" \
+    "tmux verifier did not retain the builder worktree"
+  pass "fm-spawn: tmux verifier retires an exact Herdr quarantine"
 }
 
 test_verifier_handoff_refuses_orca_worktree_ownership() {
@@ -2041,16 +2189,19 @@ test_non_claude_harness_ignores_config_dir
 test_active_dispatch_profile_does_not_block_secondmate_launch
 test_role_verifier_encodes_verifier_brief
 test_verifier_handoff_retires_builder_wiring
+test_verifier_handoff_retires_builder_busy_generation
 test_verifier_handoff_refuses_dirty_builder_worktrees
 test_verifier_handoff_refuses_rebase_and_preserves_stash
 test_verifier_handoff_accepts_detached_builder_head
+test_verifier_handoff_refuses_unreadable_worktree_ownership
 test_verifier_handoff_adoption_failure_retires_new_endpoint
 test_verifier_handoff_requires_confirmed_endpoint_retirement
 test_verifier_handoff_prepublication_failure_retires_replacement_state
 test_verifier_handoff_teardown_returns_single_worktree
 test_verifier_handoff_refuses_live_or_unverified_endpoint
 test_verifier_handoff_allows_backend_change
-test_verifier_handoff_retires_stale_herdr_journal_on_transition
+test_verifier_handoff_refuses_unbound_herdr_quarantine
+test_verifier_handoff_retires_bound_herdr_quarantine_for_tmux
 test_verifier_handoff_refuses_orca_worktree_ownership
 test_verifier_handoff_refuses_lifecycle_lock_contention
 test_verifier_handoff_refuses_invalid_builder_worktrees
