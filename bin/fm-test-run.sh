@@ -142,7 +142,6 @@ family_for_basename() {
     fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-grok-harness.test.sh|\
     fm-pi-midline-slash-patch.test.sh|\
     fm-stow-open-lock-check.test.sh|\
-    fm-answer-lock-check.test.sh|\
     fm-spec-compile-check.test.sh|\
     fm-owner-invoke-wait-check.test.sh|\
     fm-reduce-check.test.sh|\
@@ -188,7 +187,7 @@ family_for_basename() {
       printf '%s\n' secondmate
       ;;
     fm-bootstrap.test.sh|fm-bootstrap-network-parallel.test.sh|fm-fleet-sync.test.sh|fm-gate-refuse.test.sh|fm-gotmp.test.sh|\
-    fm-map-fog-check.test.sh|fm-sot-speech-check.test.sh|\
+    fm-map-fog-check.test.sh|\
     fm-prior-session-fold.test.sh|fm-session-start.test.sh|fm-sessionstart-nudge.test.sh|fm-startup-network.test.sh|\
     fm-tangle-guard.test.sh|fm-update.test.sh)
       printf '%s\n' session-bootstrap
@@ -1039,10 +1038,6 @@ families_for_changed_path() {
     bin/fm-stow-open-lock-check.sh)
       printf '%s\n' pure-contract-unit
       printf '%s\n' snapshot-bearings
-      ;;
-    bin/fm-answer-lock-check.sh)
-      printf '%s\n' pure-contract-unit
-      printf '%s\n' watcher-wake-lock
       ;;
     bin/fm-spec-compile-check.sh|bin/fm-reduce-check.sh|bin/fm-keep-rows.py)
       printf '%s\n' pure-contract-unit

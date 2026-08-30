@@ -357,15 +357,6 @@ A pick never written to any decision file cannot be seen.
 The script header owns the marker grammar, rule ids, structural exit 2, exact-count regression flags, and residual coverage.
 Claims live in [`verification/stow-open-lock-recurring-defect-claims.json`](verification/stow-open-lock-recurring-defect-claims.json).
 
-## Defect-class name list (data/defect-classes.tsv)
-
-An optional home-local registry binds miss-line phrasings to one class id so cleanup can refuse a second-occurrence ship that did not touch an enforcing file.
-The file is captain-owned vocabulary, private to the home, and is not part of firstmate git.
-Lookup uses `$FM_HOME/data/defect-classes.tsv` only.
-Each non-comment row is tab-separated: `class_id <TAB> miss_regex`.
-`bin/fm-teardown.sh`'s header owns the match, scout exemption, enforcing-file set, and the refusal that a queued next slice does not discharge.
-See [`class-repeat-gate.md`](class-repeat-gate.md) for what the check covers and what it does not, and [`defect-classes.example.tsv`](defect-classes.example.tsv) for a non-live copyable shape.
-
 ## Crew dispatch profiles (config/crew-dispatch.json)
 
 `config/crew-dispatch.json` is an optional local, gitignored file containing natural-language rules that firstmate reads before dispatching a crewmate or scout.

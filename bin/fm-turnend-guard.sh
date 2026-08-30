@@ -42,10 +42,9 @@
 # primary checkout - the main home or a genuinely marked secondmate home - and
 # stay a silent, fast no-op inside child task worktrees.
 # Loop-guard, codex/Grok (default) mode: never block twice in the same turn for
-# every predicate after the allow (SoT speech, answer-time lock, ready-action,
-# owner-invoke wait, supervision). Codex uses
-# stop_hook_active and Grok uses stopHookActive; typed
-# camel-case takes precedence when both spellings are present. A true value
+# every predicate after the allow (ready-action, owner-invoke wait,
+# supervision). Codex uses stop_hook_active and Grok uses stopHookActive;
+# typed camel-case takes precedence when both spellings are present. A true value
 # means the current stop attempt already follows a block, so those later
 # predicates always allow it.
 # Passive harness adapters provide their own one-follow-up guard before calling
@@ -155,32 +154,6 @@ fi
 # checkout has the two equal. Child worktrees never carry the gitignored marker,
 # so this exempts them while guarding every real secondmate home.
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
-
-# Speech matching a speech-claim: ERE on a data/decisions lock must carry
-# same-session open evidence. This refusal runs before the independent
-# supervision predicates so an otherwise healthy watcher cannot hide
-# unsupported captain-facing claims. The helper is inert when absent so
-# incomplete test fixtures stay silent.
-if [ -x "$SCRIPT_DIR/fm-sot-speech-check.sh" ]; then
-  if [ "$CLAUDE_MODE" -eq 1 ]; then
-    printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-sot-speech-check.sh" --claude
-  else
-    printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-sot-speech-check.sh"
-  fi
-  sot_speech_rc=$?
-  [ "$sot_speech_rc" -ne 2 ] || exit 2
-fi
-
-# Answer-time lock: Map 2 ticket status must agree with dated lock files.
-# Child scouts stay inert because this runs after primary-scope.
-# Same loop-guard seat as SoT speech. Always --claude so
-# findings are Stop exit 2; bin/fm-answer-lock-check.sh owns gather, rules,
-# and the two escapes.
-if [ -x "$SCRIPT_DIR/fm-answer-lock-check.sh" ]; then
-  printf '%s' "$PAYLOAD" | "$SCRIPT_DIR/fm-answer-lock-check.sh" --claude
-  answer_lock_rc=$?
-  [ "$answer_lock_rc" -ne 2 ] || exit 2
-fi
 
 # --- the actual predicate ----------------------------------------------------
 # shellcheck source=bin/fm-wake-lib.sh
