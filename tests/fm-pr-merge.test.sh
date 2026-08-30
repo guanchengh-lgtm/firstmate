@@ -587,10 +587,16 @@ test_upstream_sync_branch_uses_merge() {
 test_upstream_sync_unsafe_methods_refuse() {
   assert_sync_refusal squash --squash
   assert_sync_refusal rebase --rebase
+  assert_sync_refusal short-squash -s
+  assert_sync_refusal short-rebase -r
+  assert_sync_refusal boolean-squash --squash=true
+  assert_sync_refusal boolean-rebase --rebase=true
   assert_sync_refusal method-squash --method squash
   assert_sync_refusal method-rebase --method rebase
   assert_sync_refusal method-equals-squash --method=squash
   assert_sync_refusal method-equals-rebase --method=rebase
+  assert_sync_refusal bundled-short-squash -ds
+  assert_sync_refusal bundled-short-rebase -dr
   pass "upstream-sync squash and rebase forms refuse before recording or merging"
 }
 

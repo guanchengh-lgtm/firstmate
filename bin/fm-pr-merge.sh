@@ -111,7 +111,7 @@ reject_upstream_sync_methods() {
       continue
     fi
     case "$arg" in
-      --squash|--rebase|--method=squash|--method=rebase)
+      --squash|--squash=*|--rebase|--rebase=*|--method=squash|--method=rebase)
         echo "error: upstream-sync PRs require merge method merge" >&2
         return 1
         ;;
@@ -121,6 +121,11 @@ reject_upstream_sync_methods() {
           echo "error: upstream-sync PRs require merge method merge" >&2
           return 1
         }
+        ;;
+      --*) ;;
+      -*s*|-*r*)
+        echo "error: upstream-sync PRs require merge method merge" >&2
+        return 1
         ;;
     esac
   done
