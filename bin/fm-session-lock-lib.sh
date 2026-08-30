@@ -277,18 +277,13 @@ fm_session_lock_owned_by_self() {
     fi
     return 1
   fi
-  if fm_session_lock_claim_is_fresh "$state/.lock.acquire"; then
+  if [ -n "$FM_SESSION_ID" ] && fm_session_lock_claim_is_fresh "$state/.lock.acquire"; then
     # shellcheck disable=SC2034 # The auto-arm reads this sourced output.
     FM_SESSION_LOCK_OWNER_REASON='session lock identity update in progress'
     return 1
   fi
   while IFS= read -r pid; do
     if [ "$pid" = "$lock_pid" ]; then
-      if fm_session_lock_claim_is_fresh "$state/.lock.acquire"; then
-        # shellcheck disable=SC2034 # The auto-arm reads this sourced output.
-        FM_SESSION_LOCK_OWNER_REASON='session lock identity update in progress'
-        return 1
-      fi
       return 0
     fi
   done <<EOF

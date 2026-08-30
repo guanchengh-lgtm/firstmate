@@ -418,6 +418,61 @@ test_same_claude_session_reacquires_with_durable_pid() {
   pass "session-lock executable: same Claude session reacquires with its durable pid"
 }
 
+test_same_claude_session_reacquires_during_startup_lease() {
+  local dir current_pid fakebin lease_pid releaser_pid real_sed rc=0
+  dir="$TMP_ROOT/same-session-startup-lease"
+  make_lock_identity_home "$dir"
+  printf '9999999\n' > "$dir/state/.lock"
+  printf 'session-startup-owner\n' > "$dir/state/.lock.session"
+  sleep 30 &
+  lease_pid=$!
+  mkdir "$dir/state/.lock.acquire"
+  printf '%s\n' "$lease_pid" > "$dir/state/.lock.acquire/pid"
+  printf 'pid=%s\n' "$lease_pid" > "$dir/state/.startup-network.status"
+  fakebin=$(fm_fakebin "$dir/startup-lease-bin")
+  real_sed=$(command -v sed)
+  cat > "$fakebin/sed" <<'SH'
+#!/usr/bin/env bash
+set -u
+"$FM_REAL_SED" "$@"
+rc=$?
+case "$*" in *'.startup-network.status'*) : > "$FM_HOME/state/startup-status-read" ;; esac
+exit "$rc"
+SH
+  chmod +x "$fakebin/sed"
+  (
+    i=0
+    while [ "$i" -lt 500 ] && [ ! -e "$dir/state/startup-status-read" ]; do
+      sleep 0.01
+      i=$((i + 1))
+    done
+    sleep 0.1
+    rm -f "$dir/state/.lock.acquire/pid"
+    rmdir "$dir/state/.lock.acquire" 2>/dev/null || true
+    kill "$lease_pid" 2>/dev/null || true
+  ) &
+  releaser_pid=$!
+  FM_HOME="$dir" FM_REAL_SED="$real_sed" PATH="$fakebin:$PATH" "$NAMED_CLAUDE" -c '
+    export CLAUDE_CODE_SESSION_ID=session-startup-owner
+    export CLAUDE_PID=$$
+    export CLAUDE_CODE_CHILD_SESSION=1
+    printf "%s\n" "$$" > "$FM_HOME/state/current-pid"
+    "$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/current.out" 2>&1
+  ' || rc=$?
+  wait "$releaser_pid" 2>/dev/null || true
+  wait "$lease_pid" 2>/dev/null || true
+  expect_code 0 "$rc" "the matching Claude session must reacquire during its startup lease"
+  current_pid=$(cat "$dir/state/current-pid")
+  [ "$(cat "$dir/state/.lock")" = "$current_pid" ] \
+    || fail "startup-lease reacquire did not refresh the durable ancestry pid"
+  [ "$(cat "$dir/state/.lock.session")" = session-startup-owner ] \
+    || fail "startup-lease reacquire changed the matching session sidecar"
+  if grep -F 'operate read-only' "$dir/state/current.out" >/dev/null; then
+    fail "startup-lease reacquire refused the matching session"
+  fi
+  pass "session-lock executable: matching session reacquires during its startup lease"
+}
+
 test_background_claude_session_is_refused_under_live_holder() {
   local dir holder_pid
   dir="$TMP_ROOT/background-session"
@@ -723,6 +778,36 @@ SH
   pass "session-lock executable: sidecar failure restores the prior identity"
 }
 
+test_persistent_sidecar_failure_removes_legacy_lock() {
+  local dir fakebin rc=0
+  dir="$TMP_ROOT/persistent-sidecar-failure"
+  make_lock_identity_home "$dir"
+  printf '9999999\n' > "$dir/state/.lock"
+  printf 'session-old\n' > "$dir/state/.lock.session"
+  fakebin=$(fm_fakebin "$dir/persistent-sidecar-failure-bin")
+  cat > "$fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+set -u
+dest=
+for arg in "$@"; do dest=$arg; done
+[ "$dest" != "$FM_HOME/state/.lock.session" ] || exit 1
+/bin/mv "$@"
+SH
+  chmod +x "$fakebin/mv"
+  FM_HOME="$dir" PATH="$fakebin:$PATH" "$NAMED_CLAUDE" -c '
+    export CLAUDE_CODE_SESSION_ID=session-current
+    export CLAUDE_PID=$$
+    export CLAUDE_CODE_CHILD_SESSION=1
+    "$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/current.out" 2>&1
+  ' || rc=$?
+  expect_code 1 "$rc" "a persistent sidecar failure must fail acquisition"
+  [ ! -e "$dir/state/.lock" ] \
+    || fail "persistent sidecar failure exposed the restored pid as a legacy lock"
+  [ ! -e "$dir/state/.lock.session" ] \
+    || fail "persistent sidecar failure left a session sidecar without its lock"
+  pass "session-lock executable: persistent sidecar failure fails closed"
+}
+
 test_failed_sidecar_removal_preserves_prior_identity() {
   local dir fakebin rc=0
   dir="$TMP_ROOT/failed-sidecar-removal"
@@ -826,6 +911,7 @@ test_e2e_version_named_session_claims_the_home
 test_e2e_daemon_parented_session_claims_the_home
 test_e2e_daemon_parented_version_named_session_keeps_its_lock
 test_same_claude_session_reacquires_with_durable_pid
+test_same_claude_session_reacquires_during_startup_lease
 test_background_claude_session_is_refused_under_live_holder
 test_foreign_session_takes_over_dead_holder
 test_dead_claude_pid_does_not_change_ancestry_pid
@@ -837,6 +923,7 @@ test_identity_publication_exposes_only_stable_pairs
 test_real_stop_hook_ignores_aged_acquisition_claim
 test_real_stop_hook_uses_stable_identity_during_live_lease
 test_failed_sidecar_publication_rolls_back_lock
+test_persistent_sidecar_failure_removes_legacy_lock
 test_failed_sidecar_removal_preserves_prior_identity
 test_foreign_stop_hook_stands_down_with_session_reason
 test_real_stop_hook_recovers_dead_foreign_sidecar

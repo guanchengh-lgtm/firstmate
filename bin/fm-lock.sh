@@ -84,6 +84,7 @@ release_claim_lock() {
         if mv "$rollback_session_tmp" "$LOCK_SESSION" 2>/dev/null; then
           rollback_session_tmp=''
         else
+          rm -f "$LOCK" 2>/dev/null || true
           rm -f "$LOCK_SESSION" 2>/dev/null || true
         fi
       fi
@@ -102,13 +103,18 @@ release_claim_lock() {
 trap release_claim_lock EXIT
 trap 'exit 1' HUP INT TERM
 
+matching_session=0
 lock_refuses_current_session() {  # <recorded-pid>
   local old=$1 holder_session=''
+  matching_session=0
   if [ -n "$session_id" ]; then
     holder_session=$(fm_session_lock_read_session_id "$STATE" 2>/dev/null || true)
   fi
   if [ -n "$session_id" ] && [ -n "$holder_session" ]; then
-    [ "$holder_session" = "$session_id" ] && return 1
+    if [ "$holder_session" = "$session_id" ]; then
+      matching_session=1
+      return 1
+    fi
     if fm_harness_pid_alive "$old"; then
       echo "error: another live firstmate session holds the lock (pid $old, Claude session $holder_session); operate read-only until resolved" >&2
       return 0
@@ -133,8 +139,10 @@ fi
 if ! fm_lock_try_acquire "$CLAIM_LOCK"; then
   sweep_pid=$(sed -n 's/^pid=//p' "$STATE/.startup-network.status" 2>/dev/null | tail -1)
   if [ -n "${FM_LOCK_HELD_PID:-}" ] && [ "$FM_LOCK_HELD_PID" = "$sweep_pid" ]; then
-    echo "error: the prior session's bounded startup sweep is finishing; operate read-only until it releases the fleet lock" >&2
-    exit 1
+    if [ "$matching_session" -ne 1 ]; then
+      echo "error: the prior session's bounded startup sweep is finishing; operate read-only until it releases the fleet lock" >&2
+      exit 1
+    fi
   fi
   fm_lock_acquire_wait "$CLAIM_LOCK"
 fi
