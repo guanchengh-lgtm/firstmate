@@ -96,6 +96,38 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tmux"
+  cat > "$fakebin/herdr" <<'SH'
+#!/usr/bin/env bash
+set -u
+[ -z "${FM_FAKE_HERDR_LOG:-}" ] || printf '%s\n' "$*" >> "$FM_FAKE_HERDR_LOG"
+endpoint_state=
+[ -z "${FM_FAKE_ENDPOINT_STATE:-}" ] || endpoint_state=$(cat "$FM_FAKE_ENDPOINT_STATE" 2>/dev/null || true)
+case "$*" in
+  *"status --json"*) printf '%s\n' '{"server":{"running":true}}'; exit 0 ;;
+  *"session list --json"*)
+    printf '%s\n' '{"sessions":[{"name":"fmtest","running":true,"socket_path":"/tmp/fm-test-herdr.sock"}]}'
+    exit 0
+    ;;
+  *"workspace list"*) printf '%s\n' '{"result":{"workspaces":[]}}'; exit 0 ;;
+  *"tab list"*) printf '%s\n' '{"result":{"tabs":[]}}'; exit 0 ;;
+  *"agent get"*) printf '%s\n' '{"error":{"code":"agent_not_found"}}'; exit 1 ;;
+  *"pane close"*)
+    [ -z "${FM_FAKE_ENDPOINT_STATE:-}" ] || printf '%s\n' missing > "$FM_FAKE_ENDPOINT_STATE"
+    printf '%s\n' '{"result":{}}'
+    exit 0
+    ;;
+  *"pane get"*)
+    if [ "$endpoint_state" = missing ]; then
+      printf '%s\n' '{"error":{"code":"pane_not_found"}}'
+      exit 1
+    fi
+    printf '%s\n' '{"result":{"pane":{"pane_id":"w2:p2","tab_id":"w2:t2","workspace_id":"w2"}}}'
+    exit 0
+    ;;
+esac
+exit 1
+SH
+  chmod +x "$fakebin/herdr"
   cat > "$fakebin/treehouse" <<'SH'
 #!/usr/bin/env bash
 [ -z "${FM_FAKE_TREEHOUSE_LOG:-}" ] || printf '%s\n' "$*" >> "$FM_FAKE_TREEHOUSE_LOG"
@@ -209,6 +241,7 @@ run_spawn() {
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
     FM_FAKE_ENDPOINT_STATE="$endpoint_state" FM_FAKE_ENDPOINT_LABEL="$endpoint_label" \
     FM_FAKE_PRIOR_COMMAND="$prior_command" FM_FAKE_TMUX_LOG="$tmuxlog" \
+    FM_FAKE_HERDR_LOG="${FM_FAKE_HERDR_LOG:-}" \
     CLAUDE_CONFIG_DIR="${FM_TEST_CLAUDE_CONFIG_DIR:-}" \
     FM_FAKE_LAUNCH_LOG="$launchlog" FM_FAKE_PI_VERSION="${FM_TEST_PI_VERSION:-0.84.0}" \
     FM_FAKE_CURSOR_MODELS="${FM_TEST_CURSOR_MODELS:-}" \
@@ -1605,6 +1638,39 @@ test_verifier_handoff_refuses_live_or_unverified_endpoint() {
   pass "fm-spawn: verifier handoff refuses live and unverified builder endpoints"
 }
 
+test_verifier_handoff_allows_backend_change() {
+  local rec id out status meta herdrlog tmuxlog
+  id=profile-verifier-backend-change-z50
+  rec=$(make_spawn_case profile-verifier-backend-change claude "$id")
+  read_case_record "$rec"
+  prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  meta="$HOME_DIR/state/$id.meta"
+  replace_meta_value "$meta" window fmtest:w2:p2
+  {
+    printf '%s\n' 'backend=herdr' 'herdr_session=fmtest' 'herdr_workspace_id=w2' \
+      'herdr_tab_id=w2:t2' 'herdr_pane_id=w2:p2'
+  } >> "$meta"
+  herdrlog="$HOME_DIR/state/.fake-herdr.log"; : > "$herdrlog"
+
+  out=$(FM_FAKE_HERDR_LOG="$herdrlog" run_spawn \
+    "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --backend tmux --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  expect_code 0 "$status" "verifier handoff should allow a resolved backend change"
+  assert_no_grep '^backend=herdr$' "$meta" \
+    "verifier handoff retained the builder backend"
+  assert_grep "window=firstmate:fm-$id" "$meta" \
+    "verifier handoff did not record the resolved tmux endpoint"
+  assert_grep 'pane close w2:p2' "$herdrlog" \
+    "verifier handoff did not retire the stopped builder through its backend"
+  tmuxlog="$HOME_DIR/state/.fake-tmux.log"
+  [ "$(grep -c '^new-window ' "$tmuxlog" || true)" -eq 1 ] \
+    || fail "verifier handoff backend change did not create one fresh endpoint"
+  assert_grep "worktree=$WT_DIR" "$meta" \
+    "verifier handoff backend change did not retain the builder worktree"
+  pass "fm-spawn: verifier handoff follows resolved backend selection"
+}
+
 test_verifier_handoff_refuses_lifecycle_lock_contention() {
   local rec id out status meta_before endpoint_before lock holder i=0
   id=profile-verifier-lifecycle-lock-z49
@@ -1820,6 +1886,7 @@ test_verifier_handoff_adoption_failure_retires_new_endpoint
 test_verifier_handoff_prepublication_failure_retires_replacement_state
 test_verifier_handoff_teardown_returns_single_worktree
 test_verifier_handoff_refuses_live_or_unverified_endpoint
+test_verifier_handoff_allows_backend_change
 test_verifier_handoff_refuses_lifecycle_lock_contention
 test_verifier_handoff_refuses_invalid_builder_worktrees
 test_role_verifier_enforces_explicit_ov

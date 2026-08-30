@@ -2185,6 +2185,7 @@ fm_backend_herdr_projection_cleanup_exact() {  # <session> <task-pane> <seeded-p
 
 fm_backend_herdr_projection_abort_reclaim() {  # <session> <journal> <task-id> <old-tab> <old-pane> <new-tab> <new-pane> <active>
   local session=$1 journal=$2 id=$3 old_tab=$4 old_pane=$5 new_tab=$6 new_pane=$7 active=$8 state
+  local focus active_tab close_active
   fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
   [ "$FM_BACKEND_HERDR_JOURNAL_VERSION" = 2 ] \
     && [ "$FM_BACKEND_HERDR_JOURNAL_SESSION" = "$session" ] \
@@ -2196,15 +2197,74 @@ fm_backend_herdr_projection_abort_reclaim() {  # <session> <journal> <task-id> <
   case "$state" in
     dead) ;;
     no-agent)
-      if [ "$active" = 1 ]; then
-        fm_backend_herdr_explicit_close_pane_confirmed "$session" "$new_pane" || return 1
+      close_active=$active
+      if focus=$(fm_backend_herdr_projection_focus_snapshot "$session"); then
+        active_tab=${focus#*$'\t'}
+        close_active=0
+        [ "$active_tab" != "$new_tab" ] || close_active=1
       else
-        fm_backend_herdr_projection_close_pane_focus_preserving "$session" "$new_pane" no-agent || return 1
+        close_active=1
+      fi
+      if [ "$close_active" = 1 ]; then
+        fm_backend_herdr_explicit_close_pane_confirmed "$session" "$new_pane" || return 1
+      elif ! fm_backend_herdr_projection_close_pane_focus_preserving "$session" "$new_pane" no-agent; then
+        state=$(fm_backend_herdr_pane_agent_state "$session" "$new_pane")
+        case "$state" in
+          dead) ;;
+          no-agent)
+            fm_backend_herdr_explicit_close_pane_confirmed "$session" "$new_pane" || return 1
+            ;;
+          live|unknown) return 1 ;;
+        esac
       fi
       ;;
     live|unknown) return 1 ;;
   esac
   [ "$(fm_backend_herdr_pane_agent_state "$session" "$new_pane")" = dead ] || return 1
+  rm -f -- "$journal" || return 1
+  [ ! -e "$journal" ] && [ ! -L "$journal" ]
+}
+
+fm_backend_herdr_projection_retire_handoff_binding() {  # <session> <journal> <task-id> <workspace> <tab> <pane>
+  local session=$1 journal=$2 id=$3 workspace=$4 tab=$5 pane=$6
+  local token list matches panes state
+  fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
+  case "$FM_BACKEND_HERDR_JOURNAL_VERSION" in
+    1)
+      token=$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID
+      list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 1
+      matches=$(printf '%s' "$list" | jq -r --arg suffix " · p:$token" --arg workspace "$workspace" '
+        select((.result.workspaces | type) == "array")
+        | [.result.workspaces[]? | select((.label | type) == "string" and (.label | endswith($suffix)))] as $matches
+        | select(($matches | length) == 1 and $matches[0].workspace_id == $workspace)
+        | $matches[0].workspace_id
+      ' 2>/dev/null) || return 1
+      [ "$matches" = "$workspace" ] || return 1
+      panes=$(fm_backend_herdr_cli "$session" pane list --workspace "$workspace" 2>/dev/null) || return 1
+      printf '%s' "$panes" | jq -e --arg pane "$pane" --arg tab "$tab" '
+        (.result.panes | type) == "array"
+        and (.result.panes | length) == 1
+        and .result.panes[0].pane_id == $pane
+        and .result.panes[0].tab_id == $tab
+      ' >/dev/null 2>&1 || return 1
+      ;;
+    2)
+      [ "$FM_BACKEND_HERDR_JOURNAL_SESSION" = "$session" ] \
+        && [ "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_ID" = "$workspace" ] \
+        && [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" = "$tab" ] \
+        && [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" = "$pane" ] || return 1
+      ;;
+    *) return 1 ;;
+  esac
+  state=$(fm_backend_herdr_pane_agent_state "$session" "$pane")
+  case "$state" in
+    dead) ;;
+    no-agent)
+      fm_backend_herdr_kill_serialized "$session" "$pane" || return 1
+      ;;
+    live|unknown) return 1 ;;
+  esac
+  [ "$(fm_backend_herdr_pane_agent_state "$session" "$pane")" = dead ] || return 1
   rm -f -- "$journal" || return 1
   [ ! -e "$journal" ] && [ ! -L "$journal" ]
 }

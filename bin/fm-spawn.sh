@@ -2106,6 +2106,7 @@ VERIFIER_HANDOFF_META=
 VERIFIER_HANDOFF_PRIOR_BACKEND=
 VERIFIER_HANDOFF_PRIOR_HARNESS=
 VERIFIER_HANDOFF_PRIOR_TARGET=
+VERIFIER_HANDOFF_PRIOR_RETIRED=0
 git_common_dir_real() {  # <worktree>
   local worktree=$1 common
   common=$(git -C "$worktree" rev-parse --git-common-dir 2>/dev/null) || return 1
@@ -2149,10 +2150,6 @@ verifier_handoff_preflight() {
     echo "error: verifier handoff refused: builder endpoint backend '$VERIFIER_HANDOFF_PRIOR_BACKEND' cannot prove the prior agent stopped" >&2
     return 1
   }
-  if [ "$VERIFIER_HANDOFF_PRIOR_BACKEND" != "$BACKEND" ]; then
-    echo "error: verifier handoff refused: builder backend '$VERIFIER_HANDOFF_PRIOR_BACKEND' does not match verifier backend '$BACKEND'" >&2
-    return 1
-  fi
   prior_state=$(fm_backend_agent_state "$VERIFIER_HANDOFF_PRIOR_BACKEND" "$VERIFIER_HANDOFF_PRIOR_TARGET")
   case "$prior_state" in
     dead|missing) ;;
@@ -2248,6 +2245,23 @@ verifier_handoff_preflight() {
   VERIFIER_HANDOFF=1
 }
 
+verifier_handoff_retire_herdr_projection() {  # <journal>
+  local journal=$1 session status=1
+  fm_backend_source herdr || return 1
+  herdr_projection_existing_meta_allows_flat "$VERIFIER_HANDOFF_META" || return 1
+  fm_backend_herdr_parse_target "$VERIFIER_HANDOFF_PRIOR_TARGET" || return 1
+  session=$FM_BACKEND_HERDR_SESSION
+  spawn_herdr_presentation_order_lock_acquire "$session" || return 1
+  if fm_backend_herdr_projection_recovery_allows_flat "$session" "$journal" "$ID" \
+     && fm_backend_herdr_projection_retire_handoff_binding \
+       "$session" "$journal" "$ID" \
+       "$HERDR_RECOVERY_WORKSPACE_ID" "$HERDR_RECOVERY_TAB_ID" "$HERDR_RECOVERY_PANE_ID"; then
+    status=0
+  fi
+  spawn_herdr_presentation_order_lock_release
+  return "$status"
+}
+
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ] && [ "$ROLE" = verifier ]; then
   VERIFIER_HANDOFF_META="$STATE/$ID.meta"
   verifier_handoff_preflight "$VERIFIER_HANDOFF_META" || exit 1
@@ -2269,8 +2283,19 @@ if [ "$RELAUNCH" -eq 1 ]; then
   SES=${T%%:*}
 else
 if [ "$VERIFIER_HANDOFF" -eq 1 ] \
+   && [ "$VERIFIER_HANDOFF_PRIOR_BACKEND" = herdr ] \
+   && [ "$BACKEND" != herdr ] \
+   && { [ -e "$STATE/$ID.herdr-presentation" ] \
+     || [ -L "$STATE/$ID.herdr-presentation" ]; }; then
+  verifier_handoff_retire_herdr_projection "$STATE/$ID.herdr-presentation" || {
+    echo "error: verifier handoff refused: could not retire the stopped projected builder endpoint" >&2
+    exit 1
+  }
+  VERIFIER_HANDOFF_PRIOR_RETIRED=1
+fi
+if [ "$VERIFIER_HANDOFF" -eq 1 ] \
+   && [ "$VERIFIER_HANDOFF_PRIOR_RETIRED" -ne 1 ] \
    && { [ "$VERIFIER_HANDOFF_PRIOR_BACKEND" != herdr ] \
-     || [ "$BACKEND" != herdr ] \
      || { [ ! -e "$STATE/$ID.herdr-presentation" ] \
        && [ ! -L "$STATE/$ID.herdr-presentation" ]; }; }; then
   fm_backend_kill "$VERIFIER_HANDOFF_PRIOR_BACKEND" "$VERIFIER_HANDOFF_PRIOR_TARGET" || {
@@ -2373,10 +2398,19 @@ case "$BACKEND" in
               ;;
             2)
               if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
-                echo "error: verifier handoff refused: projected builder endpoint could not be replaced exactly" >&2
-                exit 1
+                if [ "${FM_BACKEND_HERDR_JOURNAL_VERSION:-}" = 1 ] \
+                   && fm_backend_herdr_projection_retire_handoff_binding \
+                     "$HERDR_SES" "$HERDR_PRESENTATION_JOURNAL" "$ID" \
+                     "$HERDR_RECOVERY_WORKSPACE_ID" "$HERDR_RECOVERY_TAB_ID" \
+                     "$HERDR_RECOVERY_PANE_ID"; then
+                  spawn_herdr_presentation_order_lock_release
+                else
+                  echo "error: verifier handoff refused: projected builder endpoint could not be replaced exactly" >&2
+                  exit 1
+                fi
+              else
+                spawn_herdr_presentation_order_lock_release
               fi
-              spawn_herdr_presentation_order_lock_release
               ;;
             3) spawn_herdr_presentation_order_lock_release ;;
             *) exit 1 ;;
