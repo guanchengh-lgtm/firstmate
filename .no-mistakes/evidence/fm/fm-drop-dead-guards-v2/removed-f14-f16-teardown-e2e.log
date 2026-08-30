@@ -1,0 +1,7 @@
+class_repeat_scenario=second occurrence without enforcing-file change
+class_repeat_exit_code=0
+class_repeat_meta_after=absent
+map_next_scenario=successor missing from backlog
+map_next_exit_code=0
+map_next_meta_after=absent
+driver_exit_code=0

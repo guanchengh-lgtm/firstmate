@@ -1,0 +1,116 @@
+ok - stow open-lock: missing and empty input exit 2
+ok - stow open-lock: historical Q2-open fixture fires exact count 1
+ok - stow open-lock: listed remaining pick and locked Q2 are clean
+ok - stow open-lock: omitted snapshot fires exact count 1; listed snapshot is clean
+ok - stow open-lock: --list-open is public JSON; expect-count 0 and empty rules exit 2
+ok - stow open-lock: locked Q-item with quoted Still open is not a marker
+ok - stow open-lock: summary substring remaining picks are not clean
+ok - stow open-lock: decision file-stem remaining picks are not clean
+ok - stow open-lock: snapshot key collision is not clean; mate-prefixed ids cover
+ok - stow open-lock: scoped selection keeps the non-dot glob scope
+ok - stow open-lock: 200 decision files preserve verdict with bounded scaling
+# all fm-stow-open-lock-check tests passed
+ok - empty fleet snapshot and view use explicit absence markers
+ok - fixture snapshot covers task rows, backlog rows, pointers, and stable ordering
+ok - main_inventory discloses orphan/unstructured and clears when inventory is consistent
+ok - backlog normalization preserves strict roles and resolves every blocker compatibly
+ok - snapshot event hints follow reconciled current state
+ok - durable fold keeps an open decision past a later unrelated event
+ok - a live secondmate endpoint preserves unrelated open decisions
+ok - durable captain-held transfer closes the duplicate live status decision
+ok - durable fold clears a decision only on a keyed resolution
+ok - a completed scout's stale decision surfaces as a report pointer, not pending
+ok - a scout still parked at a decision stays pending (terminal clear does not over-fire)
+ok - snapshot includes durable scout reports after teardown
+ok - snapshot parses tasks-axi rows and respects operational overrides
+ok - fleet view renders the snapshot without secondmate peek guidance
+ok - fleet view renders secondmate agent liveness
+ok - owner-invoke-wait: missing and empty input, expect-count 0, empty rules exit 2
+ok - owner-invoke-wait: 2026-08-22 compile-check with no OV fires exact count 1
+ok - owner-invoke-wait: 2026-08-23 reconstructed owner-node-open fires exact count 1
+ok - owner-invoke-wait: same-turn Stop and matching artifact are clean
+ok - owner-invoke-wait: held map_next, date-cleared, future, and real captain holds
+ok - owner-invoke-wait: placeholder and no-task briefs are clean
+ok - owner-invoke-wait: builder self-review is not OV
+ok - owner-invoke-wait: distinct spawned OV worker is required
+ok - owner-invoke-wait: OV report ladder and report-gated skills own the wait
+ok - owner-invoke-wait: unrelated rule fire is not exact-count success
+ok - owner-invoke-wait: hook session gather runs OV report ladder
+ok - owner-invoke-wait: turn-end does not re-refuse in-flight ships without ov=
+ok - owner-invoke-wait: hook scopes ship gather to this session only
+ok - owner-invoke-wait: finished non-Claude review without skills passes
+ok - owner-invoke-wait: finished Claude review skips duplicate Stop skill check
+ok - owner-invoke-wait: skill-load recorder appends normalized token
+ok - owner-invoke-wait: husk OV pane without report refuses
+ok - owner-invoke-wait: live OV agent without report passes
+ok - owner-invoke-wait: crewmate settings wire Skill load recorder
+ok - owner-invoke-wait: brief mode reads OV worker report and skills
+ok - owner-invoke-wait: hook does not refuse a wayfinder node on the trigger turn
+ok - owner-invoke-wait: header table refuses an open node with no home file
+ok - owner-invoke-wait: slash text without command-name does not arm a node
+ok - owner-invoke-wait: malformed owner-invoke nodes registry is structural
+ok - owner-invoke-wait: duplicate token globs OR-merge so any hit clears the node
+ok - owner-invoke-wait: ** globs credit nested artifacts recursively
+ok - owner-invoke-wait: 200 rows preserve verdict with bounded scaling
+# all fm-owner-invoke-wait-check tests passed
+ok - no --model/--effort records defaults and types the claude launch instructions
+ok - non-cursor launches clear inherited Cursor identity markers
+ok - relative home overrides ignore CDPATH and become absolute before spawn launch construction
+ok - FM_HOME defaults resolve relative paths and preserve absolute spellings
+ok - absolute override spellings are preserved in spawn launch paths
+ok - unresolvable relative spawn overrides fail with named diagnostics
+ok - active crew-dispatch profile requires an explicit harness for ship spawns
+ok - active crew-dispatch profile requires an explicit harness for scout spawns
+ok - active crew-dispatch profile requires an explicit model for ship spawns
+ok - active crew-dispatch profile requires an explicit effort for ship spawns
+ok - active crew-dispatch profile allows an explicit resolved harness
+ok - active crew-dispatch profile allows the legacy positional harness form
+ok - active crew-dispatch profile allows the raw launch-command escape hatch
+ok - claude receives --model and --effort profile flags
+ok - codex receives --model and model_reasoning_effort profile flags
+ok - codex omits unsupported max effort instead of passing a bad config value
+ok - grok receives --model and --reasoning-effort profile flags
+ok - grok omits unsupported max reasoning effort
+ok - grok receives --reasoning-effort xhigh
+ok - opencode receives --model and omits the unsupported effort axis
+ok - pi receives --model and --thinking max profile flags
+ok - Pi launch probing omits --tui-mode on older Pi and preserves it on supporting Pi
+ok - pi-signed shares Pi launch semantics while preserving its configured and recorded identity
+ok - pi-signed refuses safely and actionably when the selected executable is unavailable
+ok - pi-signed is a distinct persistent secondmate runtime with shared Pi supervision semantics
+ok - batch dispatch forwards shared --harness, --model, and --effort to every pair
+ok - fm-spawn: --map-next records a valid id and refuses unsafe ids
+ok - fm-spawn: filled ships require a distinct spawned OV worker
+ok - fm-spawn: --map refuses live and structural fog and records a clean map
+ok - fm-spawn: fake worker slash refuses before endpoint creation
+ok - claude forwards firstmate's CLAUDE_CONFIG_DIR so the crewmate uses the same credential store
+ok - claude omits the config-dir prefix when firstmate runs with the single-store default
+ok - non-claude harnesses do not receive the claude CLAUDE_CONFIG_DIR prefix
+ok - active crew-dispatch profile does not block secondmate launches
+ok - fm-spawn: --role verifier encodes verifier-brief.md and records role=verifier
+ok - fm-spawn: verifier ships enforce explicit OV worker and skill rules
+# all fm-spawn-dispatch-profile tests passed
+ok - documentation inventory classifies every maintained prose surface exactly once
+ok - classification, setup routing, and maintained-prose scope fail safely
+ok - required documentation owner pointers cannot silently disappear
+ok - local links resolve while dates, versions, commands, and incident prose remain semantically reviewed
+ok - exact suite coverage: --all lists every tests/*.test.sh once
+ok - family selection returns a proper subset of the suite
+ok - single-script selection lists exactly that path
+ok - changed-file selection stays conservative (never silent full suite)
+ok - changed selection covers dependents and fails closed for unmapped source
+ok - empty changed selection emits deterministic text and JSON summaries
+ok - timing markers and JSON artifact are valid
+ok - aggregate exit reflects any script failure
+ok - gate-skip accounting is honest and non-failing
+ok - fail-on-gate-skip converts herdr-not-found into a hard failure
+ok - exclude-family drops the named primary family after selection
+ok - portable shard union, disjointness, and coverage guard hold
+ok - portable serial shards are a deterministic disjoint cover of the serial lane
+ok - portable serial shard lanes refuse mismatched, out-of-range, and countless names
+ok - --jobs refuses non-proven / stateful selections
+ok - jobs scheduler runs proven scripts; failure propagates; non-proven refused
+ok - Herdr CI family-run step times out at 20 min under a 75 min job backstop
+ok - aggregate-json merges lane timing artifacts
+
+exit_code=0

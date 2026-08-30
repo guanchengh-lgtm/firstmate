@@ -1,0 +1,6 @@
+ok - claude 2.1.251 (Claude Code): a cold open reports source 'startup' and its hook stdout reaches model context
+ok - claude 2.1.251 (Claude Code): a worker detached by the session-open hook outlives it, so the deferred network checks still run
+ok - claude 2.1.251 (Claude Code): a context-preserving reopen reports source 'resume', which the run tier routes without a re-emit
+not ok - claude 2.1.251 (Claude Code): the interactive session fired no session-open hook
+
+exit_code=1

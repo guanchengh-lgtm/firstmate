@@ -1,0 +1,5 @@
+scenario=unread speech claim plus previously refused answer-lock fixture
+home=/tmp/fm-removed-guards-e2e.NkBXvT
+command=fm-turnend-guard.sh
+exit_code=0
+output=<empty>

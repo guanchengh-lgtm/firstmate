@@ -1,0 +1,3 @@
+not ok - claude 2.1.251 (Claude Code): the tracked session-open registration never invoked the wrapper on a cold open
+
+exit_code=1

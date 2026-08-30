@@ -1,0 +1,69 @@
+$ bin/fm-teardown.sh --help
+Usage: fm-teardown.sh <task-id> [--force]
+
+Cleanup gate:
+  Every non-forced ship builder needs a valid measure at
+  $FM_HOME/data/<task-id>/measure.md. A ship with no recorded role is a legacy
+  builder. Verifiers, scouts, secondmates, remote retirements, and --force
+  discards skip this measure gate.
+  A ship with any other recorded role refuses cleanup.
+  The file must contain exactly these five lines in this order:
+
+    miss: <value>
+    number: <value>
+    pair: <value>
+    pick: <value>
+    none:
+
+  Either fill all first four values and leave none: empty, or leave all first
+  four values empty and write none: <why>. Empty files fail. A number never
+  passes without its paired counter-metric.
+
+Options:
+  --force  Skip ordinary-task dirty and landed-work checks, skip scout report
+           checks, discard secondmate child work, and skip the no-mistakes
+           validation-truth gate because discard is not a green claim. It also
+           skips the measure gate.
+  -h, --help
+           Show this help.
+
+$ bin/fm-spawn.sh --help | sed -n "1,18p"
+Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
+secondmate in its isolated firstmate home.
+Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> --role <builder|verifier> [--map <map-file>] [--map-next <task-id>] [--ov <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
+       fm-spawn.sh <task-id> <project-dir> --scout [--map <map-file>] [--map-next <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
+       fm-spawn.sh <task-id> [<firstmate-home>] [--map-next <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
+  --map names one build map relative to FM_HOME and records map= in task meta.
+  A ship spawn with --map is refused while that map, or a map.md it names,
+  has live fog (bin/fm-map-fog-check.sh --strict). Scout --map records the
+  path and does not refuse. --map is invalid on --secondmate.
+  --map-next records one already-locked successor as map_next= in task meta.
+  bin/fm-owner-invoke-wait-check.sh's R-held-locked-next rule then refuses a
+  turn end that leaves that locked successor held with no worker, so a landed
+  blocker cannot invent a new go gate while the task meta lives.
+  --ov records a distinct already-spawned outside-voice worker as ov= in
+  ship meta. Every supplied --ov must still have worker metadata and a
+  completed report before any builder or verifier launch. A Claude OV must
+  also have recorded plan-eng-review. A filled builder Task requires --ov;
+  builder self-review is not OV. bin/fm-owner-invoke-wait-check.sh owns these
+
+$ jq hook inventory .claude/settings.json
+{
+  "session_start_commands": [
+    "[ -z \"${GROK_AGENT:-}${GROK_HOOK_EVENT:-}\" ] || exit 0; exec \"$CLAUDE_PROJECT_DIR\"/bin/fm-sessionstart-run.sh"
+  ],
+  "pretool_matchers": [
+    "Bash",
+    ".*"
+  ],
+  "ask_user_question_matcher_present": false
+}
+
+$ deleted guard entry points
+ABSENT bin/fm-sot-speech-check.sh
+ABSENT bin/fm-answer-lock-check.sh
+ABSENT docs/class-repeat-gate.md
+ABSENT docs/defect-classes.example.tsv
+ABSENT docs/verification/class-repeat-gate-claims.json
+ABSENT tests/fm-sot-speech-check.test.sh
+ABSENT tests/fm-answer-lock-check.test.sh

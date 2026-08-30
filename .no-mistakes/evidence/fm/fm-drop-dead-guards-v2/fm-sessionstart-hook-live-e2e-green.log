@@ -1,0 +1,11 @@
+ok - claude 2.1.251 (Claude Code): a cold open reports source 'startup' and its hook stdout reaches model context
+ok - claude 2.1.251 (Claude Code): a worker detached by the session-open hook outlives it, so the deferred network checks still run
+ok - claude 2.1.251 (Claude Code): a context-preserving reopen reports source 'resume', which the run tier routes without a re-emit
+ok - claude 2.1.251 (Claude Code): '/clear' reports source 'clear' and re-injects hook stdout into model context
+ok - claude 2.1.251 (Claude Code): a compaction reports source 'compact' and re-injects hook stdout into model context
+# codex: not installed on this host, so its run-tier evidence was NOT refreshed
+# pi: not installed on this host, so its run-tier evidence was NOT refreshed
+# run-tier evidence was refreshed for 1 harness(es); still missing: codex pi
+# fm-sessionstart-hook-live-e2e.test.sh: all live assertions passed
+
+exit_code=0
