@@ -97,7 +97,7 @@ SH
 }
 
 test_live_work_gate() {
-  local idle process_event task relay unavailable reset
+  local idle process_event secondmate mixed multiple task relay unavailable reset
 
   idle=$(new_case idle-stale)
   rm -f "$idle/home/state/task.meta"
@@ -125,6 +125,36 @@ test_live_work_gate() {
   [ ! -e "$process_event/install/first-stale" ] \
     || fail "process-event-only state retained a first sample"
 
+  secondmate=$(new_case secondmate-only)
+  printf 'kind=secondmate\n' > "$secondmate/home/state/task.meta"
+  set_mtime "$secondmate/home/state/.last-watcher-beat" 0
+  run_probe "$secondmate" 1000
+  run_probe "$secondmate" 1060
+  [ "$(notify_count "$secondmate/notify.log")" -eq 0 ] \
+    || fail "secondmate-only metadata enabled a stale page"
+  [ ! -e "$secondmate/install/first-stale" ] \
+    || fail "secondmate-only metadata retained a first sample"
+
+  mixed=$(new_case mixed-secondmate-and-task)
+  printf 'kind=secondmate\n' > "$mixed/home/state/sm-tv.meta"
+  set_mtime "$mixed/home/state/.last-watcher-beat" 0
+  run_probe "$mixed" 1000
+  run_probe "$mixed" 1060
+  [ "$(notify_count "$mixed/notify.log")" -eq 1 ] \
+    || fail "ordinary task metadata beside secondmate metadata did not enable a stale page"
+
+  multiple=$(new_case multiple-secondmates)
+  printf 'kind=secondmate\n' > "$multiple/home/state/task.meta"
+  printf 'kind=secondmate\n' > "$multiple/home/state/sm-tv.meta"
+  set_mtime "$multiple/home/state/.last-watcher-beat" 0
+  run_probe "$multiple" 1000
+  run_probe "$multiple" 1060
+  [ "$(notify_count "$multiple/notify.log")" -eq 0 ] \
+    || fail "multiple secondmate metadata files enabled a stale page"
+  [ ! -e "$multiple/install/first-stale" ] \
+    || fail "multiple secondmate metadata files retained a first sample"
+
+  # The empty task.meta proves that kind-less metadata still pages.
   task=$(new_case task-meta)
   set_mtime "$task/home/state/.last-watcher-beat" 0
   run_probe "$task" 1000
