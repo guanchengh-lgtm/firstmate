@@ -2118,7 +2118,7 @@ git_common_dir_real() {  # <worktree>
 }
 
 verifier_handoff_preflight() {
-  local meta=$1 prior_kind prior_mode prior_role prior_project prior_project_real
+  local meta=$1 prior_kind prior_mode prior_yolo prior_role prior_project prior_project_real
   local prior_state worktree_common project_common status tracked_status untracked_status
   local rebase_merge rebase_apply head branch branch_status expected_branch branch_head branch_owner worktree_list
   [ -f "$meta" ] && [ ! -L "$meta" ] || {
@@ -2134,9 +2134,14 @@ verifier_handoff_preflight() {
     || VERIFIER_HANDOFF_PRIOR_BUSY_GEN=
   prior_kind=$(fm_backend_meta_exact_value "$meta" kind) || prior_kind=
   prior_mode=$(fm_backend_meta_exact_value "$meta" mode) || prior_mode=
+  prior_yolo=$(fm_backend_meta_exact_value "$meta" yolo) || prior_yolo=
   prior_role=$(fm_backend_meta_exact_value "$meta" role) || prior_role=
   if [ "$prior_kind" != ship ] || [ "$prior_mode" != no-mistakes ] || [ "$prior_role" != builder ]; then
     echo "error: verifier handoff refused: existing task must record kind=ship, mode=no-mistakes, role=builder" >&2
+    return 1
+  fi
+  if [ "$prior_yolo" != "$YOLO" ]; then
+    echo "error: verifier handoff refused: requested yolo posture '$YOLO' does not match builder yolo posture '${prior_yolo:-none}'" >&2
     return 1
   fi
   prior_project=$(fm_backend_meta_exact_value "$meta" project) || prior_project=

@@ -1404,6 +1404,24 @@ test_role_verifier_encodes_verifier_brief() {
   pass "fm-spawn: --role verifier encodes verifier-brief.md and records role=verifier"
 }
 
+test_verifier_handoff_preserves_yolo_authority() {
+  local rec id out status meta_before endpoint_before
+  id=profile-verifier-yolo-authority-z59
+  rec=$(make_spawn_case profile-verifier-yolo-authority claude "$id")
+  read_case_record "$rec"
+  prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  meta_before=$(cat "$HOME_DIR/state/$id.meta")
+  endpoint_before=$(cat "$HOME_DIR/state/.fake-endpoint-state")
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --mode no-mistakes --yolo on --role verifier)
+  status=$?
+  assert_verifier_handoff_refusal_preserved "$out" "$status" \
+    "error: verifier handoff refused: requested yolo posture 'on' does not match builder yolo posture 'off'" \
+    "$meta_before" "$endpoint_before" "$id"
+  pass "fm-spawn: verifier handoff preserves builder yolo authority"
+}
+
 test_verifier_handoff_retires_builder_wiring() {
   local rec id out status old_token old_auth new_token new_auth pointer exclude
   id=profile-verifier-wiring-z47
@@ -2218,6 +2236,7 @@ test_claude_omits_config_dir_prefix_when_unset
 test_non_claude_harness_ignores_config_dir
 test_active_dispatch_profile_does_not_block_secondmate_launch
 test_role_verifier_encodes_verifier_brief
+test_verifier_handoff_preserves_yolo_authority
 test_verifier_handoff_retires_builder_wiring
 test_verifier_handoff_retires_builder_busy_generation
 test_verifier_handoff_refuses_dirty_builder_worktrees
