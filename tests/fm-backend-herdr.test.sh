@@ -2665,6 +2665,35 @@ test_projection_reclaim_refusal_matrix_is_non_mutating() {
   pass "herdr presentation reclaim: legacy, cross-home, ambiguous, live/unknown, and focus-unknown cases refuse without mutation"
 }
 
+test_projection_reclaim_retires_dead_exact_binding() {
+  local dir state home home_real journal out
+  dir="$TMP_ROOT/projection-reclaim-dead"; state="$dir/state"; home="$dir/home"
+  mkdir -p "$state" "$home"
+  home_real=$(cd "$home" && pwd -P)
+  bash -c '
+    . "$0/bin/backends/herdr.sh"
+    token=$(fm_backend_herdr_projection_journal_create "$1" dead-r1) || exit 1
+    label=$(fm_backend_herdr_projection_workspace_label dead-r1 "$token")
+    fm_backend_herdr_projection_journal_bind \
+      "$1/dead-r1.herdr-presentation" dead-r1 "$2" fmtest \
+      w2 w2:t2 w2:p2 w1 firstmate "$label" fm-dead-r1
+  ' "$ROOT" "$state" "$home_real" || fail "could not create dead reclaim journal fixture"
+  journal="$state/dead-r1.herdr-presentation"
+  out=$(bash -c '
+    . "$0/bin/backends/herdr.sh"
+    fm_backend_herdr_pane_agent_state() { printf dead; }
+    fm_backend_herdr_projection_live_binding_matches() { return 1; }
+    fm_backend_herdr_projection_reclaim_task \
+      fmtest "$1" dead-r1 "$2" w2 w2:t2 w2:p2 firstmate fm-dead-r1 /tmp/project \
+      >/dev/null 2>&1
+    printf "%s" "$?"
+  ' "$ROOT" "$journal" "$home")
+  [ "$out" = 3 ] || fail "dead exact binding did not select flat replacement: $out"
+  [ ! -e "$journal" ] && [ ! -L "$journal" ] \
+    || fail "dead exact binding retained its stale journal"
+  pass "herdr presentation reclaim: exact dead binding retires for flat replacement"
+}
+
 test_projection_reclaim_replaces_only_exact_husk_and_advances_binding() {
   local dir state home home_real log resp fb journal token label out calls create_line close_line agent_line boundary_mutations
   dir="$TMP_ROOT/projection-reclaim-exact"; state="$dir/state"; home="$dir/home"
@@ -4668,6 +4697,7 @@ test_presentation_session_lock_path_is_shared_across_homes
 test_presentation_session_lock_path_rejects_malformed_socket
 test_projection_order_rejects_malformed_socket
 test_projection_reclaim_refusal_matrix_is_non_mutating
+test_projection_reclaim_retires_dead_exact_binding
 test_projection_reclaim_replaces_only_exact_husk_and_advances_binding
 test_projection_reclaim_replaces_active_husk_for_handoff
 test_projection_recovery_is_read_only_and_refuses_live_duplicate_risk

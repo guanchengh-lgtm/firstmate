@@ -2209,6 +2209,18 @@ fm_backend_herdr_projection_abort_reclaim() {  # <session> <journal> <task-id> <
   [ ! -e "$journal" ] && [ ! -L "$journal" ]
 }
 
+fm_backend_herdr_projection_retire_dead_binding() {  # <session> <journal> <task-id> <tab> <pane>
+  local session=$1 journal=$2 id=$3 tab=$4 pane=$5
+  fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
+  [ "$FM_BACKEND_HERDR_JOURNAL_VERSION" = 2 ] \
+    && [ "$FM_BACKEND_HERDR_JOURNAL_SESSION" = "$session" ] \
+    && [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" = "$tab" ] \
+    && [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" = "$pane" ] \
+    && [ "$(fm_backend_herdr_pane_agent_state "$session" "$pane")" = dead ] || return 1
+  rm -f -- "$journal" || return 1
+  [ ! -e "$journal" ] && [ ! -L "$journal" ]
+}
+
 # fm_backend_herdr_projection_parent_workspace_exact: resolve one exact parent
 # workspace only when its presentation label is unique in the named session.
 fm_backend_herdr_projection_parent_workspace_exact() {  # <session> <parent-label>
@@ -2298,8 +2310,9 @@ fm_backend_herdr_projection_reclaim_rollback() {  # <session> <new-pane>
 # The caller holds the session presentation lock and has already established
 # that flat fallback is safe across every token match.
 # Return 0 means exact reclaim, 2 means non-mutating or exactly rolled-back
-# refusal with flat fallback permitted, and 1 means a live/unknown or
-# post-mutation uncertainty that must refuse the launch.
+# refusal with flat fallback permitted, 3 means an exact dead binding was
+# retired for flat replacement, and 1 means live/unknown or post-mutation
+# uncertainty that must refuse the launch.
 fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <home> <meta-workspace> <meta-tab> <meta-pane> <parent-label> <task-label> <cwd> [replace-active]
   local session=$1 journal=$2 id=$3 home=$4 meta_workspace=$5 meta_tab=$6 meta_pane=$7
   local parent_label=$8 task_label=$9 cwd=${10} reclaim_mode=${11:-}
@@ -2331,6 +2344,13 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
     "$meta_workspace" "$meta_tab" "$meta_pane" \
     "$FM_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID" "$parent_label" \
     "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" "$task_label"; then
+    state=$(fm_backend_herdr_pane_agent_state "$session" "$meta_pane")
+    if [ "$state" = dead ]; then
+      fm_backend_herdr_projection_retire_dead_binding \
+        "$session" "$journal" "$id" "$meta_tab" "$meta_pane" || return 1
+      echo "warning: exact herdr presentation pane for $id is gone; spawning flat" >&2
+      return 3
+    fi
     echo "warning: herdr presentation binding for $id has an ambiguous, renamed, foreign, or non-nested live shape; spawning flat" >&2
     return 2
   fi
@@ -2338,8 +2358,10 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
   case "$state" in
     no-agent) ;;
     dead)
+      fm_backend_herdr_projection_retire_dead_binding \
+        "$session" "$journal" "$id" "$meta_tab" "$meta_pane" || return 1
       echo "warning: exact herdr presentation pane for $id is gone; spawning flat" >&2
-      return 2
+      return 3
       ;;
     live|unknown)
       echo "error: exact herdr presentation pane for $id is $state; refusing duplicate launch" >&2

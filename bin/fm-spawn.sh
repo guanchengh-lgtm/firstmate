@@ -2378,6 +2378,7 @@ case "$BACKEND" in
               fi
               spawn_herdr_presentation_order_lock_release
               ;;
+            3) spawn_herdr_presentation_order_lock_release ;;
             *) exit 1 ;;
           esac
         else
