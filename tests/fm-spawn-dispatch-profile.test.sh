@@ -1550,7 +1550,7 @@ test_verifier_handoff_refuses_dirty_builder_worktrees() {
 
 test_verifier_handoff_refuses_rebase_and_preserves_stash() {
   local rec id out status meta_before endpoint_before rebase_dir porcelain
-  local stash_before stash_after head_before head_after
+  local stash_before stash_after head_before head_after branch_before branch_after
 
   id=profile-verifier-rebase-z32
   rec=$(make_spawn_case profile-verifier-rebase claude "$id")
@@ -1560,6 +1560,8 @@ test_verifier_handoff_refuses_rebase_and_preserves_stash() {
   mkdir -p "$rebase_dir"
   porcelain=$(git -C "$WT_DIR" status --porcelain --untracked-files=all)
   [ -z "$porcelain" ] || fail "rebase fixture did not keep porcelain clean"
+  head_before=$(git -C "$WT_DIR" rev-parse HEAD)
+  branch_before=$(git -C "$WT_DIR" symbolic-ref --quiet --short HEAD)
   meta_before=$(cat "$HOME_DIR/state/$id.meta")
   endpoint_before=$(cat "$HOME_DIR/state/.fake-endpoint-state")
   out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
@@ -1569,6 +1571,34 @@ test_verifier_handoff_refuses_rebase_and_preserves_stash() {
     "error: verifier handoff refused: builder worktree '$WT_DIR' has an in-progress rebase" \
     "$meta_before" "$endpoint_before" "$id"
   [ -d "$rebase_dir" ] || fail "verifier handoff refusal removed builder rebase state"
+  head_after=$(git -C "$WT_DIR" rev-parse HEAD)
+  branch_after=$(git -C "$WT_DIR" symbolic-ref --quiet --short HEAD)
+  [ "$head_after" = "$head_before" ] || fail "rebase-merge refusal changed builder HEAD"
+  [ "$branch_after" = "$branch_before" ] || fail "rebase-merge refusal changed branch attachment"
+
+  id=profile-verifier-rebase-apply-z58
+  rec=$(make_spawn_case profile-verifier-rebase-apply claude "$id")
+  read_case_record "$rec"
+  prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  rebase_dir=$(git -C "$WT_DIR" rev-parse --git-path rebase-apply)
+  mkdir -p "$rebase_dir"
+  porcelain=$(git -C "$WT_DIR" status --porcelain --untracked-files=all)
+  [ -z "$porcelain" ] || fail "rebase-apply fixture did not keep porcelain clean"
+  head_before=$(git -C "$WT_DIR" rev-parse HEAD)
+  branch_before=$(git -C "$WT_DIR" symbolic-ref --quiet --short HEAD)
+  meta_before=$(cat "$HOME_DIR/state/$id.meta")
+  endpoint_before=$(cat "$HOME_DIR/state/.fake-endpoint-state")
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  assert_verifier_handoff_refusal_preserved "$out" "$status" \
+    "error: verifier handoff refused: builder worktree '$WT_DIR' has an in-progress rebase" \
+    "$meta_before" "$endpoint_before" "$id"
+  [ -d "$rebase_dir" ] || fail "verifier handoff refusal removed builder rebase-apply state"
+  head_after=$(git -C "$WT_DIR" rev-parse HEAD)
+  branch_after=$(git -C "$WT_DIR" symbolic-ref --quiet --short HEAD)
+  [ "$head_after" = "$head_before" ] || fail "rebase-apply refusal changed builder HEAD"
+  [ "$branch_after" = "$branch_before" ] || fail "rebase-apply refusal changed branch attachment"
 
   id=profile-verifier-stash-z33
   rec=$(make_spawn_case profile-verifier-stash claude "$id")

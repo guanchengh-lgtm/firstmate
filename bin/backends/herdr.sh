@@ -1990,6 +1990,15 @@ fm_backend_herdr_agent_alive() {  # <target>
 # the safety argument). An ADOPTED workspace's caller always passes an empty
 # 4th arg, so this function never even queries for a prune candidate in that
 # case. Echoes "<tab_id> <pane_id>" on success.
+fm_backend_herdr_cleanup_created_task() {
+  local session=$1 tab=$2 pane=$3
+  if [ -n "$pane" ]; then
+    fm_backend_herdr_kill_serialized "$session" "$pane" >/dev/null 2>&1 || true
+  elif [ -n "$tab" ]; then
+    fm_backend_herdr_cli "$session" tab close "$tab" >/dev/null 2>&1 || true
+  fi
+}
+
 fm_backend_herdr_create_task() {  # <container> <label> <cwd> <seeded_default_tab_id>
   local container=$1 label=$2 cwd=$3 seeded_tab_id=${4:-} session wsid list dup_tabs dup dup_pane dup_tab_ids out tab_id pane_id remaining_dup_tabs
   session=${container%%:*}
@@ -2017,10 +2026,15 @@ EOF
   tab_id=$(printf '%s' "$out" | jq -r '.result.tab.tab_id // empty' 2>/dev/null)
   pane_id=$(printf '%s' "$out" | jq -r '.result.root_pane.pane_id // empty' 2>/dev/null)
   if [ -z "$tab_id" ] || [ -z "$pane_id" ]; then
+    fm_backend_herdr_cleanup_created_task "$session" "$tab_id" "$pane_id"
     echo "error: could not parse tab/pane id from herdr tab create output" >&2
     return 1
   fi
-  [ -z "$seeded_tab_id" ] || fm_backend_herdr_workspace_prune_seeded_default_tab "$session" "$wsid" "$seeded_tab_id"
+  if [ -n "$seeded_tab_id" ] \
+     && ! fm_backend_herdr_workspace_prune_seeded_default_tab "$session" "$wsid" "$seeded_tab_id"; then
+    fm_backend_herdr_cleanup_created_task "$session" "$tab_id" "$pane_id"
+    return 1
+  fi
   if [ -n "$dup_tab_ids" ]; then
     while IFS= read -r dup; do
       [ -n "$dup" ] || continue
@@ -2029,10 +2043,12 @@ EOF
 $dup_tab_ids
 EOF
     list=$(fm_backend_herdr_cli "$session" tab list --workspace "$wsid" 2>/dev/null) || {
+      fm_backend_herdr_cleanup_created_task "$session" "$tab_id" "$pane_id"
       echo "error: could not verify herdr husk removal for tab '$label' in workspace $wsid (session $session)" >&2
       return 1
     }
     if ! printf '%s' "$list" | jq -e '(.result.tabs | type) == "array"' >/dev/null 2>&1; then
+      fm_backend_herdr_cleanup_created_task "$session" "$tab_id" "$pane_id"
       echo "error: could not parse herdr tab list output for workspace $wsid (session $session)" >&2
       return 1
     fi
@@ -2040,6 +2056,7 @@ EOF
       '.result.tabs[]? | select(.label == $want and .tab_id != $replacement) | .tab_id' 2>/dev/null)
     remaining_dup_tabs=${remaining_dup_tabs//$'\n'/ }
     if [ -n "$remaining_dup_tabs" ]; then
+      fm_backend_herdr_cleanup_created_task "$session" "$tab_id" "$pane_id"
       echo "error: failed to remove preexisting herdr tab(s) $remaining_dup_tabs for label '$label' in workspace $wsid (session $session)" >&2
       return 1
     fi
@@ -2183,7 +2200,7 @@ fm_backend_herdr_projection_cleanup_exact() {  # <session> <task-pane> <seeded-p
   fi
 }
 
-fm_backend_herdr_projection_abort_reclaim() {  # <session> <journal> <task-id> <old-tab> <old-pane> <new-tab> <new-pane> <active>
+fm_backend_herdr_projection_abort_reclaim() {  # <session> <journal> <task-id> <old-tab> <old-pane> <new-tab> <new-pane>
   local session=$1 journal=$2 id=$3 old_tab=$4 old_pane=$5 new_tab=$6 new_pane=$7
   fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
   [ "$FM_BACKEND_HERDR_JOURNAL_VERSION" = 2 ] \
@@ -2193,23 +2210,38 @@ fm_backend_herdr_projection_abort_reclaim() {  # <session> <journal> <task-id> <
       || { [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" = "$new_tab" ] \
         && [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" = "$new_pane" ]; }; } || return 1
   fm_backend_herdr_projection_close_replacement "$session" "$new_tab" "$new_pane" || return 1
-  rm -f -- "$journal" || return 1
-  [ ! -e "$journal" ] && [ ! -L "$journal" ]
+  fm_backend_herdr_projection_retire_quarantine "$session" "$journal" "$id"
 }
 
 fm_backend_herdr_projection_retire_quarantine() {  # <session> <journal> <task-id>
-  local session=$1 journal=$2 id=$3 token list wsids wsid panes pane_ids all_panes pane state journal_pane
+  local session=$1 journal=$2 id=$3 token list wsids wsid panes pane_ids all_panes pane state journal_pane exact_workspace exact_workspace_count
   fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
   token=$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID
   journal_pane=
   if [ "$FM_BACKEND_HERDR_JOURNAL_VERSION" = 2 ]; then
     [ "$FM_BACKEND_HERDR_JOURNAL_SESSION" = "$session" ] || return 1
     journal_pane=$FM_BACKEND_HERDR_JOURNAL_PANE_ID
+    exact_workspace=$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_ID
   fi
   list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 1
   printf '%s' "$list" | jq -e '(.result.workspaces | type) == "array"' >/dev/null 2>&1 || return 1
   wsids=$(printf '%s' "$list" | jq -r --arg suffix " · p:$token" \
     '.result.workspaces[]? | select((.label | type) == "string" and (.label | endswith($suffix))) | .workspace_id' 2>/dev/null) || return 1
+  if [ -n "${exact_workspace:-}" ]; then
+    exact_workspace_count=$(printf '%s' "$list" | jq -r --arg workspace "$exact_workspace" \
+      '[.result.workspaces[]? | select(.workspace_id == $workspace)] | length' 2>/dev/null) || return 1
+    case "$exact_workspace_count" in
+      0) : ;;
+      1)
+        if ! printf '%s\n' "$wsids" | grep -Fqx "$exact_workspace"; then
+          [ -z "$wsids" ] || wsids="$wsids
+"
+          wsids="$wsids$exact_workspace"
+        fi
+        ;;
+      *) return 1 ;;
+    esac
+  fi
   all_panes=
   while IFS= read -r wsid; do
     [ -n "$wsid" ] || continue
@@ -2309,8 +2341,7 @@ fm_backend_herdr_projection_retire_dead_binding() {  # <session> <journal> <task
     && [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" = "$tab" ] \
     && [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" = "$pane" ] \
     && [ "$(fm_backend_herdr_pane_agent_state "$session" "$pane")" = dead ] || return 1
-  rm -f -- "$journal" || return 1
-  [ ! -e "$journal" ] && [ ! -L "$journal" ]
+  fm_backend_herdr_projection_retire_quarantine "$session" "$journal" "$id"
 }
 
 # fm_backend_herdr_projection_parent_workspace_exact: resolve one exact parent
@@ -2425,13 +2456,12 @@ fm_backend_herdr_projection_reclaim_rollback() {  # <session> <new-tab> <new-pan
 # refusal with flat fallback permitted, 3 means an exact dead binding was
 # retired for flat replacement, and 1 means live/unknown or post-mutation
 # uncertainty that must refuse the launch.
-fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <home> <meta-workspace> <meta-tab> <meta-pane> <parent-label> <task-label> <cwd> [replace-active]
+fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <home> <meta-workspace> <meta-tab> <meta-pane> <parent-label> <task-label> <cwd>
   local session=$1 journal=$2 id=$3 home=$4 meta_workspace=$5 meta_tab=$6 meta_pane=$7
-  local parent_label=$8 task_label=$9 cwd=${10} reclaim_mode=${11:-}
-  local canonical_home state focus_before active_tab out new_tab new_pane info close_status replace_active=0 expected_focus
+  local parent_label=$8 task_label=$9 cwd=${10}
+  local canonical_home state focus_before active_tab out new_tab new_pane info close_status
   FM_BACKEND_HERDR_PROJECTION_TAB_ID=""
   FM_BACKEND_HERDR_PROJECTION_PANE_ID=""
-  FM_BACKEND_HERDR_PROJECTION_RECLAIMED_ACTIVE=0
   fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
   if [ "$FM_BACKEND_HERDR_JOURNAL_VERSION" != 2 ]; then
     echo "warning: herdr presentation journal for $id has no exact restart binding; spawning flat" >&2
@@ -2486,12 +2516,8 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
   }
   active_tab=${focus_before#*$'\t'}
   if [ "$active_tab" = "$meta_tab" ]; then
-    if [ "$reclaim_mode" = replace-active ]; then
-      replace_active=1
-    else
-      echo "warning: herdr presentation reclaim for $id would replace the active tab; spawning flat" >&2
-      return 2
-    fi
+    echo "warning: herdr presentation reclaim for $id would replace the active tab; spawning flat" >&2
+    return 2
   fi
   if ! out=$(fm_backend_herdr_cli "$session" tab create \
     --workspace "$meta_workspace" --cwd "$cwd" --label "$task_label" --no-focus 2>/dev/null); then
@@ -2542,63 +2568,17 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
       return 2
       ;;
   esac
-  if [ "$replace_active" -eq 1 ]; then
-    if ! fm_backend_herdr_cli "$session" tab focus "$new_tab" >/dev/null 2>&1; then
-      fm_backend_herdr_projection_focus_restore "$session" "$focus_before" "active husk replacement focus" || true
-      fm_backend_herdr_projection_reclaim_rollback "$session" "$new_tab" "$new_pane" || return 1
-      echo "warning: herdr presentation reclaim for $id could not focus its active replacement; spawning flat" >&2
-      return 2
-    fi
-    expected_focus="$meta_workspace"$'\t'"$new_tab"
-    if ! fm_backend_herdr_projection_focus_restore \
-      "$session" "$expected_focus" "active husk replacement focus"; then
-      fm_backend_herdr_projection_focus_restore "$session" "$focus_before" "active husk replacement rollback" || true
-      fm_backend_herdr_projection_reclaim_rollback "$session" "$new_tab" "$new_pane" || return 1
-      return 1
-    fi
-    if fm_backend_herdr_explicit_close_pane_confirmed "$session" "$meta_pane"; then
-      close_status=0
-    else
-      close_status=1
-    fi
-    if [ "$close_status" -eq 0 ]; then
-      if ! fm_backend_herdr_projection_focus_restore \
-        "$session" "$expected_focus" "active husk replacement close"; then
-        fm_backend_herdr_projection_abort_reclaim \
-          "$session" "$journal" "$id" "$meta_tab" "$meta_pane" \
-          "$new_tab" "$new_pane" "$replace_active" || return 1
-        return 1
-      fi
-    fi
-  elif fm_backend_herdr_projection_close_pane_focus_preserving "$session" "$meta_pane" no-agent; then
+  if fm_backend_herdr_projection_close_pane_focus_preserving "$session" "$meta_pane" no-agent; then
     close_status=0
   else
     close_status=$?
-  fi
-  if [ "$close_status" -ne 0 ]; then
-    if [ "$replace_active" -eq 1 ]; then
-      state=$(fm_backend_herdr_pane_agent_state "$session" "$meta_pane")
-      case "$state" in
-        no-agent)
-          fm_backend_herdr_projection_focus_restore "$session" "$focus_before" "active husk replacement rollback" || true
-          fm_backend_herdr_projection_reclaim_rollback "$session" "$new_tab" "$new_pane" || return 1
-          echo "warning: herdr presentation reclaim for $id could not close the exact old husk; spawning flat" >&2
-          return 2
-          ;;
-        dead) close_status=0 ;;
-        live|unknown)
-          fm_backend_herdr_projection_reclaim_rollback "$session" "$new_tab" "$new_pane" || return 1
-          return 1
-          ;;
-      esac
-    fi
   fi
   if [ "$close_status" -ne 0 ]; then
     if [ "$close_status" -eq 2 ]; then
       if [ "$(fm_backend_herdr_pane_agent_state "$session" "$meta_pane")" = dead ]; then
         fm_backend_herdr_projection_abort_reclaim \
           "$session" "$journal" "$id" "$meta_tab" "$meta_pane" \
-          "$new_tab" "$new_pane" 1 || return 1
+          "$new_tab" "$new_pane" || return 1
       else
         fm_backend_herdr_projection_reclaim_rollback "$session" "$new_tab" "$new_pane" || return 1
       fi
@@ -2616,9 +2596,6 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
     return 2
   fi
   if [ "$(fm_backend_herdr_pane_agent_state "$session" "$meta_pane")" != dead ]; then
-    if [ "$replace_active" -eq 1 ]; then
-      fm_backend_herdr_projection_focus_restore "$session" "$focus_before" "active husk replacement rollback" || true
-    fi
     fm_backend_herdr_projection_reclaim_rollback "$session" "$new_tab" "$new_pane" || return 1
     return 1
   fi
@@ -2629,7 +2606,7 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
     "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" "$task_label"; then
     fm_backend_herdr_projection_abort_reclaim \
       "$session" "$journal" "$id" "$meta_tab" "$meta_pane" \
-      "$new_tab" "$new_pane" "$replace_active" || return 1
+      "$new_tab" "$new_pane" || return 1
     echo "warning: herdr presentation reclaim for $id did not converge exactly; spawning flat" >&2
     return 2
   fi
@@ -2637,13 +2614,12 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
     "$journal" "$id" "$meta_tab" "$meta_pane" "$new_tab" "$new_pane"; then
     fm_backend_herdr_projection_abort_reclaim \
       "$session" "$journal" "$id" "$meta_tab" "$meta_pane" \
-      "$new_tab" "$new_pane" "$replace_active" || return 1
+      "$new_tab" "$new_pane" || return 1
     echo "warning: herdr presentation reclaim for $id could not publish its replacement binding; spawning flat" >&2
     return 2
   fi
   FM_BACKEND_HERDR_PROJECTION_TAB_ID=$new_tab
   FM_BACKEND_HERDR_PROJECTION_PANE_ID=$new_pane
-  FM_BACKEND_HERDR_PROJECTION_RECLAIMED_ACTIVE=$replace_active
   return 0
 }
 

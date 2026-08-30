@@ -782,6 +782,30 @@ test_create_task_creates_and_parses_ids() {
   pass "fm_backend_herdr_create_task: creates a tab and parses tab_id/pane_id from the JSON response, prunes nothing when no seeded tab id is given"
 }
 
+test_create_task_removes_tab_when_postcreate_validation_fails() {
+  local dir out status
+  dir="$TMP_ROOT/create-task-postcreate-failure"; mkdir -p "$dir"
+  out=$(FM_TEST_PARTIAL_LOG="$dir/partial.log" bash -c '
+    . "$0/bin/backends/herdr.sh"
+    fm_backend_herdr_cli() {
+      shift
+      case "$1 $2" in
+        "tab list") printf "%s\n" "{\"result\":{\"tabs\":[]}}" ;;
+        "tab create") printf "%s\n" "{\"result\":{\"tab\":{\"tab_id\":\"w1:t2\"},\"root_pane\":{\"pane_id\":\"w1:p2\"}}}" ;;
+        *) return 1 ;;
+      esac
+    }
+    fm_backend_herdr_workspace_prune_seeded_default_tab() { return 1; }
+    fm_backend_herdr_kill_serialized() { printf "%s %s\n" "$1" "$2" >> "$FM_TEST_PARTIAL_LOG"; }
+    fm_backend_herdr_create_task fmtest:w1 fm-partial /tmp/proj w1:t1
+  ' "$ROOT" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "create_task accepted failed post-create validation"
+  [ "$(cat "$dir/partial.log")" = "fmtest w1:p2" ] \
+    || fail "create_task did not remove the partial Herdr pane: $out"
+  pass "fm_backend_herdr_create_task: post-create failure removes the partial pane"
+}
+
 # --- container_ensure / create_task: --no-focus and per-home label ----------
 
 test_container_ensure_creates_with_no_focus_flag() {
@@ -2683,6 +2707,11 @@ test_projection_reclaim_retires_dead_exact_binding() {
     . "$0/bin/backends/herdr.sh"
     fm_backend_herdr_pane_agent_state() { printf dead; }
     fm_backend_herdr_projection_live_binding_matches() { return 1; }
+    fm_backend_herdr_cli() {
+      shift
+      [ "$1 $2" = "workspace list" ] || return 1
+      printf "%s\n" "{\"result\":{\"workspaces\":[]}}"
+    }
     fm_backend_herdr_projection_reclaim_task \
       fmtest "$1" dead-r1 "$2" w2 w2:t2 w2:p2 firstmate fm-dead-r1 /tmp/project \
       >/dev/null 2>&1
@@ -2779,204 +2808,19 @@ test_projection_reclaim_replaces_only_exact_husk_and_advances_binding() {
       replacement_state=dead
       printf "abort-close %s\n" "$2" >> "$FM_TEST_RECLAIM_LOG"
     }
+    fm_backend_herdr_cli() {
+      shift
+      [ "$1 $2" = "workspace list" ] || return 1
+      printf "%s\n" "{\"result\":{\"workspaces\":[]}}"
+    }
     fm_backend_herdr_projection_abort_reclaim \
-      fmtest "$1" fm-hibit-r1 w2:t2 w2:p2 w2:t3 w2:p3 0
+      fmtest "$1" fm-hibit-r1 w2:t2 w2:p2 w2:t3 w2:p3
   ' "$ROOT" "$journal" || fail "inactive reclaim abort cleanup failed"
   [ ! -e "$journal" ] && [ ! -L "$journal" ] \
     || fail "inactive reclaim abort cleanup retained the replacement journal"
   [ "$(tail -1 "$log")" = "abort-close w2:p3" ] \
     || fail "inactive reclaim abort cleanup did not close the replacement endpoint"
   pass "herdr presentation reclaim: exact inactive replacement and abort cleanup preserve ownership"
-}
-
-test_projection_reclaim_replaces_active_husk_for_handoff() {
-  local dir state home home_real journal token label log out failure_log status
-  dir="$TMP_ROOT/projection-reclaim-active"; state="$dir/state"; home="$dir/home"
-  mkdir -p "$state" "$home"
-  home_real=$(cd "$home" && pwd -P)
-  log="$dir/log"; : > "$log"
-  token=$(bash -c '
-    . "$0/bin/backends/herdr.sh"
-    token=$(fm_backend_herdr_projection_journal_create "$1" active-r1) || exit 1
-    label=$(fm_backend_herdr_projection_workspace_label active-r1 "$token")
-    fm_backend_herdr_projection_journal_bind \
-      "$1/active-r1.herdr-presentation" active-r1 "$2" fmtest \
-      w2 w2:t2 w2:p2 w1 firstmate "$label" fm-active-r1 || exit 1
-    printf "%s" "$token"
-  ' "$ROOT" "$state" "$home_real") || fail "could not create active reclaim journal fixture"
-  journal="$state/active-r1.herdr-presentation"
-  label="└ active-r1 · p:$token"
-  out=$(FM_TEST_RECLAIM_LOG="$log" bash -c '
-    . "$0/bin/backends/herdr.sh"
-    current_focus=w2:t2
-    old_state=no-agent
-    fm_backend_herdr_projection_live_binding_matches() { return 0; }
-    fm_backend_herdr_pane_agent_state() {
-      if [ "$2" = w2:p2 ]; then printf "%s" "$old_state"; else printf no-agent; fi
-    }
-    fm_backend_herdr_projection_focus_snapshot() { printf "w2\t%s" "$current_focus"; }
-    fm_backend_herdr_cli() {
-      shift
-      case "$1 $2" in
-        "tab create") printf "%s\n" "{\"result\":{\"tab\":{\"tab_id\":\"w2:t3\"},\"root_pane\":{\"pane_id\":\"w2:p3\"}}}" ;;
-        "tab get") printf "%s\n" "{\"result\":{\"tab\":{\"tab_id\":\"w2:t3\",\"workspace_id\":\"w2\"}}}" ;;
-        "pane get") printf "%s\n" "{\"result\":{\"pane\":{\"pane_id\":\"w2:p3\",\"tab_id\":\"w2:t3\",\"workspace_id\":\"w2\"}}}" ;;
-        "tab focus") current_focus=$3; printf "focus %s\n" "$3" >> "$FM_TEST_RECLAIM_LOG" ;;
-        *) return 1 ;;
-      esac
-    }
-    fm_backend_herdr_explicit_close_pane_confirmed() {
-      [ "$2" = w2:p2 ] && [ "$current_focus" = w2:t3 ] || return 1
-      old_state=dead
-      printf "close %s\n" "$2" >> "$FM_TEST_RECLAIM_LOG"
-    }
-    fm_backend_herdr_projection_reclaim_task \
-      fmtest "$1" active-r1 "$2" w2 w2:t2 w2:p2 firstmate fm-active-r1 \
-      /tmp/project replace-active || exit 1
-    printf "%s %s %s %s" "$FM_BACKEND_HERDR_PROJECTION_TAB_ID" \
-      "$FM_BACKEND_HERDR_PROJECTION_PANE_ID" "$current_focus" \
-      "$FM_BACKEND_HERDR_PROJECTION_RECLAIMED_ACTIVE"
-  ' "$ROOT" "$journal" "$home") || fail "active agent-free projection reclaim failed"
-  [ "$out" = "w2:t3 w2:p3 w2:t3 1" ] \
-    || fail "active reclaim did not return and focus the replacement: $out"
-  [ "$(cat "$log")" = $'focus w2:t3\nclose w2:p2' ] \
-    || fail "active reclaim did not focus the replacement before closing the husk: $(cat "$log")"
-  [ "$(sed -n 's/^tab_id=//p' "$journal")" = w2:t3 ] \
-    && [ "$(sed -n 's/^pane_id=//p' "$journal")" = w2:p3 ] \
-    || fail "active reclaim did not advance the journal to the replacement endpoint"
-  [ "$(sed -n 's/^workspace_label=//p' "$journal")" = "$label" ] \
-    || fail "active reclaim changed the projected workspace binding"
-  FM_TEST_RECLAIM_LOG="$log" bash -c '
-    . "$0/bin/backends/herdr.sh"
-    replacement_state=no-agent
-    fm_backend_herdr_pane_agent_state() { printf "%s" "$replacement_state"; }
-    fm_backend_herdr_projection_focus_snapshot() { printf "w2\tw2:t3"; }
-    fm_backend_herdr_explicit_close_pane_confirmed() {
-      [ "$2" = w2:p3 ] || return 1
-      replacement_state=dead
-      printf "abort-close %s\n" "$2" >> "$FM_TEST_RECLAIM_LOG"
-    }
-    fm_backend_herdr_projection_abort_reclaim \
-      fmtest "$1" active-r1 w2:t2 w2:p2 w2:t3 w2:p3 0
-  ' "$ROOT" "$journal" || fail "active reclaim abort cleanup failed"
-  [ ! -e "$journal" ] && [ ! -L "$journal" ] \
-    || fail "active reclaim abort cleanup retained the replacement journal"
-  [ "$(tail -1 "$log")" = "abort-close w2:p3" ] \
-    || fail "active reclaim abort cleanup did not close the replacement endpoint"
-  token=$(bash -c '
-    . "$0/bin/backends/herdr.sh"
-    token=$(fm_backend_herdr_projection_journal_create "$1" active-r1) || exit 1
-    label=$(fm_backend_herdr_projection_workspace_label active-r1 "$token")
-    fm_backend_herdr_projection_journal_bind \
-      "$1/active-r1.herdr-presentation" active-r1 "$2" fmtest \
-      w2 w2:t2 w2:p2 w1 firstmate "$label" fm-active-r1 || exit 1
-    printf "%s" "$token"
-  ' "$ROOT" "$state" "$home_real") || fail "could not recreate active reclaim journal fixture"
-  failure_log="$dir/postclose-failure.log"; : > "$failure_log"
-  out=$(FM_TEST_RECLAIM_LOG="$failure_log" bash -c '
-    . "$0/bin/backends/herdr.sh"
-    current_focus=w2:t2
-    old_state=no-agent
-    replacement_state=no-agent
-    binding_calls=0
-    fm_backend_herdr_projection_live_binding_matches() {
-      binding_calls=$((binding_calls + 1))
-      [ "$binding_calls" -eq 1 ]
-    }
-    fm_backend_herdr_pane_agent_state() {
-      if [ "$2" = w2:p2 ]; then printf "%s" "$old_state"; else printf "%s" "$replacement_state"; fi
-    }
-    fm_backend_herdr_projection_focus_snapshot() { printf "w2\t%s" "$current_focus"; }
-    fm_backend_herdr_cli() {
-      shift
-      case "$1 $2" in
-        "tab create") printf "%s\n" "{\"result\":{\"tab\":{\"tab_id\":\"w2:t3\"},\"root_pane\":{\"pane_id\":\"w2:p3\"}}}" ;;
-        "tab get") printf "%s\n" "{\"result\":{\"tab\":{\"tab_id\":\"w2:t3\",\"workspace_id\":\"w2\"}}}" ;;
-        "pane get") printf "%s\n" "{\"result\":{\"pane\":{\"pane_id\":\"w2:p3\",\"tab_id\":\"w2:t3\",\"workspace_id\":\"w2\"}}}" ;;
-        "tab focus") current_focus=$3 ;;
-        *) return 1 ;;
-      esac
-    }
-    fm_backend_herdr_explicit_close_pane_confirmed() {
-      case "$2" in
-        w2:p2) old_state=dead ;;
-        w2:p3) replacement_state=dead ;;
-        *) return 1 ;;
-      esac
-      printf "close %s\n" "$2" >> "$FM_TEST_RECLAIM_LOG"
-    }
-    fm_backend_herdr_projection_reclaim_task \
-      fmtest "$1" active-r1 "$2" w2 w2:t2 w2:p2 firstmate fm-active-r1 \
-      /tmp/project replace-active >/dev/null 2>&1
-    status=$?
-    printf "%s %s %s" "$status" "$old_state" "$replacement_state"
-  ' "$ROOT" "$journal" "$home")
-  status=$?
-  [ "$status" -eq 0 ] && [ "$out" = "2 dead dead" ] \
-    || fail "active post-close failure did not retire both endpoints: status=$status out=$out"
-  [ ! -e "$journal" ] && [ ! -L "$journal" ] \
-    || fail "active post-close failure retained the stale journal"
-  [ "$(cat "$failure_log")" = $'close w2:p2\nclose w2:p3' ] \
-    || fail "active post-close failure did not close the old and replacement panes: $(cat "$failure_log")"
-  token=$(bash -c '
-    . "$0/bin/backends/herdr.sh"
-    token=$(fm_backend_herdr_projection_journal_create "$1" active-r1) || exit 1
-    label=$(fm_backend_herdr_projection_workspace_label active-r1 "$token")
-    fm_backend_herdr_projection_journal_bind \
-      "$1/active-r1.herdr-presentation" active-r1 "$2" fmtest \
-      w2 w2:t2 w2:p2 w1 firstmate "$label" fm-active-r1 || exit 1
-    printf "%s" "$token"
-  ' "$ROOT" "$state" "$home_real") || fail "could not recreate active close race journal fixture"
-  failure_log="$dir/active-close-race.log"; : > "$failure_log"
-  out=$(FM_TEST_RECLAIM_LOG="$failure_log" bash -c '
-    . "$0/bin/backends/herdr.sh"
-    current_focus=w2:t2
-    old_state=no-agent
-    replacement_state=no-agent
-    fm_backend_herdr_projection_live_binding_matches() { return 0; }
-    fm_backend_herdr_pane_agent_state() {
-      if [ "$2" = w2:p2 ]; then printf "%s" "$old_state"; else printf "%s" "$replacement_state"; fi
-    }
-    fm_backend_herdr_projection_focus_snapshot() { printf "w2\t%s" "$current_focus"; }
-    fm_backend_herdr_cli() {
-      shift
-      case "$1 $2" in
-        "tab create") printf "%s\n" "{\"result\":{\"tab\":{\"tab_id\":\"w2:t3\"},\"root_pane\":{\"pane_id\":\"w2:p3\"}}}" ;;
-        "tab get") printf "%s\n" "{\"result\":{\"tab\":{\"tab_id\":\"w2:t3\",\"workspace_id\":\"w2\"}}}" ;;
-        "pane get") printf "%s\n" "{\"result\":{\"pane\":{\"pane_id\":\"w2:p3\",\"tab_id\":\"w2:t3\",\"workspace_id\":\"w2\"}}}" ;;
-        "tab focus") current_focus=$3 ;;
-        *) return 1 ;;
-      esac
-    }
-    fm_backend_herdr_explicit_close_pane_confirmed() {
-      case "$2" in
-        w2:p2)
-          old_state=live
-          printf "close-raced %s\n" "$2" >> "$FM_TEST_RECLAIM_LOG"
-          return 1
-          ;;
-        w2:p3)
-          replacement_state=dead
-          printf "close %s\n" "$2" >> "$FM_TEST_RECLAIM_LOG"
-          ;;
-        *) return 1 ;;
-      esac
-    }
-    fm_backend_herdr_projection_reclaim_task \
-      fmtest "$1" active-r1 "$2" w2 w2:t2 w2:p2 firstmate fm-active-r1 \
-      /tmp/project replace-active >/dev/null 2>&1
-    status=$?
-    printf "%s %s %s" "$status" "$old_state" "$replacement_state"
-  ' "$ROOT" "$journal" "$home")
-  status=$?
-  [ "$status" -eq 0 ] && [ "$out" = "1 live dead" ] \
-    || fail "active close race left the replacement endpoint: status=$status out=$out"
-  [ "$(sed -n 's/^tab_id=//p' "$journal")" = w2:t2 ] \
-    && [ "$(sed -n 's/^pane_id=//p' "$journal")" = w2:p2 ] \
-    || fail "active close race changed the live builder binding"
-  [ "$(cat "$failure_log")" = $'close-raced w2:p2\nclose w2:p3' ] \
-    || fail "active close race did not retire only the replacement pane: $(cat "$failure_log")"
-  pass "herdr presentation reclaim: handoff cleanup covers success and post-close failure"
 }
 
 test_projection_handoff_retires_exact_unbound_binding() {
@@ -3079,6 +2923,63 @@ test_projection_handoff_retires_exact_unbound_binding() {
   [ ! -e "$missing_journal" ] && [ ! -L "$missing_journal" ] \
     || fail "missing version 1 handoff retained its stale journal"
   pass "herdr presentation handoff: quarantine retirement covers every safe pane"
+}
+
+test_projection_v2_retirement_inspects_renamed_exact_workspace() {
+  local dir state home home_real mode id journal out status log
+  dir="$TMP_ROOT/projection-v2-renamed-workspace"; state="$dir/state"; home="$dir/home"
+  mkdir -p "$state" "$home"
+  home_real=$(cd "$home" && pwd -P)
+  for mode in handoff dead abort; do
+    id="renamed-$mode"
+    journal="$state/$id.herdr-presentation"
+    bash -c '
+      . "$0/bin/backends/herdr.sh"
+      token=$(fm_backend_herdr_projection_journal_create "$1" "$2") || exit 1
+      label=$(fm_backend_herdr_projection_workspace_label "$2" "$token")
+      fm_backend_herdr_projection_journal_bind \
+        "$1/$2.herdr-presentation" "$2" "$3" fmtest \
+        w2 w2:t2 w2:p2 w1 firstmate "$label" "fm-$2"
+    ' "$ROOT" "$state" "$id" "$home_real" || fail "could not create $mode exact retirement journal"
+    log="$dir/$mode.log"; : > "$log"
+    out=$(FM_TEST_PARTIAL_LOG="$log" bash -c '
+      . "$0/bin/backends/herdr.sh"
+      fm_backend_herdr_cli() {
+        shift
+        case "$1 $2" in
+          "workspace list")
+            printf "%s\n" "{\"result\":{\"workspaces\":[{\"workspace_id\":\"w2\",\"label\":\"renamed\"}]}}"
+            ;;
+          "pane list")
+            printf "%s\n" "{\"result\":{\"panes\":[{\"pane_id\":\"w2:p2\",\"tab_id\":\"w2:t2\"},{\"pane_id\":\"w2:p3\",\"tab_id\":\"w2:t3\"}]}}"
+            ;;
+          *) return 1 ;;
+        esac
+      }
+      fm_backend_herdr_pane_agent_state() {
+        case "$2" in w2:p2) printf dead ;; w2:p3) printf live ;; *) printf dead ;; esac
+      }
+      fm_backend_herdr_kill_serialized() { printf "kill %s\n" "$2" >> "$FM_TEST_PARTIAL_LOG"; }
+      fm_backend_herdr_projection_close_replacement() { printf "replacement %s\n" "$3" >> "$FM_TEST_PARTIAL_LOG"; }
+      case "$2" in
+        handoff) fm_backend_herdr_projection_retire_handoff_binding fmtest "$1" "$3" w2 w2:t2 w2:p2 ;;
+        dead) fm_backend_herdr_projection_retire_dead_binding fmtest "$1" "$3" w2:t2 w2:p2 ;;
+        abort) fm_backend_herdr_projection_abort_reclaim fmtest "$1" "$3" w2:t2 w2:p2 w2:t4 w2:p4 ;;
+      esac
+    ' "$ROOT" "$journal" "$mode" "$id" 2>&1)
+    status=$?
+    [ "$status" -ne 0 ] || fail "$mode retirement ignored a live pane in the renamed exact workspace"
+    [ -f "$journal" ] || fail "$mode retirement removed the exact journal beside a live pane"
+    assert_not_contains "$(cat "$log")" "kill w2:p3" \
+      "$mode retirement closed the live drifted pane"
+    if [ "$mode" = abort ]; then
+      [ "$(cat "$log")" = "replacement w2:p4" ] \
+        || fail "abort retirement did not limit cleanup to its partial replacement: $out"
+    else
+      [ ! -s "$log" ] || fail "$mode retirement mutated the renamed exact workspace: $out"
+    fi
+  done
+  pass "herdr presentation retirement: renamed exact workspaces retain live panes and journals"
 }
 
 test_projection_recovery_is_read_only_and_refuses_live_duplicate_risk() {
@@ -4802,6 +4703,7 @@ test_create_task_refuses_when_preexisting_husk_tab_remains
 test_create_task_refuses_when_agent_state_ambiguous
 test_create_task_husk_replacement_creates_before_closing
 test_create_task_creates_and_parses_ids
+test_create_task_removes_tab_when_postcreate_validation_fails
 test_create_task_creates_with_no_focus_flag
 test_presentation_defaults_on_at_or_above_the_floor
 test_presentation_default_falls_back_below_the_floor
@@ -4861,8 +4763,8 @@ test_projection_order_rejects_malformed_socket
 test_projection_reclaim_refusal_matrix_is_non_mutating
 test_projection_reclaim_retires_dead_exact_binding
 test_projection_reclaim_replaces_only_exact_husk_and_advances_binding
-test_projection_reclaim_replaces_active_husk_for_handoff
 test_projection_handoff_retires_exact_unbound_binding
+test_projection_v2_retirement_inspects_renamed_exact_workspace
 test_projection_recovery_is_read_only_and_refuses_live_duplicate_risk
 test_workspace_find_matches_only_this_homes_own_label
 test_list_live_scoped_to_this_homes_workspace_only
