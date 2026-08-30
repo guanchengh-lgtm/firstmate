@@ -342,7 +342,7 @@ fm_backend_cmux_strict_workspace_id_for_label() {  # <label>
   out=$(fm_backend_cmux_cli workspace list --json --id-format uuids 2>/dev/null) || return 1
   match=$(printf '%s' "$out" | jq -r --arg want "$label" '
     if (.workspaces | type) != "array" then error("missing workspaces")
-    elif any(.workspaces[]?; (.id | type) != "string" or (.title | type) != "string") then error("invalid workspace")
+    elif any(.workspaces[]?; (.id | type) != "string" or (.id | length) == 0 or (.title | type) != "string") then error("invalid workspace")
     else [.workspaces[] | select(.title == $want) | .id]
       | if length <= 1 then .[]? else error("duplicate workspace title") end
     end

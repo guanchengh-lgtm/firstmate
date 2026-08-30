@@ -544,6 +544,27 @@ test_create_task_removes_workspace_when_id_discovery_fails() {
   pass "fm_backend_cmux_create_task: id discovery failure closes the partial workspace and proves absence"
 }
 
+test_create_task_refuses_empty_workspace_id_as_absence() {
+  local dir fb out status title
+  dir="$TMP_ROOT/create-task-empty-id"; mkdir -p "$dir/responses"
+  title=$(cmux_expected_scoped_title fm-empty-id)
+  printf '{"workspaces":[]}' > "$dir/responses/1.out"
+  cmux_workspace_list_response "$dir" 3 "" "$title"
+  cmux_workspace_list_response "$dir" 4 "" "$title"
+  fb=$(make_cmux_fakebin "$dir")
+  out=$(PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_create_task fm-empty-id /tmp/proj' "$ROOT" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "create_task accepted an empty workspace id"
+  assert_contains "$out" "partial-create cleanup could not prove workspace '$title' absent (workspace id unknown)" \
+    "create_task treated an empty workspace id as proven absence"
+  assert_contains "$out" "could not resolve a cmux workspace id" \
+    "create_task did not keep the original id-resolution error"
+  assert_not_contains "$(cat "$dir/log")" $'\x1f''close-workspace' \
+    "create_task tried to close an empty workspace id"
+  pass "fm_backend_cmux_create_task: empty workspace id is unknown, never proven absence"
+}
+
 test_create_task_names_workspace_when_cleanup_fails() {
   local dir fb out status title id
   dir="$TMP_ROOT/create-task-cleanup-failure"; mkdir -p "$dir/responses"
@@ -1203,6 +1224,7 @@ test_create_task_refuses_duplicate_label
 test_create_task_creates_and_parses_ids
 test_create_task_removes_workspace_when_surface_discovery_fails
 test_create_task_removes_workspace_when_id_discovery_fails
+test_create_task_refuses_empty_workspace_id_as_absence
 test_create_task_names_workspace_when_cleanup_fails
 test_target_ready_fails_when_target_absent
 test_target_ready_checks_expected_label
