@@ -313,6 +313,24 @@ fm_backend_zellij_tab_matches_label() {  # <session> <tab_id> <label>
   [ "$count" = "1" ]
 }
 
+# Close a partially created tab, then require a valid list to prove the exact
+# tab absent. A close or list failure never counts as absence.
+fm_backend_zellij_cleanup_created_tab() {  # <session> <title> <tab_id>
+  local session=$1 title=$2 tab_id=$3 tabs absent
+  fm_backend_zellij_cli "$session" action close-tab-by-id "$tab_id" >/dev/null 2>&1 || true
+  tabs=$(fm_backend_zellij_cli "$session" action list-tabs --json 2>/dev/null) || tabs=
+  absent=$(printf '%s' "$tabs" | jq -r --argjson tab "$tab_id" '
+    if type == "array" and all(.[]; type == "object" and (.tab_id | type) == "number") then
+      ([.[] | select(.tab_id == $tab)] | length == 0)
+    else
+      error("invalid tab list")
+    end
+  ' 2>/dev/null) || absent=
+  [ "$absent" = true ] && return 0
+  echo "error: zellij partial-create cleanup could not prove tab $tab_id ('$title') absent from session '$session'" >&2
+  return 1
+}
+
 # fm_backend_zellij_create_task: create the task's tab (one terminal pane) in
 # <session>, refusing an existing <label>. Zellij does NOT enforce tab-name
 # uniqueness itself (verified: two tabs can share a name), so the duplicate
@@ -330,22 +348,6 @@ fm_backend_zellij_tab_matches_label() {  # <session> <tab_id> <label>
 # spawn). Best-effort: a failure to restore never fails the spawn.
 #
 # Echoes "<tab_id> <pane_id>" on success.
-fm_backend_zellij_cleanup_created_tab() {  # <session> <title> <tab_id>
-  local session=$1 title=$2 tab_id=$3 tabs absent
-  fm_backend_zellij_cli "$session" action close-tab-by-id "$tab_id" >/dev/null 2>&1 || true
-  tabs=$(fm_backend_zellij_cli "$session" action list-tabs --json 2>/dev/null) || tabs=
-  absent=$(printf '%s' "$tabs" | jq -r --argjson tab "$tab_id" '
-    if type == "array" and all(.[]; type == "object" and (.tab_id | type) == "number") then
-      ([.[] | select(.tab_id == $tab)] | length == 0)
-    else
-      error("invalid tab list")
-    end
-  ' 2>/dev/null) || absent=
-  [ "$absent" = true ] && return 0
-  echo "error: zellij partial-create cleanup could not prove tab $tab_id ('$title') absent from session '$session'" >&2
-  return 1
-}
-
 fm_backend_zellij_create_task() {  # <session> <label> <cwd>
   local session=$1 label=$2 cwd=$3 title tabs dup prev_active tab_id pane_id
   fm_backend_zellij_session_exists "$session" || { echo "error: zellij session '$session' does not exist; run container_ensure first" >&2; return 1; }

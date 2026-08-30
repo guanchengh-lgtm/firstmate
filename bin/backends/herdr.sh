@@ -1971,49 +1971,8 @@ fm_backend_herdr_agent_alive() {  # <target>
   esac
 }
 
-# fm_backend_herdr_create_task: create the task's tab (one pane) in
-# <container> ("session:workspace_id"). Herdr does NOT enforce label
-# uniqueness itself (verified: two tabs can share a label), so the duplicate
-# check is ours, mirroring tmux's manual check.
-#
-# A same-labeled tab already existing no longer means an automatic refusal:
-# herdr persists and restores its whole session layout (workspaces/tabs/
-# panes) across a server restart, including a reboot, and a restored fm-<id>
-# task tab comes back a HUSK - a dead pane, or (today, and unconditionally
-# once a future `resume_agents_on_restore = false` config ships) a plain
-# agent-less shell sitting in the saved cwd, never the crewmate that used to
-# be there. Before this fix, every fleet respawn after such a restart needed
-# the operator to manually close each husk pane first before firstmate could
-# spawn into it again. fm_backend_herdr_tab_is_husk classifies the existing
-# tab's pane conservatively (dead or no-agent only; anything live or
-# ambiguous refuses exactly as before) and, when it is a confirmed husk,
-# this function CLOSES AND REPLACES it instead of refusing.
-#
-# Ordering is deliberate: the REPLACEMENT tab is created FIRST, and the husk
-# is closed only AFTER that succeeds - never the reverse. Closing a
-# workspace's LAST remaining tab deletes the whole workspace on real herdr
-# (docs/herdr-backend.md "Default workspace lifecycle"), and a session-restore husk
-# can legitimately be that workspace's only tab (e.g. its own seeded default
-# tab was already pruned, long before the restart, by a prior real task tab
-# existing alongside it). Herdr's lack of label-uniqueness enforcement is
-# exactly what makes this safe: the new and the husk tab can briefly share
-# the same label with no error, so the workspace never drops to zero tabs.
-# This mirrors fm_backend_herdr_workspace_prune_seeded_default_tab's own
-# create-before-close safety argument.
-#
-# --no-focus: verified tab create never focuses by default regardless of
-# sibling tabs, so this is defense in depth rather than a behavior change.
-# <seeded_default_tab_id> (4th arg, may be empty) is exactly the value
-# fm_backend_herdr_workspace_ensure captured as FM_BACKEND_HERDR_WS_SEEDED_TAB_ID
-# for THIS SAME container - non-empty only when this spawn's own
-# container_ensure call just created the workspace. Once the real task tab
-# above is created, this is the ONLY input that may trigger a prune, and it is
-# passed by the caller, never re-derived here from tab list contents or
-# labels (the live-fire self-kill fix - see
-# fm_backend_herdr_workspace_prune_seeded_default_tab for the incident and
-# the safety argument). An ADOPTED workspace's caller always passes an empty
-# 4th arg, so this function never even queries for a prune candidate in that
-# case. Echoes "<tab_id> <pane_id>" on success.
+# Clean a partially created task by exact identity. Strict follow-up reads
+# must prove each known pane and tab absent; unknown state returns failure.
 fm_backend_herdr_cleanup_created_task() {  # <session> <workspace> <label> <pre-label-tabs> <tab> <pane>
   local session=$1 wsid=$2 label=$3 pre_tabs=$4 tab=$5 pane=$6
   local list new_tabs new_count candidate candidates discovery_state tab_target
@@ -2083,6 +2042,49 @@ EOF
   return 1
 }
 
+# fm_backend_herdr_create_task: create the task's tab (one pane) in
+# <container> ("session:workspace_id"). Herdr does NOT enforce label
+# uniqueness itself (verified: two tabs can share a label), so the duplicate
+# check is ours, mirroring tmux's manual check.
+#
+# A same-labeled tab already existing no longer means an automatic refusal:
+# herdr persists and restores its whole session layout (workspaces/tabs/
+# panes) across a server restart, including a reboot, and a restored fm-<id>
+# task tab comes back a HUSK - a dead pane, or (today, and unconditionally
+# once a future `resume_agents_on_restore = false` config ships) a plain
+# agent-less shell sitting in the saved cwd, never the crewmate that used to
+# be there. Before this fix, every fleet respawn after such a restart needed
+# the operator to manually close each husk pane first before firstmate could
+# spawn into it again. fm_backend_herdr_tab_is_husk classifies the existing
+# tab's pane conservatively (dead or no-agent only; anything live or
+# ambiguous refuses exactly as before) and, when it is a confirmed husk,
+# this function CLOSES AND REPLACES it instead of refusing.
+#
+# Ordering is deliberate: the REPLACEMENT tab is created FIRST, and the husk
+# is closed only AFTER that succeeds - never the reverse. Closing a
+# workspace's LAST remaining tab deletes the whole workspace on real herdr
+# (docs/herdr-backend.md "Default workspace lifecycle"), and a session-restore husk
+# can legitimately be that workspace's only tab (e.g. its own seeded default
+# tab was already pruned, long before the restart, by a prior real task tab
+# existing alongside it). Herdr's lack of label-uniqueness enforcement is
+# exactly what makes this safe: the new and the husk tab can briefly share
+# the same label with no error, so the workspace never drops to zero tabs.
+# This mirrors fm_backend_herdr_workspace_prune_seeded_default_tab's own
+# create-before-close safety argument.
+#
+# --no-focus: verified tab create never focuses by default regardless of
+# sibling tabs, so this is defense in depth rather than a behavior change.
+# <seeded_default_tab_id> (4th arg, may be empty) is exactly the value
+# fm_backend_herdr_workspace_ensure captured as FM_BACKEND_HERDR_WS_SEEDED_TAB_ID
+# for THIS SAME container - non-empty only when this spawn's own
+# container_ensure call just created the workspace. Once the real task tab
+# above is created, this is the ONLY input that may trigger a prune, and it is
+# passed by the caller, never re-derived here from tab list contents or
+# labels (the live-fire self-kill fix - see
+# fm_backend_herdr_workspace_prune_seeded_default_tab for the incident and
+# the safety argument). An ADOPTED workspace's caller always passes an empty
+# 4th arg, so this function never even queries for a prune candidate in that
+# case. Echoes "<tab_id> <pane_id>" on success.
 fm_backend_herdr_create_task() {  # <container> <label> <cwd> <seeded_default_tab_id>
   local container=$1 label=$2 cwd=$3 seeded_tab_id=${4:-} session wsid list dup_tabs dup dup_pane dup_tab_ids out tab_id pane_id remaining_dup_tabs
   session=${container%%:*}
