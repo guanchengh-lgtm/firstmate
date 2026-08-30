@@ -105,11 +105,12 @@ missing both flags||ship spawns require --mode
 missing --yolo|--mode no-mistakes|ship spawns require --yolo
 missing --mode|--yolo off|ship spawns require --mode
 unknown mode|--mode nope --yolo off|must be one of no-mistakes, direct-PR, local-only
+unknown surface|--mode no-mistakes --yolo off --role builder --surface nope|must be one of internal-only, product, mixed, uncertain
 unknown yolo|--mode no-mistakes --yolo maybe|--yolo must be on or off
 conditional policy as a task mode|--mode no-mistakes-prod-only --yolo off|classify this task's surface
 missing --role|--mode no-mistakes --yolo off|ship spawns require --role
 unknown role|--mode no-mistakes --yolo off --role maybe|must be builder or verifier
-verifier on direct-PR|--mode direct-PR --yolo off --role verifier|--role verifier is legal only with --mode no-mistakes
+verifier on direct-PR|--mode direct-PR --yolo off --role verifier --surface internal-only|--role verifier is legal only with --mode no-mistakes
 ROWS
   pass "fm-spawn: a ship spawn requires a valid explicit mode, yolo, and role before anything is created"
 }
@@ -128,6 +129,11 @@ EOF
   status=$?
   [ "$status" -ne 0 ] || fail "a scout spawn carrying --mode should exit non-zero"
   assert_contains "$out" "--mode applies only to ship spawns" "scout spawn did not refuse --mode"
+
+  out=$(run_spawn "$home" "$fakebin" delivery-scout-a1 "$proj" claude --scout --surface internal-only)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a scout spawn carrying --surface should exit non-zero"
+  assert_contains "$out" "--surface applies only to ship spawns" "scout spawn did not refuse --surface"
 
   out=$(run_spawn "$home" "$fakebin" delivery-scout-a1 "$proj" claude --scout --yolo on)
   status=$?
@@ -161,7 +167,7 @@ test_spawn_refuses_a_brief_mode_mismatch() {
 $rec
 EOF
   write_brief "$home" delivery-mismatch-b1 no-mistakes
-  out=$(run_spawn "$home" "$fakebin" delivery-mismatch-b1 "$proj" claude --mode direct-PR --yolo off --role builder)
+  out=$(run_spawn "$home" "$fakebin" delivery-mismatch-b1 "$proj" claude --mode direct-PR --yolo off --role builder --surface internal-only)
   status=$?
   [ "$status" -ne 0 ] || fail "a brief/spawn mode mismatch should exit non-zero"
   assert_contains "$out" "delivery mismatch for delivery-mismatch-b1" "mismatch refusal did not name the task"
@@ -171,7 +177,7 @@ EOF
 
   # The agreeing case clears the check and only fails later, at the refusing tmux.
   write_brief "$home" delivery-agree-b2 direct-PR
-  out=$(run_spawn "$home" "$fakebin" delivery-agree-b2 "$proj" claude --mode direct-PR --yolo off --role builder)
+  out=$(run_spawn "$home" "$fakebin" delivery-agree-b2 "$proj" claude --mode direct-PR --yolo off --role builder --surface internal-only)
   assert_not_contains "$out" "delivery mismatch" "an agreeing mode was reported as a mismatch"
 
   # A brief scaffolded before the mode marker existed warns once and continues.
@@ -302,7 +308,7 @@ EOF
 # (AGENTS.md section 7), so a downgrade there is announced too. A conditional
 # policy is excluded because both of its legs are legitimate classifications.
 test_spawn_notices_a_rigor_downgrade_against_the_registry() {
-  local rec home proj fakebin out label mode registry expect registered n=0
+  local rec home proj fakebin out label mode registry expect registered n=0 extra
   while IFS='|' read -r label registry mode expect registered; do
     [ -n "$label" ] || continue
     n=$((n + 1))
@@ -311,7 +317,9 @@ test_spawn_notices_a_rigor_downgrade_against_the_registry() {
 $rec
 EOF
     write_brief "$home" "delivery-dev-$n" "$mode"
-    out=$(run_spawn "$home" "$fakebin" "delivery-dev-$n" "$proj" claude --mode "$mode" --yolo off --role builder)
+    extra=()
+    [ "$mode" != direct-PR ] || extra=(--surface internal-only)
+    out=$(run_spawn "$home" "$fakebin" "delivery-dev-$n" "$proj" claude --mode "$mode" --yolo off --role builder "${extra[@]}")
     case "$expect" in
       notice)
         assert_contains "$out" "less rigor than the captain's standing posture" \
@@ -381,7 +389,7 @@ test_promote_requires_and_records_the_delivery_contract() {
   assert_contains "$out" "classify this task's surface" "promote did not refuse the conditional policy as a task mode"
   assert_absent "$home/data/promote-d1/role" "refused policy promotion wrote a role marker"
 
-  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" promote-d1 --mode direct-PR --yolo on 2>&1)
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" promote-d1 --mode direct-PR --yolo on --surface internal-only 2>&1)
   status=$?
   expect_code 0 "$status" "a promotion carrying both flags should succeed"
   assert_grep 'kind=ship' "$meta" "promotion did not restore ship teardown protection"
@@ -456,7 +464,7 @@ EOF
 # conditional policy, maps it to its most rigorous leg for them, and exposes the
 # raw annotation for the one caller that must tell a policy from a flat mode.
 test_project_mode_maps_the_conditional_policy() {
-  local home out err
+  local home out err rec proj fakebin
   home="$TMP_ROOT/project-mode/home"
   mkdir -p "$home/data"
   cat > "$home/data/projects.md" <<'EOF'
@@ -483,7 +491,84 @@ EOF
   [ "$out" = "no-mistakes off" ] || fail "a typo'd mode no longer falls back to the most rigorous default"
   err=$(FM_HOME="$home" "$PROJECT_MODE" typoproj 2>&1 >/dev/null)
   assert_contains "$err" "unknown mode" "a typo'd registry mode stopped warning"
+
+  out=$(FM_HOME="$home" "$PROJECT_MODE" never-registered 2>/dev/null)
+  [ "$out" = "no-mistakes off" ] || fail "an unregistered project did not stay no-mistakes off (got '$out')"
+  rec=$(make_home absent-reg)
+  IFS='|' read -r home proj fakebin <<EOF
+$rec
+EOF
+  rm -f "$home/data/projects.md"
+  out=$(FM_HOME="$home" "$PROJECT_MODE" anyproj 2>/dev/null)
+  [ "$out" = "no-mistakes off" ] || fail "an absent registry did not stay no-mistakes off (got '$out')"
   pass "fm-project-mode: the conditional policy is accepted, mapped for mechanical callers, and readable raw"
+}
+
+# --mode direct-PR is legal only with --surface internal-only. Product, mixed,
+# uncertain, or an omitted surface must refuse at spawn and promote. no-mistakes
+# still accepts a product surface. Tests drive the public CLIs, not the lib source.
+test_direct_pr_requires_internal_only_surface() {
+  local rec home proj fakebin out status
+  rec=$(make_home surface-gate)
+  IFS='|' read -r home proj fakebin <<EOF
+$rec
+EOF
+
+  write_brief "$home" surf-product-s1 no-mistakes
+  out=$(run_spawn "$home" "$fakebin" surf-product-s1 "$proj" claude --mode direct-PR --yolo off --role builder --surface product)
+  status=$?
+  [ "$status" -ne 0 ] || fail "product + direct-PR spawn should exit non-zero"
+  assert_contains "$out" "refused for product work" "product + direct-PR spawn did not name the refused surface"
+  assert_absent "$home/state/surf-product-s1.meta" "product + direct-PR spawn wrote task metadata"
+
+  write_brief "$home" surf-mixed-s2 no-mistakes
+  out=$(run_spawn "$home" "$fakebin" surf-mixed-s2 "$proj" claude --mode direct-PR --yolo off --role builder --surface mixed)
+  status=$?
+  [ "$status" -ne 0 ] || fail "mixed + direct-PR spawn should exit non-zero"
+  assert_contains "$out" "refused for mixed work" "mixed + direct-PR spawn did not name the refused surface"
+
+  write_brief "$home" surf-uncertain-s3 no-mistakes
+  out=$(run_spawn "$home" "$fakebin" surf-uncertain-s3 "$proj" claude --mode direct-PR --yolo off --role builder --surface uncertain)
+  status=$?
+  [ "$status" -ne 0 ] || fail "uncertain + direct-PR spawn should exit non-zero"
+  assert_contains "$out" "refused for uncertain work" "uncertain + direct-PR spawn did not name the refused surface"
+
+  write_brief "$home" surf-omitted-s4 no-mistakes
+  out=$(run_spawn "$home" "$fakebin" surf-omitted-s4 "$proj" claude --mode direct-PR --yolo off --role builder)
+  status=$?
+  [ "$status" -ne 0 ] || fail "direct-PR spawn without --surface should exit non-zero"
+  assert_contains "$out" "requires --surface internal-only" "omitted surface spawn did not fail closed"
+  assert_absent "$home/state/surf-omitted-s4.meta" "direct-PR spawn without --surface wrote task metadata"
+
+  write_brief "$home" surf-internal-s5 direct-PR
+  out=$(run_spawn "$home" "$fakebin" surf-internal-s5 "$proj" claude --mode direct-PR --yolo off --role builder --surface internal-only)
+  assert_not_contains "$out" "refused for" "internal-only + direct-PR was refused"
+  assert_not_contains "$out" "requires --surface internal-only" "internal-only + direct-PR was treated as omitted"
+
+  write_brief "$home" surf-nm-product-s6 no-mistakes
+  out=$(run_spawn "$home" "$fakebin" surf-nm-product-s6 "$proj" claude --mode no-mistakes --yolo off --role builder --surface product)
+  assert_not_contains "$out" "refused for" "product + no-mistakes spawn was refused"
+  assert_not_contains "$out" "requires --surface" "product + no-mistakes required a surface it already had"
+
+  mkdir -p "$home/state" "$home/data"
+  printf 'window=fm-surf-promote\nkind=scout\nworktree=/tmp/wt\n' > "$home/state/surf-promote-p1.meta"
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" surf-promote-p1 --mode direct-PR --yolo off --surface product 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "product + direct-PR promotion should exit non-zero"
+  assert_contains "$out" "refused for product work" "product + direct-PR promote did not name the refused surface"
+  assert_grep 'kind=scout' "$home/state/surf-promote-p1.meta" "refused product promotion still changed the task record"
+
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" surf-promote-p1 --mode direct-PR --yolo off 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "direct-PR promotion without --surface should exit non-zero"
+  assert_contains "$out" "requires --surface internal-only" "omitted surface promote did not fail closed"
+
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" surf-promote-p1 --mode no-mistakes --yolo off --surface product 2>&1)
+  status=$?
+  expect_code 0 "$status" "product + no-mistakes promotion should succeed"
+  assert_grep 'kind=ship' "$home/state/surf-promote-p1.meta" "product + no-mistakes promotion did not flip the task to ship"
+
+  pass "fm-spawn/fm-promote: product/mixed/uncertain/omitted + direct-PR refuse; internal-only and no-mistakes product still work"
 }
 
 test_ship_spawn_requires_a_valid_delivery_contract
@@ -495,4 +580,5 @@ test_scout_records_no_delivery_posture
 test_promote_requires_and_records_the_delivery_contract
 test_promote_records_builder_from_the_role_marker_not_brief_prose
 test_project_mode_maps_the_conditional_policy
+test_direct_pr_requires_internal_only_surface
 echo "# all fm-task-delivery tests passed"
