@@ -162,6 +162,9 @@ list_open_tsv() {
   if [ "$#" -gt 0 ]; then
     files=()
     for file in "$@"; do
+      case "$file" in
+        .*) continue ;;
+      esac
       files+=("$dir/$file")
     done
   else
@@ -169,8 +172,8 @@ list_open_tsv() {
     files=( "$dir"/*.md )
     shopt -u nullglob
   fi
-  for file in "${files[@]}"; do
-    [ -f "$file" ] && [ ! -L "$file" ] || continue
+  for file in "${files[@]+"${files[@]}"}"; do
+    [ -f "$file" ] && [ ! -L "$file" ] && [ -r "$file" ] || continue
     base=${file##*/}
     stem=${base%.md}
     rel="data/decisions/$base"

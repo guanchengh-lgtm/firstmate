@@ -325,6 +325,40 @@ EOF
   pass "stow open-lock: snapshot key collision is not clean; mate-prefixed ids cover"
 }
 
+test_scoped_list_open_keeps_non_dot_glob_scope() {
+  local decisions="$TMP_ROOT/scoped-non-dot-scope" out rc
+  mkdir -p "$decisions"
+  cat > "$decisions/.hidden.md" <<'EOF'
+# hidden
+- **Q1 Hidden scope.** Still open.
+EOF
+  cat > "$decisions/visible.md" <<'EOF'
+# visible
+- **Q2 Visible scope.** Still open.
+EOF
+
+  set +e
+  out=$(run_check --list-open --decisions-dir "$decisions" \
+    --file .hidden.md --file visible.md)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "scoped non-dot selection exited $rc: $out"
+  printf '%s' "$out" | jq -e '
+    length == 1
+      and .[0].id == "visible/Q2"
+      and .[0].file == "data/decisions/visible.md"
+  ' >/dev/null || fail "scoped selection included a hidden decision file: $out"
+
+  set +e
+  out=$(run_check --list-open --decisions-dir "$decisions" --file .hidden.md)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "hidden-only scoped selection exited $rc: $out"
+  printf '%s' "$out" | jq -e 'length == 0' >/dev/null \
+    || fail "hidden-only scoped selection included a hidden decision file: $out"
+  pass "stow open-lock: scoped selection keeps the non-dot glob scope"
+}
+
 test_scaled_decision_fixture_keeps_verdict_and_cost_bounded() {
   local small="$TMP_ROOT/scale-small" scaled="$TMP_ROOT/scale-large"
   local small_out scaled_out scoped_out start small_ms scaled_ms rc
@@ -370,6 +404,7 @@ test_quoted_still_open_mention_is_not_a_marker
 test_summary_substring_remaining_pick_is_not_clean
 test_file_stem_remaining_pick_is_not_clean
 test_snapshot_key_collision_is_not_clean
+test_scoped_list_open_keeps_non_dot_glob_scope
 test_scaled_decision_fixture_keeps_verdict_and_cost_bounded
 
 echo "# all fm-stow-open-lock-check tests passed"
