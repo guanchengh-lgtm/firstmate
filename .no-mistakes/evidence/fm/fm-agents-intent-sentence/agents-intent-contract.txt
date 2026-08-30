@@ -1,0 +1,17 @@
+END-USER CONTRACT SURFACE
+section=AGENTS.md section 7 Intake and authority
+line=If established evidence already answers an informational question, relay it without a design-only scout; a defect, gap, or complaint the captain names about firstmate or a project is implementation intent, so dispatch the ship without asking, and ask one concise question only when two readings would lead to materially different work, never asking whether to start and never dispatching speculative design work in place of that question.
+exact_required_line=yes
+changed_files=AGENTS.md
+numstat=1 1 AGENTS.md
+base_lines=301
+target_lines=301
+old_restatements=0
+new_rule_owners=1
+
+Focused contract test output:
+ok - supervisor skills: internal frontmatter + agent-only descriptions + required body contracts
+ok - worker brief: refuses /worker-control and /firstmate-no-mistakes; permits plain names
+ok - AGENTS.md contract: locked always-on facts and restorations present
+ok - companion skills: cross-references resolve to live AGENTS.md text
+ok - style: plain dash and one-sentence-per-line on applied contract surfaces
