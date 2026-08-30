@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 # Shared session-lock harness identity.
 #
-# ONE owner of the "which verified-harness process holds this home's session
-# lock, and does the current process descend from that same harness?" decision.
-# bin/fm-lock.sh uses it to acquire and inspect state/.lock;
+# ONE owner of the "which verified-harness session holds this home's session
+# lock, and does the current process belong to that session?" decision. Claude
+# identity uses a valid CLAUDE_CODE_SESSION_ID only after the ancestry resolves
+# to Claude; CLAUDE_PID is only its liveness pid, with the ancestry pid as the
+# fallback. Other harnesses and uncertain Claude states use ancestry unchanged.
+# bin/fm-lock.sh uses it to acquire state/.lock and state/.lock.session;
 # bin/fm-claude-stop-autoarm.sh uses it to prove a Stop hook fires inside the
 # lock-owning primary session before it may arm or rewake.
 # This file is sourced by scripts and has no side effects on source.
@@ -152,25 +155,116 @@ fm_harness_pid_alive() {
   fm_harness_process_matches "$comm" "$args"
 }
 
-# True when state dir $1 holds a session lock whose pid is ANY harness ancestor
-# of the current process: this script runs inside the session that owns the
-# home's fleet lock. Membership is the honest test of that question, because the
-# lock owner sits at an unknown depth in a contiguous Claude run - it is the
-# outermost pid when the hook fires inside the session's own nested worker chain,
-# and an inner pid when a harness-named daemon parents the session. A missing
-# lock, a malformed lock, a lock held by a harness outside this ancestry, or an
-# ancestry that cannot be resolved all fail closed.
+# True when $1 is a valid vendor session discriminator.
+fm_session_id_valid() {
+  case "${1:-}" in
+    ''|*[!A-Za-z0-9-]*) return 1 ;;
+  esac
+  return 0
+}
+
+# Print state dir $1's valid Claude session sidecar, or return 1. A missing,
+# malformed, or non-regular sidecar is an old or uncertain lock and must use
+# the ancestry fallback.
+fm_session_lock_read_session_id() {  # <state>
+  local state=$1 session_id
+  [ -f "$state/.lock.session" ] && [ ! -L "$state/.lock.session" ] || return 1
+  session_id=$(cat "$state/.lock.session" 2>/dev/null) || return 1
+  fm_session_id_valid "$session_id" || return 1
+  printf '%s\n' "$session_id"
+}
+
+# Resolve the current lock identity into globals. The ancestry walk always runs
+# first. Only a resolved Claude ancestry may use Claude's environment identity.
+#
+# FM_SESSION_ANCESTRY_PIDS: current contiguous harness run, innermost first
+# FM_SESSION_ANCESTRY_PID:  today's lock pid, outermost for Claude
+# FM_SESSION_ID:            valid Claude session id, or empty for fallback
+# FM_SESSION_LIVENESS_PID:  Claude liveness pid, or the ancestry pid fallback
+# shellcheck disable=SC2034 # Globals are outputs consumed by sourcing scripts.
+fm_session_lock_identity() {
+  local pids pid innermost='' outermost='' comm args session_id claude_pid
+  FM_SESSION_ANCESTRY_PIDS=''
+  FM_SESSION_ANCESTRY_PID=''
+  FM_SESSION_ID=''
+  FM_SESSION_LIVENESS_PID=''
+
+  pids=$(fm_harness_ancestry_pids) || return 1
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    [ -n "$innermost" ] || innermost=$pid
+    outermost=$pid
+  done <<EOF
+$pids
+EOF
+  [ -n "$innermost" ] && [ -n "$outermost" ] || return 1
+
+  FM_SESSION_ANCESTRY_PIDS=$pids
+  FM_SESSION_ANCESTRY_PID=$outermost
+  FM_SESSION_LIVENESS_PID=$outermost
+
+  comm=$(ps -o comm= -p "$innermost" 2>/dev/null) || return 0
+  args=$(ps -o args= -p "$innermost" 2>/dev/null)
+  fm_harness_process_matches "$comm" "$args" || return 0
+  [ "$FM_HARNESS_IS_CLAUDE" -eq 1 ] || return 0
+
+  session_id=${CLAUDE_CODE_SESSION_ID:-}
+  fm_session_id_valid "$session_id" || return 0
+  FM_SESSION_ID=$session_id
+
+  claude_pid=${CLAUDE_PID:-}
+  case "$claude_pid" in
+    ''|*[!0-9]*) return 0 ;;
+  esac
+  if fm_harness_pid_alive "$claude_pid"; then
+    FM_SESSION_LIVENESS_PID=$claude_pid
+  fi
+  return 0
+}
+
+# True when state dir $1 belongs to the current session. A resolved Claude
+# session with two valid discriminators compares the sidecar; every uncertain
+# state and every other harness uses today's ancestry membership. A missing or
+# malformed lock and an unresolved ancestry fail closed.
+# shellcheck disable=SC2034 # The auto-arm reads this output after a false result.
+FM_SESSION_LOCK_OWNER_REASON=''
 fm_session_lock_owned_by_self() {
-  local state=$1 lock_pid pids pid
+  local state=$1 lock_pid lock_session pid
+  FM_SESSION_LOCK_OWNER_REASON=''
+  if [ -e "$state/.lock.acquire" ] || [ -L "$state/.lock.acquire" ]; then
+    # shellcheck disable=SC2034 # The auto-arm reads this sourced output.
+    FM_SESSION_LOCK_OWNER_REASON='session lock identity update in progress'
+    return 1
+  fi
   lock_pid=$(cat "$state/.lock" 2>/dev/null || true)
   case "$lock_pid" in
     ''|*[!0-9]*) return 1 ;;
   esac
-  pids=$(fm_harness_ancestry_pids) || return 1
+  fm_session_lock_identity || return 1
+  if [ -n "$FM_SESSION_ID" ] && lock_session=$(fm_session_lock_read_session_id "$state"); then
+    if [ "$lock_session" = "$FM_SESSION_ID" ]; then
+      if [ -e "$state/.lock.acquire" ] || [ -L "$state/.lock.acquire" ]; then
+        # shellcheck disable=SC2034 # The auto-arm reads this sourced output.
+        FM_SESSION_LOCK_OWNER_REASON='session lock identity update in progress'
+        return 1
+      fi
+      return 0
+    fi
+    # shellcheck disable=SC2034 # The auto-arm reads this sourced output.
+    FM_SESSION_LOCK_OWNER_REASON="lock belongs to Claude session $lock_session, not $FM_SESSION_ID"
+    return 1
+  fi
   while IFS= read -r pid; do
-    [ "$pid" = "$lock_pid" ] && return 0
+    if [ "$pid" = "$lock_pid" ]; then
+      if [ -e "$state/.lock.acquire" ] || [ -L "$state/.lock.acquire" ]; then
+        # shellcheck disable=SC2034 # The auto-arm reads this sourced output.
+        FM_SESSION_LOCK_OWNER_REASON='session lock identity update in progress'
+        return 1
+      fi
+      return 0
+    fi
   done <<EOF
-$pids
+$FM_SESSION_ANCESTRY_PIDS
 EOF
   return 1
 }

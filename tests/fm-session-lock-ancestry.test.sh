@@ -13,6 +13,10 @@
 # shellcheck disable=SC2016 # single quotes are deliberate: $FM_HOME and $$ expand inside the fixture child
 set -u
 
+# A developer commonly runs this suite from Claude. Never let the runner's
+# session identity leak into a case; cases that need it set explicit fakes.
+unset CLAUDE_CODE_SESSION_ID CLAUDE_PID CLAUDE_CODE_CHILD_SESSION
+
 # shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -31,6 +35,8 @@ VERSIONED_CLAUDE="$CLAUDE_VERSION_DIR/2.1.220"
 FAKEBIN=$(fm_fakebin "$TMP_ROOT/harness-bin")
 ln -s /bin/bash "$FAKEBIN/claude"
 NAMED_CLAUDE="$FAKEBIN/claude"
+ln -s /bin/bash "$FAKEBIN/codex"
+NAMED_CODEX="$FAKEBIN/codex"
 
 # --- unit layer: identity behind a deterministic process table ---------------
 
@@ -305,6 +311,45 @@ run_fixture_tree() {  # <dir> <session-bin> [<daemon-bin>]
   [ -s "$dir/state/hook.rc" ] || fail "the fixture hook never finished"
 }
 
+make_lock_identity_home() {  # <dir>
+  local dir=$1
+  mkdir -p "$dir/state"
+  install_autoarm_scripts "$dir"
+  cat > "$dir/contender.sh" <<'SH'
+#!/usr/bin/env bash
+export CLAUDE_CODE_SESSION_ID=${FM_CONTENDER_SESSION_ID:?}
+export CLAUDE_PID=$$
+export CLAUDE_CODE_CHILD_SESSION=1
+rc=0
+"$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/contender.out" 2>&1 || rc=$?
+printf '%s\n' "$rc" > "$FM_HOME/state/contender.rc"
+printf '%s\n' "$$" > "$FM_HOME/state/contender-pid"
+SH
+  cat > "$dir/holder.sh" <<'SH'
+#!/usr/bin/env bash
+export CLAUDE_CODE_SESSION_ID=${FM_HOLDER_SESSION_ID:?}
+export CLAUDE_PID=$$
+export CLAUDE_CODE_CHILD_SESSION=1
+printf '%s\n' "$$" > "$FM_HOME/state/holder-pid"
+if [ "${FM_OLD_LOCK:-0}" = 1 ]; then
+  printf '%s\n' "$$" > "$FM_HOME/state/.lock"
+  rm -f "$FM_HOME/state/.lock.session"
+else
+  "$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/holder.out" 2>&1 || exit $?
+fi
+FM_CONTENDER_SESSION_ID=${FM_CONTENDER_SESSION_ID:?} \
+  "$FM_CONTENDER_BIN" "$FM_HOME/contender.sh"
+SH
+  chmod +x "$dir/contender.sh" "$dir/holder.sh"
+}
+
+run_lock_pair() {  # <dir> <holder-session> <contender-session> [old-lock]
+  local dir=$1 holder_session=$2 contender_session=$3 old_lock=${4:-0}
+  FM_HOME="$dir" FM_HOLDER_SESSION_ID="$holder_session" \
+    FM_CONTENDER_SESSION_ID="$contender_session" FM_CONTENDER_BIN="$NAMED_CLAUDE" \
+    FM_OLD_LOCK="$old_lock" "$NAMED_CLAUDE" "$dir/holder.sh"
+}
+
 hook_rc() {
   tr -d '[:space:]' < "$1/state/hook.rc"
 }
@@ -356,6 +401,177 @@ test_e2e_daemon_parented_version_named_session_keeps_its_lock() {
   pass "session-lock e2e: a version-named session under a harness-named daemon keeps its own lock"
 }
 
+test_same_claude_session_reacquires_and_refreshes_pid() {
+  local dir contender_pid
+  dir="$TMP_ROOT/same-session"
+  make_lock_identity_home "$dir"
+  run_lock_pair "$dir" session-same session-same
+  expect_code 0 "$(cat "$dir/state/contender.rc")" "the same Claude session id must reacquire the lock"
+  contender_pid=$(cat "$dir/state/contender-pid")
+  [ "$(cat "$dir/state/.lock")" = "$contender_pid" ] \
+    || fail "same-session reacquire did not refresh the liveness pid"
+  [ "$(cat "$dir/state/.lock.session")" = session-same ] \
+    || fail "same-session reacquire changed the session discriminator"
+  pass "session-lock executable: same Claude session reacquires and refreshes its pid"
+}
+
+test_background_claude_session_is_refused_under_live_holder() {
+  local dir holder_pid
+  dir="$TMP_ROOT/background-session"
+  make_lock_identity_home "$dir"
+  run_lock_pair "$dir" session-holder session-background
+  expect_code 1 "$(cat "$dir/state/contender.rc")" "a background Claude session must not acquire its parent's live lock"
+  holder_pid=$(cat "$dir/state/holder-pid")
+  [ "$(cat "$dir/state/.lock")" = "$holder_pid" ] \
+    || fail "the refused background session replaced the holder pid"
+  [ "$(cat "$dir/state/.lock.session")" = session-holder ] \
+    || fail "the refused background session replaced the holder session id"
+  grep -F 'Claude session session-holder' "$dir/state/contender.out" >/dev/null \
+    || fail "the live-holder refusal did not name the holder session id"
+  pass "session-lock executable: background Claude session is refused under its live holder"
+}
+
+test_foreign_session_takes_over_dead_holder() {
+  local dir current_pid rc=0
+  dir="$TMP_ROOT/dead-holder-session"
+  make_lock_identity_home "$dir"
+  printf '9999999\n' > "$dir/state/.lock"
+  printf 'session-dead\n' > "$dir/state/.lock.session"
+  FM_HOME="$dir" "$NAMED_CLAUDE" -c '
+    export CLAUDE_CODE_SESSION_ID=session-current
+    export CLAUDE_PID=$$
+    export CLAUDE_CODE_CHILD_SESSION=1
+    printf "%s\n" "$$" > "$FM_HOME/state/current-pid"
+    "$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/current.out" 2>&1
+  ' || rc=$?
+  expect_code 0 "$rc" "a foreign Claude session must take over a dead holder"
+  current_pid=$(cat "$dir/state/current-pid")
+  [ "$(cat "$dir/state/.lock")" = "$current_pid" ] \
+    || fail "dead-holder takeover did not publish the current liveness pid"
+  [ "$(cat "$dir/state/.lock.session")" = session-current ] \
+    || fail "dead-holder takeover did not publish the current session id"
+  pass "session-lock executable: foreign Claude session takes over a dead holder"
+}
+
+test_non_claude_ancestry_ignores_inherited_claude_environment() {
+  local dir current_pid rc=0
+  dir="$TMP_ROOT/non-claude-inherited-env"
+  make_lock_identity_home "$dir"
+  FM_HOME="$dir" CLAUDE_CODE_SESSION_ID=session-inherited CLAUDE_PID=9999999 \
+    CLAUDE_CODE_CHILD_SESSION=1 "$NAMED_CODEX" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/current-pid"
+      "$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/current.out" 2>&1
+    ' || rc=$?
+  expect_code 0 "$rc" "a non-Claude ancestry must acquire by ancestry despite inherited Claude variables"
+  current_pid=$(cat "$dir/state/current-pid")
+  [ "$(cat "$dir/state/.lock")" = "$current_pid" ] \
+    || fail "non-Claude ancestry did not keep its innermost ancestry pid"
+  [ ! -e "$dir/state/.lock.session" ] \
+    || fail "non-Claude ancestry wrote an inherited Claude session sidecar"
+  pass "session-lock executable: non-Claude ancestry ignores inherited Claude environment"
+}
+
+test_old_lock_without_sidecar_uses_pid_fallback() {
+  local dir contender_pid
+  dir="$TMP_ROOT/old-lock-fallback"
+  make_lock_identity_home "$dir"
+  run_lock_pair "$dir" session-holder session-background 1
+  expect_code 0 "$(cat "$dir/state/contender.rc")" "an old lock must use today's ancestry pid comparison"
+  contender_pid=$(cat "$dir/state/contender-pid")
+  [ "$(cat "$dir/state/.lock")" = "$contender_pid" ] \
+    || fail "old-lock fallback did not refresh the liveness pid after acquisition"
+  [ "$(cat "$dir/state/.lock.session")" = session-background ] \
+    || fail "old-lock fallback did not upgrade the acquired lock with a sidecar"
+  pass "session-lock executable: old lock without a sidecar uses pid fallback"
+}
+
+test_real_stop_hook_owns_matching_claude_session() {
+  local dir
+  dir="$TMP_ROOT/e2e-session-sidecar"
+  make_primary_home "$dir"
+  cat > "$dir/session.sh" <<'SH'
+#!/usr/bin/env bash
+export CLAUDE_CODE_SESSION_ID=session-hook-owner
+export CLAUDE_PID=$$
+export CLAUDE_CODE_CHILD_SESSION=1
+"$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/lock.out" 2>&1 || exit $?
+"$FM_HOME/bin/fm-claude-stop-autoarm.sh" </dev/null > "$FM_HOME/state/hook.out" 2>&1
+printf '%s\n' "$?" > "$FM_HOME/state/hook.rc"
+SH
+  chmod +x "$dir/session.sh"
+  run_fixture_tree "$dir" "$NAMED_CLAUDE"
+  expect_code 2 "$(hook_rc "$dir")" "the real Stop hook must own a matching Claude session sidecar"
+  [ -e "$dir/state/arm-ran" ] || fail "the matching-session real Stop hook did not arm"
+  [ "$(cat "$dir/state/.lock.session")" = session-hook-owner ] \
+    || fail "the matching-session real Stop hook lost its session sidecar"
+  pass "session-lock e2e: real Stop hook owns its matching Claude session"
+}
+
+test_foreign_stop_hook_stands_down_with_session_reason() {
+  local dir rc=0
+  dir="$TMP_ROOT/e2e-foreign-hook"
+  make_primary_home "$dir"
+  cat > "$dir/foreign-hook.sh" <<'SH'
+#!/usr/bin/env bash
+export CLAUDE_CODE_SESSION_ID=session-foreign-hook
+export CLAUDE_PID=$$
+export CLAUDE_CODE_CHILD_SESSION=1
+"$FM_HOME/bin/fm-claude-stop-autoarm.sh" </dev/null > "$FM_HOME/state/foreign-hook.out" 2>&1
+printf '%s\n' "$?" > "$FM_HOME/state/foreign-hook.rc"
+SH
+  cat > "$dir/holder-hook.sh" <<'SH'
+#!/usr/bin/env bash
+export CLAUDE_CODE_SESSION_ID=session-hook-holder
+export CLAUDE_PID=$$
+export CLAUDE_CODE_CHILD_SESSION=1
+"$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/holder-lock.out" 2>&1 || exit $?
+"$FM_FOREIGN_BIN" "$FM_HOME/foreign-hook.sh"
+mv "$FM_HOME/state/foreign-hook.out" "$FM_HOME/state/foreign-stable.out"
+mv "$FM_HOME/state/foreign-hook.rc" "$FM_HOME/state/foreign-stable.rc"
+mkdir "$FM_HOME/state/.lock.acquire"
+rm -f "$FM_HOME/state/.lock.session"
+"$FM_FOREIGN_BIN" "$FM_HOME/foreign-hook.sh"
+SH
+  chmod +x "$dir/foreign-hook.sh" "$dir/holder-hook.sh"
+  FM_HOME="$dir" FM_FOREIGN_BIN="$NAMED_CLAUDE" \
+    "$NAMED_CLAUDE" "$dir/holder-hook.sh" || rc=$?
+  expect_code 0 "$rc" "a foreign Stop hook must stand down without failing the hook"
+  expect_code 0 "$(cat "$dir/state/foreign-stable.rc")" "the foreign Stop hook must exit cleanly"
+  grep -F 'standing down: lock belongs to Claude session session-hook-holder, not session-foreign-hook' \
+    "$dir/state/foreign-stable.out" >/dev/null \
+    || fail "the foreign Stop hook did not give one clear session-identity reason"
+  expect_code 0 "$(cat "$dir/state/foreign-hook.rc")" "a hook during identity publication must exit cleanly"
+  grep -F 'standing down: session lock identity update in progress' \
+    "$dir/state/foreign-hook.out" >/dev/null \
+    || fail "the publication-gap hook did not stand down with one clear reason"
+  [ ! -e "$dir/state/arm-ran" ] || fail "the foreign Stop hook armed supervision"
+  [ ! -e "$dir/state/.claude-autoarm-epoch" ] || fail "the foreign Stop hook wrote an epoch"
+  pass "session-lock e2e: foreign Stop hook stands down for a foreign id and during sidecar publication"
+}
+
+test_real_stop_hook_recovers_dead_foreign_sidecar() {
+  local dir
+  dir="$TMP_ROOT/e2e-dead-sidecar-hook"
+  make_primary_home "$dir"
+  printf '9999999\n' > "$dir/state/.lock"
+  printf 'session-dead-hook\n' > "$dir/state/.lock.session"
+  cat > "$dir/session.sh" <<'SH'
+#!/usr/bin/env bash
+export CLAUDE_CODE_SESSION_ID=session-live-hook
+export CLAUDE_PID=$$
+export CLAUDE_CODE_CHILD_SESSION=1
+"$FM_HOME/bin/fm-claude-stop-autoarm.sh" </dev/null > "$FM_HOME/state/hook.out" 2>&1
+printf '%s\n' "$?" > "$FM_HOME/state/hook.rc"
+SH
+  chmod +x "$dir/session.sh"
+  run_fixture_tree "$dir" "$NAMED_CLAUDE"
+  expect_code 2 "$(hook_rc "$dir")" "the real Stop hook must recover a dead foreign session holder"
+  [ -e "$dir/state/arm-ran" ] || fail "the recovered real Stop hook did not arm"
+  [ "$(cat "$dir/state/.lock.session")" = session-live-hook ] \
+    || fail "stale-owner recovery did not replace the dead foreign sidecar"
+  pass "session-lock e2e: real Stop hook recovers a dead foreign sidecar"
+}
+
 test_version_named_session_is_identified_on_both_platforms
 test_ordinary_paths_are_never_harness_processes
 test_harness_beyond_a_gap_never_owns_the_lock
@@ -363,3 +579,11 @@ test_competing_version_named_session_is_seen_as_live
 test_e2e_version_named_session_claims_the_home
 test_e2e_daemon_parented_session_claims_the_home
 test_e2e_daemon_parented_version_named_session_keeps_its_lock
+test_same_claude_session_reacquires_and_refreshes_pid
+test_background_claude_session_is_refused_under_live_holder
+test_foreign_session_takes_over_dead_holder
+test_non_claude_ancestry_ignores_inherited_claude_environment
+test_old_lock_without_sidecar_uses_pid_fallback
+test_real_stop_hook_owns_matching_claude_session
+test_foreign_stop_hook_stands_down_with_session_reason
+test_real_stop_hook_recovers_dead_foreign_sidecar

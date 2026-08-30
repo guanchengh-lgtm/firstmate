@@ -112,7 +112,12 @@ if ! fm_session_lock_owned_by_self "$STATE"; then
   case "$LOCK_PID" in
     ''|*[!0-9]*) exit 0 ;;
   esac
-  fm_harness_pid_alive "$LOCK_PID" && exit 0
+  if fm_harness_pid_alive "$LOCK_PID"; then
+    if [ -n "$FM_SESSION_LOCK_OWNER_REASON" ]; then
+      printf 'firstmate watcher auto-arm standing down: %s\n' "$FM_SESSION_LOCK_OWNER_REASON" >&2
+    fi
+    exit 0
+  fi
   RECOVER_SESSION_LOCK=1
 fi
 
