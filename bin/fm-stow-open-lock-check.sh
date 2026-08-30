@@ -6,7 +6,7 @@
 #          [--decisions-dir <dir>] [--snapshot <snapshot.json>]
 #          [--expect-rule <rule-id> --expect-count <count>]
 #          [--rules <id,id>]
-#        fm-stow-open-lock-check.sh --list-open [--decisions-dir <dir>]
+#        fm-stow-open-lock-check.sh --list-open [--decisions-dir <dir>] [--file <name.md>]...
 #
 # This is the promoted stow-reset-safe checker taxonomy (exit 0/1/2, exact-count
 # regression) extended to data/decisions/*.md open-pick markers.
@@ -22,9 +22,9 @@
 #                               (skipped unless --snapshot is passed, unless
 #                               that rule is the --expect-rule)
 #
-# --list-open prints the JSON array of open lock-file picks and is the single
-# reader used by fm-fleet-snapshot.sh. An absent decisions directory is an
-# empty list, not a pass over missing receipt input.
+# --list-open prints the JSON array of open lock-file picks and is the single shared reader.
+# Each repeatable --file limits it to a named direct child; hidden names, symlinks, non-files, and unreadable files do not become rows.
+# Without --file, an absent decisions directory is an empty list.
 #
 # Open-pick markers are Q-items whose bold span has no locked answer, and
 # lines whose lead-in is Still open. Exact-count regression requires both
@@ -48,6 +48,7 @@ list_open=0
 expect_rule=
 expect_count=
 rules="R-stow-open-lock,R-bearings-lists-open-locks"
+decision_files=()
 
 usage() {
   sed -n '2,36p' "$0" | sed 's/^# \{0,1\}//'
@@ -79,6 +80,15 @@ while [ "$#" -gt 0 ]; do
       list_open=1
       shift
       ;;
+    --file)
+      [ "$#" -ge 2 ] || structural "--file requires a decision file name"
+      case "$2" in
+        */*|''|.|..|*[!A-Za-z0-9._-]*) structural "unsafe --file name: $2" ;;
+        *.md) decision_files+=("$2") ;;
+        *) structural "--file must name a .md file: $2" ;;
+      esac
+      shift 2
+      ;;
     --expect-rule)
       [ "$#" -ge 2 ] || structural "--expect-rule requires a rule id"
       expect_rule=$2
@@ -103,6 +113,9 @@ while [ "$#" -gt 0 ]; do
       ;;
   esac
 done
+
+[ "$list_open" -eq 1 ] || [ "${#decision_files[@]}" -eq 0 ] \
+  || structural "--file requires --list-open"
 
 command -v jq >/dev/null 2>&1 || structural "jq not found"
 
@@ -140,17 +153,29 @@ fi
 
 # Print TSV: id, key, summary, file. One row per open pick.
 list_open_tsv() {
-  local dir=$1 file stem rel lineno line key bold_rest after bold ans label summary
+  local dir=$1 file base stem rel lineno line key bold_rest after bold ans label summary
   local -a files
+  shift
   [ -e "$dir" ] || return 0
   [ -d "$dir" ] && [ ! -L "$dir" ] || structural "decisions path is not a regular directory: $dir"
-  shopt -s nullglob
-  files=( "$dir"/*.md )
-  shopt -u nullglob
-  for file in "${files[@]}"; do
-    [ -f "$file" ] && [ ! -L "$file" ] || continue
-    stem=$(basename "$file" .md)
-    rel="data/decisions/$(basename "$file")"
+  if [ "$#" -gt 0 ]; then
+    files=()
+    for file in "$@"; do
+      case "$file" in
+        .*) continue ;;
+      esac
+      files+=("$dir/$file")
+    done
+  else
+    shopt -s nullglob
+    files=( "$dir"/*.md )
+    shopt -u nullglob
+  fi
+  for file in "${files[@]+"${files[@]}"}"; do
+    [ -f "$file" ] && [ ! -L "$file" ] && [ -r "$file" ] || continue
+    base=${file##*/}
+    stem=${base%.md}
+    rel="data/decisions/$base"
     lineno=0
     while IFS= read -r line || [ -n "$line" ]; do
       lineno=$((lineno + 1))
@@ -203,7 +228,7 @@ tsv_to_json() {
   '
 }
 
-picks_json=$(list_open_tsv "$decisions_dir" | tsv_to_json) \
+picks_json=$(list_open_tsv "$decisions_dir" "${decision_files[@]+"${decision_files[@]}"}" | tsv_to_json) \
   || structural "could not list open lock-file picks"
 
 if [ "$list_open" -eq 1 ]; then

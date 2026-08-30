@@ -275,15 +275,15 @@ done
 today=$(date +%F)
 
 read_skill_lines() {  # <path> -> JSON array
-  local path=$1 json='[]' line
+  local path=$1
   [ -f "$path" ] && [ ! -L "$path" ] || { printf '%s\n' '[]'; return 0; }
-  while IFS= read -r line || [ -n "$line" ]; do
-    line=${line#"${line%%[![:space:]]*}"}
-    line=${line%"${line##*[![:space:]]}"}
-    [ -n "$line" ] || continue
-    json=$(jq -n -c --arg s "$line" --argjson acc "$json" '$acc + [$s]')
-  done < "$path"
-  printf '%s\n' "$json"
+  jq -R -s -c '
+    [ split("\n")[]
+      | gsub("^[[:space:]]+"; "")
+      | gsub("[[:space:]]+$"; "")
+      | select(length > 0)
+    ]
+  ' "$path"
 }
 
 path_mtime() {
@@ -558,16 +558,14 @@ if [ -f "$CONFIG/backlog-backend" ]; then
 fi
 
 gather_held() {
-  local backlog="$DATA/backlog.md" output id until
+  local backlog="$DATA/backlog.md" output id until rows=
   [ -f "$backlog" ] && [ ! -L "$backlog" ] || return 0
   [ "$backend" != manual ] || return 0
   command -v tasks-axi >/dev/null 2>&1 || return 0
   output=$(tasks-axi ready --file "$backlog" --include-held 2>/dev/null) || return 0
   while IFS=$'\t' read -r id until; do
     [ -n "$id" ] || continue
-    held_json=$(jq -n -c --arg id "$id" --arg until "$until" \
-      --argjson acc "$held_json" \
-      '$acc + [{id:$id, hold_until:$until}]')
+    rows+="$id"$'\t'"$until"$'\n'
   done < <(printf '%s\n' "$output" | awk '
     /^held\[[0-9]+\]/ { in_held = 1; next }
     in_held && /^[[:space:]]/ {
@@ -583,27 +581,35 @@ gather_held() {
     }
     in_held && /^[^[:space:]]/ { exit }
   ')
+  held_json=$(printf '%s' "$rows" | jq -R -s -c '
+    [ split("\n")[]
+      | select(length > 0)
+      | split("\t")
+      | {id: .[0], hold_until: .[1]}
+    ]
+  ')
 }
 
 gather_meta() {
-  local meta id next owned='[]' maps='[]'
+  local meta id next owned_rows='' map_rows=''
   for meta in "$STATE"/*.meta; do
     [ -f "$meta" ] && [ ! -L "$meta" ] || continue
-    id=$(basename "$meta")
+    id=${meta##*/}
     id=${id%.meta}
     [ -n "$id" ] || continue
-    owned=$(jq -n -c --arg id "$id" --argjson acc "$owned" '$acc + [$id]')
+    owned_rows+="$id"$'\n'
     next=$(sed -n 's/^map_next=//p' "$meta" 2>/dev/null | tail -1)
     [ -n "$next" ] || continue
-    maps=$(jq -n -c --arg id "$next" --argjson acc "$maps" '$acc + [$id]')
+    map_rows+="$next"$'\n'
   done
-  owned_json=$owned
-  map_json=$maps
+  owned_json=$(printf '%s' "$owned_rows" | jq -R -s -c \
+    '[split("\n")[] | select(length > 0)]')
+  map_json=$(printf '%s' "$map_rows" | jq -R -s -c \
+    '[split("\n")[] | select(length > 0)]')
 }
 
 gather_ships() {
-  local session_id meta id kind ov ov_harness ship_session skills_json ov_report ov_alive ship
-  local ships='[]'
+  local session_id meta id kind ov ov_harness ship_session skills_json ov_report ov_alive rows=
   session_id=
   if [ -f "$STATE/.lock" ] && [ ! -L "$STATE/.lock" ]; then
     session_id=$(tr -d '[:space:]' < "$STATE/.lock" 2>/dev/null || true)
@@ -616,7 +622,7 @@ gather_ships() {
   . "$SCRIPT_DIR/fm-backend.sh" 2>/dev/null || true
   for meta in "$STATE"/*.meta; do
     [ -f "$meta" ] && [ ! -L "$meta" ] || continue
-    id=$(basename "$meta")
+    id=${meta##*/}
     id=${id%.meta}
     [ -n "$id" ] || continue
     kind=$(sed -n 's/^kind=//p' "$meta" 2>/dev/null | tail -1)
@@ -639,17 +645,26 @@ gather_ships() {
         ov_alive=true
       fi
     fi
-    ship=$(jq -n -c --arg id "$id" --arg ov "$ov" --arg ov_harness "$ov_harness" \
-      --argjson skills "$skills_json" \
-      --argjson ov_report "$ov_report" --argjson ov_alive "$ov_alive" \
-      '{id:$id, ov:$ov, ov_harness:$ov_harness, skills:$skills, ov_report:$ov_report, ov_alive:$ov_alive}')
-    ships=$(jq -n -c --argjson ship "$ship" --argjson acc "$ships" '$acc + [$ship]')
+    rows+="$id"$'\t'"$ov"$'\t'"$ov_harness"$'\t'"$skills_json"$'\t'"$ov_report"$'\t'"$ov_alive"$'\n'
   done
-  ships_json=$ships
+  ships_json=$(printf '%s' "$rows" | jq -R -s -c '
+    [ split("\n")[]
+      | select(length > 0)
+      | split("\t")
+      | {
+          id: .[0],
+          ov: .[1],
+          ov_harness: .[2],
+          skills: (.[3] | fromjson),
+          ov_report: (.[4] == "true"),
+          ov_alive: (.[5] == "true")
+        }
+    ]
+  ')
 }
 
 gather_owner_nodes() {
-  local line_no=0 tabs token glob rows='[]' line trimmed lock_mtime py extracted transcript
+  local line_no=0 tabs token glob row_text='' rows line trimmed lock_mtime py extracted transcript
   local registry_file=
   owner_nodes_json='[]'
   [ "$run_node" -eq 1 ] || return 0
@@ -682,9 +697,15 @@ gather_owner_nodes() {
     case "$glob" in
       /*|../*|*/../*|*/..|.. ) structural "owner-invoke nodes registry line $line_no has an unsafe glob: $glob" ;;
     esac
-    rows=$(jq -n -c --arg token "$token" --arg glob "$glob" --argjson acc "$rows" \
-      '$acc + [{token: ($token | ascii_downcase), glob: $glob}]')
+    row_text+="$token"$'\t'"$glob"$'\n'
   done < "$registry_file"
+  rows=$(printf '%s' "$row_text" | jq -R -s -c '
+    [ split("\n")[]
+      | select(length > 0)
+      | split("\t")
+      | {token: (.[0] | ascii_downcase), glob: .[1]}
+    ]
+  ')
   [ "$(jq 'length' <<<"$rows")" -gt 0 ] || return 0
   command -v python3 >/dev/null 2>&1 || return 0
   transcript=$(printf '%s' "$PAYLOAD" | jq -r '(.transcript_path // .transcriptPath // empty)' 2>/dev/null) || return 0

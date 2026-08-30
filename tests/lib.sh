@@ -56,6 +56,36 @@ pass() {
   printf 'ok - %s\n' "$1"
 }
 
+fm_test_monotonic_ms() {
+  python3 -c 'import time; print(time.monotonic_ns() // 1000000)'
+}
+
+fm_test_assert_scale_bound() {  # <small-ms> <scaled-ms> <label>
+  local small=$1 scaled=$2 label=$3 limit
+  limit=$((small * 4 + 150))
+  [ "$scaled" -le "$limit" ] \
+    || fail "$label scaled fixture took ${scaled}ms; small fixture took ${small}ms; limit ${limit}ms"
+}
+
+fm_test_seed_guard_scale_fixture() {  # <home> <decision-file-count>
+  local home=$1 count=$2 i=3
+  [ "$count" -ge 3 ] || return 1
+  mkdir -p "$home/data/decisions"
+  printf '%s\n' '**Pick:** A. locked.' 'speech-claim: scale-claim' \
+    > "$home/data/decisions/claim.md"
+  printf '%s\n' '**Pick:** A. locked.' '- **Q1 Scope.** Still open.' \
+    > "$home/data/decisions/open.md"
+  while [ "$i" -lt "$count" ]; do
+    printf '# filler %s\n**Pick:** A. locked.\n' "$i" \
+      > "$home/data/decisions/filler-$i.md"
+    i=$((i + 1))
+  done
+  printf '%s\n' 'speech-claim: symlink-only-claim' '- **Q9 Symlink.** Still open.' \
+    > "$home/symlink-target.md"
+  ln -s "$home/symlink-target.md" "$home/data/decisions/symlink.md"
+  dd if=/dev/zero of="$home/transcript.jsonl" bs=1048576 count=3 2>/dev/null
+}
+
 # --- self-cleaning temp root ------------------------------------------------
 #
 # fm_test_tmproot <prefix> echoes a fresh temp dir and registers it for removal

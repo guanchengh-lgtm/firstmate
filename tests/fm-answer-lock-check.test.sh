@@ -255,6 +255,29 @@ test_valid_pointer_invokes_open_lock_reader_once() {
   pass "answer-lock: valid pointer invokes open-lock reader once"
 }
 
+test_scoped_reader_non_array_is_structural() {
+  local home local_bin out rc
+  home="$TMP_ROOT/scoped-reader-non-array"
+  local_bin="$home/bin"
+  mkdir -p "$home/data/wf-map2-v2/tickets" "$home/data/decisions"
+  make_counted_check "$local_bin"
+  # shellcheck disable=SC2016 # Backticks are literal Markdown lock tokens.
+  write_ticket "$home/data/wf-map2-v2/tickets/closed-lock.md" \
+    "$(printf '%s\n' 'status: CLOSED 2026-08-22' '' '## Answer' \
+      '**A.** Lock `data/decisions/lock.md`.')"
+  write_lock "$home/data/decisions/lock.md" '**Pick:** A. locked.'
+  set +e
+  out=$(FM_HOME="$home" FM_TEST_OPEN_LOCK_LOG="$home/reader.log" \
+    FM_TEST_OPEN_LOCK_JSON='{}' "$local_bin/fm-answer-lock-check.sh" \
+    --rules R-lock-still-open 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "scoped reader non-array exited $rc: $out"
+  assert_contains "$out" "open-lock reader did not return a JSON array" \
+    "scoped reader non-array did not stay structural"
+  pass "answer-lock: scoped reader keeps non-array output structural"
+}
+
 test_session_lock_mtime_does_not_skip_valid_pointer() {
   local home local_bin log pointer open_json out rc calls
   home="$TMP_ROOT/session-lock-mtime"
@@ -486,6 +509,39 @@ test_help_names_gather_and_escapes() {
   pass "answer-lock: --help owns gather, loops exclusion, and the two escapes"
 }
 
+test_scaled_decision_fixture_keeps_verdict_and_cost_bounded() {
+  local small="$TMP_ROOT/scale-small" scaled="$TMP_ROOT/scale-large"
+  local small_out scaled_out start small_ms scaled_ms rc home
+  for home in "$small" "$scaled"; do
+    mkdir -p "$home/data/wf-map2-v2/tickets"
+    # shellcheck disable=SC2016 # Backticks are literal Markdown lock tokens.
+    write_ticket "$home/data/wf-map2-v2/tickets/closed-open-lock.md" \
+      "$(printf '%s\n' 'status: CLOSED 2026-08-22' '' '## Answer' \
+        '**A.** Lock `data/decisions/open.md`.')"
+  done
+  fm_test_seed_guard_scale_fixture "$small" 3
+  fm_test_seed_guard_scale_fixture "$scaled" 200
+
+  start=$(fm_test_monotonic_ms)
+  set +e
+  small_out=$(FM_HOME="$small" run_check --rules R-lock-still-open)
+  rc=$?
+  set -e
+  small_ms=$(($(fm_test_monotonic_ms) - start))
+  [ "$rc" -eq 1 ] || fail "small scaled-fixture oracle exited $rc: $small_out"
+
+  start=$(fm_test_monotonic_ms)
+  set +e
+  scaled_out=$(FM_HOME="$scaled" run_check --rules R-lock-still-open)
+  rc=$?
+  set -e
+  scaled_ms=$(($(fm_test_monotonic_ms) - start))
+  [ "$rc" -eq 1 ] || fail "large scaled-fixture oracle exited $rc: $scaled_out"
+  [ "$small_out" = "$scaled_out" ] || fail "scaled decision fixture changed answer-lock verdict"
+  fm_test_assert_scale_bound "$small_ms" "$scaled_ms" "answer-lock"
+  pass "answer-lock: 200 decision files preserve verdict with bounded scaling"
+}
+
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
 test_missing_tickets_dir_is_inert
@@ -497,6 +553,7 @@ test_answered_close_without_lock_fires
 test_ticket_without_pointer_skips_open_lock_reader
 test_open_ticket_with_valid_pointer_skips_open_lock_reader
 test_valid_pointer_invokes_open_lock_reader_once
+test_scoped_reader_non_array_is_structural
 test_session_lock_mtime_does_not_skip_valid_pointer
 test_lock_still_open_uses_list_open_reader
 test_lock_without_pick_fires
@@ -506,5 +563,6 @@ test_lock_token_only_inside_answer_ignores_prose_paths
 test_s1_style_pick_phrase_still_open_fires
 test_claude_stop_banner_has_only_two_escapes
 test_help_names_gather_and_escapes
+test_scaled_decision_fixture_keeps_verdict_and_cost_bounded
 
 echo "# all fm-answer-lock-check tests passed"

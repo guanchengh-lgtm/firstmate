@@ -24,7 +24,7 @@ run_check() {
 }
 
 test_missing_and_empty_input_are_structural() {
-  local out rc empty
+  local out rc empty not_dir
   empty="$TMP_ROOT/empty.json"
   : > "$empty"
   set +e
@@ -45,6 +45,15 @@ test_missing_and_empty_input_are_structural() {
   set -e
   [ "$rc" -eq 2 ] || fail "empty receipt exited $rc"
   assert_contains "$out" "empty receipt" "empty receipt was not structural"
+  not_dir="$TMP_ROOT/not-a-decisions-directory"
+  printf 'not a directory\n' > "$not_dir"
+  set +e
+  out=$(run_check --list-open --decisions-dir "$not_dir" --file lock.md)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "scoped reader non-directory exited $rc: $out"
+  assert_contains "$out" "decisions path is not a regular directory" \
+    "scoped reader non-directory did not stay structural"
   pass "stow open-lock: missing and empty input exit 2"
 }
 
@@ -149,6 +158,14 @@ test_list_open_and_expect_count_zero_are_structural_or_public() {
   rc=$?
   set -e
   [ "$rc" -eq 2 ] || fail "empty --rules exited $rc"
+  set +e
+  out=$(run_check --input "$HIST/receipt.json" --decisions-dir "$HIST_DECISIONS" \
+    --file secondmate-2026-08-22.md)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "receipt mode accepted scoped --file with exit $rc"
+  assert_contains "$out" "--file requires --list-open" \
+    "receipt mode did not reject scoped --file"
   pass "stow open-lock: --list-open is public JSON; expect-count 0 and empty rules exit 2"
 }
 
@@ -308,6 +325,74 @@ EOF
   pass "stow open-lock: snapshot key collision is not clean; mate-prefixed ids cover"
 }
 
+test_scoped_list_open_keeps_non_dot_glob_scope() {
+  local decisions="$TMP_ROOT/scoped-non-dot-scope" out rc
+  mkdir -p "$decisions"
+  cat > "$decisions/.hidden.md" <<'EOF'
+# hidden
+- **Q1 Hidden scope.** Still open.
+EOF
+  cat > "$decisions/visible.md" <<'EOF'
+# visible
+- **Q2 Visible scope.** Still open.
+EOF
+
+  set +e
+  out=$(run_check --list-open --decisions-dir "$decisions" \
+    --file .hidden.md --file visible.md)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "scoped non-dot selection exited $rc: $out"
+  printf '%s' "$out" | jq -e '
+    length == 1
+      and .[0].id == "visible/Q2"
+      and .[0].file == "data/decisions/visible.md"
+  ' >/dev/null || fail "scoped selection included a hidden decision file: $out"
+
+  set +e
+  out=$(run_check --list-open --decisions-dir "$decisions" --file .hidden.md)
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "hidden-only scoped selection exited $rc: $out"
+  printf '%s' "$out" | jq -e 'length == 0' >/dev/null \
+    || fail "hidden-only scoped selection included a hidden decision file: $out"
+  pass "stow open-lock: scoped selection keeps the non-dot glob scope"
+}
+
+test_scaled_decision_fixture_keeps_verdict_and_cost_bounded() {
+  local small="$TMP_ROOT/scale-small" scaled="$TMP_ROOT/scale-large"
+  local small_out scaled_out scoped_out start small_ms scaled_ms rc
+  fm_test_seed_guard_scale_fixture "$small" 3
+  fm_test_seed_guard_scale_fixture "$scaled" 200
+
+  start=$(fm_test_monotonic_ms)
+  set +e
+  small_out=$(run_check --list-open --decisions-dir "$small/data/decisions")
+  rc=$?
+  set -e
+  small_ms=$(($(fm_test_monotonic_ms) - start))
+  [ "$rc" -eq 0 ] || fail "small scaled-fixture oracle exited $rc: $small_out"
+
+  start=$(fm_test_monotonic_ms)
+  set +e
+  scaled_out=$(run_check --list-open --decisions-dir "$scaled/data/decisions")
+  rc=$?
+  set -e
+  scaled_ms=$(($(fm_test_monotonic_ms) - start))
+  [ "$rc" -eq 0 ] || fail "large scaled-fixture oracle exited $rc: $scaled_out"
+  [ "$(printf '%s' "$small_out" | jq -cS .)" = "$(printf '%s' "$scaled_out" | jq -cS .)" ] \
+    || fail "scaled decision fixture changed --list-open verdict"
+  printf '%s' "$scaled_out" | jq -e \
+    'length == 1 and .[0].file == "data/decisions/open.md"' >/dev/null \
+    || fail "scaled decision fixture included the symlinked lock"
+  scoped_out=$(run_check --list-open --decisions-dir "$scaled/data/decisions" \
+    --file claim.md)
+  printf '%s' "$scoped_out" | jq -e 'length == 0' >/dev/null \
+    || fail "--file scanned decisions outside its requested file"
+  fm_test_assert_scale_bound "$small_ms" "$scaled_ms" "stow open-lock"
+  pass "stow open-lock: 200 decision files preserve verdict with bounded scaling"
+}
+
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
 test_missing_and_empty_input_are_structural
@@ -319,5 +404,7 @@ test_quoted_still_open_mention_is_not_a_marker
 test_summary_substring_remaining_pick_is_not_clean
 test_file_stem_remaining_pick_is_not_clean
 test_snapshot_key_collision_is_not_clean
+test_scoped_list_open_keeps_non_dot_glob_scope
+test_scaled_decision_fixture_keeps_verdict_and_cost_bounded
 
 echo "# all fm-stow-open-lock-check tests passed"
