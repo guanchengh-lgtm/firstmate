@@ -52,10 +52,8 @@ fail() {
 pass() { printf 'ok - %s\n' "$1"; }
 note() { printf '# %s\n' "$1"; }
 
-if ! command -v tmux >/dev/null 2>&1; then
-  echo "skip: tmux not found; the live context-reset checks require real interactive harnesses"
-  exit 0
-fi
+command -v tmux >/dev/null 2>&1 \
+  || fail "tmux not found; the context-reset checks drive real interactive harnesses"
 
 # Outside the repo on purpose: each lab is its own git repo, and nesting one
 # inside the checkout would show up as an embedded repository in a working tree

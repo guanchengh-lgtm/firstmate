@@ -228,10 +228,34 @@ EOF
 # malformed lock and an unresolved ancestry fail closed.
 # shellcheck disable=SC2034 # The auto-arm reads this output after a false result.
 FM_SESSION_LOCK_OWNER_REASON=''
+fm_session_lock_claim_is_fresh() {
+  local claim=$1 stale age modified
+  [ -e "$claim" ] || [ -L "$claim" ] || return 1
+  stale=${FM_LOCK_STALE_AFTER:-2}
+  case "$stale" in
+    ''|*[!0-9]*) stale=2 ;;
+  esac
+  [ "$stale" -lt 2 ] && stale=2
+  if command -v fm_path_age >/dev/null 2>&1; then
+    age=$(fm_path_age "$claim")
+  else
+    if [ "$(uname -s 2>/dev/null || true)" = Darwin ]; then
+      modified=$(stat -f %m "$claim" 2>/dev/null || true)
+    else
+      modified=$(stat -c %Y "$claim" 2>/dev/null || true)
+    fi
+    case "$modified" in
+      ''|*[!0-9]*) return 1 ;;
+    esac
+    age=$(( $(date +%s) - modified ))
+  fi
+  [ "$age" -lt "$stale" ]
+}
+
 fm_session_lock_owned_by_self() {
   local state=$1 lock_pid lock_session pid
   FM_SESSION_LOCK_OWNER_REASON=''
-  if [ -e "$state/.lock.acquire" ] || [ -L "$state/.lock.acquire" ]; then
+  if fm_session_lock_claim_is_fresh "$state/.lock.acquire"; then
     # shellcheck disable=SC2034 # The auto-arm reads this sourced output.
     FM_SESSION_LOCK_OWNER_REASON='session lock identity update in progress'
     return 1
@@ -243,7 +267,7 @@ fm_session_lock_owned_by_self() {
   fm_session_lock_identity || return 1
   if [ -n "$FM_SESSION_ID" ] && lock_session=$(fm_session_lock_read_session_id "$state"); then
     if [ "$lock_session" = "$FM_SESSION_ID" ]; then
-      if [ -e "$state/.lock.acquire" ] || [ -L "$state/.lock.acquire" ]; then
+      if fm_session_lock_claim_is_fresh "$state/.lock.acquire"; then
         # shellcheck disable=SC2034 # The auto-arm reads this sourced output.
         FM_SESSION_LOCK_OWNER_REASON='session lock identity update in progress'
         return 1
@@ -256,7 +280,7 @@ fm_session_lock_owned_by_self() {
   fi
   while IFS= read -r pid; do
     if [ "$pid" = "$lock_pid" ]; then
-      if [ -e "$state/.lock.acquire" ] || [ -L "$state/.lock.acquire" ]; then
+      if fm_session_lock_claim_is_fresh "$state/.lock.acquire"; then
         # shellcheck disable=SC2034 # The auto-arm reads this sourced output.
         FM_SESSION_LOCK_OWNER_REASON='session lock identity update in progress'
         return 1

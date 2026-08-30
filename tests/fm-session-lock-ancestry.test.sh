@@ -453,6 +453,26 @@ test_foreign_session_takes_over_dead_holder() {
   pass "session-lock executable: foreign Claude session takes over a dead holder"
 }
 
+test_dead_claude_pid_falls_back_to_ancestry_pid() {
+  local dir current_pid rc=0
+  dir="$TMP_ROOT/dead-claude-pid"
+  make_lock_identity_home "$dir"
+  FM_HOME="$dir" "$NAMED_CLAUDE" -c '
+    export CLAUDE_CODE_SESSION_ID=session-dead-claude-pid
+    export CLAUDE_PID=9999999
+    export CLAUDE_CODE_CHILD_SESSION=1
+    printf "%s\n" "$$" > "$FM_HOME/state/current-pid"
+    "$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/current.out" 2>&1
+  ' || rc=$?
+  expect_code 0 "$rc" "a dead CLAUDE_PID must fall back to the resolved ancestry pid"
+  current_pid=$(cat "$dir/state/current-pid")
+  [ "$(cat "$dir/state/.lock")" = "$current_pid" ] \
+    || fail "a dead CLAUDE_PID did not publish the resolved ancestry pid"
+  [ "$(cat "$dir/state/.lock.session")" = session-dead-claude-pid ] \
+    || fail "a dead CLAUDE_PID fallback did not publish the session discriminator"
+  pass "session-lock executable: a dead CLAUDE_PID falls back to the ancestry pid"
+}
+
 test_non_claude_ancestry_ignores_inherited_claude_environment() {
   local dir current_pid rc=0
   dir="$TMP_ROOT/non-claude-inherited-env"
@@ -505,6 +525,30 @@ SH
   [ "$(cat "$dir/state/.lock.session")" = session-hook-owner ] \
     || fail "the matching-session real Stop hook lost its session sidecar"
   pass "session-lock e2e: real Stop hook owns its matching Claude session"
+}
+
+test_real_stop_hook_ignores_aged_acquisition_claim() {
+  local dir
+  dir="$TMP_ROOT/e2e-aged-acquisition-claim"
+  make_primary_home "$dir"
+  cat > "$dir/session.sh" <<'SH'
+#!/usr/bin/env bash
+export CLAUDE_CODE_SESSION_ID=session-aged-claim-owner
+export CLAUDE_PID=$$
+export CLAUDE_CODE_CHILD_SESSION=1
+"$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/lock.out" 2>&1 || exit $?
+mkdir "$FM_HOME/state/.lock.acquire"
+touch -t 200001010000 "$FM_HOME/state/.lock.acquire"
+"$FM_HOME/bin/fm-claude-stop-autoarm.sh" </dev/null > "$FM_HOME/state/hook.out" 2>&1
+printf '%s\n' "$?" > "$FM_HOME/state/hook.rc"
+SH
+  chmod +x "$dir/session.sh"
+  run_fixture_tree "$dir" "$NAMED_CLAUDE"
+  expect_code 2 "$(hook_rc "$dir")" "an aged acquisition claim must not silence the real owner hook"
+  [ -e "$dir/state/arm-ran" ] || fail "an aged acquisition claim prevented the real owner hook from arming"
+  [ "$(cat "$dir/state/.lock.session")" = session-aged-claim-owner ] \
+    || fail "the aged-claim real Stop hook lost its matching session sidecar"
+  pass "session-lock e2e: real Stop hook ignores an aged acquisition claim"
 }
 
 test_foreign_stop_hook_stands_down_with_session_reason() {
@@ -582,8 +626,10 @@ test_e2e_daemon_parented_version_named_session_keeps_its_lock
 test_same_claude_session_reacquires_and_refreshes_pid
 test_background_claude_session_is_refused_under_live_holder
 test_foreign_session_takes_over_dead_holder
+test_dead_claude_pid_falls_back_to_ancestry_pid
 test_non_claude_ancestry_ignores_inherited_claude_environment
 test_old_lock_without_sidecar_uses_pid_fallback
 test_real_stop_hook_owns_matching_claude_session
+test_real_stop_hook_ignores_aged_acquisition_claim
 test_foreign_stop_hook_stands_down_with_session_reason
 test_real_stop_hook_recovers_dead_foreign_sidecar
