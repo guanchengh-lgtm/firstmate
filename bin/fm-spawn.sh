@@ -172,6 +172,8 @@
 #   origin, resolves the current remote default branch, and resets to its tip.
 #   An unreachable origin, unresolved default branch, or non-clean worktree
 #   refuses the spawn rather than risking a PR based on stale history.
+#   A no-mistakes verifier is different: it reuses the stopped builder's clean
+#   worktree and committed head, while a fresh endpoint supplies context isolation.
 #   If treehouse reports that every pooled worktree is in use or dirty, spawn relays that reason immediately instead of waiting for the cwd poll timeout.
 # Batch dispatch: pass one or more `id=repo` pairs instead of a single <id> <project>, e.g.
 #     fm-spawn.sh fix-a-k3=projects/foo add-b-q7=projects/bar [--scout]
@@ -751,8 +753,13 @@ ORCA_WORKTREE_ID=
 ORCA_TERMINAL=
 HERDR_PROJECTION_ABORT_CLEANUP=0
 HERDR_PROJECTION_ABORT_SESSION=
+HERDR_PROJECTION_ABORT_TASK_TAB=
 HERDR_PROJECTION_ABORT_TASK_PANE=
 HERDR_PROJECTION_ABORT_SEEDED_PANE=
+HERDR_PROJECTION_ABORT_RECLAIM=0
+HERDR_PROJECTION_ABORT_JOURNAL=
+HERDR_PROJECTION_ABORT_OLD_TAB=
+HERDR_PROJECTION_ABORT_OLD_PANE=
 HERDR_PRESENTATION_ORDER_LOCK=
 HERDR_PRESENTATION_ORDER_LOCK_HELD=0
 SPAWN_TASK_LOCK=
@@ -771,6 +778,9 @@ RELAUNCH_REPLACEMENT_BUSY_GEN=
 RELAUNCH_REPLACEMENT_HARNESS=
 RELAUNCH_REPLACEMENT_STATE=
 RELAUNCH_REPLACEMENT_WT=
+VERIFIER_HANDOFF_ABORT_ENDPOINT=0
+VERIFIER_HANDOFF_ABORT_BACKEND=
+VERIFIER_HANDOFF_ABORT_TARGET=
 CONFIG_INHERIT_LOCK=
 CONFIG_INHERIT_LOCK_HELD=0
 
@@ -817,6 +827,14 @@ spawn_abort_cleanup() {
       fi
     fi
   fi
+  if [ "$VERIFIER_HANDOFF_ABORT_ENDPOINT" = 1 ]; then
+    VERIFIER_HANDOFF_ABORT_ENDPOINT=0
+    if [ "$VERIFIER_HANDOFF_ABORT_BACKEND" != herdr ] \
+       || [ "$HERDR_PROJECTION_ABORT_CLEANUP" != 1 ]; then
+      fm_backend_kill "$VERIFIER_HANDOFF_ABORT_BACKEND" \
+        "$VERIFIER_HANDOFF_ABORT_TARGET" 2>/dev/null || true
+    fi
+  fi
   if [ "$HERDR_PROJECTION_ABORT_CLEANUP" = 1 ] \
      && [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" != 1 ]; then
     if ! spawn_herdr_presentation_order_lock_acquire "${HERDR_PROJECTION_ABORT_SESSION:-}"; then
@@ -826,10 +844,21 @@ spawn_abort_cleanup() {
   fi
   if [ "$HERDR_PROJECTION_ABORT_CLEANUP" = 1 ]; then
     HERDR_PROJECTION_ABORT_CLEANUP=0
-    fm_backend_herdr_projection_cleanup_exact \
-      "$HERDR_PROJECTION_ABORT_SESSION" \
-      "$HERDR_PROJECTION_ABORT_TASK_PANE" \
-      "$HERDR_PROJECTION_ABORT_SEEDED_PANE" || true
+    if [ "$HERDR_PROJECTION_ABORT_RECLAIM" = 1 ]; then
+      HERDR_PROJECTION_ABORT_RECLAIM=0
+      fm_backend_herdr_projection_abort_reclaim \
+        "$HERDR_PROJECTION_ABORT_SESSION" \
+        "$HERDR_PROJECTION_ABORT_JOURNAL" "$ID" \
+        "$HERDR_PROJECTION_ABORT_OLD_TAB" \
+        "$HERDR_PROJECTION_ABORT_OLD_PANE" \
+        "$HERDR_PROJECTION_ABORT_TASK_TAB" \
+        "$HERDR_PROJECTION_ABORT_TASK_PANE" || true
+    else
+      fm_backend_herdr_projection_cleanup_exact \
+        "$HERDR_PROJECTION_ABORT_SESSION" \
+        "$HERDR_PROJECTION_ABORT_TASK_PANE" \
+        "$HERDR_PROJECTION_ABORT_SEEDED_PANE" || true
+    fi
   fi
   if [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" = 1 ]; then
     HERDR_PRESENTATION_ORDER_LOCK_HELD=0
@@ -1036,6 +1065,15 @@ if [ "$RELAUNCH" -eq 0 ]; then
     exit 1
   fi
   SPAWN_TASK_SET_LOCK_HELD=1
+fi
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ] && [ "$ROLE" = verifier ]; then
+  SPAWN_CONTROL_LOCK="$STATE/.control-$ID.lock"
+  if fm_lock_try_acquire "$SPAWN_CONTROL_LOCK"; then
+    SPAWN_CONTROL_LOCK_HELD=1
+  else
+    echo "error: another lifecycle action is already running for task $ID" >&2
+    exit 1
+  fi
 fi
 [ "$MAP_NEXT_SET" -eq 0 ] || [ "$MAP_NEXT" != "$ID" ] || { echo "error: --map-next must name a different task id" >&2; exit 2; }
 [ "$OV_SET" -eq 0 ] || [ "$KIND" = ship ] || {
@@ -2062,6 +2100,203 @@ herdr_projection_existing_meta_allows_flat() {  # <meta>
   esac
 }
 
+VERIFIER_HANDOFF=0
+VERIFIER_HANDOFF_META=
+VERIFIER_HANDOFF_PRIOR_BACKEND=
+VERIFIER_HANDOFF_PRIOR_HARNESS=
+VERIFIER_HANDOFF_PRIOR_BUSY_GEN=
+VERIFIER_HANDOFF_PRIOR_TARGET=
+VERIFIER_HANDOFF_PRIOR_RETIRED=0
+VERIFIER_HANDOFF_RETIRED_STATE=
+git_common_dir_real() {  # <worktree>
+  local worktree=$1 common
+  common=$(git -C "$worktree" rev-parse --git-common-dir 2>/dev/null) || return 1
+  case "$common" in
+    /*) ;;
+    *) common="$worktree/$common" ;;
+  esac
+  cd "$common" 2>/dev/null && pwd -P
+}
+
+verifier_handoff_preflight() {
+  local meta=$1 prior_kind prior_mode prior_yolo prior_role prior_project prior_project_real
+  local prior_state worktree_common project_common status tracked_status untracked_status
+  local rebase_merge rebase_apply head branch branch_status expected_branch branch_head branch_owner worktree_list
+  [ -f "$meta" ] && [ ! -L "$meta" ] || {
+    echo "error: verifier handoff refused: no regular builder metadata at '$meta'" >&2
+    return 1
+  }
+  fm_backend_validate_task_endpoint "$meta" "$ID" || return 1
+  VERIFIER_HANDOFF_PRIOR_BACKEND=$FM_BACKEND_VALIDATED_BACKEND
+  VERIFIER_HANDOFF_PRIOR_TARGET=$FM_BACKEND_VALIDATED_TARGET
+  VERIFIER_HANDOFF_PRIOR_HARNESS=$(fm_backend_meta_exact_value "$meta" harness) \
+    || VERIFIER_HANDOFF_PRIOR_HARNESS=
+  VERIFIER_HANDOFF_PRIOR_BUSY_GEN=$(fm_backend_meta_exact_value "$meta" busy_gen) \
+    || VERIFIER_HANDOFF_PRIOR_BUSY_GEN=
+  prior_kind=$(fm_backend_meta_exact_value "$meta" kind) || prior_kind=
+  prior_mode=$(fm_backend_meta_exact_value "$meta" mode) || prior_mode=
+  prior_yolo=$(fm_backend_meta_exact_value "$meta" yolo) || prior_yolo=
+  prior_role=$(fm_backend_meta_exact_value "$meta" role) || prior_role=
+  if [ "$prior_kind" != ship ] || [ "$prior_mode" != no-mistakes ] || [ "$prior_role" != builder ]; then
+    echo "error: verifier handoff refused: existing task must record kind=ship, mode=no-mistakes, role=builder" >&2
+    return 1
+  fi
+  if [ "$prior_yolo" != "$YOLO" ]; then
+    echo "error: verifier handoff refused: requested yolo posture '$YOLO' does not match builder yolo posture '${prior_yolo:-none}'" >&2
+    return 1
+  fi
+  prior_project=$(fm_backend_meta_exact_value "$meta" project) || prior_project=
+  prior_project_real=
+  if ! prior_project_real=$(cd "$prior_project" 2>/dev/null && pwd -P); then
+    prior_project_real=
+  fi
+  if [ -z "$prior_project_real" ] || [ "$prior_project_real" != "$PROJ_ABS_REAL" ]; then
+    echo "error: verifier handoff refused: builder project '${prior_project:-none}' does not match '$PROJ_ABS'" >&2
+    return 1
+  fi
+  WT=$(fm_backend_meta_exact_value "$meta" worktree) || WT=
+  if [ "$VERIFIER_HANDOFF_PRIOR_BACKEND" = orca ] || [ "$BACKEND" = orca ]; then
+    echo "error: verifier handoff refused: Orca owns a separate worktree and cannot reuse builder worktree '$WT'" >&2
+    return 1
+  fi
+  fm_control_backend_state_verified "$VERIFIER_HANDOFF_PRIOR_BACKEND" || {
+    echo "error: verifier handoff refused: builder endpoint backend '$VERIFIER_HANDOFF_PRIOR_BACKEND' cannot prove the prior agent stopped" >&2
+    return 1
+  }
+  prior_state=$(fm_backend_agent_state "$VERIFIER_HANDOFF_PRIOR_BACKEND" "$VERIFIER_HANDOFF_PRIOR_TARGET")
+  case "$prior_state" in
+    dead|missing) ;;
+    *)
+      echo "error: verifier handoff refused: builder endpoint reads '$prior_state', not positively stopped" >&2
+      return 1
+      ;;
+  esac
+  validate_spawn_worktree "verifier handoff builder metadata" "$VERIFIER_HANDOFF_PRIOR_TARGET"
+  worktree_common=$(git_common_dir_real "$WT") || {
+    echo "error: verifier handoff refused: builder worktree '$WT' has an unreadable Git repository" >&2
+    return 1
+  }
+  project_common=$(git_common_dir_real "$PROJ_ABS_REAL") || {
+    echo "error: verifier handoff refused: project '$PROJ_ABS' has an unreadable Git repository" >&2
+    return 1
+  }
+  if [ "$worktree_common" != "$project_common" ]; then
+    echo "error: verifier handoff refused: builder worktree '$WT' belongs to another project" >&2
+    return 1
+  fi
+  rebase_merge=$(git -C "$WT" rev-parse --git-path rebase-merge 2>/dev/null) || {
+    echo "error: verifier handoff refused: builder worktree '$WT' has unreadable rebase state" >&2
+    return 1
+  }
+  rebase_apply=$(git -C "$WT" rev-parse --git-path rebase-apply 2>/dev/null) || {
+    echo "error: verifier handoff refused: builder worktree '$WT' has unreadable rebase state" >&2
+    return 1
+  }
+  if [ -e "$rebase_merge" ] || [ -L "$rebase_merge" ] \
+     || [ -e "$rebase_apply" ] || [ -L "$rebase_apply" ]; then
+    echo "error: verifier handoff refused: builder worktree '$WT' has an in-progress rebase" >&2
+    return 1
+  fi
+  status=$(git -C "$WT" status --porcelain --untracked-files=all 2>/dev/null) || {
+    echo "error: verifier handoff refused: builder worktree '$WT' has unreadable status" >&2
+    return 1
+  }
+  untracked_status=$(printf '%s\n' "$status" | grep '^?? ' || true)
+  tracked_status=$(printf '%s\n' "$status" | grep -v '^?? ' || true)
+  if [ -n "$tracked_status" ]; then
+    echo "error: verifier handoff refused: builder worktree '$WT' has uncommitted changes" >&2
+    return 1
+  fi
+  if [ -n "$untracked_status" ]; then
+    echo "error: verifier handoff refused: builder worktree '$WT' has untracked files" >&2
+    return 1
+  fi
+  head=$(git -C "$WT" rev-parse --verify 'HEAD^{commit}' 2>/dev/null) || {
+    echo "error: verifier handoff refused: builder worktree '$WT' has an unreadable HEAD" >&2
+    return 1
+  }
+  [ -n "$head" ] || return 1
+  branch=
+  branch_status=0
+  branch=$(git -C "$WT" symbolic-ref --quiet --short HEAD 2>/dev/null) || branch_status=$?
+  case "$branch_status" in
+    0)
+      expected_branch="fm/$ID"
+      if [ "$branch" != "$expected_branch" ]; then
+        echo "error: verifier handoff refused: builder worktree '$WT' is on '$branch', expected '$expected_branch' or detached" >&2
+        return 1
+      fi
+      ;;
+    1)
+      expected_branch="fm/$ID"
+      branch_head=$(git -C "$WT" rev-parse --verify "refs/heads/$expected_branch^{commit}" 2>/dev/null) || {
+        echo "error: verifier handoff refused: detached builder worktree '$WT' has no '$expected_branch' branch" >&2
+        return 1
+      }
+      if [ "$branch_head" != "$head" ]; then
+        echo "error: verifier handoff refused: detached builder worktree '$WT' is at '$head', but '$expected_branch' is at '$branch_head'" >&2
+        return 1
+      fi
+      worktree_list=$(git -C "$WT" worktree list --porcelain 2>/dev/null) || {
+        echo "error: verifier handoff refused: builder worktree '$WT' has unreadable worktree ownership" >&2
+        return 1
+      }
+      branch_owner=$(printf '%s\n' "$worktree_list" | awk -v ref="refs/heads/$expected_branch" '
+        /^worktree / { path = substr($0, 10) }
+        $1 == "branch" && $2 == ref { print path; exit }
+      ')
+      if [ -n "$branch_owner" ]; then
+        echo "error: verifier handoff refused: task branch '$expected_branch' is checked out in worktree '$branch_owner'" >&2
+        return 1
+      fi
+      ;;
+    *)
+      echo "error: verifier handoff refused: builder worktree '$WT' has unreadable branch state" >&2
+      return 1
+      ;;
+  esac
+  VERIFIER_HANDOFF=1
+}
+
+verifier_handoff_retire_herdr_projection() {  # <journal>
+  local journal=$1 session status=1 canonical_home
+  fm_backend_source herdr || return 1
+  if [ "$VERIFIER_HANDOFF_PRIOR_BACKEND" = herdr ]; then
+    herdr_projection_existing_meta_allows_flat "$VERIFIER_HANDOFF_META" || return 1
+    fm_backend_herdr_parse_target "$VERIFIER_HANDOFF_PRIOR_TARGET" || return 1
+    session=$FM_BACKEND_HERDR_SESSION
+  else
+    fm_backend_herdr_projection_journal_snapshot "$journal" "$ID" || return 1
+    if [ "$FM_BACKEND_HERDR_JOURNAL_VERSION" != 2 ]; then
+      echo "error: verifier handoff refused: version 1 Herdr presentation journal has no exact builder binding" >&2
+      return 1
+    fi
+    canonical_home=$(fm_backend_herdr_projection_home_identity "$FM_HOME") || return 1
+    [ "$FM_BACKEND_HERDR_JOURNAL_HOME" = "$canonical_home" ] || return 1
+    session=$FM_BACKEND_HERDR_JOURNAL_SESSION
+    fm_backend_herdr_server_ensure "$session" || return 1
+  fi
+  spawn_herdr_presentation_order_lock_acquire "$session" || return 1
+  if fm_backend_herdr_projection_recovery_allows_flat "$session" "$journal" "$ID"; then
+    if [ "$VERIFIER_HANDOFF_PRIOR_BACKEND" = herdr ]; then
+      if fm_backend_herdr_projection_retire_handoff_binding \
+        "$session" "$journal" "$ID" \
+        "$HERDR_RECOVERY_WORKSPACE_ID" "$HERDR_RECOVERY_TAB_ID" "$HERDR_RECOVERY_PANE_ID"; then
+        status=0
+      fi
+    elif fm_backend_herdr_projection_retire_quarantine "$session" "$journal" "$ID"; then
+      status=0
+    fi
+  fi
+  spawn_herdr_presentation_order_lock_release
+  return "$status"
+}
+
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ] && [ "$ROLE" = verifier ]; then
+  VERIFIER_HANDOFF_META="$STATE/$ID.meta"
+  verifier_handoff_preflight "$VERIFIER_HANDOFF_META" || exit 1
+fi
+
 W="fm-$ID"
 T=
 WT_TARGET=
@@ -2077,6 +2312,39 @@ if [ "$RELAUNCH" -eq 1 ]; then
   WT_TARGET=$T
   SES=${T%%:*}
 else
+if [ "$VERIFIER_HANDOFF" -eq 1 ] \
+   && { [ -e "$STATE/$ID.herdr-presentation" ] \
+     || [ -L "$STATE/$ID.herdr-presentation" ]; }; then
+  verifier_handoff_retire_herdr_projection "$STATE/$ID.herdr-presentation" || {
+    echo "error: verifier handoff refused: could not retire the quarantined Herdr presentation" >&2
+    exit 1
+  }
+  [ "$VERIFIER_HANDOFF_PRIOR_BACKEND" != herdr ] || VERIFIER_HANDOFF_PRIOR_RETIRED=1
+fi
+if [ "$VERIFIER_HANDOFF" -eq 1 ] \
+   && [ "$VERIFIER_HANDOFF_PRIOR_RETIRED" -ne 1 ] \
+   && { [ "$VERIFIER_HANDOFF_PRIOR_BACKEND" != herdr ] \
+     || { [ ! -e "$STATE/$ID.herdr-presentation" ] \
+       && [ ! -L "$STATE/$ID.herdr-presentation" ]; }; }; then
+  fm_backend_kill "$VERIFIER_HANDOFF_PRIOR_BACKEND" "$VERIFIER_HANDOFF_PRIOR_TARGET" || {
+    echo "error: verifier handoff refused: could not retire the stopped builder endpoint" >&2
+    exit 1
+  }
+  VERIFIER_HANDOFF_RETIRED_STATE=$(fm_backend_agent_state \
+    "$VERIFIER_HANDOFF_PRIOR_BACKEND" "$VERIFIER_HANDOFF_PRIOR_TARGET") \
+    || VERIFIER_HANDOFF_RETIRED_STATE=unreadable
+  if [ "$VERIFIER_HANDOFF_RETIRED_STATE" != missing ]; then
+    echo "error: verifier handoff refused: stopped builder endpoint reads '$VERIFIER_HANDOFF_RETIRED_STATE' after retirement, not missing" >&2
+    exit 1
+  fi
+fi
+if [ "$VERIFIER_HANDOFF" -eq 1 ] && [ -n "$VERIFIER_HANDOFF_PRIOR_BUSY_GEN" ]; then
+  "$FM_ROOT/bin/fm-busy-event.sh" retire "$STATE" "$ID" \
+    --gen "$VERIFIER_HANDOFF_PRIOR_BUSY_GEN" || {
+      echo "error: verifier handoff refused: could not retire the builder busy generation" >&2
+      exit 1
+    }
+fi
 case "$BACKEND" in
   tmux)
     SES=$(fm_backend_tmux_container_ensure)
@@ -2117,7 +2385,11 @@ case "$BACKEND" in
     fi
     HERDR_PRESENTATION_JOURNAL=$(fm_backend_herdr_projection_journal_path "$STATE" "$ID")
     HERDR_PROJECTED=0
-    if [ "$KIND" != secondmate ] && fm_backend_herdr_presentation_enabled "$CONFIG" "$STATE"; then
+    if [ "$KIND" != secondmate ] \
+       && { fm_backend_herdr_presentation_enabled "$CONFIG" "$STATE" \
+         || { [ "$VERIFIER_HANDOFF" -eq 1 ] \
+           && { [ -e "$HERDR_PRESENTATION_JOURNAL" ] \
+             || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; }; }; }; then
       HERDR_SES=$(fm_backend_herdr_session)
       HERDR_PARENT_LABEL=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_workspace_label)
       if [ -e "$HERDR_PRESENTATION_JOURNAL" ] || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; then
@@ -2151,14 +2423,41 @@ case "$BACKEND" in
               HERDR_PANE_ID=$FM_BACKEND_HERDR_PROJECTION_PANE_ID
               HERDR_PROJECTION_ABORT_CLEANUP=1
               HERDR_PROJECTION_ABORT_SESSION=$HERDR_SES
+              HERDR_PROJECTION_ABORT_TASK_TAB=$HERDR_TAB_ID
               HERDR_PROJECTION_ABORT_TASK_PANE=$HERDR_PANE_ID
               HERDR_PROJECTION_ABORT_SEEDED_PANE=""
+              HERDR_PROJECTION_ABORT_RECLAIM=1
+              HERDR_PROJECTION_ABORT_JOURNAL=$HERDR_PRESENTATION_JOURNAL
+              HERDR_PROJECTION_ABORT_OLD_TAB=$HERDR_RECOVERY_TAB_ID
+              HERDR_PROJECTION_ABORT_OLD_PANE=$HERDR_RECOVERY_PANE_ID
               ;;
             2)
-              spawn_herdr_presentation_order_lock_release
+              if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+                if [ "${FM_BACKEND_HERDR_JOURNAL_VERSION:-}" = 1 ] \
+                   && fm_backend_herdr_projection_retire_handoff_binding \
+                     "$HERDR_SES" "$HERDR_PRESENTATION_JOURNAL" "$ID" \
+                     "$HERDR_RECOVERY_WORKSPACE_ID" "$HERDR_RECOVERY_TAB_ID" \
+                     "$HERDR_RECOVERY_PANE_ID"; then
+                  spawn_herdr_presentation_order_lock_release
+                else
+                  echo "error: verifier handoff refused: projected builder endpoint could not be replaced exactly" >&2
+                  exit 1
+                fi
+              else
+                spawn_herdr_presentation_order_lock_release
+              fi
               ;;
+            3) spawn_herdr_presentation_order_lock_release ;;
             *) exit 1 ;;
           esac
+        elif [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+          if ! fm_backend_herdr_projection_retire_quarantine \
+            "$HERDR_SES" "$HERDR_PRESENTATION_JOURNAL" "$ID"; then
+            spawn_herdr_presentation_order_lock_release
+            echo "error: verifier handoff refused: could not retire the quarantined herdr presentation" >&2
+            exit 1
+          fi
+          spawn_herdr_presentation_order_lock_release
         else
           spawn_herdr_presentation_order_lock_release
         fi
@@ -2308,6 +2607,11 @@ EOF
     ;;
 esac
 fi
+if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+  VERIFIER_HANDOFF_ABORT_ENDPOINT=1
+  VERIFIER_HANDOFF_ABORT_BACKEND=$BACKEND
+  VERIFIER_HANDOFF_ABORT_TARGET=$T
+fi
 if [ "$KIND" = secondmate ]; then
   FM_INHERITABLE_CONFIG=trace-context \
     propagate_inheritable_config "$CONFIG" "$PROJ_ABS/config" \
@@ -2443,6 +2747,20 @@ if [ "$RELAUNCH" -eq 1 ]; then
     exit 1
   fi
   [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
+elif [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+  handoff_wt_real=$(real_path_or_raw "$WT")
+  spawn_send_text_line "$WT_TARGET" "cd $(shell_quote "$WT")"
+  handoff_seen=
+  for _ in $(seq 1 10); do
+    handoff_seen=$(spawn_current_path "$WT_TARGET" || true)
+    [ -z "$handoff_seen" ] || [ "$(real_path_or_raw "$handoff_seen")" != "$handoff_wt_real" ] || break
+    sleep 0.5
+  done
+  if [ -z "$handoff_seen" ] || [ "$(real_path_or_raw "$handoff_seen")" != "$handoff_wt_real" ]; then
+    echo "error: verifier handoff endpoint is in '${handoff_seen:-unknown}', not builder worktree '$WT'; refusing to launch outside the copy holding its work" >&2
+    exit 1
+  fi
+  validate_spawn_worktree "verifier handoff" "$T"
 elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   spawn_send_text_line "$WT_TARGET" 'treehouse get'
 
@@ -2501,7 +2819,7 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
 
   validate_spawn_worktree "treehouse get" "$T"
 fi
-if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" != secondmate ]; then
+if [ "$RELAUNCH" -eq 0 ] && [ "$VERIFIER_HANDOFF" -eq 0 ] && [ "$KIND" != secondmate ]; then
   freshen_spawn_worktree_base "$WT" || exit 1
 fi
 
@@ -2527,14 +2845,14 @@ exclude_path() {
   mkdir -p "$(dirname "$EXCL")"
   grep -qxF "$rel" "$EXCL" 2>/dev/null || echo "$rel" >> "$EXCL"
 }
-if [ "$RELAUNCH" -eq 1 ]; then
-  # Retire the previous incarnation's per-task harness wiring before arming the
-  # new one. Without this, a harness switch would leave the old adapter's hook
-  # files and turn-end token registry entries behind, and even a same-harness
-  # relaunch would orphan the retired busy generation's token
-  # (bin/fm-control-lib.sh owns where those artifacts live).
-  clear_relaunch_harness_wiring "$RELAUNCH_PRIOR_HARNESS" "$WT" "$STATE_REAL" "$ID" || {
-    echo "error: could not retire $RELAUNCH_PRIOR_HARNESS wiring for task $ID; refusing to arm the replacement" >&2
+if [ "$RELAUNCH" -eq 1 ] || [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+  if [ "$RELAUNCH" -eq 1 ]; then
+    PRIOR_HARNESS=$RELAUNCH_PRIOR_HARNESS
+  else
+    PRIOR_HARNESS=$VERIFIER_HANDOFF_PRIOR_HARNESS
+  fi
+  clear_relaunch_harness_wiring "$PRIOR_HARNESS" "$WT" "$STATE_REAL" "$ID" || {
+    echo "error: could not retire $PRIOR_HARNESS wiring for task $ID; refusing to arm the replacement" >&2
     exit 1
   }
   RELAUNCH_REPLACEMENT_PENDING=1
@@ -2565,7 +2883,9 @@ if [ "$KIND" != secondmate ]; then
         echo "error: failed to arm the busy-state contract for $ID" >&2
         exit 1
       }
-      [ "$RELAUNCH" -ne 1 ] || RELAUNCH_REPLACEMENT_BUSY_GEN=$BUSY_GEN
+      if [ "$RELAUNCH" -eq 1 ] || [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+        RELAUNCH_REPLACEMENT_BUSY_GEN=$BUSY_GEN
+      fi
       ;;
     kimi*)
       # Standalone Kimi stays unknown until fm_busy_kimi_verified opens on a
@@ -2865,11 +3185,15 @@ META_WINDOW=$T
 [ "$BACKEND" = orca ] && META_WINDOW=$W
 SPAWN_GEN="s$(date +%s).${BASHPID:-$$}.$RANDOM"
 SPAWN_META_PATH="$STATE/$ID.meta"
-if [ "$RELAUNCH" -eq 1 ]; then
+if [ "$RELAUNCH" -eq 1 ] || [ "$VERIFIER_HANDOFF" -eq 1 ]; then
   SPAWN_META_LOCK=$(fm_meta_lock_path "$STATE/$ID.meta") || exit 1
   fm_lock_acquire_wait "$SPAWN_META_LOCK"
   SPAWN_META_LOCK_HELD=1
-  SPAWN_META_TMP="$STATE/.$ID.meta.relaunch.${BASHPID:-$$}"
+  if [ "$RELAUNCH" -eq 1 ]; then
+    SPAWN_META_TMP="$STATE/.$ID.meta.relaunch.${BASHPID:-$$}"
+  else
+    SPAWN_META_TMP="$STATE/.$ID.meta.handoff.${BASHPID:-$$}"
+  fi
   SPAWN_META_PATH=$SPAWN_META_TMP
 elif [ -d "$SPAWN_META_PATH" ]; then
   # Bash 3.2 reports a failed redirection onto a directory without failing the
@@ -2886,6 +3210,24 @@ preserve_relaunch_meta() {
     }
     !($1 in owned)
   ' "$RELAUNCH_META"
+}
+preserve_verifier_handoff_meta() {
+  awk -F= \
+    -v map_next_set="$MAP_NEXT_SET" \
+    -v map_set="$MAP_SET" \
+    -v ov_set="$OV_SET" '
+    BEGIN {
+      split("window endpoint_task_id worktree project harness kind mode yolo role tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      for (i in keys) owned[keys[i]] = 1
+      if (map_next_set == 1) owned["map_next"] = 1
+      if (map_set == 1) owned["map"] = 1
+      if (ov_set == 1) {
+        owned["ov"] = 1
+        owned["ov_harness"] = 1
+      }
+    }
+    !($1 in owned)
+  ' "$VERIFIER_HANDOFF_META"
 }
 SPAWN_SESSION=
 if [ -f "$STATE/.lock" ] && [ ! -L "$STATE/.lock" ]; then
@@ -2909,7 +3251,7 @@ if ! {
   [ -z "${MAP:-}" ] || echo "map=$MAP"
   [ -z "${OV:-}" ] || echo "ov=$OV"
   [ -z "${OV_HARNESS:-}" ] || echo "ov_harness=$OV_HARNESS"
-  [ -z "$SPAWN_SESSION" ] || echo "session=$SPAWN_SESSION"
+  [ "$VERIFIER_HANDOFF" -eq 1 ] || [ -z "$SPAWN_SESSION" ] || echo "session=$SPAWN_SESSION"
   echo "tasktmp=$TASK_TMP"
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"
@@ -2945,6 +3287,8 @@ if ! {
   fi
   if [ "$RELAUNCH" -eq 1 ]; then
     preserve_relaunch_meta
+  elif [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+    preserve_verifier_handoff_meta
   fi
   if [ "$SPAWN_CONTROL_PARENT" = 1 ] && [ -n "${FM_CONTROL_RELAUNCH_TX:-}" ]; then
     echo "control_relaunch_tx=$FM_CONTROL_RELAUNCH_TX"
@@ -2952,9 +3296,14 @@ if ! {
 } > "$SPAWN_META_PATH"; then
   exit 1
 fi
-if [ "$RELAUNCH" -eq 1 ]; then
+if [ "$RELAUNCH" -eq 1 ] || [ "$VERIFIER_HANDOFF" -eq 1 ]; then
   SPAWN_META_PUBLISH_STARTED=1
   mv -f "$SPAWN_META_TMP" "$STATE/$ID.meta"
+  if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+    VERIFIER_HANDOFF_ABORT_ENDPOINT=0
+    HERDR_PROJECTION_ABORT_CLEANUP=0
+    HERDR_PROJECTION_ABORT_RECLAIM=0
+  fi
   RELAUNCH_REPLACEMENT_PENDING=0
   SPAWN_META_PUBLISH_STARTED=0
   SPAWN_META_TMP=

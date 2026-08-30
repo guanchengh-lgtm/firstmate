@@ -10,7 +10,7 @@ metadata:
 
 # Firstmate no-mistakes validation
 
-After the builder's implementation commit and stop, render a missing verifier brief with `bin/fm-brief.sh <id> --verifier` and spawn a fresh context on the same task with `--role verifier` using the invocation form owned by `harness-adapters`.
+After the builder's implementation commit and stop, render a missing verifier brief with `bin/fm-brief.sh <id> --verifier` and spawn a fresh context in the stopped builder's recorded worktree with `--role verifier` using the invocation form owned by `harness-adapters`.
 The builder never drives no-mistakes, builder and verifier never share a context, and Firstmate never calls `no-mistakes axi respond` for a worker-owned run.
 The verifier owns every `no-mistakes axi run` and `no-mistakes axi respond` call through the next decision or outcome.
 

@@ -483,6 +483,28 @@ test_create_task_creates_and_parses_ids() {
   pass "fm_backend_zellij_create_task: creates a home-scoped tab and parses tab_id/pane_id from the response"
 }
 
+test_create_task_removes_tab_when_pane_discovery_fails() {
+  local dir fb out status
+  dir="$TMP_ROOT/create-task-pane-failure"; mkdir -p "$dir/responses"
+  printf '[{"tab_id":0,"name":"Tab #1","active":true}]\n' > "$dir/responses/1.out"
+  printf '4\n' > "$dir/responses/2.out"
+  printf '[]\n' > "$dir/responses/3.out"
+  fb=$(make_zellij_fakebin "$dir")
+  out=$(PATH="$fb:$PATH" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
+    FM_ZELLIJ_SESSION_LIST="firstmate" \
+    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_create_task firstmate fm-partial /tmp/proj' "$ROOT" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "create_task accepted a tab without a terminal pane"
+  assert_contains "$out" "could not find a terminal pane" \
+    "create_task did not report failed pane discovery"
+  assert_contains "$(cat "$dir/log")" $'\x1f''close-tab-by-id'$'\x1f''4' \
+    "create_task did not remove the partial tab"
+  zellij_assert_call_order "$dir/log" $'\x1f''close-tab-by-id'$'\x1f''4' \
+    $'\x1f''go-to-tab-by-id'$'\x1f''0' \
+    "create_task did not restore focus after removing the partial tab"
+  pass "fm_backend_zellij_create_task: pane discovery failure removes the partial tab"
+}
+
 test_create_task_restores_previously_active_tab() {
   local dir fb out
   dir="$TMP_ROOT/focus-restore"; mkdir -p "$dir/responses"
@@ -1322,6 +1344,7 @@ test_dispatch_routes_zellij_backend
 test_dispatch_busy_state_unknown_for_zellij
 test_create_task_refuses_duplicate_label
 test_create_task_creates_and_parses_ids
+test_create_task_removes_tab_when_pane_discovery_fails
 test_create_task_restores_previously_active_tab
 test_create_task_no_restore_when_new_tab_was_already_active
 test_capture_small_reads_use_viewport_and_trim

@@ -496,6 +496,29 @@ test_create_task_creates_and_parses_ids() {
   pass "fm_backend_cmux_create_task: creates a workspace and parses workspace_id/surface_id from list responses"
 }
 
+test_create_task_removes_workspace_when_surface_discovery_fails() {
+  local dir fb out status title
+  dir="$TMP_ROOT/create-task-surface-failure"; mkdir -p "$dir/responses"
+  title=$(cmux_expected_scoped_title fm-partial)
+  printf '{"workspaces":[]}' > "$dir/responses/1.out"
+  cmux_workspace_list_response "$dir" 3 "bbbbbbbb-1111-1111-1111-111111111111" "$title"
+  cmux_panes_empty_response "$dir" 4
+  fb=$(make_cmux_fakebin "$dir")
+  out=$(PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    FM_TEST_PARTIAL_LOG="$dir/partial.log" bash -c '
+      . "$0/bin/backends/cmux.sh"
+      fm_backend_cmux_kill() { printf "%s\n" "$1" >> "$FM_TEST_PARTIAL_LOG"; }
+      fm_backend_cmux_create_task fm-partial /tmp/proj
+    ' "$ROOT" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "create_task accepted a workspace without a default surface"
+  assert_contains "$out" "could not resolve the default surface" \
+    "create_task did not report failed surface discovery"
+  [ "$(cat "$dir/partial.log")" = "bbbbbbbb-1111-1111-1111-111111111111:partial" ] \
+    || fail "create_task did not remove the partial workspace"
+  pass "fm_backend_cmux_create_task: surface discovery failure removes the partial workspace"
+}
+
 # --- target_ready / capture ---------------------------------------------------
 
 test_target_ready_fails_when_target_absent() {
@@ -1130,6 +1153,7 @@ test_ensure_running_fails_fast_on_denied_without_launching
 test_ensure_running_fails_fast_on_unauth_without_launching
 test_create_task_refuses_duplicate_label
 test_create_task_creates_and_parses_ids
+test_create_task_removes_workspace_when_surface_discovery_fails
 test_target_ready_fails_when_target_absent
 test_target_ready_checks_expected_label
 test_target_ready_rejects_label_mismatch
