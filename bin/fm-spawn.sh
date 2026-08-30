@@ -2637,7 +2637,6 @@ elif [ "$VERIFIER_HANDOFF" -eq 1 ]; then
     exit 1
   fi
   validate_spawn_worktree "verifier handoff" "$T"
-  VERIFIER_HANDOFF_ABORT_ENDPOINT=0
 elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   spawn_send_text_line "$WT_TARGET" 'treehouse get'
 
@@ -2760,7 +2759,9 @@ if [ "$KIND" != secondmate ]; then
         echo "error: failed to arm the busy-state contract for $ID" >&2
         exit 1
       }
-      [ "$RELAUNCH" -ne 1 ] || RELAUNCH_REPLACEMENT_BUSY_GEN=$BUSY_GEN
+      if [ "$RELAUNCH" -eq 1 ] || [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+        RELAUNCH_REPLACEMENT_BUSY_GEN=$BUSY_GEN
+      fi
       ;;
     kimi*)
       # Standalone Kimi stays unknown until fm_busy_kimi_verified opens on a
@@ -3174,6 +3175,7 @@ fi
 if [ "$RELAUNCH" -eq 1 ] || [ "$VERIFIER_HANDOFF" -eq 1 ]; then
   SPAWN_META_PUBLISH_STARTED=1
   mv -f "$SPAWN_META_TMP" "$STATE/$ID.meta"
+  [ "$VERIFIER_HANDOFF" -ne 1 ] || VERIFIER_HANDOFF_ABORT_ENDPOINT=0
   RELAUNCH_REPLACEMENT_PENDING=0
   SPAWN_META_PUBLISH_STARTED=0
   SPAWN_META_TMP=

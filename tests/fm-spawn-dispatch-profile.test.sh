@@ -123,6 +123,35 @@ SH
   printf '%s\n' "$fakebin"
 }
 
+make_spawn_mv_failure_stub() {
+  local fakebin=$1
+  cat > "$fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+set -u
+source_path=
+target_path=
+for arg in "$@"; do
+  case "$arg" in
+    -*) ;;
+    *)
+      [ -n "$source_path" ] || source_path=$arg
+      target_path=$arg
+      ;;
+  esac
+done
+case "$source_path" in
+  *.meta.handoff.*)
+    if [ -n "${FM_FAKE_META_PUBLISH_MV_FAIL:-}" ] \
+       && [ "$target_path" = "$FM_FAKE_META_PUBLISH_MV_FAIL" ]; then
+      exit 1
+    fi
+    ;;
+esac
+exec "$FM_REAL_MV" "$@"
+SH
+  chmod +x "$fakebin/mv"
+}
+
 make_spawn_case() {
   local name=$1 harness=$2 case_dir home proj wt fakebin launchlog id
   shift 2
@@ -1468,6 +1497,38 @@ test_verifier_handoff_adoption_failure_retires_new_endpoint() {
   pass "fm-spawn: verifier handoff adoption failure retires its new endpoint"
 }
 
+test_verifier_handoff_prepublication_failure_retires_replacement_state() {
+  local rec id out status meta meta_before real_mv tmuxlog
+  id=profile-verifier-prepublish-failure-z48
+  rec=$(make_spawn_case profile-verifier-prepublish-failure claude "$id")
+  read_case_record "$rec"
+  prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  meta="$HOME_DIR/state/$id.meta"
+  meta_before=$(cat "$meta")
+  real_mv=$(command -v mv)
+  make_spawn_mv_failure_stub "$FAKEBIN_DIR"
+
+  out=$(FM_REAL_MV="$real_mv" FM_FAKE_META_PUBLISH_MV_FAIL="$meta" \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+      --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  [ "$status" -ne 0 ] || fail "verifier handoff accepted failed metadata publication"
+  [ "$(cat "$meta")" = "$meta_before" ] \
+    || fail "verifier handoff publication failure changed builder metadata"
+  [ "$(cat "$HOME_DIR/state/.fake-endpoint-state")" = missing ] \
+    || fail "verifier handoff publication failure left the replacement endpoint"
+  assert_absent "$HOME_DIR/state/$id.busy-gen" \
+    "verifier handoff publication failure left the replacement busy generation"
+  assert_absent "$HOME_DIR/state/$id.busy-state" \
+    "verifier handoff publication failure left the seeded busy state"
+  assert_absent "$WT_DIR/.claude/settings.local.json" \
+    "verifier handoff publication failure left replacement harness wiring"
+  tmuxlog="$HOME_DIR/state/.fake-tmux.log"
+  [ "$(grep -c '^kill-window ' "$tmuxlog" || true)" -eq 2 ] \
+    || fail "verifier handoff publication failure did not retire both endpoints"
+  pass "fm-spawn: verifier handoff publication failure retires replacement state"
+}
+
 test_verifier_handoff_teardown_returns_single_worktree() {
   local rec id out status treehouse_log tmuxlog return_count
   id=profile-verifier-teardown-z43
@@ -1725,6 +1786,7 @@ test_verifier_handoff_refuses_dirty_builder_worktrees
 test_verifier_handoff_refuses_rebase_and_preserves_stash
 test_verifier_handoff_accepts_detached_builder_head
 test_verifier_handoff_adoption_failure_retires_new_endpoint
+test_verifier_handoff_prepublication_failure_retires_replacement_state
 test_verifier_handoff_teardown_returns_single_worktree
 test_verifier_handoff_refuses_live_or_unverified_endpoint
 test_verifier_handoff_refuses_invalid_builder_worktrees
