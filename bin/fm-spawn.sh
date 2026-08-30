@@ -2146,6 +2146,11 @@ verifier_handoff_preflight() {
     echo "error: verifier handoff refused: builder project '${prior_project:-none}' does not match '$PROJ_ABS'" >&2
     return 1
   fi
+  WT=$(fm_backend_meta_exact_value "$meta" worktree) || WT=
+  if [ "$VERIFIER_HANDOFF_PRIOR_BACKEND" = orca ] || [ "$BACKEND" = orca ]; then
+    echo "error: verifier handoff refused: Orca owns a separate worktree and cannot reuse builder worktree '$WT'" >&2
+    return 1
+  fi
   fm_control_backend_state_verified "$VERIFIER_HANDOFF_PRIOR_BACKEND" || {
     echo "error: verifier handoff refused: builder endpoint backend '$VERIFIER_HANDOFF_PRIOR_BACKEND' cannot prove the prior agent stopped" >&2
     return 1
@@ -2158,7 +2163,6 @@ verifier_handoff_preflight() {
       return 1
       ;;
   esac
-  WT=$(fm_backend_meta_exact_value "$meta" worktree) || WT=
   validate_spawn_worktree "verifier handoff builder metadata" "$VERIFIER_HANDOFF_PRIOR_TARGET"
   worktree_common=$(git_common_dir_real "$WT") || {
     echo "error: verifier handoff refused: builder worktree '$WT' has an unreadable Git repository" >&2

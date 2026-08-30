@@ -128,6 +128,19 @@ esac
 exit 1
 SH
   chmod +x "$fakebin/herdr"
+  cat > "$fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+set -u
+[ -z "${FM_FAKE_ORCA_LOG:-}" ] || printf '%s\n' "$*" >> "$FM_FAKE_ORCA_LOG"
+case "$*" in
+  "status --json")
+    printf '%s\n' '{"ok":true,"result":{"runtime":{"reachable":true,"state":"ready"}}}'
+    exit 0
+    ;;
+esac
+exit 1
+SH
+  chmod +x "$fakebin/orca"
   cat > "$fakebin/treehouse" <<'SH'
 #!/usr/bin/env bash
 [ -z "${FM_FAKE_TREEHOUSE_LOG:-}" ] || printf '%s\n' "$*" >> "$FM_FAKE_TREEHOUSE_LOG"
@@ -242,6 +255,7 @@ run_spawn() {
     FM_FAKE_ENDPOINT_STATE="$endpoint_state" FM_FAKE_ENDPOINT_LABEL="$endpoint_label" \
     FM_FAKE_PRIOR_COMMAND="$prior_command" FM_FAKE_TMUX_LOG="$tmuxlog" \
     FM_FAKE_HERDR_LOG="${FM_FAKE_HERDR_LOG:-}" \
+    FM_FAKE_ORCA_LOG="${FM_FAKE_ORCA_LOG:-}" \
     CLAUDE_CONFIG_DIR="${FM_TEST_CLAUDE_CONFIG_DIR:-}" \
     FM_FAKE_LAUNCH_LOG="$launchlog" FM_FAKE_PI_VERSION="${FM_TEST_PI_VERSION:-0.84.0}" \
     FM_FAKE_CURSOR_MODELS="${FM_TEST_CURSOR_MODELS:-}" \
@@ -1671,6 +1685,49 @@ test_verifier_handoff_allows_backend_change() {
   pass "fm-spawn: verifier handoff follows resolved backend selection"
 }
 
+test_verifier_handoff_refuses_orca_worktree_ownership() {
+  local rec id out status meta meta_before endpoint_before orcalog
+  id=profile-verifier-to-orca-z51
+  rec=$(make_spawn_case profile-verifier-to-orca claude "$id")
+  read_case_record "$rec"
+  prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  meta="$HOME_DIR/state/$id.meta"
+  meta_before=$(cat "$meta")
+  endpoint_before=$(cat "$HOME_DIR/state/.fake-endpoint-state")
+  orcalog="$HOME_DIR/state/.fake-orca.log"; : > "$orcalog"
+  out=$(FM_FAKE_ORCA_LOG="$orcalog" run_spawn \
+    "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --backend orca --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  assert_verifier_handoff_refusal_preserved "$out" "$status" \
+    "error: verifier handoff refused: Orca owns a separate worktree and cannot reuse builder worktree '$WT_DIR'" \
+    "$meta_before" "$endpoint_before" "$id"
+  assert_no_grep 'worktree create' "$orcalog" \
+    "verifier handoff allocated an Orca worktree"
+
+  id=profile-verifier-from-orca-z52
+  rec=$(make_spawn_case profile-verifier-from-orca claude "$id")
+  read_case_record "$rec"
+  prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  meta="$HOME_DIR/state/$id.meta"
+  replace_meta_value "$meta" window "fm-$id"
+  {
+    printf '%s\n' 'backend=orca' 'terminal=term-builder' 'orca_worktree_id=wt-builder'
+  } >> "$meta"
+  meta_before=$(cat "$meta")
+  endpoint_before=$(cat "$HOME_DIR/state/.fake-endpoint-state")
+  orcalog="$HOME_DIR/state/.fake-orca.log"; : > "$orcalog"
+  out=$(FM_FAKE_ORCA_LOG="$orcalog" run_spawn \
+    "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --backend tmux --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  assert_verifier_handoff_refusal_preserved "$out" "$status" \
+    "error: verifier handoff refused: Orca owns a separate worktree and cannot reuse builder worktree '$WT_DIR'" \
+    "$meta_before" "$endpoint_before" "$id"
+  [ ! -s "$orcalog" ] || fail "verifier handoff mutated the recorded Orca owner"
+  pass "fm-spawn: verifier handoff refuses Orca worktree ownership changes"
+}
+
 test_verifier_handoff_refuses_lifecycle_lock_contention() {
   local rec id out status meta_before endpoint_before lock holder i=0
   id=profile-verifier-lifecycle-lock-z49
@@ -1887,6 +1944,7 @@ test_verifier_handoff_prepublication_failure_retires_replacement_state
 test_verifier_handoff_teardown_returns_single_worktree
 test_verifier_handoff_refuses_live_or_unverified_endpoint
 test_verifier_handoff_allows_backend_change
+test_verifier_handoff_refuses_orca_worktree_ownership
 test_verifier_handoff_refuses_lifecycle_lock_contention
 test_verifier_handoff_refuses_invalid_builder_worktrees
 test_role_verifier_enforces_explicit_ov
