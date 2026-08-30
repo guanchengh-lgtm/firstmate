@@ -9,8 +9,9 @@
 #   has live fog (bin/fm-map-fog-check.sh --strict). Scout --map records the
 #   path and does not refuse. --map is invalid on --secondmate.
 #   --map-next records one already-locked successor as map_next= in task meta.
-#   fm-teardown.sh refuses completion until that id exists in the active backlog
-#   as queued, in flight, or done, so a landed blocker cannot invent a new go gate.
+#   bin/fm-owner-invoke-wait-check.sh's R-held-locked-next rule then refuses a
+#   turn end that leaves that locked successor held with no worker, so a landed
+#   blocker cannot invent a new go gate while the task meta lives.
 #   --ov records a distinct already-spawned outside-voice worker as ov= in
 #   ship meta. Every supplied --ov must still have worker metadata and a
 #   completed report before any builder or verifier launch. A Claude OV must
