@@ -239,6 +239,7 @@ current_session_still_ours() {
 # leaving its numeric harness pid behind is the one recoverable
 # case, delegated to bin/fm-lock.sh so acquisition keeps its single owner.
 if ! fm_session_lock_owned_by_self "$STATE"; then
+  [ "$FM_SESSION_LOCK_OWNER_REASON" != 'session lock identity update in progress' ] || exit 0
   LOCK_PID=$(cat "$STATE/.lock" 2>/dev/null || true)
   case "$LOCK_PID" in ''|*[!0-9]*) exit 0 ;; esac
   fm_harness_pid_alive "$LOCK_PID" && exit 0

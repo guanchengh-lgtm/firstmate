@@ -295,6 +295,25 @@ test_park_delivers_actionable_wake_as_followup() {
   pass "cursor park: an actionable close is delivered as one watcher-kind follow-up"
 }
 
+test_park_runs_during_startup_lease() {
+  local dir out
+  dir=$(make_primary_dir "$TMP_ROOT/park-startup-lease")
+  : > "$dir/state/task1.meta"
+  mkdir "$dir/state/.lock.acquire"
+  printf '%s\n' "$$" > "$dir/state/.lock.acquire/pid"
+  write_arm_fixture "$dir" actionable
+  out=$(printf '%s' "$CURSOR_PAYLOAD" | FM_HOME="$dir" FM_CURSOR_PARK_POLL=1 \
+    "$FAKE_CURSOR" -c '
+      owner=$(ps -o ppid= -p $$ 2>/dev/null | tr -d " ")
+      printf "%s\n" "$owner" > "$FM_HOME/state/.lock"
+      "$FM_HOME/bin/fm-turnend-guard-cursor.sh"
+    ' 2>/dev/null)
+  [ -e "$dir/state/arm-ran" ] || fail "the startup lease suppressed the matching Cursor park"
+  [ "$(kind_of_followup "$out")" = watcher ] \
+    || fail "the matching Cursor park did not deliver its wake during the startup lease: $out"
+  pass "cursor park: matching ancestry survives a startup lease"
+}
+
 test_park_never_exits_two() {
   local dir status
   dir=$(make_primary_dir "$TMP_ROOT/park-exit")
@@ -650,6 +669,7 @@ test_pretool_guards_deduplicate_and_render_cursor_deny
 test_cd_guard_renders_cursor_deny
 test_park_silent_when_nothing_in_flight
 test_park_delivers_actionable_wake_as_followup
+test_park_runs_during_startup_lease
 test_park_never_exits_two
 test_park_repair_nag_is_bounded
 test_park_repair_nag_requires_a_persisted_budget
