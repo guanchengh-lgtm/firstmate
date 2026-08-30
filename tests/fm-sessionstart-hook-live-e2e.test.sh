@@ -35,7 +35,6 @@
 #
 # It costs real model turns on every installed adapter in this suite.
 set -u
-unset CLAUDE_CODE_SESSION_ID CLAUDE_PID CLAUDE_CODE_CHILD_SESSION
 
 if [ "${FM_SESSIONSTART_HOOK_LIVE_E2E:-0}" != 1 ]; then
   echo "skip: set FM_SESSIONSTART_HOOK_LIVE_E2E=1 to run the live session-open hook regression"
@@ -52,8 +51,7 @@ fail() {
 pass() { printf 'ok - %s\n' "$1"; }
 note() { printf '# %s\n' "$1"; }
 
-command -v tmux >/dev/null 2>&1 \
-  || fail "tmux not found; the context-reset checks drive real interactive harnesses"
+command -v tmux >/dev/null 2>&1 || fail "tmux not found; the context-reset checks drive real interactive harnesses"
 
 # Outside the repo on purpose: each lab is its own git repo, and nesting one
 # inside the checkout would show up as an embedded repository in a working tree
