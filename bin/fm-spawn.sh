@@ -2107,6 +2107,7 @@ VERIFIER_HANDOFF_PRIOR_BACKEND=
 VERIFIER_HANDOFF_PRIOR_HARNESS=
 VERIFIER_HANDOFF_PRIOR_TARGET=
 VERIFIER_HANDOFF_PRIOR_RETIRED=0
+VERIFIER_HANDOFF_RETIRED_STATE=
 git_common_dir_real() {  # <worktree>
   local worktree=$1 common
   common=$(git -C "$worktree" rev-parse --git-common-dir 2>/dev/null) || return 1
@@ -2306,8 +2307,11 @@ if [ "$VERIFIER_HANDOFF" -eq 1 ] \
     echo "error: verifier handoff refused: could not retire the stopped builder endpoint" >&2
     exit 1
   }
-  if fm_backend_target_exists "$VERIFIER_HANDOFF_PRIOR_BACKEND" "$VERIFIER_HANDOFF_PRIOR_TARGET" "fm-$ID"; then
-    echo "error: verifier handoff refused: stopped builder endpoint still exists after retirement" >&2
+  VERIFIER_HANDOFF_RETIRED_STATE=$(fm_backend_agent_state \
+    "$VERIFIER_HANDOFF_PRIOR_BACKEND" "$VERIFIER_HANDOFF_PRIOR_TARGET") \
+    || VERIFIER_HANDOFF_RETIRED_STATE=unreadable
+  if [ "$VERIFIER_HANDOFF_RETIRED_STATE" != missing ]; then
+    echo "error: verifier handoff refused: stopped builder endpoint reads '$VERIFIER_HANDOFF_RETIRED_STATE' after retirement, not missing" >&2
     exit 1
   fi
 fi
@@ -2419,6 +2423,14 @@ case "$BACKEND" in
             3) spawn_herdr_presentation_order_lock_release ;;
             *) exit 1 ;;
           esac
+        elif [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+          if ! fm_backend_herdr_projection_retire_quarantine \
+            "$HERDR_SES" "$HERDR_PRESENTATION_JOURNAL" "$ID"; then
+            spawn_herdr_presentation_order_lock_release
+            echo "error: verifier handoff refused: could not retire the quarantined herdr presentation" >&2
+            exit 1
+          fi
+          spawn_herdr_presentation_order_lock_release
         else
           spawn_herdr_presentation_order_lock_release
         fi

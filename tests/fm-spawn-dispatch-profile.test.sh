@@ -52,6 +52,10 @@ esac
 case "${1:-}" in
   display-message) printf 'firstmate\n'; exit 0 ;;
   list-windows)
+    if [ "$endpoint_state" = unreadable ]; then
+      printf '%s\n' 'temporary inventory failure' >&2
+      exit 1
+    fi
     if [ -n "$endpoint_state" ] && [ "$endpoint_state" != missing ]; then
       printf '%s\n' "${FM_FAKE_ENDPOINT_LABEL:-}"
     elif [ -z "$endpoint_state" ] && [ -n "${FM_FAKE_OV_WINDOW:-}" ]; then
@@ -65,7 +69,8 @@ case "${1:-}" in
     exit 0
     ;;
   kill-window)
-    [ -z "${FM_FAKE_ENDPOINT_STATE:-}" ] || printf '%s\n' missing > "$FM_FAKE_ENDPOINT_STATE"
+    [ -z "${FM_FAKE_ENDPOINT_STATE:-}" ] \
+      || printf '%s\n' "${FM_FAKE_TMUX_KILL_STATE:-missing}" > "$FM_FAKE_ENDPOINT_STATE"
     exit 0
     ;;
   has-session|new-session) exit 0 ;;
@@ -102,21 +107,51 @@ set -u
 [ -z "${FM_FAKE_HERDR_LOG:-}" ] || printf '%s\n' "$*" >> "$FM_FAKE_HERDR_LOG"
 endpoint_state=
 [ -z "${FM_FAKE_ENDPOINT_STATE:-}" ] || endpoint_state=$(cat "$FM_FAKE_ENDPOINT_STATE" 2>/dev/null || true)
+stale_state=
+[ -z "${FM_FAKE_HERDR_STALE_STATE:-}" ] || stale_state=$(cat "$FM_FAKE_HERDR_STALE_STATE" 2>/dev/null || true)
 case "$*" in
   *"status --json"*) printf '%s\n' '{"server":{"running":true}}'; exit 0 ;;
   *"session list --json"*)
     printf '%s\n' '{"sessions":[{"name":"fmtest","running":true,"socket_path":"/tmp/fm-test-herdr.sock"}]}'
     exit 0
     ;;
-  *"workspace list"*) printf '%s\n' '{"result":{"workspaces":[]}}'; exit 0 ;;
+  *"workspace list"*)
+    if [ -n "$stale_state" ] && [ "$stale_state" != missing ]; then
+      printf '%s\n' "{\"result\":{\"workspaces\":[{\"workspace_id\":\"w9\",\"label\":\"stale · p:${FM_FAKE_HERDR_TOKEN:-}\"}]}}"
+    else
+      printf '%s\n' '{"result":{"workspaces":[]}}'
+    fi
+    exit 0
+    ;;
+  *"pane list --workspace w9"*)
+    if [ -n "$stale_state" ] && [ "$stale_state" != missing ]; then
+      printf '%s\n' '{"result":{"panes":[{"pane_id":"w9:p9","tab_id":"w9:t9"}]}}'
+    else
+      printf '%s\n' '{"result":{"panes":[]}}'
+    fi
+    exit 0
+    ;;
   *"tab list"*) printf '%s\n' '{"result":{"tabs":[]}}'; exit 0 ;;
   *"agent get"*) printf '%s\n' '{"error":{"code":"agent_not_found"}}'; exit 1 ;;
+  *"pane close w9:p9"*)
+    [ -z "${FM_FAKE_HERDR_STALE_STATE:-}" ] || printf '%s\n' missing > "$FM_FAKE_HERDR_STALE_STATE"
+    printf '%s\n' '{"result":{}}'
+    exit 0
+    ;;
   *"pane close"*)
     [ -z "${FM_FAKE_ENDPOINT_STATE:-}" ] || printf '%s\n' missing > "$FM_FAKE_ENDPOINT_STATE"
     printf '%s\n' '{"result":{}}'
     exit 0
     ;;
   *"pane get"*)
+    if [ "${3:-}" = w9:p9 ]; then
+      if [ "$stale_state" = missing ]; then
+        printf '%s\n' '{"error":{"code":"pane_not_found"}}'
+        exit 1
+      fi
+      printf '%s\n' '{"result":{"pane":{"pane_id":"w9:p9","tab_id":"w9:t9","workspace_id":"w9"}}}'
+      exit 0
+    fi
     if [ "$endpoint_state" = missing ]; then
       printf '%s\n' '{"error":{"code":"pane_not_found"}}'
       exit 1
@@ -254,7 +289,11 @@ run_spawn() {
     FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
     FM_FAKE_ENDPOINT_STATE="$endpoint_state" FM_FAKE_ENDPOINT_LABEL="$endpoint_label" \
     FM_FAKE_PRIOR_COMMAND="$prior_command" FM_FAKE_TMUX_LOG="$tmuxlog" \
+    FM_FAKE_TMUX_KILL_STATE="${FM_TEST_TMUX_KILL_STATE:-}" \
     FM_FAKE_HERDR_LOG="${FM_FAKE_HERDR_LOG:-}" \
+    FM_FAKE_HERDR_STALE_STATE="${FM_FAKE_HERDR_STALE_STATE:-}" \
+    FM_FAKE_HERDR_TOKEN="${FM_FAKE_HERDR_TOKEN:-}" \
+    HERDR_SESSION="${FM_TEST_HERDR_SESSION:-}" \
     FM_FAKE_ORCA_LOG="${FM_FAKE_ORCA_LOG:-}" \
     CLAUDE_CONFIG_DIR="${FM_TEST_CLAUDE_CONFIG_DIR:-}" \
     FM_FAKE_LAUNCH_LOG="$launchlog" FM_FAKE_PI_VERSION="${FM_TEST_PI_VERSION:-0.84.0}" \
@@ -1544,6 +1583,36 @@ test_verifier_handoff_adoption_failure_retires_new_endpoint() {
   pass "fm-spawn: verifier handoff adoption failure retires its new endpoint"
 }
 
+test_verifier_handoff_requires_confirmed_endpoint_retirement() {
+  local rec id out status meta meta_before tmuxlog
+  id=profile-verifier-retirement-proof-z53
+  rec=$(make_spawn_case profile-verifier-retirement-proof claude "$id")
+  read_case_record "$rec"
+  prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  meta="$HOME_DIR/state/$id.meta"
+  meta_before=$(cat "$meta")
+
+  out=$(FM_TEST_TMUX_KILL_STATE=unreadable run_spawn \
+    "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  [ "$status" -ne 0 ] || fail "verifier handoff accepted unreadable post-retirement state"
+  assert_contains "$out" \
+    "error: verifier handoff refused: stopped builder endpoint reads 'unreadable' after retirement, not missing" \
+    "verifier handoff did not require confirmed endpoint retirement"
+  [ "$(cat "$meta")" = "$meta_before" ] \
+    || fail "unconfirmed endpoint retirement mutated builder metadata"
+  [ "$(cat "$HOME_DIR/state/.fake-endpoint-state")" = unreadable ] \
+    || fail "unconfirmed endpoint retirement did not preserve its observed state"
+  [ ! -s "$LAUNCH_LOG" ] || fail "unconfirmed endpoint retirement launched the verifier"
+  tmuxlog="$HOME_DIR/state/.fake-tmux.log"
+  [ "$(grep -c '^kill-window ' "$tmuxlog" || true)" -eq 1 ] \
+    || fail "unconfirmed endpoint retirement did not make exactly one close attempt"
+  assert_no_grep '^new-window ' "$tmuxlog" \
+    "unconfirmed endpoint retirement created a replacement endpoint"
+  pass "fm-spawn: verifier handoff requires confirmed endpoint retirement"
+}
+
 test_verifier_handoff_prepublication_failure_retires_replacement_state() {
   local rec id out status meta meta_before real_mv tmuxlog
   id=profile-verifier-prepublish-failure-z48
@@ -1683,6 +1752,42 @@ test_verifier_handoff_allows_backend_change() {
   assert_grep "worktree=$WT_DIR" "$meta" \
     "verifier handoff backend change did not retain the builder worktree"
   pass "fm-spawn: verifier handoff follows resolved backend selection"
+}
+
+test_verifier_handoff_retires_stale_herdr_journal_on_transition() {
+  local rec id out status meta meta_before journal token stale_state herdrlog
+  id=profile-verifier-stale-herdr-z54
+  rec=$(make_spawn_case profile-verifier-stale-herdr claude "$id")
+  read_case_record "$rec"
+  prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  meta="$HOME_DIR/state/$id.meta"
+  meta_before=$(cat "$meta")
+  token=$(FM_HOME="$HOME_DIR" bash -c '
+    . "$0/bin/backends/herdr.sh"
+    fm_backend_herdr_projection_journal_create "$1" "$2"
+  ' "$ROOT" "$HOME_DIR/state" "$id") || fail "could not create stale Herdr journal"
+  journal="$HOME_DIR/state/$id.herdr-presentation"
+  stale_state="$HOME_DIR/state/.fake-herdr-stale-state"
+  printf '%s\n' no-agent > "$stale_state"
+  herdrlog="$HOME_DIR/state/.fake-herdr.log"; : > "$herdrlog"
+
+  out=$(FM_TEST_HERDR_SESSION=fmtest FM_FAKE_HERDR_LOG="$herdrlog" \
+    FM_FAKE_HERDR_STALE_STATE="$stale_state" FM_FAKE_HERDR_TOKEN="$token" \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+      --backend herdr --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  [ "$status" -ne 0 ] || fail "stale Herdr transition fixture unexpectedly completed endpoint creation"
+  assert_contains "$out" "could not read herdr client protocol" \
+    "stale Herdr transition did not reach fresh endpoint creation"
+  [ "$(cat "$meta")" = "$meta_before" ] \
+    || fail "stale Herdr transition failure mutated builder metadata"
+  [ ! -e "$journal" ] && [ ! -L "$journal" ] \
+    || fail "backend transition retained the stale Herdr journal"
+  [ "$(cat "$stale_state")" = missing ] \
+    || fail "backend transition retained the stale Herdr pane"
+  assert_grep 'pane close w9:p9' "$herdrlog" \
+    "backend transition did not retire the stale token-bound pane"
+  pass "fm-spawn: backend transition retires stale Herdr presentation"
 }
 
 test_verifier_handoff_refuses_orca_worktree_ownership() {
@@ -1940,10 +2045,12 @@ test_verifier_handoff_refuses_dirty_builder_worktrees
 test_verifier_handoff_refuses_rebase_and_preserves_stash
 test_verifier_handoff_accepts_detached_builder_head
 test_verifier_handoff_adoption_failure_retires_new_endpoint
+test_verifier_handoff_requires_confirmed_endpoint_retirement
 test_verifier_handoff_prepublication_failure_retires_replacement_state
 test_verifier_handoff_teardown_returns_single_worktree
 test_verifier_handoff_refuses_live_or_unverified_endpoint
 test_verifier_handoff_allows_backend_change
+test_verifier_handoff_retires_stale_herdr_journal_on_transition
 test_verifier_handoff_refuses_orca_worktree_ownership
 test_verifier_handoff_refuses_lifecycle_lock_contention
 test_verifier_handoff_refuses_invalid_builder_worktrees

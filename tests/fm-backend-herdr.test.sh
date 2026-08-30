@@ -2980,7 +2980,7 @@ test_projection_reclaim_replaces_active_husk_for_handoff() {
 }
 
 test_projection_handoff_retires_exact_unbound_binding() {
-  local dir state journal token log missing_journal
+  local dir state journal token log missing_journal blocked_journal out status
   dir="$TMP_ROOT/projection-handoff-unbound"; state="$dir/state"
   mkdir -p "$state"
   token=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_journal_create "$1" unbound-r1' \
@@ -2989,7 +2989,8 @@ test_projection_handoff_retires_exact_unbound_binding() {
   log="$dir/log"; : > "$log"
   FM_TEST_PROJECTION_TOKEN="$token" FM_TEST_RECLAIM_LOG="$log" bash -c '
     . "$0/bin/backends/herdr.sh"
-    pane_state=no-agent
+    pane2_state=no-agent
+    pane3_state=no-agent
     fm_backend_herdr_cli() {
       shift
       case "$1 $2" in
@@ -2997,15 +2998,25 @@ test_projection_handoff_retires_exact_unbound_binding() {
           printf "%s\n" "{\"result\":{\"workspaces\":[{\"workspace_id\":\"w2\",\"label\":\"child · p:$FM_TEST_PROJECTION_TOKEN\"}]}}"
           ;;
         "pane list")
-          printf "%s\n" "{\"result\":{\"panes\":[{\"pane_id\":\"w2:p2\",\"tab_id\":\"w2:t2\"}]}}"
+          printf "%s\n" "{\"result\":{\"panes\":[{\"pane_id\":\"w2:p2\",\"tab_id\":\"w2:t2\"},{\"pane_id\":\"w2:p3\",\"tab_id\":\"w2:t3\"}]}}"
           ;;
         *) return 1 ;;
       esac
     }
-    fm_backend_herdr_pane_agent_state() { printf "%s" "$pane_state"; }
+    fm_backend_herdr_pane_agent_state() {
+      case "$2" in
+        w2:p2) printf "%s" "$pane2_state" ;;
+        w2:p3) printf "%s" "$pane3_state" ;;
+        *) printf unknown ;;
+      esac
+    }
     fm_backend_herdr_kill_serialized() {
-      [ "$1" = fmtest ] && [ "$2" = w2:p2 ] || return 1
-      pane_state=dead
+      [ "$1" = fmtest ] || return 1
+      case "$2" in
+        w2:p2) pane2_state=dead ;;
+        w2:p3) pane3_state=dead ;;
+        *) return 1 ;;
+      esac
       printf "%s\n" "retired $2" >> "$FM_TEST_RECLAIM_LOG"
     }
     fm_backend_herdr_projection_retire_handoff_binding \
@@ -3013,8 +3024,39 @@ test_projection_handoff_retires_exact_unbound_binding() {
   ' "$ROOT" "$journal" || fail "exact unbound handoff binding was not retired"
   [ ! -e "$journal" ] && [ ! -L "$journal" ] \
     || fail "exact unbound handoff retained its journal"
-  [ "$(cat "$log")" = "retired w2:p2" ] \
-    || fail "exact unbound handoff did not retire its stopped endpoint"
+  [ "$(cat "$log")" = $'retired w2:p2\nretired w2:p3' ] \
+    || fail "exact unbound handoff did not retire every stopped endpoint"
+
+  token=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_projection_journal_create "$1" blocked-r1' \
+    "$ROOT" "$state") || fail "could not create blocked handoff journal"
+  blocked_journal="$state/blocked-r1.herdr-presentation"
+  : > "$log"
+  out=$(FM_TEST_PROJECTION_TOKEN="$token" FM_TEST_RECLAIM_LOG="$log" bash -c '
+    . "$0/bin/backends/herdr.sh"
+    fm_backend_herdr_cli() {
+      shift
+      case "$1 $2" in
+        "workspace list")
+          printf "%s\n" "{\"result\":{\"workspaces\":[{\"workspace_id\":\"w2\",\"label\":\"child · p:$FM_TEST_PROJECTION_TOKEN\"}]}}"
+          ;;
+        "pane list")
+          printf "%s\n" "{\"result\":{\"panes\":[{\"pane_id\":\"w2:p2\",\"tab_id\":\"w2:t2\"},{\"pane_id\":\"w2:p3\",\"tab_id\":\"w2:t3\"}]}}"
+          ;;
+        *) return 1 ;;
+      esac
+    }
+    fm_backend_herdr_pane_agent_state() {
+      case "$2" in w2:p2) printf no-agent ;; w2:p3) printf live ;; *) printf unknown ;; esac
+    }
+    fm_backend_herdr_kill_serialized() { printf "%s\n" "$2" >> "$FM_TEST_RECLAIM_LOG"; }
+    fm_backend_herdr_projection_retire_handoff_binding \
+      fmtest "$1" blocked-r1 w2 w2:t2 w2:p2
+  ' "$ROOT" "$blocked_journal" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "handoff retirement closed a quarantine with a live drifted pane"
+  [ -e "$blocked_journal" ] && [ ! -L "$blocked_journal" ] \
+    || fail "live drifted pane refusal removed its journal"
+  [ ! -s "$log" ] || fail "live drifted pane refusal closed an earlier safe pane: $out"
   bash -c '
     . "$0/bin/backends/herdr.sh"
     fm_backend_herdr_projection_journal_create "$1" missing-r1 >/dev/null
@@ -3036,7 +3078,7 @@ test_projection_handoff_retires_exact_unbound_binding() {
   ' "$ROOT" "$missing_journal" || fail "missing version 1 handoff binding was not retired"
   [ ! -e "$missing_journal" ] && [ ! -L "$missing_journal" ] \
     || fail "missing version 1 handoff retained its stale journal"
-  pass "herdr presentation handoff: exact unbound binding retires for flat replacement"
+  pass "herdr presentation handoff: quarantine retirement covers every safe pane"
 }
 
 test_projection_recovery_is_read_only_and_refuses_live_duplicate_risk() {

@@ -2197,9 +2197,70 @@ fm_backend_herdr_projection_abort_reclaim() {  # <session> <journal> <task-id> <
   [ ! -e "$journal" ] && [ ! -L "$journal" ]
 }
 
+fm_backend_herdr_projection_retire_quarantine() {  # <session> <journal> <task-id>
+  local session=$1 journal=$2 id=$3 token list wsids wsid panes pane_ids all_panes pane state journal_pane
+  fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
+  token=$FM_BACKEND_HERDR_JOURNAL_PROJECTION_ID
+  journal_pane=
+  if [ "$FM_BACKEND_HERDR_JOURNAL_VERSION" = 2 ]; then
+    [ "$FM_BACKEND_HERDR_JOURNAL_SESSION" = "$session" ] || return 1
+    journal_pane=$FM_BACKEND_HERDR_JOURNAL_PANE_ID
+  fi
+  list=$(fm_backend_herdr_cli "$session" workspace list 2>/dev/null) || return 1
+  printf '%s' "$list" | jq -e '(.result.workspaces | type) == "array"' >/dev/null 2>&1 || return 1
+  wsids=$(printf '%s' "$list" | jq -r --arg suffix " · p:$token" \
+    '.result.workspaces[]? | select((.label | type) == "string" and (.label | endswith($suffix))) | .workspace_id' 2>/dev/null) || return 1
+  all_panes=
+  while IFS= read -r wsid; do
+    [ -n "$wsid" ] || continue
+    panes=$(fm_backend_herdr_cli "$session" pane list --workspace "$wsid" 2>/dev/null) || return 1
+    printf '%s' "$panes" | jq -e '(.result.panes | type) == "array"' >/dev/null 2>&1 || return 1
+    pane_ids=$(printf '%s' "$panes" | jq -r '.result.panes[]? | .pane_id' 2>/dev/null) || return 1
+    if [ -n "$pane_ids" ]; then
+      [ -z "$all_panes" ] || all_panes="$all_panes
+"
+      all_panes="$all_panes$pane_ids"
+    fi
+  done <<EOF
+$wsids
+EOF
+  if [ -n "$journal_pane" ] \
+     && ! printf '%s\n' "$all_panes" | grep -Fqx "$journal_pane"; then
+    [ -z "$all_panes" ] || all_panes="$all_panes
+"
+    all_panes="$all_panes$journal_pane"
+  fi
+  while IFS= read -r pane; do
+    [ -n "$pane" ] || continue
+    state=$(fm_backend_herdr_pane_agent_state "$session" "$pane")
+    case "$state" in
+      dead|no-agent) : ;;
+      *) return 1 ;;
+    esac
+  done <<EOF
+$all_panes
+EOF
+  while IFS= read -r pane; do
+    [ -n "$pane" ] || continue
+    state=$(fm_backend_herdr_pane_agent_state "$session" "$pane")
+    case "$state" in
+      dead) ;;
+      no-agent)
+        fm_backend_herdr_kill_serialized "$session" "$pane" || return 1
+        ;;
+      *) return 1 ;;
+    esac
+    [ "$(fm_backend_herdr_pane_agent_state "$session" "$pane")" = dead ] || return 1
+  done <<EOF
+$all_panes
+EOF
+  rm -f -- "$journal" || return 1
+  [ ! -e "$journal" ] && [ ! -L "$journal" ]
+}
+
 fm_backend_herdr_projection_retire_handoff_binding() {  # <session> <journal> <task-id> <workspace> <tab> <pane>
   local session=$1 journal=$2 id=$3 workspace=$4 tab=$5 pane=$6
-  local token list matches panes state
+  local token list matches panes
   fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
   case "$FM_BACKEND_HERDR_JOURNAL_VERSION" in
     1)
@@ -2221,12 +2282,13 @@ fm_backend_herdr_projection_retire_handoff_binding() {  # <session> <journal> <t
       fi
       [ "$matches" = exact ] || return 1
       panes=$(fm_backend_herdr_cli "$session" pane list --workspace "$workspace" 2>/dev/null) || return 1
-      printf '%s' "$panes" | jq -e --arg pane "$pane" --arg tab "$tab" '
+      printf '%s' "$panes" | jq -e '(.result.panes | type) == "array"' >/dev/null 2>&1 || return 1
+      if ! printf '%s' "$panes" | jq -e --arg pane "$pane" --arg tab "$tab" '
         (.result.panes | type) == "array"
-        and (.result.panes | length) == 1
-        and .result.panes[0].pane_id == $pane
-        and .result.panes[0].tab_id == $tab
-      ' >/dev/null 2>&1 || return 1
+        and ([.result.panes[]? | select(.pane_id == $pane and .tab_id == $tab)] | length) == 1
+      ' >/dev/null 2>&1; then
+        [ "$(fm_backend_herdr_pane_agent_state "$session" "$pane")" = dead ] || return 1
+      fi
       ;;
     2)
       [ "$FM_BACKEND_HERDR_JOURNAL_SESSION" = "$session" ] \
@@ -2236,17 +2298,7 @@ fm_backend_herdr_projection_retire_handoff_binding() {  # <session> <journal> <t
       ;;
     *) return 1 ;;
   esac
-  state=$(fm_backend_herdr_pane_agent_state "$session" "$pane")
-  case "$state" in
-    dead) ;;
-    no-agent)
-      fm_backend_herdr_kill_serialized "$session" "$pane" || return 1
-      ;;
-    live|unknown) return 1 ;;
-  esac
-  [ "$(fm_backend_herdr_pane_agent_state "$session" "$pane")" = dead ] || return 1
-  rm -f -- "$journal" || return 1
-  [ ! -e "$journal" ] && [ ! -L "$journal" ]
+  fm_backend_herdr_projection_retire_quarantine "$session" "$journal" "$id"
 }
 
 fm_backend_herdr_projection_retire_dead_binding() {  # <session> <journal> <task-id> <tab> <pane>
