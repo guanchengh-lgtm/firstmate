@@ -1,0 +1,1 @@
+not ok - nm-real-merge: teardown should accept task HEAD in a real merge: expected exit 0, got 1
