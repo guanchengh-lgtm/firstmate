@@ -2016,14 +2016,13 @@ fm_backend_herdr_agent_alive() {  # <target>
 # case. Echoes "<tab_id> <pane_id>" on success.
 fm_backend_herdr_cleanup_created_task() {  # <session> <workspace> <label> <pre-label-tabs> <tab> <pane>
   local session=$1 wsid=$2 label=$3 pre_tabs=$4 tab=$5 pane=$6
-  local out found_pane found_tab found_workspace list new_tabs new_count candidate candidates close_ok tab_state ids_incomplete use_pane
+  local list new_tabs new_count candidate candidates discovery_state tab_target
+  local pane_close_ok tab_close_ok tab_state
 
-  ids_incomplete=0
-  [ -n "$tab" ] && [ -n "$pane" ] || ids_incomplete=1
   candidates=
-  use_pane=0
-
-  if [ "$ids_incomplete" -eq 1 ]; then
+  discovery_state=known
+  tab_target=$tab
+  if [ -z "$tab_target" ]; then
     list=$(fm_backend_herdr_cli "$session" tab list --workspace "$wsid" 2>/dev/null) || list=
     new_tabs=$(printf '%s' "$list" | jq -r --arg want "$label" --arg pre "$pre_tabs" --arg workspace "$wsid" '
       if (.result.tabs | type) != "array" then error("missing result.tabs")
@@ -2052,45 +2051,35 @@ $new_tabs
 EOF
     fi
     if [ "$new_tabs" = __unknown__ ] || [ "$new_count" -gt 1 ]; then
-      echo "error: herdr partial-create cleanup could not prove absence (session '$session', workspace '$wsid', label '$label', tab '${tab:-unknown}', pane '${pane:-unknown}', candidates '${candidates:-unknown}')" >&2
-      return 1
+      discovery_state=unknown
+    elif [ "$new_count" -eq 0 ]; then
+      discovery_state=dead
+    else
+      tab_target=$candidates
     fi
-    if [ "$new_count" -eq 0 ]; then
-      return 0
-    fi
-    tab=$candidates
-    if [ -n "$pane" ]; then
-      out=$(fm_backend_herdr_cli "$session" pane get "$pane" 2>/dev/null) || out=
-      found_pane=$(printf '%s' "$out" | jq -r '.result.pane.pane_id // empty' 2>/dev/null)
-      found_tab=$(printf '%s' "$out" | jq -r '.result.pane.tab_id // empty' 2>/dev/null)
-      found_workspace=$(printf '%s' "$out" | jq -r '.result.pane.workspace_id // empty' 2>/dev/null)
-      if [ "$found_pane" = "$pane" ] && [ "$found_tab" = "$tab" ] && [ "$found_workspace" = "$wsid" ]; then
-        use_pane=1
-      fi
-    fi
-  else
-    out=$(fm_backend_herdr_cli "$session" pane get "$pane" 2>/dev/null) || out=
-    found_pane=$(printf '%s' "$out" | jq -r '.result.pane.pane_id // empty' 2>/dev/null)
-    found_tab=$(printf '%s' "$out" | jq -r '.result.pane.tab_id // empty' 2>/dev/null)
-    found_workspace=$(printf '%s' "$out" | jq -r '.result.pane.workspace_id // empty' 2>/dev/null)
-    if [ "$found_pane" != "$pane" ] || [ "$found_tab" != "$tab" ] || [ "$found_workspace" != "$wsid" ]; then
-      echo "error: herdr partial-create cleanup could not prove absence (session '$session', workspace '$wsid', label '$label', tab '$tab', pane '$pane', pane tab '${found_tab:-unknown}', pane workspace '${found_workspace:-unknown}', candidates 'none')" >&2
-      return 1
-    fi
-    use_pane=1
   fi
 
-  close_ok=0
-  if [ "$use_pane" -eq 1 ]; then
-    fm_backend_herdr_explicit_close_pane_confirmed "$session" "$pane" && close_ok=1
-    tab_state=$(fm_backend_herdr_tab_presence_state "$session" "$wsid" "$tab")
-    [ "$close_ok" -eq 1 ] && [ "$tab_state" = dead ] && return 0
-  else
-    fm_backend_herdr_cli "$session" tab close "$tab" >/dev/null 2>&1 && close_ok=1
-    tab_state=$(fm_backend_herdr_tab_presence_state "$session" "$wsid" "$tab")
-    [ "$close_ok" -eq 1 ] && [ "$tab_state" = dead ] && return 0
+  pane_close_ok=1
+  if [ -n "$pane" ]; then
+    fm_backend_herdr_explicit_close_pane_confirmed "$session" "$pane" || pane_close_ok=0
   fi
-  echo "error: herdr partial-create cleanup could not prove absence (session '$session', workspace '$wsid', label '$label', tab '$tab', pane '${pane:-unknown}', pane tab '${found_tab:-unknown}', pane workspace '${found_workspace:-unknown}', candidates '${candidates:-none}')" >&2
+
+  tab_close_ok=1
+  tab_state=$discovery_state
+  if [ -n "$tab_target" ]; then
+    if [ -n "$pane" ]; then
+      tab_state=$(fm_backend_herdr_tab_presence_state "$session" "$wsid" "$tab_target")
+    fi
+    if [ -z "$pane" ] || { [ "$pane_close_ok" -eq 1 ] && [ "$tab_state" != dead ]; }; then
+      fm_backend_herdr_cli "$session" tab close "$tab_target" >/dev/null 2>&1 || tab_close_ok=0
+      tab_state=$(fm_backend_herdr_tab_presence_state "$session" "$wsid" "$tab_target")
+    fi
+  fi
+
+  if [ "$pane_close_ok" -eq 1 ] && [ "$tab_close_ok" -eq 1 ] && [ "$tab_state" = dead ]; then
+    return 0
+  fi
+  echo "error: herdr partial-create cleanup could not prove absence (session '$session', workspace '$wsid', label '$label', tab '${tab_target:-unknown}', pane '${pane:-unknown}', candidates '${candidates:-none}')" >&2
   return 1
 }
 
