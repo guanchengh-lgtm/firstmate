@@ -533,6 +533,114 @@ SH
   pass "session-lock e2e: real Stop hook owns its matching Claude session"
 }
 
+test_real_stop_hook_refreshes_dead_matching_session() {
+  local dir session_pid
+  dir="$TMP_ROOT/e2e-dead-matching-session"
+  make_primary_home "$dir"
+  printf '9999999\n' > "$dir/state/.lock"
+  printf 'session-resumed\n' > "$dir/state/.lock.session"
+  cat > "$dir/session.sh" <<'SH'
+#!/usr/bin/env bash
+export CLAUDE_CODE_SESSION_ID=session-resumed
+export CLAUDE_PID=$$
+export CLAUDE_CODE_CHILD_SESSION=1
+printf '%s\n' "$$" > "$FM_HOME/state/session-pid"
+"$FM_HOME/bin/fm-claude-stop-autoarm.sh" </dev/null > "$FM_HOME/state/hook.out" 2>&1
+printf '%s\n' "$?" > "$FM_HOME/state/hook.rc"
+SH
+  chmod +x "$dir/session.sh"
+  run_fixture_tree "$dir" "$NAMED_CLAUDE"
+  session_pid=$(cat "$dir/state/session-pid")
+  expect_code 2 "$(hook_rc "$dir")" "a matching session must refresh its dead recorded pid before arming"
+  [ "$(cat "$dir/state/.lock")" = "$session_pid" ] \
+    || fail "matching-session recovery did not publish the live ancestry pid"
+  [ "$(cat "$dir/state/.lock.session")" = session-resumed ] \
+    || fail "matching-session recovery changed the session sidecar"
+  [ -e "$dir/state/arm-ran" ] || fail "the recovered matching-session hook did not arm"
+  pass "session-lock e2e: matching session refreshes a dead pid before arming"
+}
+
+test_identity_publication_exposes_only_stable_pairs() {
+  local dir observer_bin current_pid rc=0 saw_absent=0 saw_matching=0 lock session reader_rc
+  dir="$TMP_ROOT/claude/e2e-stable-identity-publication"
+  make_primary_home "$dir"
+  printf '9999999\n' > "$dir/state/.lock"
+  printf 'session-old\n' > "$dir/state/.lock.session"
+  observer_bin=$(fm_fakebin "$dir/observer/claude")
+  cat > "$dir/observer.sh" <<'SH'
+#!/usr/bin/env bash
+export CLAUDE_CODE_SESSION_ID=session-reader
+export CLAUDE_PID=$$
+export CLAUDE_CODE_CHILD_SESSION=1
+rc=0
+"$FM_HOME/bin/fm-claude-stop-autoarm.sh" </dev/null >> "$FM_HOME/state/reader.out" 2>&1 || rc=$?
+printf '%s\n' "$rc" >> "$FM_HOME/state/reader.rcs"
+SH
+  cat > "$observer_bin/mv" <<'SH'
+#!/usr/bin/env bash
+set -u
+dest=
+for arg in "$@"; do dest=$arg; done
+snapshot() {
+  lock=$(cat "$FM_HOME/state/.lock" 2>/dev/null || printf absent)
+  session=$(cat "$FM_HOME/state/.lock.session" 2>/dev/null || printf absent)
+  printf '%s|%s\n' "$lock" "$session" >> "$FM_HOME/state/publication.snapshots"
+}
+case "$dest" in
+  "$FM_HOME/state/.lock")
+    snapshot
+    /bin/mv "$@" || exit $?
+    snapshot
+    touch -t 200001010000 "$FM_HOME/state/.lock.acquire"
+    "$FM_OBSERVER_BIN" "$FM_HOME/observer.sh"
+    ;;
+  "$FM_HOME/state/.lock.session")
+    snapshot
+    touch -t 200001010000 "$FM_HOME/state/.lock.acquire"
+    "$FM_OBSERVER_BIN" "$FM_HOME/observer.sh"
+    /bin/mv "$@" || exit $?
+    snapshot
+    ;;
+  *) /bin/mv "$@" ;;
+esac
+SH
+  cat > "$dir/session.sh" <<'SH'
+#!/usr/bin/env bash
+export CLAUDE_CODE_SESSION_ID=session-current
+export CLAUDE_PID=$$
+export CLAUDE_CODE_CHILD_SESSION=1
+printf '%s\n' "$$" > "$FM_HOME/state/current-pid"
+PATH="$FM_OBSERVER_PATH:$PATH" FM_OBSERVER_BIN="$FM_OBSERVER_BIN" \
+  "$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/current.out" 2>&1
+SH
+  chmod +x "$dir/observer.sh" "$observer_bin/mv" "$dir/session.sh"
+  FM_HOME="$dir" FM_OBSERVER_PATH="$observer_bin" FM_OBSERVER_BIN="$NAMED_CLAUDE" \
+    "$NAMED_CLAUDE" "$dir/session.sh" || rc=$?
+  expect_code 0 "$rc" "session identity publication must complete"
+  current_pid=$(cat "$dir/state/current-pid")
+  while IFS='|' read -r lock session; do
+    if [ "$session" = absent ]; then
+      case "$lock" in
+        9999999|"$current_pid") saw_absent=1 ;;
+        *) fail "reader saw an invalid old-format lock during publication: $lock|$session" ;;
+      esac
+    elif [ "$session" = session-current ] && [ "$lock" = "$current_pid" ]; then
+      saw_matching=1
+    else
+      fail "reader saw a mismatched session identity during publication: $lock|$session"
+    fi
+  done < "$dir/state/publication.snapshots"
+  [ "$saw_absent" -eq 1 ] || fail "reader never observed the old-format publication state"
+  [ "$saw_matching" -eq 1 ] || fail "reader never observed the matching session publication state"
+  while IFS= read -r reader_rc; do
+    expect_code 0 "$reader_rc" "a foreign reader must stand down during identity publication"
+  done < "$dir/state/reader.rcs"
+  [ ! -e "$dir/state/arm-ran" ] || fail "a foreign reader armed during identity publication"
+  grep -F 'standing down: session lock identity update in progress' "$dir/state/reader.out" >/dev/null \
+    || fail "the live aged publication claim did not keep the foreign reader inert"
+  pass "session-lock e2e: identity publication exposes only stable pairs"
+}
+
 test_real_stop_hook_ignores_aged_acquisition_claim() {
   local dir
   dir="$TMP_ROOT/e2e-aged-acquisition-claim"
@@ -636,6 +744,8 @@ test_dead_claude_pid_falls_back_to_ancestry_pid
 test_non_claude_ancestry_ignores_inherited_claude_environment
 test_old_lock_without_sidecar_uses_pid_fallback
 test_real_stop_hook_owns_matching_claude_session
+test_real_stop_hook_refreshes_dead_matching_session
+test_identity_publication_exposes_only_stable_pairs
 test_real_stop_hook_ignores_aged_acquisition_claim
 test_foreign_stop_hook_stands_down_with_session_reason
 test_real_stop_hook_recovers_dead_foreign_sidecar

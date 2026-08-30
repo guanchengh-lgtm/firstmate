@@ -230,8 +230,13 @@ EOF
 # shellcheck disable=SC2034 # The auto-arm reads this output after a false result.
 FM_SESSION_LOCK_OWNER_REASON=''
 fm_session_lock_claim_is_fresh() {
-  local claim=$1 stale age modified
+  local claim=$1 stale age modified claim_pid
   [ -e "$claim" ] || [ -L "$claim" ] || return 1
+  claim_pid=$(cat "$claim/pid" 2>/dev/null || true)
+  case "$claim_pid" in
+    ''|*[!0-9]*) ;;
+    *) kill -0 "$claim_pid" 2>/dev/null && return 0 ;;
+  esac
   stale=${FM_LOCK_STALE_AFTER:-2}
   case "$stale" in
     ''|*[!0-9]*) stale=2 ;;
@@ -268,6 +273,7 @@ fm_session_lock_owned_by_self() {
   fm_session_lock_identity || return 1
   if [ -n "$FM_SESSION_ID" ] && lock_session=$(fm_session_lock_read_session_id "$state"); then
     if [ "$lock_session" = "$FM_SESSION_ID" ]; then
+      fm_harness_pid_alive "$lock_pid" || return 1
       if fm_session_lock_claim_is_fresh "$state/.lock.acquire"; then
         # shellcheck disable=SC2034 # The auto-arm reads this sourced output.
         FM_SESSION_LOCK_OWNER_REASON='session lock identity update in progress'

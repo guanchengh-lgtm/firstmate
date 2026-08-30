@@ -37,14 +37,16 @@ fm_session_lock_identity || { echo "error: cannot locate harness process in ance
 legacy_me=$FM_SESSION_ANCESTRY_PID
 me=$FM_SESSION_ANCESTRY_PID
 session_id=$FM_SESSION_ID
-probe=$(mktemp "$STATE/.lock-write.XXXXXX" 2>/dev/null) || {
+lock_tmp=$(mktemp "$STATE/.lock-write.XXXXXX" 2>/dev/null) || {
   echo "error: cannot write session lock; operate read-only until resolved" >&2
   exit 1
 }
-rm -f "$probe" 2>/dev/null || {
-  echo "error: cannot clean session-lock publication probe; operate read-only until resolved" >&2
+if ! { printf '%s\n' "$me" > "$lock_tmp"; } 2>/dev/null; then
+  rm -f "$lock_tmp" 2>/dev/null || true
+  echo "error: cannot write session lock; operate read-only until resolved" >&2
   exit 1
-}
+fi
+session_tmp=''
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 CLAIM_LOCK="$STATE/.lock.acquire"
@@ -54,6 +56,8 @@ release_claim_lock() {
     fm_lock_release "$CLAIM_LOCK"
     CLAIM_LOCK_HELD=0
   fi
+  [ -z "$lock_tmp" ] || rm -f "$lock_tmp" 2>/dev/null || true
+  [ -z "$session_tmp" ] || rm -f "$session_tmp" 2>/dev/null || true
 }
 trap release_claim_lock EXIT
 trap 'exit 1' HUP INT TERM
@@ -109,7 +113,6 @@ if [ -e "$LOCK" ] || [ -L "$LOCK" ]; then
     exit 1
   fi
 fi
-session_tmp=''
 if [ -n "$session_id" ]; then
   session_tmp=$(mktemp "$STATE/.lock-session-write.XXXXXX" 2>/dev/null) || {
     echo "error: cannot write session lock identity; operate read-only until resolved" >&2
@@ -121,21 +124,22 @@ if [ -n "$session_id" ]; then
     exit 1
   fi
 fi
-if ! rm -f "$LOCK_SESSION" 2>/dev/null; then
-  [ -z "$session_tmp" ] || rm -f "$session_tmp" 2>/dev/null || true
+existing_session=$(fm_session_lock_read_session_id "$STATE" 2>/dev/null || true)
+if { [ -z "$session_id" ] || [ "$existing_session" != "$session_id" ]; } \
+  && ! rm -f "$LOCK_SESSION" 2>/dev/null; then
   echo "error: cannot replace session lock identity; operate read-only until resolved" >&2
   exit 1
 fi
-if ! { printf '%s\n' "$me" > "$LOCK"; } 2>/dev/null; then
-  [ -z "$session_tmp" ] || rm -f "$session_tmp" 2>/dev/null || true
-  echo "error: cannot write session lock; operate read-only until resolved" >&2
+if ! mv "$lock_tmp" "$LOCK" 2>/dev/null; then
+  echo "error: cannot publish session lock; operate read-only until resolved" >&2
   exit 1
 fi
+lock_tmp=''
 if [ -n "$session_tmp" ] && ! mv "$session_tmp" "$LOCK_SESSION" 2>/dev/null; then
-  rm -f "$session_tmp" 2>/dev/null || true
   echo "error: cannot publish session lock identity; operate read-only until resolved" >&2
   exit 1
 fi
+session_tmp=''
 written=$(cat "$LOCK" 2>/dev/null) || {
   echo "error: cannot verify session lock ownership; operate read-only until resolved" >&2
   exit 1
