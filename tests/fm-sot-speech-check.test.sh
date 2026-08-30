@@ -286,6 +286,46 @@ test_transcript_scan_runs_only_for_matching_speech() {
   pass "sot-speech: transcript scan runs only for registered matching speech"
 }
 
+test_scaled_decision_fixture_keeps_verdict_and_cost_bounded() {
+  local small scaled payload small_out scaled_out symlink_out start small_ms scaled_ms rc
+  small=$(make_primary_home "$TMP_ROOT/scale-small")
+  scaled=$(make_primary_home "$TMP_ROOT/scale-large")
+  fm_test_seed_guard_scale_fixture "$small" 3
+  fm_test_seed_guard_scale_fixture "$scaled" 200
+
+  payload=$(printf '{"transcript_path":"%s","last_assistant_message":"routine status"}' \
+    "$small/transcript.jsonl")
+  start=$(fm_test_monotonic_ms)
+  set +e
+  small_out=$(run_check "$small" "$payload")
+  rc=$?
+  set -e
+  small_ms=$(($(fm_test_monotonic_ms) - start))
+  [ "$rc" -eq 0 ] || fail "small scaled-fixture oracle exited $rc: $small_out"
+
+  payload=$(printf '{"transcript_path":"%s","last_assistant_message":"routine status"}' \
+    "$scaled/transcript.jsonl")
+  start=$(fm_test_monotonic_ms)
+  set +e
+  scaled_out=$(run_check "$scaled" "$payload")
+  rc=$?
+  set -e
+  scaled_ms=$(($(fm_test_monotonic_ms) - start))
+  [ "$rc" -eq 0 ] || fail "large scaled-fixture oracle exited $rc: $scaled_out"
+  [ "$small_out" = "$scaled_out" ] || fail "scaled decision fixture changed speech verdict"
+
+  payload=$(printf '{"transcript_path":"%s","last_assistant_message":"symlink-only-claim"}' \
+    "$scaled/transcript.jsonl")
+  set +e
+  symlink_out=$(run_check "$scaled" "$payload")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "symlinked speech claim became a registry row: $symlink_out"
+  [ -z "$symlink_out" ] || fail "symlinked speech claim printed: $symlink_out"
+  fm_test_assert_scale_bound "$small_ms" "$scaled_ms" "sot-speech"
+  pass "sot-speech: 200 decision files preserve verdict with bounded scaling"
+}
+
 test_absent_locks_are_inert
 test_claim_without_read_is_refused
 test_read_evidence_allows_claim
@@ -297,5 +337,6 @@ test_decision_lock_claim_without_read_is_refused
 test_decision_lock_read_allows_claim
 test_session_start_digest_does_not_credit_decision_lock
 test_transcript_scan_runs_only_for_matching_speech
+test_scaled_decision_fixture_keeps_verdict_and_cost_bounded
 
 echo "# all fm-sot-speech-check tests passed"

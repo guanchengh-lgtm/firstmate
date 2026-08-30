@@ -79,9 +79,9 @@ printf '%s' "$PAYLOAD" > "$PAYLOAD_FILE" || exit 0
 
 claim_re='^speech-claim:[[:space:]]+(.+)$'
 rows=0
-for path in "$DECISIONS"/*.md; do
+while IFS= read -r -d '' path; do
   [ -f "$path" ] && [ ! -L "$path" ] && [ -r "$path" ] || continue
-  base=$(basename -- "$path")
+  base=${path##*/}
   file=data/decisions/$base
   ere=
   while IFS= read -r row || [ -n "$row" ]; do
@@ -93,7 +93,7 @@ for path in "$DECISIONS"/*.md; do
   [ -n "$ere" ] || continue
   rows=$((rows + 1))
   printf '%s\t%s\n' "$file" "$ere" >> "$NORMALIZED"
-done
+done < <(grep --null -l -m1 -E "$claim_re" "$DECISIONS"/*.md 2>/dev/null || true)
 [ "$rows" -gt 0 ] || exit 0
 
 MODE=stop

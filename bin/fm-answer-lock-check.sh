@@ -34,7 +34,7 @@
 #   R-lock-still-open   a CLOSED ticket's ordinary pointed-to lock has no
 #                       **Pick:** line, or the open-lock reader reports it.
 #                       Every ticket is scanned. The reader loads at most
-#                       once, only for a CLOSED ticket with a valid pointer.
+#                       once, only for pointed CLOSED-ticket lock files.
 #
 # Exact-count regression requires both --expect-rule and --expect-count and
 # exits 0 only when that rule count and the total finding count both equal
@@ -188,59 +188,86 @@ ordinary_file() {
   [ -f "$1" ] && [ ! -L "$1" ]
 }
 
-has_answer() {
-  grep -qE '^##[ \t]+Answer([ \t]|$)' "$1"
-}
-
-answer_body() {
-  awk '
-    /^##[ \t]+Answer([ \t]|$)/ { on=1; next }
-    /^##[ \t]/ { if (on) exit }
-    on { print }
-  ' "$1"
-}
-
-first_bold_is_pick() {
-  local body bold
-  body=$(answer_body "$1")
-  [[ $body =~ \*\*([^*]+)\*\* ]] || return 1
-  bold=${BASH_REMATCH[1]}
-  bold=${bold#"${bold%%[![:space:]]*}"}
-  bold=${bold%"${bold##*[![:space:]]}"}
-  [[ $bold =~ ^[A-Z](\.([[:space:]].*)?)?$ ]]
-}
-
-ticket_pointer() {
-  local body
-  body=$(answer_body "$1")
+parse_ticket() {
+  local file=$1 line body='' bold='' status_seen=0 in_answer=0 answer_done=0 body_started=0
+  parsed_status_line=
+  parsed_answered=0
+  parsed_pointer=
+  parsed_first_bold_pick=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    if [ "$status_seen" -eq 0 ] && [[ $line == status:* ]]; then
+      parsed_status_line=${line%$'\r'}
+      status_seen=1
+    fi
+    if [ "$answer_done" -eq 0 ] \
+      && [[ $line =~ ^##[[:blank:]]+Answer([[:blank:]]|$) ]]; then
+      parsed_answered=1
+      in_answer=1
+      continue
+    fi
+    [ "$in_answer" -eq 1 ] || continue
+    if [[ $line =~ ^##[[:blank:]] ]]; then
+      in_answer=0
+      answer_done=1
+      continue
+    fi
+    if [ "$body_started" -eq 1 ]; then
+      body+=$'\n'
+    fi
+    body+=$line
+    body_started=1
+  done < "$file"
   if [[ $body =~ Lock\ \`(data/decisions/[A-Za-z0-9._-]+\.md)\` ]]; then
-    printf '%s\n' "${BASH_REMATCH[1]}"
+    parsed_pointer=${BASH_REMATCH[1]}
+  fi
+  if [[ $body =~ \*\*([^*]+)\*\* ]]; then
+    bold=${BASH_REMATCH[1]}
+    bold=${bold#"${bold%%[![:space:]]*}"}
+    bold=${bold%"${bold##*[![:space:]]}"}
+    if [[ $bold =~ ^[A-Z](\.([[:space:]].*)?)?$ ]]; then
+      parsed_first_bold_pick=1
+    fi
   fi
 }
 
+lock_has_pick() {
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      *'**Pick:**'*) return 0 ;;
+    esac
+  done < "$1"
+  return 1
+}
+
 ticket_rel() {
-  printf '%s/%s' "$GATHER_REL" "$(basename "$1")"
+  printf '%s/%s' "$GATHER_REL" "${1##*/}"
 }
 
 lock_listed_open() {
-  local pointer=$1
-  load_open_json
-  printf '%s' "$open_json" | jq -e --arg f "$pointer" 'any(.[]; .file == $f)' >/dev/null
+  local pointer=$1 open_file
+  while IFS= read -r open_file; do
+    [ "$open_file" = "$pointer" ] && return 0
+  done <<< "$open_files"
+  return 1
 }
 
-open_json=
-open_json_loaded=0
 load_open_json() {
-  [ "$open_json_loaded" -eq 0 ] || return 0
+  local reader_json
   [ -x "$OPEN_LOCK_READER" ] || structural "missing open-lock reader $OPEN_LOCK_READER"
-  open_json=$("$OPEN_LOCK_READER" --list-open --decisions-dir "$decisions_dir") \
+  reader_json=$("$OPEN_LOCK_READER" --list-open --decisions-dir "$decisions_dir" "$@") \
     || structural "open-lock reader failed"
-  printf '%s' "$open_json" | jq -e 'type == "array"' >/dev/null \
+  open_files=$(printf '%s' "$reader_json" | jq -r \
+    'if type == "array" then .[].file else error("not an array") end') \
     || structural "open-lock reader did not return a JSON array"
-  open_json_loaded=1
 }
 
 findings=()
+pending_indexes=()
+pending_pointers=()
+pending_rels=()
+reader_args=()
+reader_names=' '
 shopt -s nullglob
 tickets=( "$tickets_dir"/*.md )
 shopt -u nullglob
@@ -248,8 +275,8 @@ shopt -u nullglob
 for file in "${tickets[@]+"${tickets[@]}"}"; do
   ordinary_file "$file" || continue
   rel=$(ticket_rel "$file")
-  status_line=$(grep -m1 '^status:' "$file" || true)
-  status_line=${status_line%$'\r'}
+  parse_ticket "$file"
+  status_line=$parsed_status_line
   rest=${status_line#status:}
   rest=${rest#"${rest%%[![:space:]]*}"}
   closed=0
@@ -262,13 +289,12 @@ for file in "${tickets[@]+"${tickets[@]}"}"; do
   if [[ $status_line =~ [0-9]{4}-[0-9]{2}-[0-9]{2} ]]; then
     dated=1
   fi
-  answered=0
-  has_answer "$file" && answered=1
-  pointer=$(ticket_pointer "$file")
+  answered=$parsed_answered
+  pointer=$parsed_pointer
   lock_path=
   lock_ok=0
   if [ -n "$pointer" ]; then
-    lock_path="$decisions_dir/$(basename "$pointer")"
+    lock_path="$decisions_dir/${pointer##*/}"
     if ordinary_file "$lock_path"; then
       lock_ok=1
     fi
@@ -282,20 +308,43 @@ for file in "${tickets[@]+"${tickets[@]}"}"; do
     findings+=("R-close-undated-status: $rel status: CLOSED has no YYYY-MM-DD token")
   fi
   if rule_wanted R-pick-still-open && [ "$open" -eq 1 ] && [ "$answered" -eq 1 ] \
-    && first_bold_is_pick "$file"; then
+    && [ "$parsed_first_bold_pick" -eq 1 ]; then
     findings+=("R-pick-still-open-status: $rel has a pick in ## Answer while status: is OPEN")
   fi
   if rule_wanted R-lock-still-open && [ "$closed" -eq 1 ] && [ "$lock_ok" -eq 1 ]; then
-    still=0
-    grep -qF -- '**Pick:**' "$lock_path" || still=1
-    if [ "$still" -eq 0 ] && lock_listed_open "$pointer"; then
-      still=1
-    fi
-    if [ "$still" -eq 1 ]; then
+    if ! lock_has_pick "$lock_path"; then
       findings+=("R-lock-still-open-file: $rel lock $pointer has no **Pick:** or is still open")
+    else
+      pending_indexes+=("${#findings[@]}")
+      pending_pointers+=("$pointer")
+      pending_rels+=("$rel")
+      findings+=("")
+      reader_name=${pointer##*/}
+      case "$reader_names" in
+        *" $reader_name "*) ;;
+        *)
+          reader_names+="$reader_name "
+          reader_args+=(--file "$reader_name")
+          ;;
+      esac
     fi
   fi
 done
+
+if [ "${#pending_indexes[@]}" -gt 0 ]; then
+  open_files=
+  load_open_json "${reader_args[@]}"
+  for ((pending=0; pending < ${#pending_indexes[@]}; pending++)); do
+    index=${pending_indexes[$pending]}
+    pointer=${pending_pointers[$pending]}
+    rel=${pending_rels[$pending]}
+    if lock_listed_open "$pointer"; then
+      findings[index]="R-lock-still-open-file: $rel lock $pointer has no **Pick:** or is still open"
+    else
+      unset 'findings[index]'
+    fi
+  done
+fi
 
 print_banner() {
   local rule line

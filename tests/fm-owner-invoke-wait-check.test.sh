@@ -924,6 +924,59 @@ JSONL
   pass "owner-invoke-wait: ** globs credit nested artifacts recursively"
 }
 
+test_scaled_rows_keep_verdict_and_cost_bounded() {
+  local small scaled payload small_out scaled_out start small_ms scaled_ms rc home count
+  small=$(make_primary_home "$TMP_ROOT/scale-small")
+  scaled=$(make_primary_home "$TMP_ROOT/scale-large")
+  fm_test_seed_guard_scale_fixture "$small" 3
+  fm_test_seed_guard_scale_fixture "$scaled" 200
+  for home in "$small" "$scaled"; do
+    mkdir -p "$home/data/scale-review"
+    printf '8181\n' > "$home/state/.lock"
+    printf '%s\n' 'kind=ship' 'ov=scale-review' 'ov_harness=claude' 'session=8181' \
+      > "$home/state/scale-ship.meta"
+    printf 'review complete\n' > "$home/data/scale-review/report.md"
+  done
+  printf '%s\n' plan-eng-review skill-one skill-two > "$small/data/scale-review/skills"
+  count=1
+  : > "$scaled/data/scale-review/skills"
+  while [ "$count" -le 200 ]; do
+    if [ "$count" -eq 1 ]; then
+      printf '%s\n' plan-eng-review >> "$scaled/data/scale-review/skills"
+    else
+      printf 'skill-%s\n' "$count" >> "$scaled/data/scale-review/skills"
+    fi
+    count=$((count + 1))
+  done
+
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$small/transcript.jsonl" "$small")
+  start=$(fm_test_monotonic_ms)
+  set +e
+  small_out=$(printf '%s' "$payload" | FM_HOME="$small" FM_ROOT_OVERRIDE="$small" \
+    FM_STATE_OVERRIDE="$small/state" FM_DATA_OVERRIDE="$small/data" \
+    "$CHECK" --rules R-skill-unloaded 2>&1)
+  rc=$?
+  set -e
+  small_ms=$(($(fm_test_monotonic_ms) - start))
+  [ "$rc" -eq 0 ] || fail "small scaled-fixture oracle exited $rc: $small_out"
+
+  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
+    "$scaled/transcript.jsonl" "$scaled")
+  start=$(fm_test_monotonic_ms)
+  set +e
+  scaled_out=$(printf '%s' "$payload" | FM_HOME="$scaled" FM_ROOT_OVERRIDE="$scaled" \
+    FM_STATE_OVERRIDE="$scaled/state" FM_DATA_OVERRIDE="$scaled/data" \
+    "$CHECK" --rules R-skill-unloaded 2>&1)
+  rc=$?
+  set -e
+  scaled_ms=$(($(fm_test_monotonic_ms) - start))
+  [ "$rc" -eq 0 ] || fail "large scaled-fixture oracle exited $rc: $scaled_out"
+  [ "$small_out" = "$scaled_out" ] || fail "scaled row fixture changed owner-invoke verdict"
+  fm_test_assert_scale_bound "$small_ms" "$scaled_ms" "owner-invoke-wait"
+  pass "owner-invoke-wait: 200 rows preserve verdict with bounded scaling"
+}
+
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
 test_missing_and_empty_input_are_structural
@@ -952,5 +1005,6 @@ test_hook_owner_node_ignores_slash_without_command_name
 test_hook_owner_node_malformed_registry_is_structural
 test_hook_owner_node_or_merges_duplicate_token_globs
 test_hook_owner_node_recursive_glob_credits_nested_artifact
+test_scaled_rows_keep_verdict_and_cost_bounded
 
 echo "# all fm-owner-invoke-wait-check tests passed"
