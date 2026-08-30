@@ -503,6 +503,7 @@ test_create_task_removes_workspace_when_surface_discovery_fails() {
   printf '{"workspaces":[]}' > "$dir/responses/1.out"
   cmux_workspace_list_response "$dir" 3 "bbbbbbbb-1111-1111-1111-111111111111" "$title"
   cmux_panes_empty_response "$dir" 4
+  printf '{"workspaces":[]}' > "$dir/responses/5.out"
   fb=$(make_cmux_fakebin "$dir")
   out=$(PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
     FM_TEST_PARTIAL_LOG="$dir/partial.log" bash -c '
@@ -517,6 +518,53 @@ test_create_task_removes_workspace_when_surface_discovery_fails() {
   [ "$(cat "$dir/partial.log")" = "bbbbbbbb-1111-1111-1111-111111111111:partial" ] \
     || fail "create_task did not remove the partial workspace"
   pass "fm_backend_cmux_create_task: surface discovery failure removes the partial workspace"
+}
+
+test_create_task_removes_workspace_when_id_discovery_fails() {
+  local dir fb out status title id
+  dir="$TMP_ROOT/create-task-id-failure"; mkdir -p "$dir/responses"
+  title=$(cmux_expected_scoped_title fm-id-partial)
+  id="bbbbbbbb-3333-3333-3333-333333333333"
+  printf '{"workspaces":[]}' > "$dir/responses/1.out"
+  printf '{"workspaces":[]}' > "$dir/responses/3.out"
+  cmux_workspace_list_response "$dir" 4 "$id" "$title"
+  printf '[]' > "$dir/responses/5.out"
+  printf '{"workspaces":[]}' > "$dir/responses/7.out"
+  fb=$(make_cmux_fakebin "$dir")
+  out=$(PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_create_task fm-id-partial /tmp/proj' "$ROOT" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "create_task accepted an unresolved workspace id"
+  assert_contains "$out" "could not resolve a cmux workspace id" \
+    "create_task did not keep the original id-resolution error"
+  assert_not_contains "$out" "partial-create cleanup" \
+    "create_task reported an orphan after proving workspace absence"
+  assert_contains "$(cat "$dir/log")" $'\x1f''close-workspace'$'\x1f''--workspace'$'\x1f'"$id" \
+    "create_task did not close the exact partial workspace"
+  pass "fm_backend_cmux_create_task: id discovery failure closes the partial workspace and proves absence"
+}
+
+test_create_task_names_workspace_when_cleanup_fails() {
+  local dir fb out status title id
+  dir="$TMP_ROOT/create-task-cleanup-failure"; mkdir -p "$dir/responses"
+  title=$(cmux_expected_scoped_title fm-leaked)
+  id="bbbbbbbb-4444-4444-4444-444444444444"
+  printf '{"workspaces":[]}' > "$dir/responses/1.out"
+  cmux_workspace_list_response "$dir" 3 "$id" "$title"
+  cmux_panes_empty_response "$dir" 4
+  printf '[]' > "$dir/responses/5.out"
+  printf '1' > "$dir/responses/6.exit"
+  cmux_workspace_list_response "$dir" 7 "$id" "$title"
+  fb=$(make_cmux_fakebin "$dir")
+  out=$(PATH="$fb:$PATH" FM_CMUX_LOG="$dir/log" FM_CMUX_RESPONSES="$dir/responses" \
+    bash -c '. "$0/bin/backends/cmux.sh"; fm_backend_cmux_create_task fm-leaked /tmp/proj' "$ROOT" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "create_task accepted failed partial-workspace cleanup"
+  assert_contains "$out" "partial-create cleanup left workspace '$title' ($id) present" \
+    "create_task did not name the leaked workspace"
+  assert_contains "$out" "could not resolve the default surface" \
+    "create_task did not keep the original surface-discovery error"
+  pass "fm_backend_cmux_create_task: failed cleanup names the partial workspace and keeps the original error"
 }
 
 # --- target_ready / capture ---------------------------------------------------
@@ -1154,6 +1202,8 @@ test_ensure_running_fails_fast_on_unauth_without_launching
 test_create_task_refuses_duplicate_label
 test_create_task_creates_and_parses_ids
 test_create_task_removes_workspace_when_surface_discovery_fails
+test_create_task_removes_workspace_when_id_discovery_fails
+test_create_task_names_workspace_when_cleanup_fails
 test_target_ready_fails_when_target_absent
 test_target_ready_checks_expected_label
 test_target_ready_rejects_label_mismatch

@@ -489,6 +489,7 @@ test_create_task_removes_tab_when_pane_discovery_fails() {
   printf '[{"tab_id":0,"name":"Tab #1","active":true}]\n' > "$dir/responses/1.out"
   printf '4\n' > "$dir/responses/2.out"
   printf '[]\n' > "$dir/responses/3.out"
+  printf '[{"tab_id":0,"name":"Tab #1","active":true}]\n' > "$dir/responses/5.out"
   fb=$(make_zellij_fakebin "$dir")
   out=$(PATH="$fb:$PATH" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
     FM_ZELLIJ_SESSION_LIST="firstmate" \
@@ -503,6 +504,28 @@ test_create_task_removes_tab_when_pane_discovery_fails() {
     $'\x1f''go-to-tab-by-id'$'\x1f''0' \
     "create_task did not restore focus after removing the partial tab"
   pass "fm_backend_zellij_create_task: pane discovery failure removes the partial tab"
+}
+
+test_create_task_names_tab_when_cleanup_fails() {
+  local dir fb out status title
+  dir="$TMP_ROOT/create-task-pane-cleanup-failure"; mkdir -p "$dir/responses"
+  title=$(zellij_expected_scoped_title fm-leaked)
+  printf '[{"tab_id":0,"name":"Tab #1","active":true}]\n' > "$dir/responses/1.out"
+  printf '4\n' > "$dir/responses/2.out"
+  printf '[]\n' > "$dir/responses/3.out"
+  printf '1' > "$dir/responses/4.exit"
+  printf '[{"tab_id":0,"name":"Tab #1","active":true},{"tab_id":4,"name":"%s","active":false}]\n' "$title" > "$dir/responses/5.out"
+  fb=$(make_zellij_fakebin "$dir")
+  out=$(PATH="$fb:$PATH" FM_ZELLIJ_LOG="$dir/log" FM_ZELLIJ_RESPONSES="$dir/responses" \
+    FM_ZELLIJ_SESSION_LIST="firstmate" \
+    bash -c '. "$0/bin/backends/zellij.sh"; fm_backend_zellij_create_task firstmate fm-leaked /tmp/proj' "$ROOT" 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "create_task accepted failed partial-tab cleanup"
+  assert_contains "$out" "could not prove tab 4 ('$title') absent from session 'firstmate'" \
+    "create_task did not name the orphan tab"
+  assert_contains "$out" "could not find a terminal pane for zellij tab 4" \
+    "create_task did not keep the original pane-discovery error"
+  pass "fm_backend_zellij_create_task: failed cleanup names the partial tab and keeps the original error"
 }
 
 test_create_task_restores_previously_active_tab() {
@@ -1345,6 +1368,7 @@ test_dispatch_busy_state_unknown_for_zellij
 test_create_task_refuses_duplicate_label
 test_create_task_creates_and_parses_ids
 test_create_task_removes_tab_when_pane_discovery_fails
+test_create_task_names_tab_when_cleanup_fails
 test_create_task_restores_previously_active_tab
 test_create_task_no_restore_when_new_tab_was_already_active
 test_capture_small_reads_use_viewport_and_trim

@@ -335,6 +335,40 @@ fm_backend_cmux_workspace_id_for_label() {  # <label>
     | jq -r --arg want "$label" '.workspaces[]? | select(.title == $want) | .id' 2>/dev/null | head -1
 }
 
+# Strict create-failure lookup. Unlike the normal best-effort resolver above,
+# empty output means confirmed absence only after a successful, valid list.
+fm_backend_cmux_strict_workspace_id_for_label() {  # <label>
+  local label=$1 out match
+  out=$(fm_backend_cmux_cli workspace list --json --id-format uuids 2>/dev/null) || return 1
+  match=$(printf '%s' "$out" | jq -r --arg want "$label" '
+    if (.workspaces | type) != "array" then error("missing workspaces")
+    elif any(.workspaces[]?; (.id | type) != "string" or (.title | type) != "string") then error("invalid workspace")
+    else [.workspaces[] | select(.title == $want) | .id]
+      | if length <= 1 then .[]? else error("duplicate workspace title") end
+    end
+  ' 2>/dev/null) || return 1
+  printf '%s' "$match"
+}
+
+fm_backend_cmux_cleanup_created_workspace() {  # <title> [<workspace_id>]
+  local title=$1 wsid=${2:-} remaining
+  if [ -z "$wsid" ]; then
+    wsid=$(fm_backend_cmux_strict_workspace_id_for_label "$title") || {
+      echo "error: cmux partial-create cleanup could not prove workspace '$title' absent (workspace id unknown)" >&2
+      return 1
+    }
+    [ -n "$wsid" ] || return 0
+  fi
+  fm_backend_cmux_kill "$wsid:partial"
+  remaining=$(fm_backend_cmux_strict_workspace_id_for_label "$title") || {
+    echo "error: cmux partial-create cleanup could not prove workspace '$title' ($wsid) absent" >&2
+    return 1
+  }
+  [ -z "$remaining" ] && return 0
+  echo "error: cmux partial-create cleanup left workspace '$title' ($wsid) present" >&2
+  return 1
+}
+
 fm_backend_cmux_surface_id_for_workspace() {  # <workspace_id>
   local wsid=$1
   fm_backend_cmux_cli list-panes --workspace "$wsid" --json --id-format uuids 2>/dev/null \
@@ -363,10 +397,14 @@ fm_backend_cmux_create_task() {  # <label> <cwd>
     return 1
   }
   wsid=$(fm_backend_cmux_workspace_id_for_label "$title")
-  [ -n "$wsid" ] || { echo "error: could not resolve a cmux workspace id for '$title' after creation" >&2; return 1; }
+  if [ -z "$wsid" ]; then
+    fm_backend_cmux_cleanup_created_workspace "$title" || true
+    echo "error: could not resolve a cmux workspace id for '$title' after creation" >&2
+    return 1
+  fi
   sfid=$(fm_backend_cmux_surface_id_for_workspace "$wsid")
   if [ -z "$sfid" ]; then
-    fm_backend_cmux_kill "$wsid:partial"
+    fm_backend_cmux_cleanup_created_workspace "$title" "$wsid" || true
     echo "error: could not resolve the default surface for cmux workspace '$title' ($wsid)" >&2
     return 1
   fi
