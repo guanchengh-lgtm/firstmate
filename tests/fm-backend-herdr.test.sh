@@ -2743,6 +2743,65 @@ test_projection_reclaim_replaces_only_exact_husk_and_advances_binding() {
   pass "herdr presentation reclaim: exact agent-free husk survives duplicate parent labels while its sibling stays untouched"
 }
 
+test_projection_reclaim_replaces_active_husk_for_handoff() {
+  local dir state home home_real journal token label log out
+  dir="$TMP_ROOT/projection-reclaim-active"; state="$dir/state"; home="$dir/home"
+  mkdir -p "$state" "$home"
+  home_real=$(cd "$home" && pwd -P)
+  log="$dir/log"; : > "$log"
+  token=$(bash -c '
+    . "$0/bin/backends/herdr.sh"
+    token=$(fm_backend_herdr_projection_journal_create "$1" active-r1) || exit 1
+    label=$(fm_backend_herdr_projection_workspace_label active-r1 "$token")
+    fm_backend_herdr_projection_journal_bind \
+      "$1/active-r1.herdr-presentation" active-r1 "$2" fmtest \
+      w2 w2:t2 w2:p2 w1 firstmate "$label" fm-active-r1 || exit 1
+    printf "%s" "$token"
+  ' "$ROOT" "$state" "$home_real") || fail "could not create active reclaim journal fixture"
+  journal="$state/active-r1.herdr-presentation"
+  label="└ active-r1 · p:$token"
+  out=$(FM_TEST_RECLAIM_LOG="$log" bash -c '
+    . "$0/bin/backends/herdr.sh"
+    current_focus=w2:t2
+    old_state=no-agent
+    fm_backend_herdr_projection_live_binding_matches() { return 0; }
+    fm_backend_herdr_pane_agent_state() {
+      if [ "$2" = w2:p2 ]; then printf "%s" "$old_state"; else printf no-agent; fi
+    }
+    fm_backend_herdr_projection_focus_snapshot() { printf "w2\t%s" "$current_focus"; }
+    fm_backend_herdr_cli() {
+      shift
+      case "$1 $2" in
+        "tab create") printf "%s\n" "{\"result\":{\"tab\":{\"tab_id\":\"w2:t3\"},\"root_pane\":{\"pane_id\":\"w2:p3\"}}}" ;;
+        "tab get") printf "%s\n" "{\"result\":{\"tab\":{\"tab_id\":\"w2:t3\",\"workspace_id\":\"w2\"}}}" ;;
+        "pane get") printf "%s\n" "{\"result\":{\"pane\":{\"pane_id\":\"w2:p3\",\"tab_id\":\"w2:t3\",\"workspace_id\":\"w2\"}}}" ;;
+        "tab focus") current_focus=$3; printf "focus %s\n" "$3" >> "$FM_TEST_RECLAIM_LOG" ;;
+        *) return 1 ;;
+      esac
+    }
+    fm_backend_herdr_explicit_close_pane_confirmed() {
+      [ "$2" = w2:p2 ] && [ "$current_focus" = w2:t3 ] || return 1
+      old_state=dead
+      printf "close %s\n" "$2" >> "$FM_TEST_RECLAIM_LOG"
+    }
+    fm_backend_herdr_projection_reclaim_task \
+      fmtest "$1" active-r1 "$2" w2 w2:t2 w2:p2 firstmate fm-active-r1 \
+      /tmp/project replace-active || exit 1
+    printf "%s %s %s" "$FM_BACKEND_HERDR_PROJECTION_TAB_ID" \
+      "$FM_BACKEND_HERDR_PROJECTION_PANE_ID" "$current_focus"
+  ' "$ROOT" "$journal" "$home") || fail "active agent-free projection reclaim failed"
+  [ "$out" = "w2:t3 w2:p3 w2:t3" ] \
+    || fail "active reclaim did not return and focus the replacement: $out"
+  [ "$(cat "$log")" = $'focus w2:t3\nclose w2:p2' ] \
+    || fail "active reclaim did not focus the replacement before closing the husk: $(cat "$log")"
+  [ "$(sed -n 's/^tab_id=//p' "$journal")" = w2:t3 ] \
+    && [ "$(sed -n 's/^pane_id=//p' "$journal")" = w2:p3 ] \
+    || fail "active reclaim did not advance the journal to the replacement endpoint"
+  [ "$(sed -n 's/^workspace_label=//p' "$journal")" = "$label" ] \
+    || fail "active reclaim changed the projected workspace binding"
+  pass "herdr presentation reclaim: handoff replaces an active agent-free husk exactly"
+}
+
 test_projection_recovery_is_read_only_and_refuses_live_duplicate_risk() {
   local dir state log resp fb token journal out status calls
   dir="$TMP_ROOT/projection-recovery"; state="$dir/state"; mkdir -p "$dir/responses" "$state"
@@ -4522,6 +4581,7 @@ test_presentation_session_lock_path_rejects_malformed_socket
 test_projection_order_rejects_malformed_socket
 test_projection_reclaim_refusal_matrix_is_non_mutating
 test_projection_reclaim_replaces_only_exact_husk_and_advances_binding
+test_projection_reclaim_replaces_active_husk_for_handoff
 test_projection_recovery_is_read_only_and_refuses_live_duplicate_risk
 test_workspace_find_matches_only_this_homes_own_label
 test_list_live_scoped_to_this_homes_workspace_only

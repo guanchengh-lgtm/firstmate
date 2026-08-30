@@ -1605,6 +1605,37 @@ test_verifier_handoff_refuses_live_or_unverified_endpoint() {
   pass "fm-spawn: verifier handoff refuses live and unverified builder endpoints"
 }
 
+test_verifier_handoff_refuses_lifecycle_lock_contention() {
+  local rec id out status meta_before endpoint_before lock holder i=0
+  id=profile-verifier-lifecycle-lock-z49
+  rec=$(make_spawn_case profile-verifier-lifecycle-lock claude "$id")
+  read_case_record "$rec"
+  prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  meta_before=$(cat "$HOME_DIR/state/$id.meta")
+  endpoint_before=$(cat "$HOME_DIR/state/.fake-endpoint-state")
+  lock="$HOME_DIR/state/.control-$id.lock"
+  (
+    . "$ROOT/bin/fm-wake-lib.sh"
+    fm_lock_try_acquire "$lock" || exit 1
+    sleep 30
+  ) &
+  holder=$!
+  while [ ! -e "$lock" ] && [ "$i" -lt 100 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ -e "$lock" ] || { kill "$holder" 2>/dev/null; fail "could not stage verifier lifecycle lock"; }
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  assert_verifier_handoff_refusal_preserved "$out" "$status" \
+    "error: another lifecycle action is already running for task $id" \
+    "$meta_before" "$endpoint_before" "$id"
+  pass "fm-spawn: verifier handoff participates in lifecycle serialization"
+}
+
 test_verifier_handoff_refuses_invalid_builder_worktrees() {
   local rec id out status meta meta_before endpoint_before bad_path other_project other_worktree
 
@@ -1789,6 +1820,7 @@ test_verifier_handoff_adoption_failure_retires_new_endpoint
 test_verifier_handoff_prepublication_failure_retires_replacement_state
 test_verifier_handoff_teardown_returns_single_worktree
 test_verifier_handoff_refuses_live_or_unverified_endpoint
+test_verifier_handoff_refuses_lifecycle_lock_contention
 test_verifier_handoff_refuses_invalid_builder_worktrees
 test_role_verifier_enforces_explicit_ov
 

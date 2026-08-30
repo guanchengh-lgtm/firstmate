@@ -2274,9 +2274,10 @@ fm_backend_herdr_projection_reclaim_rollback() {  # <session> <new-pane>
 # Return 0 means exact reclaim, 2 means non-mutating or exactly rolled-back
 # refusal with flat fallback permitted, and 1 means a live/unknown or
 # post-mutation uncertainty that must refuse the launch.
-fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <home> <meta-workspace> <meta-tab> <meta-pane> <parent-label> <task-label> <cwd>
+fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <home> <meta-workspace> <meta-tab> <meta-pane> <parent-label> <task-label> <cwd> [replace-active]
   local session=$1 journal=$2 id=$3 home=$4 meta_workspace=$5 meta_tab=$6 meta_pane=$7
-  local parent_label=$8 task_label=$9 cwd=${10} canonical_home state focus_before active_tab out new_tab new_pane info close_status
+  local parent_label=$8 task_label=$9 cwd=${10} reclaim_mode=${11:-}
+  local canonical_home state focus_before active_tab out new_tab new_pane info close_status replace_active=0 expected_focus
   FM_BACKEND_HERDR_PROJECTION_TAB_ID=""
   FM_BACKEND_HERDR_PROJECTION_PANE_ID=""
   fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
@@ -2324,8 +2325,12 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
   }
   active_tab=${focus_before#*$'\t'}
   if [ "$active_tab" = "$meta_tab" ]; then
-    echo "warning: herdr presentation reclaim for $id would replace the active tab; spawning flat" >&2
-    return 2
+    if [ "$reclaim_mode" = replace-active ]; then
+      replace_active=1
+    else
+      echo "warning: herdr presentation reclaim for $id would replace the active tab; spawning flat" >&2
+      return 2
+    fi
   fi
   if ! out=$(fm_backend_herdr_cli "$session" tab create \
     --workspace "$meta_workspace" --cwd "$cwd" --label "$task_label" --no-focus 2>/dev/null); then
@@ -2373,10 +2378,48 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
       return 2
       ;;
   esac
-  if fm_backend_herdr_projection_close_pane_focus_preserving "$session" "$meta_pane" no-agent; then
+  if [ "$replace_active" -eq 1 ]; then
+    if ! fm_backend_herdr_cli "$session" tab focus "$new_tab" >/dev/null 2>&1; then
+      fm_backend_herdr_projection_focus_restore "$session" "$focus_before" "active husk replacement focus" || return 1
+      fm_backend_herdr_projection_reclaim_rollback "$session" "$new_pane" || return 1
+      echo "warning: herdr presentation reclaim for $id could not focus its active replacement; spawning flat" >&2
+      return 2
+    fi
+    expected_focus="$meta_workspace"$'\t'"$new_tab"
+    if ! fm_backend_herdr_projection_focus_restore \
+      "$session" "$expected_focus" "active husk replacement focus"; then
+      fm_backend_herdr_projection_focus_restore "$session" "$focus_before" "active husk replacement rollback" || return 1
+      fm_backend_herdr_projection_reclaim_rollback "$session" "$new_pane" || return 1
+      return 1
+    fi
+    if fm_backend_herdr_explicit_close_pane_confirmed "$session" "$meta_pane"; then
+      close_status=0
+    else
+      close_status=1
+    fi
+    if [ "$close_status" -eq 0 ]; then
+      fm_backend_herdr_projection_focus_restore \
+        "$session" "$expected_focus" "active husk replacement close" || return 1
+    fi
+  elif fm_backend_herdr_projection_close_pane_focus_preserving "$session" "$meta_pane" no-agent; then
     close_status=0
   else
     close_status=$?
+  fi
+  if [ "$close_status" -ne 0 ]; then
+    if [ "$replace_active" -eq 1 ]; then
+      state=$(fm_backend_herdr_pane_agent_state "$session" "$meta_pane")
+      case "$state" in
+        no-agent)
+          fm_backend_herdr_projection_focus_restore "$session" "$focus_before" "active husk replacement rollback" || return 1
+          fm_backend_herdr_projection_reclaim_rollback "$session" "$new_pane" || return 1
+          echo "warning: herdr presentation reclaim for $id could not close the exact old husk; spawning flat" >&2
+          return 2
+          ;;
+        dead) close_status=0 ;;
+        live|unknown) return 1 ;;
+      esac
+    fi
   fi
   if [ "$close_status" -ne 0 ]; then
     if [ "$close_status" -eq 2 ]; then
@@ -2402,14 +2445,20 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
     "$meta_workspace" "$new_tab" "$new_pane" \
     "$FM_BACKEND_HERDR_JOURNAL_PARENT_WORKSPACE_ID" "$parent_label" \
     "$FM_BACKEND_HERDR_JOURNAL_WORKSPACE_LABEL" "$task_label"; then
-    fm_backend_herdr_projection_reclaim_rollback "$session" "$new_pane" || return 1
+    [ "$replace_active" -eq 1 ] \
+      || fm_backend_herdr_projection_reclaim_rollback "$session" "$new_pane" \
+      || return 1
     echo "warning: herdr presentation reclaim for $id did not converge exactly; spawning flat" >&2
+    [ "$replace_active" -ne 1 ] || return 1
     return 2
   fi
   if ! fm_backend_herdr_projection_journal_replace_endpoint \
     "$journal" "$id" "$meta_tab" "$meta_pane" "$new_tab" "$new_pane"; then
-    fm_backend_herdr_projection_reclaim_rollback "$session" "$new_pane" || return 1
+    [ "$replace_active" -eq 1 ] \
+      || fm_backend_herdr_projection_reclaim_rollback "$session" "$new_pane" \
+      || return 1
     echo "warning: herdr presentation reclaim for $id could not publish its replacement binding; spawning flat" >&2
+    [ "$replace_active" -ne 1 ] || return 1
     return 2
   fi
   FM_BACKEND_HERDR_PROJECTION_TAB_ID=$new_tab

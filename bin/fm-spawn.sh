@@ -1049,6 +1049,15 @@ if [ "$RELAUNCH" -eq 0 ]; then
   fi
   SPAWN_TASK_SET_LOCK_HELD=1
 fi
+if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ] && [ "$ROLE" = verifier ]; then
+  SPAWN_CONTROL_LOCK="$STATE/.control-$ID.lock"
+  if fm_lock_try_acquire "$SPAWN_CONTROL_LOCK"; then
+    SPAWN_CONTROL_LOCK_HELD=1
+  else
+    echo "error: another lifecycle action is already running for task $ID" >&2
+    exit 1
+  fi
+fi
 [ "$MAP_NEXT_SET" -eq 0 ] || [ "$MAP_NEXT" != "$ID" ] || { echo "error: --map-next must name a different task id" >&2; exit 2; }
 [ "$OV_SET" -eq 0 ] || [ "$KIND" = ship ] || {
   echo "error: --ov applies only to ship spawns" >&2
@@ -2242,7 +2251,10 @@ if [ "$RELAUNCH" -eq 1 ]; then
   SES=${T%%:*}
 else
 if [ "$VERIFIER_HANDOFF" -eq 1 ] \
-   && { [ "$VERIFIER_HANDOFF_PRIOR_BACKEND" != herdr ] || [ "$BACKEND" != herdr ]; }; then
+   && { [ "$VERIFIER_HANDOFF_PRIOR_BACKEND" != herdr ] \
+     || [ "$BACKEND" != herdr ] \
+     || { [ ! -e "$STATE/$ID.herdr-presentation" ] \
+       && [ ! -L "$STATE/$ID.herdr-presentation" ]; }; }; then
   fm_backend_kill "$VERIFIER_HANDOFF_PRIOR_BACKEND" "$VERIFIER_HANDOFF_PRIOR_TARGET" || {
     echo "error: verifier handoff refused: could not retire the stopped builder endpoint" >&2
     exit 1
@@ -2292,7 +2304,11 @@ case "$BACKEND" in
     fi
     HERDR_PRESENTATION_JOURNAL=$(fm_backend_herdr_projection_journal_path "$STATE" "$ID")
     HERDR_PROJECTED=0
-    if [ "$KIND" != secondmate ] && fm_backend_herdr_presentation_enabled "$CONFIG" "$STATE"; then
+    if [ "$KIND" != secondmate ] \
+       && { fm_backend_herdr_presentation_enabled "$CONFIG" "$STATE" \
+         || { [ "$VERIFIER_HANDOFF" -eq 1 ] \
+           && { [ -e "$HERDR_PRESENTATION_JOURNAL" ] \
+             || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; }; }; }; then
       HERDR_SES=$(fm_backend_herdr_session)
       HERDR_PARENT_LABEL=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_workspace_label)
       if [ -e "$HERDR_PRESENTATION_JOURNAL" ] || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; then
@@ -2311,10 +2327,12 @@ case "$BACKEND" in
           "$HERDR_SES" "$HERDR_PRESENTATION_JOURNAL" "$ID" || exit 1
         if [ "${HERDR_RECOVERY_BACKEND:-}" = herdr ]; then
           set +e
+          HERDR_RECLAIM_MODE=
+          [ "$VERIFIER_HANDOFF" -ne 1 ] || HERDR_RECLAIM_MODE=replace-active
           FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_projection_reclaim_task \
             "$HERDR_SES" "$HERDR_PRESENTATION_JOURNAL" "$ID" "$HERDR_LABEL_HOME" \
             "$HERDR_RECOVERY_WORKSPACE_ID" "$HERDR_RECOVERY_TAB_ID" "$HERDR_RECOVERY_PANE_ID" \
-            "$HERDR_PARENT_LABEL" "$W" "$PROJ_ABS"
+            "$HERDR_PARENT_LABEL" "$W" "$PROJ_ABS" "$HERDR_RECLAIM_MODE"
           HERDR_RECLAIM_STATUS=$?
           set -e
           case "$HERDR_RECLAIM_STATUS" in
@@ -2330,6 +2348,10 @@ case "$BACKEND" in
               HERDR_PROJECTION_ABORT_SEEDED_PANE=""
               ;;
             2)
+              if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+                echo "error: verifier handoff refused: projected builder endpoint could not be replaced exactly" >&2
+                exit 1
+              fi
               spawn_herdr_presentation_order_lock_release
               ;;
             *) exit 1 ;;
