@@ -78,7 +78,7 @@ do
 done
 
 lock_out=$(FM_HOME="$VERIFY_HOME" "$REPO_ROOT/bin/fm-lock.sh" status) || true
-printf 'lock: %s\n' "$lock_out"
+printf '%s\n' "$lock_out"
 
 detect_out=$(FM_HOME="$VERIFY_HOME" FM_BOOTSTRAP_DETECT_ONLY=1 "$REPO_ROOT/bin/fm-bootstrap.sh" 2>&1) || true
 if [ -z "$detect_out" ]; then

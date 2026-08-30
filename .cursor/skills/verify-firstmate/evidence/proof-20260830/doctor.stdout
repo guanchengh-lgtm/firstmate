@@ -1,0 +1,21 @@
+home: /tmp/fm-verify-proof-20260830
+repo: /workspace
+parse: ok bin/fm-session-start.sh
+parse: ok bin/fm-bootstrap.sh
+parse: ok bin/fm-brief.sh
+parse: ok bin/fm-bearings-snapshot.sh
+parse: ok bin/fm-lock.sh
+parse: ok bin/fm-test-run.sh
+lock: lock: free
+bootstrap:
+MISSING: treehouse (install: curl -fsSL https://kunchenguid.github.io/treehouse/install.sh | sh)
+MISSING: no-mistakes (install: curl -fsSL https://raw.githubusercontent.com/kunchenguid/no-mistakes/main/docs/install.sh | sh)
+MISSING: gh-axi (install: npm install -g gh-axi && gh-axi setup hooks)
+MISSING: chrome-devtools-axi (install: npm install -g chrome-devtools-axi && chrome-devtools-axi setup hooks)
+MISSING: lavish-axi (install: npm install -g lavish-axi && lavish-axi setup hooks)
+MISSING: tasks-axi (install: npm install -g tasks-axi)
+MISSING: quota-axi (install: npm install -g quota-axi)
+TANGLE: primary checkout on feature branch 'cursor/verify-firstmate-skill-27d6' (expected 'main'); the work is safe on that ref - read-only session must leave restore work to the session holding the fleet lock
+test-run: lists tests/fm-brief.test.sh
+doctor: driveable isolated-bin-scripts (missing_tools=7)
+note: MISSING treehouse/no-mistakes/axi tools block spawn and no-mistakes delivery, not brief, bearings, session-start, or the behavior suite.

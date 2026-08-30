@@ -1,0 +1,4 @@
+LAUNCH_OK
+VERIFY_HOME=/tmp/fm-verify-proof-20260830
+VERIFY_EVIDENCE=/workspace/.cursor/skills/verify-firstmate/evidence/proof-20260830
+VERIFY_ENV=/tmp/fm-verify-proof-20260830/.fm-verify-env

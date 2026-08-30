@@ -1,0 +1,1 @@
+FM_HOME=/tmp/fm-verify-proof-20260830 bin/fm-brief.sh verify-brief demo-proj --mode direct-PR
