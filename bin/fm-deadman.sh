@@ -117,9 +117,12 @@ beacon_mtime() {
 }
 
 live_work_exists() {
-  local meta
+  local meta kind
   for meta in "$FM_HOME"/state/*.meta; do
-    [ -f "$meta" ] && [ ! -L "$meta" ] && return 0
+    [ -f "$meta" ] && [ ! -L "$meta" ] || continue
+    kind=$(grep '^kind=' "$meta" 2>/dev/null | tail -1 | cut -d= -f2-)
+    [ "$kind" = secondmate ] && continue
+    return 0
   done
   [ -f "$FM_HOME/state/x-watch.check.sh" ] && [ ! -L "$FM_HOME/state/x-watch.check.sh" ]
 }
