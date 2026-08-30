@@ -2077,6 +2077,7 @@ herdr_projection_existing_meta_allows_flat() {  # <meta>
 VERIFIER_HANDOFF=0
 VERIFIER_HANDOFF_META=
 VERIFIER_HANDOFF_PRIOR_BACKEND=
+VERIFIER_HANDOFF_PRIOR_HARNESS=
 VERIFIER_HANDOFF_PRIOR_TARGET=
 git_common_dir_real() {  # <worktree>
   local worktree=$1 common
@@ -2099,6 +2100,8 @@ verifier_handoff_preflight() {
   fm_backend_validate_task_endpoint "$meta" "$ID" || return 1
   VERIFIER_HANDOFF_PRIOR_BACKEND=$FM_BACKEND_VALIDATED_BACKEND
   VERIFIER_HANDOFF_PRIOR_TARGET=$FM_BACKEND_VALIDATED_TARGET
+  VERIFIER_HANDOFF_PRIOR_HARNESS=$(fm_backend_meta_exact_value "$meta" harness) \
+    || VERIFIER_HANDOFF_PRIOR_HARNESS=
   prior_kind=$(fm_backend_meta_exact_value "$meta" kind) || prior_kind=
   prior_mode=$(fm_backend_meta_exact_value "$meta" mode) || prior_mode=
   prior_role=$(fm_backend_meta_exact_value "$meta" role) || prior_role=
@@ -2719,14 +2722,14 @@ exclude_path() {
   mkdir -p "$(dirname "$EXCL")"
   grep -qxF "$rel" "$EXCL" 2>/dev/null || echo "$rel" >> "$EXCL"
 }
-if [ "$RELAUNCH" -eq 1 ]; then
-  # Retire the previous incarnation's per-task harness wiring before arming the
-  # new one. Without this, a harness switch would leave the old adapter's hook
-  # files and turn-end token registry entries behind, and even a same-harness
-  # relaunch would orphan the retired busy generation's token
-  # (bin/fm-control-lib.sh owns where those artifacts live).
-  clear_relaunch_harness_wiring "$RELAUNCH_PRIOR_HARNESS" "$WT" "$STATE_REAL" "$ID" || {
-    echo "error: could not retire $RELAUNCH_PRIOR_HARNESS wiring for task $ID; refusing to arm the replacement" >&2
+if [ "$RELAUNCH" -eq 1 ] || [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+  if [ "$RELAUNCH" -eq 1 ]; then
+    PRIOR_HARNESS=$RELAUNCH_PRIOR_HARNESS
+  else
+    PRIOR_HARNESS=$VERIFIER_HANDOFF_PRIOR_HARNESS
+  fi
+  clear_relaunch_harness_wiring "$PRIOR_HARNESS" "$WT" "$STATE_REAL" "$ID" || {
+    echo "error: could not retire $PRIOR_HARNESS wiring for task $ID; refusing to arm the replacement" >&2
     exit 1
   }
   RELAUNCH_REPLACEMENT_PENDING=1
@@ -3057,11 +3060,15 @@ META_WINDOW=$T
 [ "$BACKEND" = orca ] && META_WINDOW=$W
 SPAWN_GEN="s$(date +%s).${BASHPID:-$$}.$RANDOM"
 SPAWN_META_PATH="$STATE/$ID.meta"
-if [ "$RELAUNCH" -eq 1 ]; then
+if [ "$RELAUNCH" -eq 1 ] || [ "$VERIFIER_HANDOFF" -eq 1 ]; then
   SPAWN_META_LOCK=$(fm_meta_lock_path "$STATE/$ID.meta") || exit 1
   fm_lock_acquire_wait "$SPAWN_META_LOCK"
   SPAWN_META_LOCK_HELD=1
-  SPAWN_META_TMP="$STATE/.$ID.meta.relaunch.${BASHPID:-$$}"
+  if [ "$RELAUNCH" -eq 1 ]; then
+    SPAWN_META_TMP="$STATE/.$ID.meta.relaunch.${BASHPID:-$$}"
+  else
+    SPAWN_META_TMP="$STATE/.$ID.meta.handoff.${BASHPID:-$$}"
+  fi
   SPAWN_META_PATH=$SPAWN_META_TMP
 elif [ -d "$SPAWN_META_PATH" ]; then
   # Bash 3.2 reports a failed redirection onto a directory without failing the
@@ -3078,6 +3085,24 @@ preserve_relaunch_meta() {
     }
     !($1 in owned)
   ' "$RELAUNCH_META"
+}
+preserve_verifier_handoff_meta() {
+  awk -F= \
+    -v map_next_set="$MAP_NEXT_SET" \
+    -v map_set="$MAP_SET" \
+    -v ov_set="$OV_SET" '
+    BEGIN {
+      split("window endpoint_task_id worktree project harness kind mode yolo role tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      for (i in keys) owned[keys[i]] = 1
+      if (map_next_set == 1) owned["map_next"] = 1
+      if (map_set == 1) owned["map"] = 1
+      if (ov_set == 1) {
+        owned["ov"] = 1
+        owned["ov_harness"] = 1
+      }
+    }
+    !($1 in owned)
+  ' "$VERIFIER_HANDOFF_META"
 }
 SPAWN_SESSION=
 if [ -f "$STATE/.lock" ] && [ ! -L "$STATE/.lock" ]; then
@@ -3101,7 +3126,7 @@ if ! {
   [ -z "${MAP:-}" ] || echo "map=$MAP"
   [ -z "${OV:-}" ] || echo "ov=$OV"
   [ -z "${OV_HARNESS:-}" ] || echo "ov_harness=$OV_HARNESS"
-  [ -z "$SPAWN_SESSION" ] || echo "session=$SPAWN_SESSION"
+  [ "$VERIFIER_HANDOFF" -eq 1 ] || [ -z "$SPAWN_SESSION" ] || echo "session=$SPAWN_SESSION"
   echo "tasktmp=$TASK_TMP"
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"
@@ -3137,6 +3162,8 @@ if ! {
   fi
   if [ "$RELAUNCH" -eq 1 ]; then
     preserve_relaunch_meta
+  elif [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+    preserve_verifier_handoff_meta
   fi
   if [ "$SPAWN_CONTROL_PARENT" = 1 ] && [ -n "${FM_CONTROL_RELAUNCH_TX:-}" ]; then
     echo "control_relaunch_tx=$FM_CONTROL_RELAUNCH_TX"
@@ -3144,7 +3171,7 @@ if ! {
 } > "$SPAWN_META_PATH"; then
   exit 1
 fi
-if [ "$RELAUNCH" -eq 1 ]; then
+if [ "$RELAUNCH" -eq 1 ] || [ "$VERIFIER_HANDOFF" -eq 1 ]; then
   SPAWN_META_PUBLISH_STARTED=1
   mv -f "$SPAWN_META_TMP" "$STATE/$ID.meta"
   RELAUNCH_REPLACEMENT_PENDING=0

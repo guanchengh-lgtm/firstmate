@@ -1239,6 +1239,8 @@ test_role_verifier_encodes_verifier_brief() {
   rec=$(make_spawn_case profile-role-verifier claude "$id")
   read_case_record "$rec"
   prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  printf '%s\n' 'map_next=profile-next-task-z46' 'x_request=request-46' \
+    >> "$HOME_DIR/state/$id.meta"
   head_before=$(git -C "$WT_DIR" rev-parse HEAD)
 
   out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
@@ -1248,6 +1250,10 @@ test_role_verifier_encodes_verifier_brief() {
   meta="$HOME_DIR/state/$id.meta"
   assert_grep 'role=verifier' "$meta" "verifier spawn did not record role=verifier"
   assert_grep 'kind=ship' "$meta" "verifier spawn lost kind=ship"
+  assert_grep 'map_next=profile-next-task-z46' "$meta" \
+    "verifier spawn lost the task successor"
+  assert_grep 'x_request=request-46' "$meta" \
+    "verifier spawn lost the external request link"
   assert_contains "$out" "role=verifier" "spawned line did not report role=verifier"
   assert_grep "worktree=$WT_DIR" "$meta" "verifier spawn did not retain builder worktree"
   head_after=$(git -C "$WT_DIR" rev-parse HEAD)
@@ -1263,6 +1269,36 @@ test_role_verifier_encodes_verifier_brief() {
   expected="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false claude --dangerously-skip-permissions \"\$('${ROOT}/bin/fm-operational-input.sh' encode launch-brief < '$HOME_DIR/data/$id/verifier-brief.md')\""
   [ "$launch" = "$expected" ] || fail "verifier spawn did not encode verifier-brief.md"$'\n'"expected: $expected"$'\n'"actual:   $launch"
   pass "fm-spawn: --role verifier encodes verifier-brief.md and records role=verifier"
+}
+
+test_verifier_handoff_retires_builder_wiring() {
+  local rec id out status old_token old_auth new_token new_auth pointer exclude
+  id=profile-verifier-wiring-z47
+  rec=$(make_spawn_case profile-verifier-wiring grok "$id")
+  read_case_record "$rec"
+  prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  replace_meta_value "$HOME_DIR/state/$id.meta" harness grok
+  old_token=fm.111111111111
+  mkdir -p "$HOME_DIR/grok-home/hooks/fm-turn-end.d"
+  printf '%s\n' "$old_token" > "$HOME_DIR/state/$id.grok-turnend-token"
+  old_auth="$HOME_DIR/grok-home/hooks/fm-turn-end.d/$old_token"
+  printf '%s\n' "$HOME_DIR/state/$id.turn-ended" > "$old_auth"
+  printf 'token=%s\n' "$old_token" > "$WT_DIR/.fm-grok-turnend"
+  exclude=$(git -C "$WT_DIR" rev-parse --git-path info/exclude)
+  printf '%s\n' '.fm-grok-turnend' >> "$exclude"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  expect_code 0 "$status" "verifier handoff from a grok builder should succeed"
+  assert_absent "$old_auth" "verifier handoff left the builder authorization file"
+  new_token=$(cat "$HOME_DIR/state/$id.grok-turnend-token")
+  [ "$new_token" != "$old_token" ] || fail "verifier handoff reused the builder wiring token"
+  new_auth="$HOME_DIR/grok-home/hooks/fm-turn-end.d/$new_token"
+  assert_present "$new_auth" "verifier handoff did not arm fresh verifier wiring"
+  pointer=$(sed -n 's/^token=//p' "$WT_DIR/.fm-grok-turnend")
+  [ "$pointer" = "$new_token" ] || fail "verifier handoff pointer does not name verifier wiring"
+  pass "fm-spawn: verifier handoff retires builder wiring before replacement"
 }
 
 test_verifier_handoff_refuses_dirty_builder_worktrees() {
@@ -1684,6 +1720,7 @@ test_claude_omits_config_dir_prefix_when_unset
 test_non_claude_harness_ignores_config_dir
 test_active_dispatch_profile_does_not_block_secondmate_launch
 test_role_verifier_encodes_verifier_brief
+test_verifier_handoff_retires_builder_wiring
 test_verifier_handoff_refuses_dirty_builder_worktrees
 test_verifier_handoff_refuses_rebase_and_preserves_stash
 test_verifier_handoff_accepts_detached_builder_head
