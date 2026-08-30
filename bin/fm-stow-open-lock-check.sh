@@ -6,8 +6,7 @@
 #          [--decisions-dir <dir>] [--snapshot <snapshot.json>]
 #          [--expect-rule <rule-id> --expect-count <count>]
 #          [--rules <id,id>]
-#        fm-stow-open-lock-check.sh --list-open [--decisions-dir <dir>]
-#          [--file <name.md>]...
+#        fm-stow-open-lock-check.sh --list-open [--decisions-dir <dir>] [--file <name.md>]...
 #
 # This is the promoted stow-reset-safe checker taxonomy (exit 0/1/2, exact-count
 # regression) extended to data/decisions/*.md open-pick markers.
@@ -23,9 +22,9 @@
 #                               (skipped unless --snapshot is passed, unless
 #                               that rule is the --expect-rule)
 #
-# --list-open prints the JSON array of open lock-file picks and is the single
-# reader used by fm-fleet-snapshot.sh. An absent decisions directory is an
-# empty list, not a pass over missing receipt input.
+# --list-open prints the JSON array of open lock-file picks and is the single shared reader.
+# Each repeatable --file limits it to a named direct child; hidden names, symlinks, non-files, and unreadable files do not become rows.
+# Without --file, an absent decisions directory is an empty list.
 #
 # Open-pick markers are Q-items whose bold span has no locked answer, and
 # lines whose lead-in is Still open. Exact-count regression requires both

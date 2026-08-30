@@ -33,8 +33,8 @@
 #                       status: is OPEN.
 #   R-lock-still-open   a CLOSED ticket's ordinary pointed-to lock has no
 #                       **Pick:** line, or the open-lock reader reports it.
-#                       Every ticket is scanned. The reader loads at most
-#                       once, only for pointed CLOSED-ticket lock files.
+#                       Every ticket is scanned. The reader runs once when
+#                       needed and scans only pointed locks with **Pick:**.
 #
 # Exact-count regression requires both --expect-rule and --expect-count and
 # exits 0 only when that rule count and the total finding count both equal
