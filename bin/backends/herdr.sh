@@ -2183,6 +2183,24 @@ fm_backend_herdr_projection_cleanup_exact() {  # <session> <task-pane> <seeded-p
   fi
 }
 
+fm_backend_herdr_projection_abort_reclaimed_active() {  # <session> <journal> <task-id> <tab> <pane>
+  local session=$1 journal=$2 id=$3 tab=$4 pane=$5 state
+  fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
+  [ "$FM_BACKEND_HERDR_JOURNAL_VERSION" = 2 ] \
+    && [ "$FM_BACKEND_HERDR_JOURNAL_SESSION" = "$session" ] \
+    && [ "$FM_BACKEND_HERDR_JOURNAL_TAB_ID" = "$tab" ] \
+    && [ "$FM_BACKEND_HERDR_JOURNAL_PANE_ID" = "$pane" ] || return 1
+  state=$(fm_backend_herdr_pane_agent_state "$session" "$pane")
+  case "$state" in
+    dead) ;;
+    no-agent) fm_backend_herdr_explicit_close_pane_confirmed "$session" "$pane" || return 1 ;;
+    live|unknown) return 1 ;;
+  esac
+  [ "$(fm_backend_herdr_pane_agent_state "$session" "$pane")" = dead ] || return 1
+  rm -f -- "$journal" || return 1
+  [ ! -e "$journal" ] && [ ! -L "$journal" ]
+}
+
 # fm_backend_herdr_projection_parent_workspace_exact: resolve one exact parent
 # workspace only when its presentation label is unique in the named session.
 fm_backend_herdr_projection_parent_workspace_exact() {  # <session> <parent-label>
@@ -2280,6 +2298,7 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
   local canonical_home state focus_before active_tab out new_tab new_pane info close_status replace_active=0 expected_focus
   FM_BACKEND_HERDR_PROJECTION_TAB_ID=""
   FM_BACKEND_HERDR_PROJECTION_PANE_ID=""
+  FM_BACKEND_HERDR_PROJECTION_RECLAIMED_ACTIVE=0
   fm_backend_herdr_projection_journal_snapshot "$journal" "$id" || return 1
   if [ "$FM_BACKEND_HERDR_JOURNAL_VERSION" != 2 ]; then
     echo "warning: herdr presentation journal for $id has no exact restart binding; spawning flat" >&2
@@ -2463,6 +2482,7 @@ fm_backend_herdr_projection_reclaim_task() {  # <session> <journal> <task-id> <h
   fi
   FM_BACKEND_HERDR_PROJECTION_TAB_ID=$new_tab
   FM_BACKEND_HERDR_PROJECTION_PANE_ID=$new_pane
+  FM_BACKEND_HERDR_PROJECTION_RECLAIMED_ACTIVE=$replace_active
   return 0
 }
 

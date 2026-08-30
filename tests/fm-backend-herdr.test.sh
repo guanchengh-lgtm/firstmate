@@ -2787,10 +2787,11 @@ test_projection_reclaim_replaces_active_husk_for_handoff() {
     fm_backend_herdr_projection_reclaim_task \
       fmtest "$1" active-r1 "$2" w2 w2:t2 w2:p2 firstmate fm-active-r1 \
       /tmp/project replace-active || exit 1
-    printf "%s %s %s" "$FM_BACKEND_HERDR_PROJECTION_TAB_ID" \
-      "$FM_BACKEND_HERDR_PROJECTION_PANE_ID" "$current_focus"
+    printf "%s %s %s %s" "$FM_BACKEND_HERDR_PROJECTION_TAB_ID" \
+      "$FM_BACKEND_HERDR_PROJECTION_PANE_ID" "$current_focus" \
+      "$FM_BACKEND_HERDR_PROJECTION_RECLAIMED_ACTIVE"
   ' "$ROOT" "$journal" "$home") || fail "active agent-free projection reclaim failed"
-  [ "$out" = "w2:t3 w2:p3 w2:t3" ] \
+  [ "$out" = "w2:t3 w2:p3 w2:t3 1" ] \
     || fail "active reclaim did not return and focus the replacement: $out"
   [ "$(cat "$log")" = $'focus w2:t3\nclose w2:p2' ] \
     || fail "active reclaim did not focus the replacement before closing the husk: $(cat "$log")"
@@ -2799,7 +2800,23 @@ test_projection_reclaim_replaces_active_husk_for_handoff() {
     || fail "active reclaim did not advance the journal to the replacement endpoint"
   [ "$(sed -n 's/^workspace_label=//p' "$journal")" = "$label" ] \
     || fail "active reclaim changed the projected workspace binding"
-  pass "herdr presentation reclaim: handoff replaces an active agent-free husk exactly"
+  FM_TEST_RECLAIM_LOG="$log" bash -c '
+    . "$0/bin/backends/herdr.sh"
+    replacement_state=no-agent
+    fm_backend_herdr_pane_agent_state() { printf "%s" "$replacement_state"; }
+    fm_backend_herdr_explicit_close_pane_confirmed() {
+      [ "$2" = w2:p3 ] || return 1
+      replacement_state=dead
+      printf "abort-close %s\n" "$2" >> "$FM_TEST_RECLAIM_LOG"
+    }
+    fm_backend_herdr_projection_abort_reclaimed_active \
+      fmtest "$1" active-r1 w2:t3 w2:p3
+  ' "$ROOT" "$journal" || fail "active reclaim abort cleanup failed"
+  [ ! -e "$journal" ] && [ ! -L "$journal" ] \
+    || fail "active reclaim abort cleanup retained the replacement journal"
+  [ "$(tail -1 "$log")" = "abort-close w2:p3" ] \
+    || fail "active reclaim abort cleanup did not close the replacement endpoint"
+  pass "herdr presentation reclaim: handoff replaces and abort-cleans an active agent-free husk exactly"
 }
 
 test_projection_recovery_is_read_only_and_refuses_live_duplicate_risk() {
