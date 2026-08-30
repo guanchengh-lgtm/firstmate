@@ -49,6 +49,7 @@
 #   (w) index.lock mtime read failure                         -> lock kept, REFUSE
 #   (x) transient lock cleared after first failed return      -> retry ALLOW
 #   (y) persistent lock (never clears, not provably stale)    -> REFUSE loudly
+#   (z) no-mistakes + task parent of real merge on origin/main -> ALLOW
 set -u
 
 # shellcheck source=tests/lib.sh disable=SC1091
@@ -701,6 +702,31 @@ test_no_mistakes_origin_remote_allows() {
   grep -F 'blockers are gone and date is due' "$case_dir/stdout" >/dev/null \
     || fail "nm-origin: teardown manual prompt did not preserve date-gate check"
   pass "no-mistakes worktree with HEAD on origin is torn down (no regression)"
+}
+
+test_no_mistakes_real_merge_on_origin_main_allows() {
+  local case_dir rc merge_parent
+  case_dir=$(make_case nm-real-merge)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit_file "$case_dir" feature.txt landed "merge-landed work"
+
+  git -C "$case_dir/project" -c user.email=t@t -c user.name=t \
+    merge -q --no-ff fm/task-x1 -m "merge task branch"
+  merge_parent=$(git -C "$case_dir/project" rev-parse 'HEAD^2')
+  [ "$merge_parent" = "$(git -C "$case_dir/wt" rev-parse HEAD)" ] \
+    || fail "nm-real-merge: merge commit does not contain task HEAD as second parent"
+  git -C "$case_dir/project" push -q origin main
+  git -C "$case_dir/project" fetch -q origin
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" "nm-real-merge: teardown should accept task HEAD in a real merge"
+  ! grep -q REFUSED "$case_dir/stderr" \
+    || fail "nm-real-merge: teardown printed a REFUSED line"
+  pass "no-mistakes worktree landed by a real merge commit is torn down"
 }
 
 test_no_mistakes_truly_unpushed_refuses() {
@@ -3196,6 +3222,7 @@ test_teardown_manual_backend_prompts_hand_edit_even_when_tasks_axi_present
 test_local_only_truly_unpushed_refuses
 test_local_only_merged_to_local_main_allows
 test_no_mistakes_origin_remote_allows
+test_no_mistakes_real_merge_on_origin_main_allows
 test_no_mistakes_truly_unpushed_refuses
 test_local_only_force_overrides_unpushed
 test_teardown_missing_busy_sidecar_completes
