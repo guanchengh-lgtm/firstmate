@@ -1,0 +1,1 @@
+skip: set FM_SESSIONSTART_HOOK_LIVE_E2E=1 to run the live session-open hook regression

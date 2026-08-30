@@ -1,0 +1,24 @@
+ok - session-lock: a version-named Claude Code session is identified from its install path and argv[0]
+ok - session-lock: ordinary script paths under a harness directory are not harness processes
+ok - session-lock: ownership stops at the first non-harness gap above the contiguous run
+ok - session-lock: a live version-named session holding the lock is not mistaken for a stale owner
+ok - session-lock e2e: a version-named session claims the home and arms supervision
+ok - session-lock e2e: a session parented by a harness-named daemon claims the home and arms supervision
+ok - session-lock e2e: a version-named session under a harness-named daemon keeps its own lock
+ok - session-lock executable: same Claude session reacquires with its durable pid
+ok - session-lock executable: matching session reacquires during its startup lease
+ok - session-lock executable: background Claude session is refused under its live holder
+ok - session-lock executable: foreign Claude session takes over a dead holder
+ok - session-lock executable: CLAUDE_PID does not change the ancestry pid
+ok - session-lock executable: non-Claude ancestry ignores inherited Claude environment
+ok - session-lock executable: old lock without a sidecar uses pid fallback
+ok - session-lock e2e: real Stop hook owns its matching Claude session
+ok - session-lock e2e: matching session refreshes a dead pid before arming
+ok - session-lock e2e: identity publication exposes only stable pairs
+ok - session-lock e2e: real Stop hook ignores an aged acquisition claim
+ok - session-lock e2e: stable identity survives a live acquisition lease
+ok - session-lock executable: sidecar failure restores the prior identity
+ok - session-lock executable: persistent sidecar failure fails closed
+ok - session-lock executable: sidecar removal failure preserves prior identity
+ok - session-lock e2e: foreign Stop hook stands down for a foreign id and during sidecar publication
+ok - session-lock e2e: real Stop hook recovers a dead foreign sidecar

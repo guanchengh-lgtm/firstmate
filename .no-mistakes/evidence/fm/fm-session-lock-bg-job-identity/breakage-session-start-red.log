@@ -1,0 +1,6 @@
+ok - context digest distinguishes ABSENT, empty-but-present, and populated files
+ok - a lock refusal prints a loud read-only banner, skips every mutating step, and still completes the digest
+ok - session start stays read-only when lock ownership cannot be published
+awk: can't open file /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-session-start-tests.wdTien/trace-context-session-state/home/state/.trace-context-effective
+ source line number 1
+not ok - session start must freeze an env-off override over a present config flag

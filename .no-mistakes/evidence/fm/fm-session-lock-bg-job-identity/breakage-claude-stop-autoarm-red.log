@@ -1,0 +1,3 @@
+ok - auto-arm: inert in a linked child worktree even when in-flight
+ok - auto-arm: inert with no session lock
+not ok - a dead recorded session owner must be reclaimed before the actionable rewake: expected exit 2, got 0

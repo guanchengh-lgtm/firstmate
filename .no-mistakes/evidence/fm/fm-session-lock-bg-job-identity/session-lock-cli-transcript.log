@@ -1,0 +1,9 @@
+holder acquire:
+lock acquired: harness pid 54508
+persisted pair: lock=54508 session=session-holder
+same-session reacquire:
+lock acquired: harness pid 54508
+foreign background acquire:
+error: another live firstmate session holds the lock (pid 54508, Claude session session-holder); operate read-only until resolved
+foreign rc=1
+final pair: lock=54508 session=session-holder

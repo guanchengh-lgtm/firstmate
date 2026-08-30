@@ -1,0 +1,12 @@
+holder acquire:
+lock acquired: harness pid 8112
+persisted lock=8112 session=session-holder
+same-session reacquire:
+lock acquired: harness pid 8112
+persisted lock=8112 session=session-holder
+background-session acquire:
+error: another live firstmate session holds the lock (pid 8112, Claude session session-holder); operate read-only until resolved
+exit=1 persisted lock=8112 session=session-holder
+stale-holder takeover:
+lock acquired: harness pid 10149
+persisted lock=10149 session=session-current
