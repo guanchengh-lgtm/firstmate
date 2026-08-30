@@ -2038,11 +2038,8 @@ test_verifier_handoff_refuses_lifecycle_lock_contention() {
   meta_before=$(cat "$HOME_DIR/state/$id.meta")
   endpoint_before=$(cat "$HOME_DIR/state/.fake-endpoint-state")
   lock="$HOME_DIR/state/.control-$id.lock"
-  (
-    . "$ROOT/bin/fm-wake-lib.sh"
-    fm_lock_try_acquire "$lock" || exit 1
-    sleep 30
-  ) &
+  bash -c '. "$1"; fm_lock_try_acquire "$2" || exit 1; sleep 30' \
+    _ "$ROOT/bin/fm-wake-lib.sh" "$lock" &
   holder=$!
   while [ ! -e "$lock" ] && [ "$i" -lt 100 ]; do
     sleep 0.1
