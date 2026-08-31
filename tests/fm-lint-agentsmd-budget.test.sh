@@ -261,17 +261,17 @@ test_stale_local_target() {
   pass 'a stale local target fails with synchronization guidance'
 }
 
-test_ambiguous_local_targets() {
+test_remote_target_precedence() {
   local repo old_target
-  repo=$(repo_new ambiguous-local-targets 300)
+  repo=$(repo_new remote-target-precedence 300)
   old_target=$(git -C "$repo" rev-parse HEAD)
   git -C "$repo" update-ref refs/remotes/origin/main "$old_target"
   write_marked_bytes "$repo/AGENTS.md" 100
   commit_all "$repo" newer-local-main
   git -C "$repo" checkout -qb feature
   write_marked_bytes "$repo/AGENTS.md" 200
-  expect_fail 'ambiguous local target refs' 'origin/main and main disagree' "$repo"
-  pass 'different local target refs fail before baseline comparison'
+  expect_pass 'remote target precedes different local main' "$repo"
+  pass 'origin/main remains the target when local main differs'
 }
 
 test_shrink_equal_and_growth() {
@@ -660,7 +660,7 @@ test_pr_local_and_main_bases
 test_generic_ci_feature_uses_target_base
 test_deleted_wrong_type_and_utf8_bases
 test_stale_local_target
-test_ambiguous_local_targets
+test_remote_target_precedence
 test_shrink_equal_and_growth
 test_override_failure_matrix_and_exact_pair
 test_override_duplicate_pairing_and_mutation

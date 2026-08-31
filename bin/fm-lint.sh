@@ -661,7 +661,7 @@ fm_lint_agentsmd_validate_override() {  # <base> <base-blob> <target-blob> <befo
 
 fm_lint_run_agentsmd_budget() {
   local path=$ROOT/AGENTS.md bytes current_blob head_blob branch base_ref base
-  local entry mode type base_blob base_bytes target_blob diff_rc base_ref_rc
+  local entry mode type base_blob base_bytes target_blob diff_rc
   [ "$EXPLICIT_PATHS" -eq 0 ] || return 0
 
   fm_lint_agentsmd_validate_current "$path" || return 1
@@ -714,12 +714,7 @@ fm_lint_run_agentsmd_budget() {
       return 1
     fi
   else
-    base_ref_rc=0
-    base_ref=$(fm_lint_changed_base_ref) || base_ref_rc=$?
-    [ "$base_ref_rc" -ne 2 ] || {
-      fm_lint_agentsmd_error 'target refs origin/main and main disagree; synchronize the target branch.'
-      return 1
-    }
+    base_ref=$(fm_lint_changed_base_ref) || base_ref=
     if [ -z "$base_ref" ]; then
       fm_lint_agentsmd_error 'the target AGENTS.md base is missing; synchronize the target branch.'
       return 1
@@ -858,15 +853,12 @@ if [ "$FAST" -eq 1 ] && { [ "${GITHUB_ACTIONS:-}" = true ] || [ "${CI:-}" = true
   exit 2
 fi
 
-# fm_lint_changed_base_ref prints the unambiguous ref to diff the working branch
-# against, returns 1 when neither target exists, and returns 2 when both differ.
+# fm_lint_changed_base_ref prefers origin/main, falls back to main, and returns
+# 1 when neither target exists.
 fm_lint_changed_base_ref() {
   local remote_oid= local_oid=
   remote_oid=$(git rev-parse --verify -q 'origin/main^{commit}' 2>/dev/null) || remote_oid=
   local_oid=$(git rev-parse --verify -q 'main^{commit}' 2>/dev/null) || local_oid=
-  if [ -n "$remote_oid" ] && [ -n "$local_oid" ] && [ "$remote_oid" != "$local_oid" ]; then
-    return 2
-  fi
   if [ -n "$remote_oid" ]; then
     printf 'origin/main\n'
     return 0

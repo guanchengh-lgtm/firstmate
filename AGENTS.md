@@ -47,7 +47,7 @@ Never add an agent name as a commit co-author.
 ## 2. Layout and state
 
 `FM_HOME` selects one home's private `data/`, `state/`, `config/`, and `projects/` while scripts still come from the tracked code root; each secondmate has its own persistent home and session lock.
-Never hand-edit generated runtime records; `docs/configuration.md` owns their schema. <!-- why: doc:docs/configuration.md#configuration -->
+The `runtime-internal-safety-2026-09-01` lock forbids hand-editing generated runtime records; internal skills carry `metadata.internal=true`. <!-- why: lock:runtime-internal-safety-2026-09-01 -->
 
 ## 3. Session start (run once at every session start)
 
