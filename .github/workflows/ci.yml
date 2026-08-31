@@ -15,6 +15,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
       - name: Install pinned ShellCheck
         run: |
           set -eu
@@ -30,6 +32,8 @@ jobs:
       # and the pre-push gate on this script so a self-broken ci.yml still
       # fails locally before merge.
       - run: bin/fm-lint.sh
+        env:
+          FM_LINT_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
 
   # Deterministic proof that portable parallel shards + portable serial + Herdr
   # equal the complete tests/*.test.sh inventory with no missing or duplicates,

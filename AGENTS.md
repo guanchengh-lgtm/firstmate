@@ -46,7 +46,6 @@ Never add an agent name as a commit co-author.
 
 ## 2. Layout and state
 
-`docs/configuration.md` owns the operational-home layout and configuration schemas; producing script headers and help own child fields and mutations.
 `FM_HOME` selects one home's private `data/`, `state/`, `config/`, and `projects/` while scripts still come from the tracked code root; each secondmate has its own persistent home and session lock.
 Tracked files are shared tooling, while those four directories and `.env` are captain-private and gitignored; internal skills carry `metadata.internal=true` for installers.
 Treat status lines as events, not current truth; use `bin/fm-crew-state.sh` when current state matters, and never hand-edit generated runtime records.
@@ -177,8 +176,6 @@ That skill owns context isolation, pipeline custody, captain decisions, status i
 
 ### PR ready, landing, and teardown
 
-For PR-based ship tasks, the ready signal depends on mode: `no-mistakes` reports `done: PR <url> checks green` after CI is green, while `direct-PR` reports `done: PR <url>` after opening the PR.
-Run `bin/fm-pr-check.sh <id> <PR url>` - it records `pr=` and the forge's `pr_head=` when available in the task's meta and arms the watcher's merge poll.
 Tell the captain the PR's full URL, always the complete `https://...` link rather than a bare `#number`, a concise outcome summary, and the no-mistakes risk level when applicable.
 A captain instruction to merge is explicit authority; `yolo` is the only standing routine merge authority.
 For any custom `state/<id>.check.sh` you write yourself, keep it an ordinary single-link mode-`0700` file, print one line only when firstmate should wake, print nothing otherwise, finish before `FM_CHECK_TIMEOUT`, then bind its current bytes with `bin/fm-check-register.sh <id>` before the watcher may execute it.
@@ -197,8 +194,6 @@ A completed scout must leave a self-contained report before its scratch worktree
 A report may recommend implementation but does not authorize it.
 Before treating the investigation or any visual review as complete, load `captain-hold-lifecycle`; teardown enforces that shared completion gate.
 When a scout's deliverable is a visual artifact the captain will iterate on, prefer keeping that scout alive to host its own Lavish loop rather than tearing it down and mediating from firstmate, so the scout keeps its investigation context and the captain iterates in one continuous session.
-When implementation is separately authorized, promote the existing scout through `bin/fm-promote.sh` rather than creating a duplicate task.
-The promoted worker must inventory scratch state, return to a clean default-branch base, carry over only intended fix changes, create the ship branch, and follow the project's selected delivery path while leaving scratch commits and debug edits behind and turning a reproduced bug into the regression test.
 
 ## 8. Supervision protocol
 
@@ -257,8 +252,6 @@ Load `secondmate-provisioning` for charter briefs, and keep status appends spars
 
 ## 12. Self-update
 
-Firstmate's shared instruction surface reaches running homes only after it lands on the default branch and those homes fast-forward.
-Only `AGENTS.md`, `bin/`, and `.agents/skills/` are loaded by a running firstmate; public `skills/` is an installer-facing surface.
 When the captain invokes `/updatefirstmate` or asks to update firstmate, load the `/updatefirstmate` skill.
 It performs guarded fast-forward updates of firstmate and registered secondmate homes, refreshes instructions, and never touches anything under `projects/`.
 
@@ -277,10 +270,8 @@ The following triggers remain inline because no narrower always-loaded operating
 
 ## 14. Relay
 
-Relay is the public-mention integration older docs and some emitted lines still call "X mode"; its identifiers keep the `FMX_`, `x-`, and `fm-x-` spellings.
 Relay ships inert and causes no behavior change until the home opts in by placing `FMX_PAIRING_TOKEN` in its gitignored `.env`.
 That token is consent for public replies and normal reversible lifecycle actions from eligible mentions, not authority for destructive, irreversible, or security-sensitive action; those still require trusted-channel confirmation.
-`docs/configuration.md` owns activation, generated state, cadence, wire protocol, and opt-out mechanics.
 
 A Relay-only home still requires the live supervision cycle so mentions can wake it without fleet work.
 On an `x-mention <request_id>` or `x-mode-error ...` check wake, load `fmx-respond`, which owns classification, public-safety policy, reply or dismissal, task linking, and follow-ups.
@@ -304,3 +295,4 @@ Keep this file for knowledge useful to almost every future agent session in this
 Do not repeat what the codebase already shows; point to the authoritative file, skill, command, or doc.
 Prefer rewriting or pruning existing entries over appending new ones.
 When updating this file, preserve every safety boundary and keep the always-loaded contract concise.
+`firstmate-coding-guidelines` owns this file's why-trace contract. <!-- why: skill:firstmate-coding-guidelines#why-trace-convention -->

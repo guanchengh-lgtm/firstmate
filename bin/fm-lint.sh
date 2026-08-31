@@ -13,6 +13,17 @@
 # The default (no explicit-path) path also runs bin/fm-lint-workflows.sh so a
 # malformed GitHub workflow, including a self-broken ci.yml, fails locally
 # before merge instead of only failing to run as CI.
+# The same default path validates AGENTS.md as safe UTF-8 text, enforces its
+# calibrated-byte hard ceiling, and compares final content with the accepted
+# target base for net-zero growth and new-line why traces.
+# Pull request CI supplies FM_LINT_BASE_SHA, local branches use the current
+# origin/main or main ancestor, and main-push CI uses HEAD^1.
+# Growth needs exactly one paired trailer set in the accepted branch range:
+#   AGENTS-Budget-Override: v1 base=<blob> target=<blob> before=<count> after=<count>
+#   Captain-Instruction: <the captain's exact words for this growth>
+# Both counts are calibrated bytes for the bound AGENTS.md blobs.
+# An override never bypasses file safety, the hard ceiling, or why traces.
+# firstmate-coding-guidelines owns the why-trace marker grammar.
 #
 # With no explicit paths, the file set depends on context:
 #   - In CI (GITHUB_ACTIONS=true or CI=true), on the main branch, or when no
@@ -120,6 +131,539 @@ fm_lint_usage() {
 fm_lint_run_workflows() {
   [ "$EXPLICIT_PATHS" -eq 0 ] || return 0
   "$SELF_DIR/fm-lint-workflows.sh"
+}
+
+# Captain-locked calibration, measured once on 2026-08-31 with pinned
+# tiktoken==0.14.0 and cl100k_base: 30,567 UTF-8 bytes encoded to 6,270
+# `cl100k_base` tokens. The exact calibration is
+# floor(30,567 * 6,000 / 6,270) = 29,250 calibrated bytes.
+# Runtime enforcement is offline and bytes-only;
+# this constant does not claim provider-exact token counts for later content.
+AGENTS_CALIBRATED_BYTE_CEILING=29250
+
+fm_lint_agentsmd_error() {
+  printf 'fm-lint.sh: AGENTS.md budget: %s\n' "$*" >&2
+  return 1
+}
+
+fm_lint_agentsmd_link_count() {  # <path>
+  local path=$1 links
+  links=$(stat -f '%l' "$path" 2>/dev/null) \
+    || links=$(stat -c '%h' "$path" 2>/dev/null) \
+    || return 1
+  case "$links" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  printf '%s\n' "$links"
+}
+
+fm_lint_agentsmd_read_bits() {  # <path>
+  local path=$1 mode digits owner group other
+  mode=$(stat -f '%OLp' "$path" 2>/dev/null) \
+    || mode=$(stat -c '%a' "$path" 2>/dev/null) \
+    || return 1
+  case "$mode" in
+    ''|*[!0-7]*) return 1 ;;
+  esac
+  digits=${mode: -3}
+  [ "${#digits}" -eq 3 ] || return 1
+  owner=${digits:0:1}
+  group=${digits:1:1}
+  other=${digits:2:1}
+  [ $((owner & 4)) -ne 0 ] || [ $((group & 4)) -ne 0 ] || [ $((other & 4)) -ne 0 ]
+}
+
+fm_lint_agentsmd_validate_current() {
+  local path=$1 links
+  [ ! -L "$path" ] || {
+    fm_lint_agentsmd_error 'AGENTS.md must not be a symlink.'
+    return 1
+  }
+  [ -e "$path" ] || {
+    fm_lint_agentsmd_error 'AGENTS.md is missing.'
+    return 1
+  }
+  [ -f "$path" ] || {
+    fm_lint_agentsmd_error 'AGENTS.md must be a regular file.'
+    return 1
+  }
+  links=$(fm_lint_agentsmd_link_count "$path") \
+    || {
+      fm_lint_agentsmd_error 'could not read AGENTS.md link metadata.'
+      return 1
+    }
+  [ "$links" -eq 1 ] || {
+    fm_lint_agentsmd_error 'AGENTS.md must not be hardlinked.'
+    return 1
+  }
+  if [ ! -r "$path" ] || ! fm_lint_agentsmd_read_bits "$path"; then
+    fm_lint_agentsmd_error 'AGENTS.md is unreadable.'
+    return 1
+  fi
+  command -v iconv >/dev/null 2>&1 \
+    || {
+      fm_lint_agentsmd_error 'iconv is required to validate AGENTS.md UTF-8.'
+      return 1
+    }
+  LC_ALL=C iconv -f UTF-8 -t UTF-8 "$path" >/dev/null 2>&1 \
+    || {
+      fm_lint_agentsmd_error 'AGENTS.md is not valid UTF-8.'
+      return 1
+    }
+}
+
+fm_lint_agentsmd_bytes() {  # <path>
+  local bytes
+  bytes=$(LC_ALL=C wc -c < "$1" 2>/dev/null | tr -d '[:space:]') || return 1
+  case "$bytes" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  printf '%s\n' "$bytes"
+}
+
+fm_lint_agentsmd_slug_valid() {  # <slug>
+  [[ "$1" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]]
+}
+
+fm_lint_agentsmd_repo_path_valid() {  # <path>
+  local path=$1
+  [[ "$path" =~ ^[A-Za-z0-9._/-]+$ ]] || return 1
+  case "/$path/" in
+    *'//'*) return 1 ;;
+    *'/./'*|*'/../'*) return 1 ;;
+  esac
+  case "$path" in
+    /*|.|..|*/.|*/..) return 1 ;;
+  esac
+}
+
+fm_lint_agentsmd_why_target_valid() {  # <kind> <target>
+  local kind=$1 target=$2 name slug path
+  case "$kind" in
+    skill)
+      case "$target" in
+        *'#'*) name=${target%%#*}; slug=${target#*#} ;;
+        *) return 1 ;;
+      esac
+      [ "$slug" = "${slug#*#}" ] || return 1
+      fm_lint_agentsmd_slug_valid "$name" || return 1
+      fm_lint_agentsmd_slug_valid "$slug" || return 1
+      [ -f "$ROOT/.agents/skills/$name/SKILL.md" ] \
+        || [ -f "$ROOT/skills/$name/SKILL.md" ]
+      ;;
+    doc)
+      case "$target" in
+        *'#'*) path=${target%%#*}; slug=${target#*#} ;;
+        *) return 1 ;;
+      esac
+      [ "$slug" = "${slug#*#}" ] || return 1
+      fm_lint_agentsmd_repo_path_valid "$path" || return 1
+      fm_lint_agentsmd_slug_valid "$slug" || return 1
+      [ -f "$ROOT/$path" ] && [ ! -L "$ROOT/$path" ]
+      ;;
+    script)
+      case "$target" in
+        *--help) path=${target%--help} ;;
+        *) return 1 ;;
+      esac
+      [ -n "$path" ] || return 1
+      fm_lint_agentsmd_repo_path_valid "$path" || return 1
+      [ -f "$ROOT/$path" ] && [ ! -L "$ROOT/$path" ] && [ -x "$ROOT/$path" ]
+      ;;
+    lock)
+      [[ "$target" =~ ^[a-z0-9]+(-[a-z0-9]+)*-[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$ ]]
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+fm_lint_agentsmd_fence_context() {  # <line-number>
+  awk -v target="$1" '
+    function candidate(line, first, text, char, count) {
+      match(line, /^ */)
+      if (RLENGTH > 3) return 0
+      text=substr(line, RLENGTH + 1)
+      char=substr(text, 1, 1)
+      if (char != "`" && char != "~") return 0
+      count=0
+      while (substr(text, count + 1, 1) == char) count++
+      if (count < 3) return 0
+      candidate_char=char
+      candidate_count=count
+      candidate_rest=substr(text, count + 1)
+      return 1
+    }
+    function valid_opening() {
+      return candidate_char == "~" || index(candidate_rest, "`") == 0
+    }
+    function valid_closing() {
+      return candidate_char == open_char \
+        && candidate_count >= open_count \
+        && candidate_rest ~ /^[ \t]*$/
+    }
+    NR < target {
+      if (!candidate($0)) next
+      if (open_char == "") {
+        if (valid_opening()) {
+          open_char=candidate_char
+          open_count=candidate_count
+        }
+      } else if (valid_closing()) {
+        open_char=""
+        open_count=0
+      }
+      next
+    }
+    NR == target {
+      if (candidate($0)) {
+        if (open_char == "" && valid_opening()) {
+          print "delimiter"
+          exit
+        }
+        if (open_char != "" && valid_closing()) {
+          print "delimiter"
+          exit
+        }
+      }
+      if (open_char != "") print "inside"
+      else print "outside"
+      exit
+    }
+  ' "$ROOT/AGENTS.md"
+}
+
+fm_lint_agentsmd_validate_added_line() {  # <line-number> <content>
+  local line_number=$1 content=$2 prefix remainder owner kind target context
+  local visible_target why_prefix='<!-- why: '
+  local heading_re
+  heading_re='^[[:space:]]{0,3}#{1,6}([[:space:]]|$)'
+  [[ "$content" =~ ^[[:space:]]*$ ]] && return 0
+  context=$(fm_lint_agentsmd_fence_context "$line_number") \
+    || {
+      fm_lint_agentsmd_error "could not determine Markdown fence context for line $line_number."
+      return 1
+    }
+  [ "$context" = delimiter ] && return 0
+  if [ "$context" != inside ] && [[ "$content" =~ $heading_re ]]; then
+    return 0
+  fi
+
+  case "$content" in
+    *'<!-- why: '*) ;;
+    *)
+      fm_lint_agentsmd_error "line $line_number is added content without a why trace."
+      return 1
+      ;;
+  esac
+  prefix=${content%%"$why_prefix"*}
+  remainder=${content#*"$why_prefix"}
+  case "$prefix$remainder" in
+    *'<!-- why: '*)
+      fm_lint_agentsmd_error "line $line_number has more than one why trace."
+      return 1
+      ;;
+  esac
+  case "$remainder" in
+    *' -->') owner=${remainder%' -->'} ;;
+    *)
+      fm_lint_agentsmd_error "line $line_number has a malformed trailing why trace."
+      return 1
+      ;;
+  esac
+  case "$owner" in
+    *:*) kind=${owner%%:*}; target=${owner#*:} ;;
+    *)
+      fm_lint_agentsmd_error "line $line_number has a malformed why owner."
+      return 1
+      ;;
+  esac
+  [ -n "$target" ] || {
+    fm_lint_agentsmd_error "line $line_number has an empty why target."
+    return 1
+  }
+  fm_lint_agentsmd_why_target_valid "$kind" "$target" \
+    || {
+      fm_lint_agentsmd_error "line $line_number has an invalid why target: $kind:$target"
+      return 1
+    }
+  case "$kind" in
+    skill|doc) visible_target=${target%%#*} ;;
+    script) visible_target=${target%--help} ;;
+    lock) visible_target=$target ;;
+  esac
+  case "$prefix" in
+    *"$visible_target"*) ;;
+    *)
+      fm_lint_agentsmd_error "line $line_number has why metadata without the visible owner pointer $visible_target."
+      return 1
+      ;;
+  esac
+}
+
+fm_lint_agentsmd_validate_added_lines() {  # <base-ref>
+  local base=$1 line_number content temp_dir trace_rc=0
+  temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/fm-lint-agentsmd.XXXXXX") \
+    || {
+      fm_lint_agentsmd_error 'could not create the AGENTS.md diff workspace.'
+      return 1
+    }
+  if ! git diff --no-ext-diff --no-color --unified=0 "$base" -- AGENTS.md \
+    > "$temp_dir/patch" 2>/dev/null; then
+    rm -rf "$temp_dir"
+    fm_lint_agentsmd_error 'could not read the zero-context AGENTS.md diff.'
+    return 1
+  fi
+  if ! awk '
+      /^@@ / {
+        header=$0
+        sub(/^.* \+/, "", header)
+        sub(/ .*/, "", header)
+        split(header, range, ",")
+        next_line=range[1] + 0
+        in_hunk=1
+        next
+      }
+      in_hunk && /^\+/ {
+        print next_line "\t" substr($0, 2)
+        next_line++
+        next
+      }
+      in_hunk && /^-/ {next}
+      in_hunk && /^\\ No newline at end of file$/ {next}
+    ' "$temp_dir/patch" > "$temp_dir/added"; then
+    rm -rf "$temp_dir"
+    fm_lint_agentsmd_error 'could not parse the zero-context AGENTS.md diff.'
+    return 1
+  fi
+  while IFS=$'\t' read -r line_number content || [ -n "${line_number:-}${content:-}" ]; do
+    [ -n "${line_number:-}" ] || continue
+    if ! fm_lint_agentsmd_validate_added_line "$line_number" "$content"; then
+      trace_rc=1
+      break
+    fi
+  done < "$temp_dir/added"
+  rm -rf "$temp_dir"
+  return "$trace_rc"
+}
+
+fm_lint_agentsmd_validate_override() {  # <base> <base-blob> <target-blob> <before> <after>
+  local base=$1 expected_base_blob=$2 expected_target_blob=$3 before=$4 after=$5
+  local commit message trailers line value normalized
+  local override_count=0 captain_count=0 override_commit='' captain_commit=''
+  local override_value='' captain_value=''
+  local override_re
+  override_re='^v1 base=([0-9a-f]{40}|[0-9a-f]{64}) target=([0-9a-f]{40}|[0-9a-f]{64}) before=([0-9]+) after=([0-9]+)$'
+
+  while IFS= read -r commit; do
+    [ -n "$commit" ] || continue
+    message=$(git show -s --format=%B "$commit" 2>/dev/null) \
+      || {
+        fm_lint_agentsmd_error 'could not read a commit in the AGENTS.md override range.'
+        return 1
+      }
+    trailers=$(printf '%s\n' "$message" | git interpret-trailers --parse 2>/dev/null) \
+      || {
+        fm_lint_agentsmd_error 'could not parse AGENTS.md budget override trailers.'
+        return 1
+      }
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        'AGENTS-Budget-Override:'*)
+          override_count=$((override_count + 1))
+          override_commit=$commit
+          value=${line#AGENTS-Budget-Override:}
+          override_value=${value# }
+          ;;
+        'Captain-Instruction:'*)
+          captain_count=$((captain_count + 1))
+          captain_commit=$commit
+          value=${line#Captain-Instruction:}
+          captain_value=${value# }
+          ;;
+      esac
+    done <<< "$trailers"
+  done < <(git rev-list "$base..HEAD" 2>/dev/null)
+
+  git rev-list "$base..HEAD" >/dev/null 2>&1 || {
+    fm_lint_agentsmd_error 'could not inspect the current branch range for override trailers.'
+    return 1
+  }
+  [ "$override_count" -eq 1 ] || {
+    fm_lint_agentsmd_error "growth requires exactly one AGENTS-Budget-Override trailer; found $override_count."
+    return 1
+  }
+  [ "$captain_count" -eq 1 ] || {
+    fm_lint_agentsmd_error "growth requires exactly one paired Captain-Instruction trailer; found $captain_count."
+    return 1
+  }
+  [ "$override_commit" = "$captain_commit" ] || {
+    fm_lint_agentsmd_error 'the AGENTS-Budget-Override and Captain-Instruction trailers must be in the same commit.'
+    return 1
+  }
+  [[ "$override_value" =~ $override_re ]] || {
+    fm_lint_agentsmd_error 'the AGENTS-Budget-Override trailer does not match the v1 grammar.'
+    return 1
+  }
+  [ "${BASH_REMATCH[1]}" = "$expected_base_blob" ] || {
+    fm_lint_agentsmd_error 'the AGENTS-Budget-Override base blob is stale.'
+    return 1
+  }
+  [ "${BASH_REMATCH[2]}" = "$expected_target_blob" ] || {
+    fm_lint_agentsmd_error 'the AGENTS-Budget-Override target blob is stale.'
+    return 1
+  }
+  [ "${BASH_REMATCH[3]}" = "$before" ] || {
+    fm_lint_agentsmd_error 'the AGENTS-Budget-Override before count is wrong.'
+    return 1
+  }
+  [ "${BASH_REMATCH[4]}" = "$after" ] || {
+    fm_lint_agentsmd_error 'the AGENTS-Budget-Override after count is wrong.'
+    return 1
+  }
+  [ -n "$captain_value" ] || {
+    fm_lint_agentsmd_error 'the Captain-Instruction trailer must quote the captain exact words.'
+    return 1
+  }
+  normalized=$(printf '%s\n' "$captain_value" \
+    | tr '[:upper:]' '[:lower:]' \
+    | awk '{$1=$1; print}')
+  case "$normalized" in
+    approved|approval|authorized|yes|ok|okay|'growth approved'|\
+    'captain approved'|'approved by captain'|'permission granted')
+      fm_lint_agentsmd_error 'the Captain-Instruction trailer is generic; quote the captain exact words.'
+      return 1
+      ;;
+  esac
+}
+
+fm_lint_run_agentsmd_budget() {
+  local path=$ROOT/AGENTS.md bytes current_blob head_blob branch base_ref base
+  local entry mode type base_blob base_bytes target_blob diff_rc
+  [ "$EXPLICIT_PATHS" -eq 0 ] || return 0
+
+  fm_lint_agentsmd_validate_current "$path" || return 1
+  bytes=$(fm_lint_agentsmd_bytes "$path") \
+    || {
+      fm_lint_agentsmd_error 'could not count AGENTS.md calibrated bytes.'
+      return 1
+    }
+  [ "$bytes" -le "$AGENTS_CALIBRATED_BYTE_CEILING" ] || {
+    fm_lint_agentsmd_error "AGENTS.md uses $bytes calibrated bytes; the hard ceiling is $AGENTS_CALIBRATED_BYTE_CEILING."
+    return 1
+  }
+
+  command -v git >/dev/null 2>&1 || {
+    fm_lint_agentsmd_error 'git is required to prove the AGENTS.md target baseline.'
+    return 1
+  }
+  git rev-parse --is-inside-work-tree >/dev/null 2>&1 || {
+    fm_lint_agentsmd_error 'a Git worktree is required to prove the AGENTS.md target baseline.'
+    return 1
+  }
+
+  current_blob=$(git hash-object -- AGENTS.md 2>/dev/null) \
+    || {
+      fm_lint_agentsmd_error 'could not hash the final AGENTS.md content.'
+      return 1
+    }
+  head_blob=$(git rev-parse --verify -q 'HEAD:AGENTS.md' 2>/dev/null) || head_blob=
+  branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null) || branch=
+  base=
+
+  if [ -n "${FM_LINT_BASE_SHA:-}" ] \
+    && [ "${GITHUB_ACTIONS:-}" != true ] && [ "${CI:-}" != true ]; then
+    fm_lint_agentsmd_error 'FM_LINT_BASE_SHA is CI-only; local lint uses the current target ref.'
+    return 1
+  elif [ -n "${FM_LINT_BASE_SHA:-}" ]; then
+    base=$FM_LINT_BASE_SHA
+  elif [ "${GITHUB_EVENT_NAME:-}" = pull_request ]; then
+    fm_lint_agentsmd_error 'FM_LINT_BASE_SHA is required for pull request lint; fetch the exact target base commit.'
+    return 1
+  elif [ "${GITHUB_ACTIONS:-}" = true ] || [ "${CI:-}" = true ] || [ "$branch" = main ]; then
+    if git rev-parse --verify -q 'HEAD^1^{commit}' >/dev/null 2>&1; then
+      base=HEAD^1
+    elif [ "$current_blob" = "$head_blob" ]; then
+      printf 'fm-lint.sh: AGENTS.md %s calibrated bytes (ceiling %s)\n' \
+        "$bytes" "$AGENTS_CALIBRATED_BYTE_CEILING"
+      return 0
+    else
+      fm_lint_agentsmd_error 'the main-push AGENTS.md baseline is unreadable; fetch parent history.'
+      return 1
+    fi
+  else
+    base_ref=$(fm_lint_changed_base_ref) || base_ref=
+    if [ -z "$base_ref" ]; then
+      if [ "$current_blob" = "$head_blob" ]; then
+        printf 'fm-lint.sh: AGENTS.md %s calibrated bytes (ceiling %s)\n' \
+          "$bytes" "$AGENTS_CALIBRATED_BYTE_CEILING"
+        return 0
+      fi
+      fm_lint_agentsmd_error 'the target AGENTS.md base is missing; synchronize the target branch.'
+      return 1
+    fi
+    git merge-base --is-ancestor "$base_ref" HEAD >/dev/null 2>&1 \
+      || {
+        fm_lint_agentsmd_error "target ref $base_ref is stale; synchronize the branch before lint."
+        return 1
+      }
+    base=$base_ref
+  fi
+
+  git cat-file -e "$base^{commit}" >/dev/null 2>&1 \
+    || {
+      fm_lint_agentsmd_error "target base $base is unreadable; fetch the exact base commit and retry."
+      return 1
+    }
+  entry=$(git ls-tree "$base" -- AGENTS.md 2>/dev/null) \
+    || {
+      fm_lint_agentsmd_error "target base $base has no readable AGENTS.md blob."
+      return 1
+    }
+  read -r mode type base_blob _ <<< "$entry"
+  if [ "$type" != blob ] || { [ "$mode" != 100644 ] && [ "$mode" != 100755 ]; }; then
+    fm_lint_agentsmd_error "target base $base has no regular AGENTS.md blob."
+    return 1
+  fi
+  (set -o pipefail
+    git cat-file blob "$base_blob" 2>/dev/null \
+      | LC_ALL=C iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1
+  ) \
+    || {
+      fm_lint_agentsmd_error "target base $base has an unreadable or invalid UTF-8 AGENTS.md blob."
+      return 1
+    }
+  base_bytes=$(git cat-file -s "$base_blob" 2>/dev/null) \
+    || {
+      fm_lint_agentsmd_error "could not count target base $base calibrated bytes."
+      return 1
+    }
+  case "$base_bytes" in
+    ''|*[!0-9]*)
+      fm_lint_agentsmd_error "target base $base has an invalid AGENTS.md byte count."
+      return 1
+      ;;
+  esac
+
+  if [ "$current_blob" = "$base_blob" ]; then
+    printf 'fm-lint.sh: AGENTS.md %s calibrated bytes (ceiling %s)\n' \
+      "$bytes" "$AGENTS_CALIBRATED_BYTE_CEILING"
+    return 0
+  fi
+  diff_rc=0
+  git diff --quiet "$base" -- AGENTS.md >/dev/null 2>&1 || diff_rc=$?
+  [ "$diff_rc" -eq 1 ] || {
+    fm_lint_agentsmd_error 'could not compare final AGENTS.md content with the target base.'
+    return 1
+  }
+  fm_lint_agentsmd_validate_added_lines "$base" || return 1
+
+  if [ "$bytes" -gt "$base_bytes" ]; then
+    target_blob=$current_blob
+    fm_lint_agentsmd_validate_override \
+      "$base" "$base_blob" "$target_blob" "$base_bytes" "$bytes" || return 1
+  fi
+  printf 'fm-lint.sh: AGENTS.md %s calibrated bytes (base %s; ceiling %s)\n' \
+    "$bytes" "$base_bytes" "$AGENTS_CALIBRATED_BYTE_CEILING"
 }
 
 JOBS=${FM_LINT_JOBS:-2}
@@ -280,7 +824,12 @@ fi
 if [ "$CHANGED_MODE" -eq 1 ] && [ "$ROOT_COUNT" -eq 0 ]; then
   printf 'fm-lint.sh: no changed lint targets\n'
   overall_rc=0
-  fm_lint_run_workflows || overall_rc=$?
+  fm_lint_run_agentsmd_budget || overall_rc=$?
+  if [ "$overall_rc" -eq 0 ]; then
+    fm_lint_run_workflows || overall_rc=$?
+  else
+    fm_lint_run_workflows || true
+  fi
   exit "$overall_rc"
 fi
 
@@ -582,6 +1131,11 @@ EOF
   fi
 fi
 
+if [ "$overall_rc" -eq 0 ]; then
+  fm_lint_run_agentsmd_budget || overall_rc=$?
+else
+  fm_lint_run_agentsmd_budget || true
+fi
 if [ "$overall_rc" -eq 0 ]; then
   fm_lint_run_workflows || overall_rc=$?
 else

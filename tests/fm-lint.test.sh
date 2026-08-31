@@ -185,6 +185,8 @@ test_list_files_reports_the_shell_inventory() {
 #   FM_TEST_GIT_MERGE_BASE_OK    1 (default) or 0
 #   FM_TEST_GIT_MERGE_BASE       merge-base value to print when OK
 #   FM_TEST_GIT_DIFF_FILE        path to a file of NUL-separated changed paths
+# The stub presents AGENTS.md as unchanged so these file-selection tests keep
+# the default companion gate active without coupling to this branch's diff.
 fm_lint_stub_git() {
   local fakebin=$1
   cat > "$fakebin/git" <<'SH'
@@ -205,6 +207,10 @@ case "$*" in
   "rev-parse --verify -q main")
     [ "${FM_TEST_GIT_HAS_MAIN:-1}" = 1 ] && exit 0 || exit 1
     ;;
+  "rev-parse --verify -q HEAD:AGENTS.md"|"hash-object -- AGENTS.md")
+    printf '1111111111111111111111111111111111111111\n'
+    exit 0
+    ;;
   "merge-base "*)
     if [ "${FM_TEST_GIT_MERGE_BASE_OK:-1}" = 1 ]; then
       printf '%s\n' "${FM_TEST_GIT_MERGE_BASE:-fakebase123}"
@@ -216,6 +222,31 @@ case "$*" in
     if [ -n "${FM_TEST_GIT_DIFF_FILE:-}" ] && [ -f "$FM_TEST_GIT_DIFF_FILE" ]; then
       cat "$FM_TEST_GIT_DIFF_FILE"
     fi
+    exit 0
+    ;;
+  "cat-file -e "*"^{commit}")
+    exit 0
+    ;;
+  "ls-tree "*" -- AGENTS.md")
+    printf '100644 blob 1111111111111111111111111111111111111111\tAGENTS.md\n'
+    exit 0
+    ;;
+  "show "*":AGENTS.md")
+    cat AGENTS.md
+    exit 0
+    ;;
+  "cat-file blob 1111111111111111111111111111111111111111")
+    cat AGENTS.md
+    exit 0
+    ;;
+  "cat-file -s 1111111111111111111111111111111111111111")
+    wc -c < AGENTS.md | tr -d '[:space:]'
+    printf '\n'
+    exit 0
+    ;;
+  "cat-file -s "*":AGENTS.md")
+    wc -c < AGENTS.md | tr -d '[:space:]'
+    printf '\n'
     exit 0
     ;;
   *)

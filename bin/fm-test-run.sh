@@ -145,7 +145,8 @@ family_for_basename() {
     fm-spec-compile-check.test.sh|\
     fm-owner-invoke-wait-check.test.sh|\
     fm-reduce-check.test.sh|\
-    fm-kimi-harness.test.sh|fm-muse-harness.test.sh|fm-herdr-lab.test.sh|fm-lint.test.sh|\
+    fm-kimi-harness.test.sh|fm-muse-harness.test.sh|fm-herdr-lab.test.sh|\
+    fm-lint-agentsmd-budget.test.sh|fm-lint.test.sh|\
     fm-lint-workflows.test.sh|\
     fm-operational-input.test.sh|fm-pi-primary-types.test.sh|\
     fm-project-write-pretool-check.test.sh|\
@@ -438,6 +439,7 @@ tests/fm-herdr-submit-confirm-live-e2e.test.sh 20
 tests/fm-herdr-version-floor-live-e2e.test.sh 20
 tests/fm-inactive-reconcile.test.sh 41671
 tests/fm-kimi-harness.test.sh 15092
+tests/fm-lint-agentsmd-budget.test.sh 30000
 tests/fm-lint-workflows.test.sh 744
 tests/fm-muse-harness.test.sh 27414
 tests/fm-muse-signals-live-e2e.test.sh 21
