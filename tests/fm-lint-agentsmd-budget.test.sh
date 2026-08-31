@@ -59,7 +59,7 @@ write_bytes() { # <file> <bytes>
 }
 
 write_marked_bytes() { # <file> <bytes>
-  perl -e '$n=shift; $m="docs/example.md owns this. <!-- why: doc:docs/example.md#document -->\n"; die if $n < length($m); print "B" x ($n-length($m)), $m' "$2" > "$1"
+  perl -e '$n=shift; $m=" docs/example.md owns this. <!-- why: doc:docs/example.md#document -->\n"; die if $n < length($m); print "B" x ($n-length($m)), $m' "$2" > "$1"
 }
 
 repo_new() { # <name> <AGENTS-bytes>
@@ -495,7 +495,7 @@ test_binary_attributes_do_not_hide_added_lines() {
 }
 
 test_why_targets_locks_and_patch_like_lines() {
-  local repo marker outside
+  local repo marker outside line
   repo=$(repo_new why-targets 200)
   git -C "$repo" checkout -qb feature
   for marker in \
@@ -507,6 +507,16 @@ test_why_targets_locks_and_patch_like_lines() {
     printf '%s\n' "+ $marker owns this content. <!-- why: $marker -->" > "$repo/AGENTS.md"
     expect_pass "why target $marker" "$repo"
   done
+  while IFS='|' read -r marker line; do
+    git -C "$repo" checkout -q -- AGENTS.md
+    printf '%s\n' "$line <!-- why: $marker -->" > "$repo/AGENTS.md"
+    expect_fail "partial visible owner $marker" 'visible owner pointer' "$repo"
+  done <<'ROWS'
+skill:demo#demo|We demonstrate this rule.
+doc:docs/example.md#document|docs/example.md.backup owns this rule.
+script:bin/example-owner.sh--help|bin/example-owner.sh--helper owns this rule.
+lock:agentsmd-budget-2026-08-31|agentsmd-budget-2026-08-31-extra owns this rule.
+ROWS
   for marker in \
     'skill:absent#demo' \
     'doc:docs/absent.md#document' \

@@ -380,6 +380,21 @@ fm_lint_agentsmd_visible_line() {  # <line-number> <normalized-path>
   ' "$2"
 }
 
+fm_lint_agentsmd_visible_owner_present() {  # <line> <target> <kind>
+  local line=$1 target=$2 kind=$3
+  # shellcheck disable=SC2016 # Perl owns every $ expression in this literal program.
+  "$PERL_BIN" -e '
+    my ($line, $target, $kind) = @ARGV;
+    if ($kind eq "skill" || $kind eq "lock") {
+      exit($line =~ /(?<![A-Za-z0-9_-])\Q$target\E(?![A-Za-z0-9_-])/ ? 0 : 1);
+    }
+    if ($kind eq "script") {
+      exit($line =~ /(?<![A-Za-z0-9_.\/-])\Q$target\E(?:--help)?(?![A-Za-z0-9_\/-]|\.[A-Za-z0-9_.\/-])/ ? 0 : 1);
+    }
+    exit($line =~ /(?<![A-Za-z0-9_.\/-])\Q$target\E(?![A-Za-z0-9_\/-]|\.[A-Za-z0-9_.\/-])/ ? 0 : 1);
+  ' -- "$line" "$target" "$kind"
+}
+
 fm_lint_agentsmd_why_marker_is_top_level() {  # <line-number> <normalized-path>
   awk -v target="$1" '
     NR <= target {
@@ -476,13 +491,11 @@ fm_lint_agentsmd_validate_added_line() {  # <line-number> <content> <normalized-
       fm_lint_agentsmd_error "could not determine visible Markdown content for line $line_number."
       return 1
     }
-  case "$visible_line" in
-    *"$visible_target"*) ;;
-    *)
+  fm_lint_agentsmd_visible_owner_present "$visible_line" "$visible_target" "$kind" \
+    || {
       fm_lint_agentsmd_error "line $line_number has why metadata without the visible owner pointer $visible_target."
       return 1
-      ;;
-  esac
+    }
 }
 
 fm_lint_agentsmd_validate_added_lines() {  # <base-blob>
