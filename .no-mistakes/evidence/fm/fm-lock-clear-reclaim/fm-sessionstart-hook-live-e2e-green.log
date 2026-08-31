@@ -1,0 +1,25 @@
+FM_TEST_BEGIN 2026-08-31T17:17:07Z tests/fm-sessionstart-hook-live-e2e.test.sh family=live-harness-optin expected_gate_skip=optin-env
+ok - claude 2.1.251 (Claude Code): a cold open reports source 'startup' and its hook stdout reaches model context
+ok - claude 2.1.251 (Claude Code): a worker detached by the session-open hook outlives it, so the deferred network checks still run
+ok - claude 2.1.251 (Claude Code): a context-preserving reopen reports source 'resume', which the run tier routes without a re-emit
+ok - claude 2.1.251 (Claude Code): '/clear' reports source 'clear' and re-injects hook stdout into model context
+ok - claude 2.1.251 (Claude Code): a compaction reports source 'compact' and re-injects hook stdout into model context
+ok - claude 2.1.251 (Claude Code): '/clear' replaces the session in place and the wrapper reclaims its own lock
+ok - claude 2.1.251 (Claude Code): '/new' replaces the session in place and the wrapper reclaims its own lock
+ok - claude 2.1.251 (Claude Code): '/resume' replaces the session in place and the wrapper reclaims its own lock
+ok - claude 2.1.251 (Claude Code): /fork cannot rewrite the live primary session's lock pair
+ok - claude 2.1.251 (Claude Code): a background Stop probe in the owner's own process tree stays inert
+ok - codex codex-cli 0.147.0-alpha.6.5: a cold open reports source 'startup' and its hook stdout reaches model context
+ok - codex codex-cli 0.147.0-alpha.6.5: a worker detached by the session-open hook outlives it, so the deferred network checks still run
+ok - codex codex-cli 0.147.0-alpha.6.5: a context-preserving reopen reports source 'resume', which the run tier routes without a re-emit
+# codex codex-cli 0.147.0-alpha.6.5: codex exec run-tier evidence refreshed; the interactive TUI remains uncovered because tracked project hooks provide no session-open or re-emit channel there
+ok - pi 0.84.4: a cold open reports source 'startup' and its hook stdout reaches model context
+ok - pi 0.84.4: a worker detached by the session-open hook outlives it, so the deferred network checks still run
+ok - pi 0.84.4: a context-preserving reopen reports source 'resume', which the run tier routes without a re-emit
+ok - pi 0.84.4: '/new' reports source 'clear' and re-injects hook stdout into model context
+ok - pi 0.84.4: a compaction reports source 'compact' and re-injects hook stdout into model context
+# fm-sessionstart-hook-live-e2e.test.sh: all live assertions passed
+FM_TEST_END 2026-08-31T17:23:07Z tests/fm-sessionstart-hook-live-e2e.test.sh exit=0 duration_ms=360629 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=360708
+FM_TEST_SUMMARY_FAMILY family=live-harness-optin count=1 duration_ms=360629 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-sessionstart-hook-live-e2e.test.sh duration_ms=360629

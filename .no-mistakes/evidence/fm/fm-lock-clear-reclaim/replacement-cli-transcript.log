@@ -1,0 +1,5 @@
+stale pair before reclaim: pid=90493 sidecar=session-before
+replacement command: rc=0 output=lock acquired: harness pid 90493
+pair after reclaim: pid=90493 sidecar=session-after
+nested replacement command: rc=1 output=error: another live firstmate session holds the lock (pid 90493, Claude session session-after); operate read-only until resolved
+pair after nested attempt: pid=90493 sidecar=session-after

@@ -1,0 +1,37 @@
+FM_TEST_BEGIN 2026-08-31T17:13:01Z tests/fm-session-lock-ancestry.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - session-lock: a version-named Claude Code session is identified from its install path and argv[0]
+ok - session-lock: ordinary script paths under a harness directory are not harness processes
+ok - session-lock: ownership stops at the first non-harness gap above the contiguous run
+ok - session-lock: a live version-named session holding the lock is not mistaken for a stale owner
+ok - session-lock e2e: a version-named session claims the home and arms supervision
+ok - session-lock e2e: a session parented by a harness-named daemon claims the home and arms supervision
+ok - session-lock e2e: a version-named session under a harness-named daemon keeps its own lock
+ok - session-lock executable: same Claude session reacquires with its durable pid
+ok - session-lock executable: matching session reacquires during its startup lease
+ok - session-lock executable: background Claude session is refused under its live holder
+ok - session-lock executable: a granted replacement reclaims its own stale sidecar
+ok - session-lock executable: a replacement refuses a matching sidecar
+ok - session-lock executable: a nested background contender is refused even with the intent
+ok - session-lock executable: a replacement refuses a live owner outside its ancestry
+ok - session-lock executable: a replacement refuses a dead owner
+ok - session-lock executable: a replacement refuses an old lock with no sidecar
+ok - session-lock executable: a replacement waits for its own startup sweep
+ok - session-lock executable: --help answers read-only before any state creation
+ok - session-lock executable: foreign Claude session takes over a dead holder
+ok - session-lock executable: CLAUDE_PID does not change the ancestry pid
+ok - session-lock executable: non-Claude ancestry ignores inherited Claude environment
+ok - session-lock executable: old lock without a sidecar uses pid fallback
+ok - session-lock e2e: real Stop hook owns its matching Claude session
+ok - session-lock e2e: matching session refreshes a dead pid before arming
+ok - session-lock e2e: identity publication exposes only stable pairs
+ok - session-lock e2e: real Stop hook ignores an aged acquisition claim
+ok - session-lock e2e: stable identity survives a live acquisition lease
+ok - session-lock executable: sidecar failure restores the prior identity
+ok - session-lock executable: persistent sidecar failure fails closed
+ok - session-lock executable: sidecar removal failure preserves prior identity
+ok - session-lock e2e: foreign Stop hook stands down for a foreign id and during sidecar publication
+ok - session-lock e2e: real Stop hook recovers a dead foreign sidecar
+FM_TEST_END 2026-08-31T17:13:24Z tests/fm-session-lock-ancestry.test.sh exit=0 duration_ms=23472 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=23546
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=1 duration_ms=23472 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-session-lock-ancestry.test.sh duration_ms=23472

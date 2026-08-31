@@ -1,0 +1,16 @@
+FM_TEST_BEGIN 2026-08-31T17:12:36Z tests/fm-session-lock-ancestry.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - session-lock: a version-named Claude Code session is identified from its install path and argv[0]
+ok - session-lock: ordinary script paths under a harness directory are not harness processes
+ok - session-lock: ownership stops at the first non-harness gap above the contiguous run
+ok - session-lock: a live version-named session holding the lock is not mistaken for a stale owner
+ok - session-lock e2e: a version-named session claims the home and arms supervision
+ok - session-lock e2e: a session parented by a harness-named daemon claims the home and arms supervision
+ok - session-lock e2e: a version-named session under a harness-named daemon keeps its own lock
+ok - session-lock executable: same Claude session reacquires with its durable pid
+ok - session-lock executable: matching session reacquires during its startup lease
+ok - session-lock executable: background Claude session is refused under its live holder
+not ok - a replacement acquisition must reclaim the stale sidecar of its own client process: expected exit 0, got 1
+FM_TEST_END 2026-08-31T17:12:45Z tests/fm-session-lock-ancestry.test.sh exit=1 duration_ms=9494 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=9571
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=1 duration_ms=9494 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-session-lock-ancestry.test.sh duration_ms=9494

@@ -1,0 +1,22 @@
+FM_TEST_BEGIN 2026-08-31T17:13:49Z tests/fm-sessionstart-nudge.test.sh family=session-bootstrap expected_gate_skip=none
+ok - fm-sessionstart-nudge: a genuine primary gets one explicitly marked instruction line
+ok - fm-sessionstart-nudge: NO_MISTAKES_GATE is silent
+ok - fm-sessionstart-nudge: .no-mistakes gate common-dir is silent
+ok - fm-sessionstart-nudge: an unmarked linked task worktree is silent
+ok - fm-sessionstart-nudge: a marked linked secondmate home is a primary
+ok - fm-sessionstart-nudge: a checkout without state is silent
+ok - fm-sessionstart-nudge: a lock holder in process ancestry is already run
+ok - OpenCode session.created delivers the exact wrapper nudge once per session
+ok - run wrapper: startup runs the full digest and never also nudges
+ok - run wrapper: clear and compact re-emit the digest without repeating startup sweeps
+ok - run wrapper forwards only stale-cache rebuild sources to immutable-baseline instruction refresh
+ok - run wrapper refreshes a compact even when startup completion is unproven
+ok - run wrapper: clear falls back to full startup when completion is unproven
+ok - run wrapper: clear accepts completion only from the current harness
+ok - run wrapper: resume delegates to the nudge instead of re-running the digest
+ok - run wrapper: a native clear payload reclaims its own session lock and re-emits
+not ok - the resume reopen did not repair the stale session sidecar before delegating
+FM_TEST_END 2026-08-31T17:14:27Z tests/fm-sessionstart-nudge.test.sh exit=1 duration_ms=38237 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=38303
+FM_TEST_SUMMARY_FAMILY family=session-bootstrap count=1 duration_ms=38237 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-sessionstart-nudge.test.sh duration_ms=38237
