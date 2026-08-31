@@ -474,6 +474,10 @@ JS
 
 CLAUDE_BIN="$(fm_fakebin "$TMP_ROOT/claude-harness")/claude"
 ln -s /bin/bash "$CLAUDE_BIN"
+NO_PYTHON_PATH="$(fm_fakebin "$TMP_ROOT/no-python")"
+for tool in awk bash basename cat dirname env git grep ps tr; do
+  ln -s "$(PATH="$RUN_PATH" command -v "$tool")" "$NO_PYTHON_PATH/$tool"
+done
 OWNER_SESSION=aaaaaaaa-1111-4111-8111-111111111111
 CURRENT_SESSION=bbbbbbbb-2222-4222-8222-222222222222
 
@@ -570,16 +574,17 @@ test_run_resume_payload_repairs_the_sidecar_before_the_nudge() {
 }
 
 test_run_refuses_replacement_without_native_evidence() {
-  local case_name delivery root probe_pid call unset_claude_pid fixture_claude_pid
+  local case_name delivery root probe_pid call unset_claude_pid fixture_claude_pid fixture_path
   # Everything a background job, another harness adapter, or a malformed hook
   # could deliver. None of them proves an in-place replacement, so the recorded
   # pair must survive each one untouched (PR #74).
   for case_name in explicit-source explicit-source-empty explicit-source-bare \
     foreign-event missing-id invalid-id mismatched-id malformed trailing-object \
-    duplicate-keys fork compact no-claude-pid foreign-claude-pid; do
+    duplicate-keys fork compact startup unknown no-python3 no-claude-pid foreign-claude-pid; do
     call=payload
     unset_claude_pid=0
     fixture_claude_pid=
+    fixture_path=$RUN_PATH
     delivery=$(payload_for SessionStart clear "$CURRENT_SESSION")
     case "$case_name" in
       explicit-source) call=source ;;
@@ -600,6 +605,12 @@ test_run_refuses_replacement_without_native_evidence() {
         ;;
       fork) delivery=$(payload_for SessionStart fork "$CURRENT_SESSION") ;;
       compact) delivery=$(payload_for SessionStart compact "$CURRENT_SESSION") ;;
+      startup) delivery=$(payload_for SessionStart startup "$CURRENT_SESSION") ;;
+      unknown) delivery=$(payload_for SessionStart future-source "$CURRENT_SESSION") ;;
+      no-python3)
+        delivery=$(payload_for SessionStart resume "$CURRENT_SESSION")
+        fixture_path=$NO_PYTHON_PATH
+        ;;
       no-claude-pid) unset_claude_pid=1 ;;
       foreign-claude-pid) fixture_claude_pid=1 ;;
     esac
@@ -609,7 +620,7 @@ test_run_refuses_replacement_without_native_evidence() {
       FM_OWNER_SESSION="$OWNER_SESSION" FM_CURRENT_SESSION="$CURRENT_SESSION" \
       FM_DELIVERY="$delivery" FM_CALL="$call" \
       FM_UNSET_CLAUDE_PID="$unset_claude_pid" \
-      FM_FIXTURE_CLAUDE_PID="$fixture_claude_pid"
+      FM_FIXTURE_CLAUDE_PID="$fixture_claude_pid" PATH="$fixture_path"
     probe_pid=$(cat "$root/probe-pid")
     [ "$(cat "$root/state/.lock.session")" = "$OWNER_SESSION" ] \
       || fail "$case_name granted a session replacement it cannot prove"
@@ -617,6 +628,21 @@ test_run_refuses_replacement_without_native_evidence() {
       || fail "$case_name moved the recorded lock pid"
   done
   pass "run wrapper: only a validated native replacement in its own client process may replace the sidecar"
+}
+
+test_run_routes_payload_without_python3() {
+  local root="$TMP_ROOT/run-routing-no-python" out status=0
+  make_run_primary "$root"
+  out=$(printf '%s' "$(payload_for SessionStart resume "$CURRENT_SESSION")" |
+    env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
+      FM_GATE_REFUSE_BYPASS=0 FM_ROOT_OVERRIDE="$root" FM_HOME="$root" \
+      PATH="$NO_PYTHON_PATH" "$RUN") || status=$?
+  expect_code 0 "$status" "run wrapper payload routing without python3"
+  assert_contains "$out" "FIRSTMATE_OP" \
+    "a host without python3 did not route a resume payload through the nudge"
+  assert_not_contains "$out" "SESSION START" \
+    "a host without python3 misrouted a resume payload to the full digest"
+  pass "run wrapper: loose source routing still works without python3"
 }
 
 test_run_nested_session_cannot_reclaim_the_primary_lock() {
@@ -741,6 +767,7 @@ test_run_resume_delegates_to_the_nudge
 test_run_clear_payload_reclaims_its_own_session_lock
 test_run_resume_payload_repairs_the_sidecar_before_the_nudge
 test_run_refuses_replacement_without_native_evidence
+test_run_routes_payload_without_python3
 test_run_nested_session_cannot_reclaim_the_primary_lock
 test_run_reads_source_from_the_hook_payload
 test_run_unknown_source_takes_the_helm

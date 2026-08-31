@@ -5,8 +5,10 @@
 # lock, and does the current process belong to that session?" decision. Claude
 # identity uses a valid CLAUDE_CODE_SESSION_ID only after the ancestry resolves
 # to Claude. state/.lock records the durable ancestry pid, which is also the
-# only liveness input. CLAUDE_PID is not part of the decision. Other harnesses
-# and uncertain Claude states use ancestry unchanged.
+# only liveness input. Replacement acquisition alone uses the vendor-set
+# CLAUDE_PID to bind the hook to its direct Claude client process; every other
+# lock decision remains CLAUDE_PID-free. Other harnesses and uncertain Claude
+# states use ancestry unchanged.
 # bin/fm-lock.sh uses it to acquire state/.lock and state/.lock.session;
 # bin/fm-claude-stop-autoarm.sh uses it to prove a Stop hook fires inside the
 # lock-owning primary session before it may arm or rewake.
