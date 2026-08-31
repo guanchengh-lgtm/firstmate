@@ -192,9 +192,10 @@ test_direct_pr_and_scout_refresh_before_launch() {
     if [ "$contract" = direct-pr ]; then
       assert_grep 'surface=internal-only' "$HOME_DIR/state/$id.meta" \
         "direct-PR spawn did not persist the validated surface"
-      [ "$(awk 'END { print NR + 0 }' "$HOME_DIR/data/$id/surface")" = 1 ] \
-        && grep -qx internal-only "$HOME_DIR/data/$id/surface" \
-        || fail "direct-PR spawn did not persist exactly one matching surface marker"
+      if [ "$(awk 'END { print NR + 0 }' "$HOME_DIR/data/$id/surface")" != 1 ] \
+        || ! grep -qx internal-only "$HOME_DIR/data/$id/surface"; then
+        fail "direct-PR spawn did not persist exactly one matching surface marker"
+      fi
     fi
     if [ "${FM_TEST_EVIDENCE:-0}" = 1 ]; then
       printf '# observed %s spawn: %s\n' "$contract" "$(printf '%s\n' "$out" | tail -n 1)"

@@ -1310,9 +1310,10 @@ test_spawn_relaunch_validates_the_recorded_surface() {
   expect_code 0 "$rc" "internal-only direct-PR relaunch should succeed"$'\n'"$out"
   [ "$(meta_field "$dir" rl36 surface)" = internal-only ] \
     || fail "relaunch did not preserve the validated internal-only surface"
-  [ "$(awk 'END { print NR + 0 }' "$dir/home/data/rl36/surface")" = 1 ] \
-    && grep -qx internal-only "$dir/home/data/rl36/surface" \
-    || fail "relaunch did not preserve exactly one matching surface marker"
+  if [ "$(awk 'END { print NR + 0 }' "$dir/home/data/rl36/surface")" != 1 ] \
+    || ! grep -qx internal-only "$dir/home/data/rl36/surface"; then
+    fail "relaunch did not preserve exactly one matching surface marker"
+  fi
 
   dir=$(new_case surface-missing rl37)
   add_ship_task "$dir" rl37 claude
