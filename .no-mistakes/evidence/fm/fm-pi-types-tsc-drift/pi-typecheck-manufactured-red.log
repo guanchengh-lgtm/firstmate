@@ -1,0 +1,6 @@
+Manufactured breakage: changed the terminal listener return to { consume: true }.
+Compiler: Version 5.9.3
+Pi package: 0.84.4
+Command: PATH=<typescript-5.9.3>/bin:$PATH tests/fm-pi-primary-types.test.sh
+../../../../../../var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-pi-primary-types.6qbXac/fm-calm.ts(474,7): error TS2322: Type '{ consume: boolean; }' is not assignable to type 'undefined'.
+Exit status: 1

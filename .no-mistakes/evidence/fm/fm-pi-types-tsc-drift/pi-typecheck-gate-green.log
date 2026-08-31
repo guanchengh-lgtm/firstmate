@@ -1,0 +1,21 @@
+Compiler: Version 5.9.3
+Pi package: 0.84.4
+Command: bin/fm-test-run.sh --fail-on-gate-skip "Pi extension typecheck unavailable" tests/fm-pi-primary-types.test.sh --json <evidence>/pi-typecheck-timing.json
+FM_TEST_BEGIN 2026-08-31T18:47:17Z tests/fm-pi-primary-types.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - tracked Pi extensions pass strict no-emit typecheck against Pi 0.84.4
+FM_TEST_END 2026-08-31T18:47:19Z tests/fm-pi-primary-types.test.sh exit=0 duration_ms=2281 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=2353
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=2281 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-pi-primary-types.test.sh duration_ms=2281
+fm-test-run: wrote timing artifact: /Users/AI/.no-mistakes/evidence/01M1CHKYV5CQ0KGE9X3GEETHPB/pi-typecheck-timing.json
+Timing record:
+{
+  "selection": "scripts;fail-on-gate-skip=Pi extension typecheck unavailable",
+  "scripts": [
+    {
+      "path": "tests/fm-pi-primary-types.test.sh",
+      "exit": 0,
+      "gate_skip": false
+    }
+  ]
+}

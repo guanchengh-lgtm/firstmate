@@ -1,0 +1,30 @@
+{
+  "families": [
+    {
+      "count": 1,
+      "duration_ms": 29,
+      "failed": 0,
+      "name": "pure-contract-unit"
+    }
+  ],
+  "finished_at": "2026-08-31T18:50:55Z",
+  "run_id": "fm-test-run-1788202255426-83303",
+  "scripts": [
+    {
+      "duration_ms": 29,
+      "exit": 0,
+      "expected_gate_skip": "none",
+      "family": "pure-contract-unit",
+      "gate_skip": true,
+      "path": "tests/fm-pi-primary-types.test.sh"
+    }
+  ],
+  "selection": "scripts",
+  "started_at": "2026-08-31T18:50:55Z",
+  "summary": {
+    "duration_ms": 114,
+    "failed": 0,
+    "skipped_gate": 1,
+    "total": 1
+  }
+}

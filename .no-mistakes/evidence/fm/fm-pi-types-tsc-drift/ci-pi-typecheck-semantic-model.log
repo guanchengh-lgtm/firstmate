@@ -1,0 +1,12 @@
+{
+  "job": "tests-portable-parallel-1",
+  "setup_before_lane": true,
+  "install_argv": [
+    "npm",
+    "install",
+    "-g",
+    "@earendil-works/pi-coding-agent@0.84.4",
+    "typescript@5.9.3"
+  ],
+  "lane_gate_token": "Pi extension typecheck unavailable"
+}
