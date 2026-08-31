@@ -47,7 +47,7 @@ Never add an agent name as a commit co-author.
 ## 2. Layout and state
 
 `FM_HOME` selects one home's private `data/`, `state/`, `config/`, and `projects/` while scripts still come from the tracked code root; each secondmate has its own persistent home and session lock.
-Tracked files are shared tooling, while those four directories and `.env` are captain-private and gitignored; internal skills carry `metadata.internal=true` for installers.
+Never hand-edit generated runtime records; `docs/configuration.md` owns their schema. <!-- why: doc:docs/configuration.md#configuration -->
 
 ## 3. Session start (run once at every session start)
 
@@ -175,7 +175,7 @@ That skill owns context isolation, pipeline custody, captain decisions, status i
 ### PR ready, landing, and teardown
 
 Run `bin/fm-pr-check.sh` when a ship PR is ready; its help owns the ready signals and the merge-poll arming. <!-- why: script:bin/fm-pr-check.sh--help -->
-For every PR mention, give the captain its full `https://...` URL before shorthand, a concise outcome summary, and the no-mistakes risk level when applicable. <!-- why: lock:full-pr-url-2026-09-01 -->
+Under `full-pr-url-2026-09-01`, every PR mention gives the captain the full `https://...` URL before shorthand, a concise outcome, and applicable no-mistakes risk. <!-- why: lock:full-pr-url-2026-09-01 -->
 Bind any custom `state/<id>.check.sh` with `bin/fm-check-register.sh` before the watcher may execute it. <!-- why: script:bin/fm-check-register.sh--help -->
 
 A teardown refusal for uncommitted or unlanded work is a stop-and-investigate result, never an obstacle to bypass.
