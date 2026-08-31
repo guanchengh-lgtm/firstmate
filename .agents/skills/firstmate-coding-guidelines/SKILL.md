@@ -85,8 +85,10 @@ A skill name and a section slug use lower-case ASCII letters and digits separate
 A repository path is relative to the repository root and contains no dot or dot-dot component.
 A stable lock identifier uses lower-case ASCII letters and digits separated by single hyphens, and it ends with a date in `YYYY-MM-DD` form.
 A local skill, document, or script target must exist.
+A local target path stays inside the repository root and contains no symbolic-link component.
 A lock target is private and does not need to exist in the repository.
 The metadata supplements a visible owner pointer in the line and never replaces that pointer.
+The visible owner pointer must match its target as a complete token, not as part of another word or path.
 
 ## Trigger hygiene
 
