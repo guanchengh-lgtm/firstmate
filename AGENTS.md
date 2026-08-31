@@ -176,9 +176,10 @@ That skill owns context isolation, pipeline custody, captain decisions, status i
 
 ### PR ready, landing, and teardown
 
+Run `bin/fm-pr-check.sh` when a ship PR is ready; its help owns the ready signals and the merge-poll arming. <!-- why: script:bin/fm-pr-check.sh--help -->
 Tell the captain the PR's full URL, always the complete `https://...` link rather than a bare `#number`, a concise outcome summary, and the no-mistakes risk level when applicable.
 A captain instruction to merge is explicit authority; `yolo` is the only standing routine merge authority.
-For any custom `state/<id>.check.sh` you write yourself, keep it an ordinary single-link mode-`0700` file, print one line only when firstmate should wake, print nothing otherwise, finish before `FM_CHECK_TIMEOUT`, then bind its current bytes with `bin/fm-check-register.sh <id>` before the watcher may execute it.
+Bind any custom `state/<id>.check.sh` with `bin/fm-check-register.sh` before the watcher may execute it. <!-- why: script:bin/fm-check-register.sh--help -->
 
 Tear down a ship task only after landing is confirmed.
 A teardown refusal for uncommitted or unlanded work is a stop-and-investigate result, never an obstacle to bypass.
