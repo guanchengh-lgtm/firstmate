@@ -13,9 +13,11 @@
 # captain's standing posture as context, and this script never looks it up.
 # Promotion always records role=builder: the scout worker becomes the implementer.
 # A later verifier is a fresh --role verifier spawn on this same task, not a
-# promote. The builder sibling markers data/<task-id>/mode and data/<task-id>/role
-# are written so a later ship respawn can pass --role from meta; spawn reads those
-# files and never scans brief prose. This script does not parse Role: lines.
+# promote. The builder sibling markers data/<task-id>/mode,
+# data/<task-id>/role, and optional data/<task-id>/surface are written so a
+# later ship respawn can recover the classified delivery contract from metadata;
+# spawn reads the mode and role files and never scans brief prose. This script
+# does not parse Role: lines.
 # --surface names the task surface classified at promotion. --mode direct-PR is
 # legal only with --surface internal-only; product, mixed, uncertain, or an
 # omitted surface is refused (bin/fm-delivery-surface-lib.sh). --mode
@@ -140,12 +142,18 @@ grep -qx 'kind=scout' "$META" || { echo "error: task $ID is not a scout task (ki
 mkdir -p "$DATA/$ID"
 printf '%s\n' "$MODE" > "$DATA/$ID/mode"
 printf '%s\n' builder > "$DATA/$ID/role"
+if [ "$SURFACE_SET" -eq 1 ]; then
+  printf '%s\n' "$SURFACE" > "$DATA/$ID/surface"
+else
+  rm -f "$DATA/$ID/surface"
+fi
 
 TMP="$META.tmp"
-grep -v -e '^kind=' -e '^mode=' -e '^yolo=' -e '^role=' "$META" > "$TMP"
+grep -v -e '^kind=' -e '^mode=' -e '^surface=' -e '^yolo=' -e '^role=' "$META" > "$TMP"
 {
   echo "kind=ship"
   echo "mode=$MODE"
+  [ "$SURFACE_SET" -eq 0 ] || echo "surface=$SURFACE"
   echo "yolo=$YOLO"
   echo "role=builder"
 } >> "$TMP"

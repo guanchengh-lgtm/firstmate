@@ -49,7 +49,8 @@
 #   legal only with --surface internal-only; product, mixed, uncertain, or an
 #   omitted surface is refused (bin/fm-delivery-surface-lib.sh). --mode
 #   no-mistakes and local-only accept any valid surface or none. --surface is
-#   refused on --scout, --secondmate, and --relaunch.
+#   refused on --scout and --secondmate. A --relaunch rejects a command-line
+#   override, reloads the recorded surface, and applies the same validation.
 #   no-mistakes-prod-only is a registry policy rather than a task mode and is
 #   refused as a flag value.
 #        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>]
@@ -213,9 +214,10 @@
 # it writes state/<id>.muse-session to bind the pane to muse's own session event
 # log; muse is crewmate/scout only and is refused for --secondmate.
 # On success prints: spawned <id> harness=<name> kind=<ship|scout|secondmate> [mode=<mode> yolo=<on|off> role=<builder|verifier>] window=<backend-target> worktree=<path>
-# A ship task records the explicit mode/yolo/role it was passed; a secondmate spawn records
-# mode=secondmate, yolo=off, home=, and projects=; a scout records neither, and both the
-# success line and state/<id>.meta omit them.
+# A ship task records the explicit mode/yolo/role and optional validated surface
+# it was passed; a secondmate spawn records mode=secondmate, yolo=off, home=, and
+# projects=; a scout records none of those delivery fields, and both the success
+# line and state/<id>.meta omit them.
 # Every fresh spawn or relaunch records a new spawn_gen= incarnation token so durable
 # consumers can distinguish a replacement worker that reuses the same task id.
 # When the home session's frozen trace-context decision is enabled (see
@@ -902,6 +904,7 @@ spawn_abort_cleanup() {
             echo "harness=$HARNESS"
             echo "kind=$KIND"
             [ -z "${MODE:-}" ] || echo "mode=$MODE"
+            [ "${SURFACE_SET:-0}" -eq 0 ] || echo "surface=$SURFACE"
             [ -z "${YOLO:-}" ] || echo "yolo=$YOLO"
             [ -z "${MAP_NEXT:-}" ] || echo "map_next=$MAP_NEXT"
             [ -z "${MAP:-}" ] || echo "map=$MAP"
@@ -1184,6 +1187,25 @@ if [ "$RELAUNCH" -eq 1 ]; then
   KIND=$(fm_meta_get "$RELAUNCH_META" kind)
   [ -n "$KIND" ] || KIND=ship
   MODE=$(fm_meta_get "$RELAUNCH_META" mode)
+  SURFACE=
+  SURFACE_COUNT=$(grep -c '^surface=' "$RELAUNCH_META" 2>/dev/null || true)
+  case "$SURFACE_COUNT" in
+    0) SURFACE_SET=0 ;;
+    1)
+      SURFACE=$(fm_meta_get "$RELAUNCH_META" surface)
+      SURFACE_SET=1
+      fm_delivery_assert_surface_value "$SURFACE" || exit 1
+      ;;
+    *)
+      echo "error: task $ID has ambiguous surface metadata; relaunch requires one validated surface classification" >&2
+      exit 1
+      ;;
+  esac
+  if [ "$MODE" = direct-PR ] && [ "$SURFACE_SET" -eq 0 ]; then
+    echo "error: task $ID records mode=direct-PR without a surface; legacy direct-PR tasks require fresh classification before relaunch" >&2
+    exit 1
+  fi
+  fm_delivery_assert_direct_pr_surface "$MODE" "$SURFACE" "$SURFACE_SET" || exit 1
   YOLO=$(fm_meta_get "$RELAUNCH_META" yolo)
   ROLE=$(fm_meta_get "$RELAUNCH_META" role)
   RELAUNCH_WT=$(fm_meta_get "$RELAUNCH_META" worktree)
@@ -2142,7 +2164,8 @@ git_common_dir_real() {  # <worktree>
 }
 
 verifier_handoff_preflight() {
-  local meta=$1 prior_kind prior_mode prior_yolo prior_role prior_project prior_project_real
+  local meta=$1 prior_kind prior_mode prior_surface prior_surface_count prior_yolo prior_role
+  local prior_project prior_project_real
   local prior_state worktree_common project_common status tracked_status untracked_status
   local rebase_merge rebase_apply head branch branch_status expected_branch branch_head branch_owner worktree_list
   [ -f "$meta" ] && [ ! -L "$meta" ] || {
@@ -2164,6 +2187,24 @@ verifier_handoff_preflight() {
     echo "error: verifier handoff refused: existing task must record kind=ship, mode=no-mistakes, role=builder" >&2
     return 1
   fi
+  prior_surface_count=$(grep -c '^surface=' "$meta" 2>/dev/null || true)
+  case "$prior_surface_count" in
+    0) ;;
+    1)
+      prior_surface=$(fm_meta_get "$meta" surface)
+      fm_delivery_assert_surface_value "$prior_surface" || return 1
+      if [ "$SURFACE_SET" -eq 1 ] && [ "$SURFACE" != "$prior_surface" ]; then
+        echo "error: verifier handoff refused: requested surface '$SURFACE' does not match builder surface '$prior_surface'" >&2
+        return 1
+      fi
+      SURFACE=$prior_surface
+      SURFACE_SET=1
+      ;;
+    *)
+      echo "error: verifier handoff refused: builder metadata has an ambiguous surface classification" >&2
+      return 1
+      ;;
+  esac
   if [ "$prior_yolo" != "$YOLO" ]; then
     echo "error: verifier handoff refused: requested yolo posture '$YOLO' does not match builder yolo posture '${prior_yolo:-none}'" >&2
     return 1
@@ -3228,7 +3269,7 @@ fi
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo role map_next map ov ov_harness session tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode surface yolo role map_next map ov ov_harness session tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -3240,7 +3281,7 @@ preserve_verifier_handoff_meta() {
     -v map_set="$MAP_SET" \
     -v ov_set="$OV_SET" '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo role tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode surface yolo role tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
       for (i in keys) owned[keys[i]] = 1
       if (map_next_set == 1) owned["map_next"] = 1
       if (map_set == 1) owned["map"] = 1
@@ -3268,6 +3309,7 @@ if ! {
   echo "harness=$HARNESS"
   echo "kind=$KIND"
   [ -z "$MODE" ] || echo "mode=$MODE"
+  [ "$SURFACE_SET" -eq 0 ] || echo "surface=$SURFACE"
   [ -z "$YOLO" ] || echo "yolo=$YOLO"
   [ -z "${ROLE:-}" ] || echo "role=$ROLE"
   [ -z "$MAP_NEXT" ] || echo "map_next=$MAP_NEXT"

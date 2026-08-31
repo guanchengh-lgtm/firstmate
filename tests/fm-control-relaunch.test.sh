@@ -1286,10 +1286,65 @@ test_spawn_relaunch_refuses_contradicting_flags() {
   out=$(run_spawn "$dir" rl16 --relaunch --scout); rc=$?
   expect_code 1 "$rc" "--scout should be refused alongside --relaunch"
   assert_contains "$out" "recorded kind" "the refusal should name the recorded kind rule"
+  out=$(run_spawn "$dir" rl16 --relaunch --surface=internal-only); rc=$?
+  expect_code 1 "$rc" "--surface should be refused alongside --relaunch"
+  assert_contains "$out" "recorded delivery mode" "the refusal should name the recorded surface rule"
   out=$(run_spawn "$dir" rl16 "$dir/proj" --relaunch); rc=$?
   expect_code 1 "$rc" "a project positional should be refused alongside --relaunch"
   assert_contains "$out" "takes the task id only" "the refusal should name the positional rule"
   pass "fm-spawn --relaunch: every identity axis comes from the record, and a contradicting flag refuses"
+}
+
+test_spawn_relaunch_validates_the_recorded_surface() {
+  local dir out rc meta
+
+  dir=$(new_case surface-allowed rl36)
+  add_ship_task "$dir" rl36 claude
+  meta="$dir/home/state/rl36.meta"
+  sed 's/^mode=no-mistakes$/mode=direct-PR/' "$meta" > "$meta.tmp"
+  mv "$meta.tmp" "$meta"
+  printf 'surface=internal-only\n' >> "$meta"
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl36 --relaunch); rc=$?
+  expect_code 0 "$rc" "internal-only direct-PR relaunch should succeed"$'\n'"$out"
+  [ "$(meta_field "$dir" rl36 surface)" = internal-only ] \
+    || fail "relaunch did not preserve the validated internal-only surface"
+
+  dir=$(new_case surface-missing rl37)
+  add_ship_task "$dir" rl37 claude
+  meta="$dir/home/state/rl37.meta"
+  sed 's/^mode=no-mistakes$/mode=direct-PR/' "$meta" > "$meta.tmp"
+  mv "$meta.tmp" "$meta"
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl37 --relaunch); rc=$?
+  expect_code 1 "$rc" "legacy direct-PR relaunch without a surface should refuse"
+  assert_contains "$out" "require fresh classification before relaunch" \
+    "legacy direct-PR refusal did not require fresh classification"
+  [ -z "$(cat "$dir/fake/literal")" ] || fail "surface-less relaunch delivered launch bytes"
+
+  dir=$(new_case surface-refused rl38)
+  add_ship_task "$dir" rl38 claude
+  meta="$dir/home/state/rl38.meta"
+  sed 's/^mode=no-mistakes$/mode=direct-PR/' "$meta" > "$meta.tmp"
+  mv "$meta.tmp" "$meta"
+  printf 'surface=product\n' >> "$meta"
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl38 --relaunch); rc=$?
+  expect_code 1 "$rc" "product direct-PR relaunch should refuse"
+  assert_contains "$out" "refused for product work" \
+    "product direct-PR relaunch did not apply the shared surface gate"
+  [ -z "$(cat "$dir/fake/literal")" ] || fail "product direct-PR relaunch delivered launch bytes"
+
+  dir=$(new_case surface-invalid rl39)
+  add_ship_task "$dir" rl39 claude
+  printf 'surface=invalid\n' >> "$dir/home/state/rl39.meta"
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl39 --relaunch); rc=$?
+  expect_code 1 "$rc" "invalid recorded surface should refuse"
+  assert_contains "$out" "must be one of internal-only, product, mixed, uncertain" \
+    "relaunch did not validate the recorded surface closed set"
+  [ -z "$(cat "$dir/fake/literal")" ] || fail "invalid-surface relaunch delivered launch bytes"
+  pass "fm-spawn --relaunch: recorded surfaces are preserved and direct-PR fails closed"
 }
 
 test_spawn_relaunch_refuses_an_unrecorded_task() {
@@ -1358,5 +1413,6 @@ test_direct_spawn_relaunch_participates_in_the_lifecycle_lock
 test_promotion_participates_in_the_lifecycle_lock_before_metadata_resolution
 test_spawn_relaunch_refuses_a_live_agent
 test_spawn_relaunch_refuses_contradicting_flags
+test_spawn_relaunch_validates_the_recorded_surface
 test_spawn_relaunch_refuses_an_unrecorded_task
 test_spawn_relaunch_refuses_a_pane_outside_the_worktree

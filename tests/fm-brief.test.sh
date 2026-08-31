@@ -204,7 +204,8 @@ test_ship_modes_generate_clean_briefs() {
     mode=${id_mode##*:}
     extra=()
     [ "$mode" != direct-PR ] || extra=(--surface internal-only)
-    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" "${extra[@]}" >/dev/null 2>&1; status=$?
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" \
+      ${extra[@]+"${extra[@]}"} >/dev/null 2>&1; status=$?
     expect_code 0 "$status" "fm-brief.sh $id --mode $mode should exit 0"
     brief="$home/data/$id/brief.md"
     assert_present "$brief" "$id: brief was not scaffolded"
@@ -301,8 +302,10 @@ mode on a scout brief|brief-refused-b3 some-proj --scout --mode direct-PR|--mode
 mode on a secondmate charter|brief-refused-b4 --secondmate --no-projects --mode no-mistakes|--mode applies only to ship briefs
 verifier on a scout|brief-refused-v1 some-proj --scout --verifier|--verifier applies only to an existing ship brief
 verifier with --mode|brief-refused-v2 some-proj --mode no-mistakes --verifier|--verifier reads mode from the task mode marker
+surface on a secondmate charter|brief-refused-b5 --secondmate --no-projects --surface=internal-only|--surface applies only to ship briefs
+surface on a verifier|brief-refused-v3 --verifier --surface internal-only|--verifier reads mode from the task mode marker
 ROWS
-  pass "fm-brief.sh: --yolo and scout/secondmate --mode are refused, never silently dropped"
+  pass "fm-brief.sh: delivery flags are refused outside ship scaffolds"
 }
 
 test_faster_paths_use_configured_authority_without_stacked_review() {
@@ -954,9 +957,6 @@ EOF
   pass "fm-brief.sh: --verifier writes a verifier-leading sibling and leaves brief.md alone"
 }
 
-# --mode direct-PR is legal only with --surface internal-only. Product, mixed,
-# uncertain, or an omitted surface must refuse. no-mistakes still accepts a
-# product surface. Tests drive the public brief CLI, not the lib source.
 test_direct_pr_requires_internal_only_surface() {
   local home out status
   home="$TMP_ROOT/surface-refuse-home"
@@ -989,10 +989,14 @@ test_direct_pr_requires_internal_only_surface() {
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-surf-internal some-proj --mode direct-PR --surface internal-only >/dev/null 2>&1 \
     || fail "internal-only + direct-PR brief should scaffold"
   assert_present "$home/data/brief-surf-internal/brief.md" "internal-only + direct-PR did not write a brief"
+  assert_grep 'internal-only' "$home/data/brief-surf-internal/surface" \
+    "internal-only + direct-PR did not persist its surface marker"
 
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-surf-nm-product some-proj --mode no-mistakes --surface product >/dev/null 2>&1 \
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-surf-nm-product some-proj --mode no-mistakes --surface=product >/dev/null 2>&1 \
     || fail "product + no-mistakes brief should scaffold"
   assert_present "$home/data/brief-surf-nm-product/brief.md" "product + no-mistakes did not write a brief"
+  assert_grep 'product' "$home/data/brief-surf-nm-product/surface" \
+    "equals-form product surface did not persist its marker"
 
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-surf-local-product some-proj --mode local-only --surface product >/dev/null 2>&1 \
     || fail "product + local-only brief should still scaffold"

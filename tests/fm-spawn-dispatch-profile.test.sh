@@ -1372,8 +1372,9 @@ test_role_verifier_encodes_verifier_brief() {
   rec=$(make_spawn_case profile-role-verifier claude "$id")
   read_case_record "$rec"
   prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
-  printf '%s\n' 'map_next=profile-next-task-z46' 'x_request=request-46' \
+  printf '%s\n' 'surface=product' 'map_next=profile-next-task-z46' 'x_request=request-46' \
     >> "$HOME_DIR/state/$id.meta"
+  printf 'product\n' > "$HOME_DIR/data/$id/surface"
   head_before=$(git -C "$WT_DIR" rev-parse HEAD)
 
   out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
@@ -1383,6 +1384,7 @@ test_role_verifier_encodes_verifier_brief() {
   meta="$HOME_DIR/state/$id.meta"
   assert_grep 'role=verifier' "$meta" "verifier spawn did not record role=verifier"
   assert_grep 'kind=ship' "$meta" "verifier spawn lost kind=ship"
+  assert_grep 'surface=product' "$meta" "verifier spawn lost the builder surface"
   assert_grep 'map_next=profile-next-task-z46' "$meta" \
     "verifier spawn lost the task successor"
   assert_grep 'x_request=request-46' "$meta" \

@@ -12,8 +12,6 @@
 # Surfaces: internal-only | product | mixed | uncertain
 # No side effects on source. set -u / set -e safe.
 
-# fm_delivery_assert_surface_value <surface>
-# Closed-set check for a surface the caller actually passed.
 fm_delivery_assert_surface_value() {
   case "$1" in
     internal-only|product|mixed|uncertain) return 0 ;;
@@ -24,9 +22,6 @@ fm_delivery_assert_surface_value() {
   esac
 }
 
-# fm_delivery_assert_direct_pr_surface <mode> <surface> <surface-set>
-# <surface-set> is 0 or 1. Returns 0 when the pair is allowed.
-# Refuses --mode direct-PR unless --surface internal-only was passed.
 fm_delivery_assert_direct_pr_surface() {
   local mode=$1 surface=$2 surface_set=${3:-0}
   case "$mode" in

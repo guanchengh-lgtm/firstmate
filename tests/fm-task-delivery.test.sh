@@ -145,12 +145,17 @@ EOF
   [ "$status" -ne 0 ] || fail "a secondmate spawn carrying delivery flags should exit non-zero"
   assert_contains "$out" "applies only to ship spawns" "secondmate spawn did not refuse the delivery flags"
 
+  out=$(run_spawn "$home" "$fakebin" delivery-sm-surface-a3 "$home" --secondmate --surface=internal-only)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a secondmate spawn carrying --surface should exit non-zero"
+  assert_contains "$out" "--surface applies only to ship spawns" "secondmate spawn did not refuse --surface"
+
   out=$(run_spawn "$home" "$fakebin" delivery-scout-a1 "$proj" claude --scout --role builder)
   status=$?
   [ "$status" -ne 0 ] || fail "a scout spawn carrying --role should exit non-zero"
   assert_contains "$out" "--role applies only to ship spawns" "scout spawn did not refuse --role"
 
-  out=$(run_spawn "$home" "$fakebin" delivery-sm-role-a3 "$home" --secondmate --role verifier)
+  out=$(run_spawn "$home" "$fakebin" delivery-sm-role-a4 "$home" --secondmate --role verifier)
   status=$?
   [ "$status" -ne 0 ] || fail "a secondmate spawn carrying --role should exit non-zero"
   assert_contains "$out" "--role applies only to ship spawns" "secondmate spawn did not refuse --role"
@@ -319,7 +324,8 @@ EOF
     write_brief "$home" "delivery-dev-$n" "$mode"
     extra=()
     [ "$mode" != direct-PR ] || extra=(--surface internal-only)
-    out=$(run_spawn "$home" "$fakebin" "delivery-dev-$n" "$proj" claude --mode "$mode" --yolo off --role builder "${extra[@]}")
+    out=$(run_spawn "$home" "$fakebin" "delivery-dev-$n" "$proj" claude \
+      --mode "$mode" --yolo off --role builder ${extra[@]+"${extra[@]}"})
     case "$expect" in
       notice)
         assert_contains "$out" "less rigor than the captain's standing posture" \
@@ -394,16 +400,20 @@ test_promote_requires_and_records_the_delivery_contract() {
   expect_code 0 "$status" "a promotion carrying both flags should succeed"
   assert_grep 'kind=ship' "$meta" "promotion did not restore ship teardown protection"
   assert_grep 'mode=direct-PR' "$meta" "promotion did not record the decided delivery mode"
+  assert_grep 'surface=internal-only' "$meta" "promotion did not record the classified surface"
   assert_grep 'yolo=on' "$meta" "promotion did not record the decided approval posture"
   assert_grep 'role=builder' "$meta" "promotion did not record role=builder for a later ship respawn"
   assert_contains "$out" "ship instructions for mode=direct-PR" "promotion hint did not carry the decided mode"
   assert_contains "$out" "role=builder" "promotion hint did not name the recorded builder role"
   [ "$(grep -c '^mode=' "$meta")" = 1 ] || fail "promotion left more than one mode= line in the task record"
+  [ "$(grep -c '^surface=' "$meta")" = 1 ] || fail "promotion left more than one surface= line in the task record"
   [ "$(grep -c '^role=' "$meta")" = 1 ] || fail "promotion left more than one role= line in the task record"
   grep -qx builder "$home/data/promote-d1/role" \
     || fail "promotion did not write the builder role marker"
   grep -qx 'direct-PR' "$home/data/promote-d1/mode" \
     || fail "promotion did not write the matching mode marker"
+  grep -qx 'internal-only' "$home/data/promote-d1/surface" \
+    || fail "promotion did not write the matching surface marker"
   pass "fm-promote: promotion requires the delivery contract and records it exactly once"
 }
 
@@ -504,9 +514,6 @@ EOF
   pass "fm-project-mode: the conditional policy is accepted, mapped for mechanical callers, and readable raw"
 }
 
-# --mode direct-PR is legal only with --surface internal-only. Product, mixed,
-# uncertain, or an omitted surface must refuse at spawn and promote. no-mistakes
-# still accepts a product surface. Tests drive the public CLIs, not the lib source.
 test_direct_pr_requires_internal_only_surface() {
   local rec home proj fakebin out status
   rec=$(make_home surface-gate)
@@ -522,7 +529,7 @@ EOF
   assert_absent "$home/state/surf-product-s1.meta" "product + direct-PR spawn wrote task metadata"
 
   write_brief "$home" surf-mixed-s2 no-mistakes
-  out=$(run_spawn "$home" "$fakebin" surf-mixed-s2 "$proj" claude --mode direct-PR --yolo off --role builder --surface mixed)
+  out=$(run_spawn "$home" "$fakebin" surf-mixed-s2 "$proj" claude --mode direct-PR --yolo off --role builder --surface=mixed)
   status=$?
   [ "$status" -ne 0 ] || fail "mixed + direct-PR spawn should exit non-zero"
   assert_contains "$out" "refused for mixed work" "mixed + direct-PR spawn did not name the refused surface"
@@ -550,25 +557,83 @@ EOF
   assert_not_contains "$out" "refused for" "product + no-mistakes spawn was refused"
   assert_not_contains "$out" "requires --surface" "product + no-mistakes required a surface it already had"
 
-  mkdir -p "$home/state" "$home/data"
-  printf 'window=fm-surf-promote\nkind=scout\nworktree=/tmp/wt\n' > "$home/state/surf-promote-p1.meta"
-  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" surf-promote-p1 --mode direct-PR --yolo off --surface product 2>&1)
+  write_surface_scout_meta() {
+    local id=$1
+    mkdir -p "$home/state" "$home/data/$id"
+    printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\n' "$id" > "$home/state/$id.meta"
+    rm -f "$home/data/$id/mode" "$home/data/$id/role" "$home/data/$id/surface"
+  }
+
+  write_surface_scout_meta surf-promote-product-p1
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" surf-promote-product-p1 \
+    --mode direct-PR --yolo off --surface product 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "product + direct-PR promotion should exit non-zero"
   assert_contains "$out" "refused for product work" "product + direct-PR promote did not name the refused surface"
-  assert_grep 'kind=scout' "$home/state/surf-promote-p1.meta" "refused product promotion still changed the task record"
+  assert_grep 'kind=scout' "$home/state/surf-promote-product-p1.meta" \
+    "refused product promotion still changed the task record"
 
-  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" surf-promote-p1 --mode direct-PR --yolo off 2>&1)
+  write_surface_scout_meta surf-promote-omitted-p2
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" surf-promote-omitted-p2 \
+    --mode direct-PR --yolo off 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "direct-PR promotion without --surface should exit non-zero"
   assert_contains "$out" "requires --surface internal-only" "omitted surface promote did not fail closed"
 
-  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" surf-promote-p1 --mode no-mistakes --yolo off --surface product 2>&1)
+  write_surface_scout_meta surf-promote-mixed-p3
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" surf-promote-mixed-p3 \
+    --mode direct-PR --yolo off --surface mixed 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "mixed + direct-PR promotion should exit non-zero"
+  assert_contains "$out" "refused for mixed work" "mixed + direct-PR promote did not name the refused surface"
+
+  write_surface_scout_meta surf-promote-uncertain-p4
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" surf-promote-uncertain-p4 \
+    --mode direct-PR --yolo off --surface=uncertain 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "uncertain + direct-PR promotion should exit non-zero"
+  assert_contains "$out" "refused for uncertain work" \
+    "uncertain + direct-PR promote did not name the refused surface"
+
+  write_surface_scout_meta surf-promote-invalid-p5
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" surf-promote-invalid-p5 \
+    --mode no-mistakes --yolo off --surface=invalid 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "invalid promotion surface should exit non-zero"
+  assert_contains "$out" "must be one of internal-only, product, mixed, uncertain" \
+    "invalid promotion surface did not fail closed"
+
+  write_surface_scout_meta surf-promote-internal-p6
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" surf-promote-internal-p6 \
+    --mode direct-PR --yolo off --surface=internal-only 2>&1)
+  status=$?
+  expect_code 0 "$status" "internal-only + direct-PR promotion should succeed"
+  assert_grep 'surface=internal-only' "$home/state/surf-promote-internal-p6.meta" \
+    "internal-only + direct-PR promotion did not record its surface"
+  assert_grep 'internal-only' "$home/data/surf-promote-internal-p6/surface" \
+    "internal-only + direct-PR promotion did not write its surface marker"
+
+  write_surface_scout_meta surf-promote-local-p7
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" surf-promote-local-p7 \
+    --mode local-only --yolo off --surface product 2>&1)
+  status=$?
+  expect_code 0 "$status" "product + local-only promotion should succeed"
+  assert_grep 'mode=local-only' "$home/state/surf-promote-local-p7.meta" \
+    "product + local-only promotion did not record its mode"
+  assert_grep 'surface=product' "$home/state/surf-promote-local-p7.meta" \
+    "product + local-only promotion did not record its surface"
+  assert_grep 'product' "$home/data/surf-promote-local-p7/surface" \
+    "product + local-only promotion did not write its surface marker"
+
+  write_surface_scout_meta surf-promote-nm-p8
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" "$PROMOTE" surf-promote-nm-p8 \
+    --mode no-mistakes --yolo off --surface product 2>&1)
   status=$?
   expect_code 0 "$status" "product + no-mistakes promotion should succeed"
-  assert_grep 'kind=ship' "$home/state/surf-promote-p1.meta" "product + no-mistakes promotion did not flip the task to ship"
+  assert_grep 'kind=ship' "$home/state/surf-promote-nm-p8.meta" \
+    "product + no-mistakes promotion did not flip the task to ship"
 
-  pass "fm-spawn/fm-promote: product/mixed/uncertain/omitted + direct-PR refuse; internal-only and no-mistakes product still work"
+  pass "fm-spawn/fm-promote: surface matrices enforce direct-PR and preserve allowed classifications"
 }
 
 test_ship_spawn_requires_a_valid_delivery_contract
