@@ -258,7 +258,7 @@ The `data/secondmates.md` line contract is owned by the [`secondmate-provisionin
 
 `no-mistakes` tasks run the full validation pipeline, `direct-PR` tasks open PRs without that pipeline, and `local-only` tasks stay local until firstmate performs an approved fast-forward merge.
 Each task's mode and `yolo` posture are firstmate's decision at intake and are passed explicitly to `bin/fm-brief.sh`, `bin/fm-spawn.sh`, and `bin/fm-promote.sh`, which refuse a ship task that does not carry them.
-Those three scripts also refuse `--mode direct-PR` unless `--surface internal-only` is passed; product, mixed, and uncertain ships cannot use that path.
+The header of `bin/fm-delivery-surface-lib.sh` owns the task-surface values and the direct-PR eligibility gate shared by those three scripts.
 A ship spawn also requires explicit `--role builder|verifier`; `bin/fm-spawn.sh` reads machine sibling markers under `data/<id>/` for mode and role (including the no-mistakes verifier second context) and refuses a missing or mismatched marker rather than scanning brief prose, so the worker's launch inputs and the recorded task delivery cannot diverge.
 `bin/fm-brief.sh` writes the mode, builder role, and optional validated surface markers on a first ship scaffold.
 `bin/fm-spawn.sh` records a validated surface in task metadata and revalidates the recorded value on relaunch; a legacy `direct-PR` record without `surface=internal-only` cannot relaunch.

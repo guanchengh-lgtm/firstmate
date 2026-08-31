@@ -55,10 +55,10 @@
 # and "Role: builder" lines in its Definition of done, and also writes unforgeable
 # machine markers beside the brief: data/<task-id>/mode (exact mode token),
 # data/<task-id>/role (exactly builder), and data/<task-id>/surface when the
-# task has a classified surface. bin/fm-spawn.sh reads the mode and role sibling
-# files (not brief prose), requires --role builder|verifier, encodes the matching
-# file, and refuses a missing or mismatched role marker so task text and recovery
-# appends cannot forge or poison the gate.
+# task has a classified surface. bin/fm-spawn.sh reads these sibling files (not
+# brief prose), requires --role builder|verifier, and refuses missing or
+# mismatched delivery markers so task text and recovery appends cannot forge or
+# poison the gate.
 # --verifier is the second-context renderer, not a first-scaffold flag. It requires
 # an existing no-mistakes ship brief.md (mode marker must be no-mistakes) and writes
 # data/<task-id>/verifier-brief.md plus data/<task-id>/verifier-role (exactly

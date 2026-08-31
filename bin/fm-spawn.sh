@@ -51,6 +51,10 @@
 #   no-mistakes and local-only accept any valid surface or none. --surface is
 #   refused on --scout and --secondmate. A --relaunch rejects a command-line
 #   override, reloads the recorded surface, and applies the same validation.
+#   Fresh builders validate data/<id>/surface against the request; verifier
+#   handoffs validate it after builder metadata recovery; relaunches validate it
+#   against relaunch metadata. A required marker must be regular and contain one
+#   matching line; an unexpected marker is refused.
 #   no-mistakes-prod-only is a registry policy rather than a task mode and is
 #   refused as a flag value.
 #        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>]

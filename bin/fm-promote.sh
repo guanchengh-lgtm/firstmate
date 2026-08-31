@@ -14,9 +14,9 @@
 # Promotion always records role=builder: the scout worker becomes the implementer.
 # A later verifier is a fresh --role verifier spawn on this same task, not a
 # promote. The builder sibling markers data/<task-id>/mode,
-# data/<task-id>/role, and optional data/<task-id>/surface are written so a
-# later ship respawn can recover the classified delivery contract from metadata;
-# spawn reads the mode and role files and never scans brief prose. This script
+# data/<task-id>/role, and optional data/<task-id>/surface are written. A
+# relaunch recovers the classified delivery contract from metadata, while every
+# launch validates the sibling markers and never scans brief prose. This script
 # does not parse Role: lines.
 # --surface names the task surface classified at promotion. --mode direct-PR is
 # legal only with --surface internal-only; product, mixed, uncertain, or an
