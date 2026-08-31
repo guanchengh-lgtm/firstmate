@@ -406,9 +406,10 @@ test_changed_mode_lints_only_the_changed_file() {
   target="bin/fm-install-shellcheck.sh"
   fm_lint_write_diff_file "$diff_file" "$target" "README.md"
 
-  # Clear the ambient CI/GITHUB_ACTIONS signals so changed-file mode is actually
-  # exercised: a CI run sets them and would otherwise force the full lint here.
-  out=$(PATH="$fakebin:$PATH" GITHUB_ACTIONS='' CI='' FM_LINT_JOBS=1 \
+  # Clear the ambient CI signals so changed-file mode is actually exercised.
+  # A pull request run otherwise forces full lint or requires its exact base.
+  out=$(PATH="$fakebin:$PATH" GITHUB_ACTIONS='' GITHUB_EVENT_NAME='' CI='' \
+    FM_LINT_JOBS=1 \
     FM_TEST_GIT_BRANCH=feature \
     FM_TEST_GIT_DIFF_FILE="$diff_file" "$LINT" 2>&1) \
     || fail "changed-mode lint run failed"$'\n'"$out"
@@ -474,9 +475,10 @@ test_zero_changed_files_exits_clean() {
   : > "$diff_file"
 
   rc=0
-  # Clear CI/GITHUB_ACTIONS so changed-file mode runs and can reach the empty
-  # target set; a CI run would otherwise force a full lint instead.
-  out=$(PATH="$fakebin:$PATH" GITHUB_ACTIONS='' CI='' FM_TEST_GIT_BRANCH=feature \
+  # Clear the ambient CI signals so changed-file mode reaches the empty target.
+  # A pull request run otherwise forces full lint or requires its exact base.
+  out=$(PATH="$fakebin:$PATH" GITHUB_ACTIONS='' GITHUB_EVENT_NAME='' CI='' \
+    FM_TEST_GIT_BRANCH=feature \
     FM_TEST_GIT_DIFF_FILE="$diff_file" "$LINT" 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || fail "zero changed lint targets must exit 0, got $rc"$'\n'"$out"
   assert_contains "$out" "ShellCheck 0.11.0" "zero-changed run did not print the ShellCheck version line"
