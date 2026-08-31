@@ -143,7 +143,7 @@ test_calibrated_byte_ceiling() {
 
 test_file_safety_and_utf8() {
   local kind repo target rc out expected
-  for kind in missing symlink hardlink directory unreadable utf8; do
+  for kind in missing symlink hardlink directory unreadable utf8 nul; do
     repo=$(repo_new "unsafe-$kind" 120)
     target="$repo/AGENTS.md"
     case "$kind" in
@@ -153,6 +153,7 @@ test_file_safety_and_utf8() {
       directory) rm "$target"; mkdir "$target" ;;
       unreadable) chmod 000 "$target" ;;
       utf8) printf '\377\n' > "$target" ;;
+      nul) printf 'valid\0text\n' > "$target" ;;
     esac
     rc=0; out=$(run_lint "$repo" 2>&1) || rc=$?
     [ "$rc" -ne 0 ] || fail "$kind AGENTS.md unexpectedly passed"
@@ -163,6 +164,7 @@ test_file_safety_and_utf8() {
       directory) expected='must be a regular file' ;;
       unreadable) expected='AGENTS.md is unreadable' ;;
       utf8) expected='not valid UTF-8' ;;
+      nul) expected='contains NUL bytes' ;;
     esac
     assert_contains "$out" "$expected" "$kind refusal used the wrong diagnostic"
     chmod 600 "$target" 2>/dev/null || true
@@ -173,12 +175,14 @@ test_file_safety_and_utf8() {
 test_unchanged_and_missing_base_modes() {
   local repo
   repo=$(repo_new unchanged-no-base 200)
+  expect_pass 'unchanged main root without a parent base' "$repo"
   git -C "$repo" checkout -qb feature
-  expect_pass 'unchanged file without base' "$repo"
   git -C "$repo" branch -D main >/dev/null
+  expect_fail 'unchanged feature without target ref' 'target AGENTS.md base is missing' "$repo"
   add_marked_line "$repo" 'docs/example.md owns the new rule. <!-- why: doc:docs/example.md#document -->'
-  expect_fail 'changed file without base' 'base' "$repo"
-  pass 'unchanged files need no base and changed files fail without one'
+  commit_all "$repo" committed-change
+  expect_fail 'committed change without target ref' 'target AGENTS.md base is missing' "$repo"
+  pass 'main root content needs no base while feature branches require a target ref'
 }
 
 test_pr_local_and_main_bases() {
@@ -208,13 +212,14 @@ test_pr_local_and_main_bases() {
 
 test_deleted_wrong_type_and_utf8_bases() {
   local kind repo bad_base
-  for kind in deleted symlink utf8; do
+  for kind in deleted symlink utf8 nul; do
     repo=$(repo_new "bad-base-$kind" 200)
     git -C "$repo" checkout -qb badbase
     case "$kind" in
       deleted) git -C "$repo" rm -q AGENTS.md ;;
       symlink) rm "$repo/AGENTS.md"; ln -s docs/example.md "$repo/AGENTS.md"; git -C "$repo" add AGENTS.md ;;
       utf8) printf '\377\n' > "$repo/AGENTS.md"; git -C "$repo" add AGENTS.md ;;
+      nul) printf 'valid\0text\n' > "$repo/AGENTS.md"; git -C "$repo" add AGENTS.md ;;
     esac
     git -C "$repo" commit -qm "bad $kind base"
     bad_base=$(git -C "$repo" rev-parse HEAD)
@@ -225,6 +230,7 @@ test_deleted_wrong_type_and_utf8_bases() {
       deleted) FM_LINT_BASE_SHA=$bad_base CI=true GITHUB_ACTIONS=true expect_fail 'deleted base AGENTS.md' 'no regular AGENTS.md blob' "$repo" ;;
       symlink) FM_LINT_BASE_SHA=$bad_base CI=true GITHUB_ACTIONS=true expect_fail 'symlink-mode base AGENTS.md' 'no regular AGENTS.md blob' "$repo" ;;
       utf8) FM_LINT_BASE_SHA=$bad_base CI=true GITHUB_ACTIONS=true expect_fail 'invalid UTF-8 base AGENTS.md' 'unreadable or invalid UTF-8' "$repo" ;;
+      nul) FM_LINT_BASE_SHA=$bad_base CI=true GITHUB_ACTIONS=true expect_fail 'NUL base AGENTS.md' 'contains NUL bytes' "$repo" ;;
     esac
   done
   pass 'deleted, wrong-type, and invalid UTF-8 base AGENTS.md blobs fail precisely'
@@ -348,7 +354,8 @@ test_override_duplicate_pairing_and_mutation() {
 
 test_generic_captain_phrases() {
   local words repo after
-  for words in 'captain approved' 'approved by captain' 'permission granted' '  approved  '; do
+  for words in 'captain approved' 'approved by captain' 'permission granted' \
+    '  approved  ' 'Approved.' 'CAPTAIN-APPROVED!'; do
     repo=$(repo_new "generic-${words// /-}" 200)
     git -C "$repo" checkout -qb feature
     add_marked_line "$repo" 'docs/example.md owns growth. <!-- why: doc:docs/example.md#document -->'
@@ -370,6 +377,29 @@ test_override_does_not_bypass_why() {
   pass 'a budget override does not bypass why-trace checks'
 }
 
+test_reused_override_authority() {
+  local repo first_after second_after
+  repo=$(repo_new reused-pair 200)
+  add_marked_line "$repo" 'docs/example.md owns the first growth. <!-- why: doc:docs/example.md#document -->'
+  first_after=$(wc -c < "$repo/AGENTS.md" | tr -d ' ')
+  make_override_commit "$repo" 200 "$first_after" 'Add this exact approved growth.'
+  git -C "$repo" checkout -qb feature
+  add_marked_line "$repo" 'docs/example.md owns the second growth. <!-- why: doc:docs/example.md#document -->'
+  second_after=$(wc -c < "$repo/AGENTS.md" | tr -d ' ')
+  make_override_commit "$repo" "$first_after" "$second_after" 'Add this exact approved growth.'
+  expect_fail 're-bound prior trailer pair' 'reuses authority from the accepted target history' "$repo"
+
+  repo=$(repo_new reused-instruction 200)
+  printf '%s\n' 'A named documentation change.' >> "$repo/docs/example.md"
+  commit_all "$repo" $'named documentation change\n\nCaptain-Instruction: Add the named documentation change.'
+  git -C "$repo" checkout -qb feature
+  add_marked_line "$repo" 'docs/example.md owns unrelated growth. <!-- why: doc:docs/example.md#document -->'
+  second_after=$(wc -c < "$repo/AGENTS.md" | tr -d ' ')
+  make_override_commit "$repo" 200 "$second_after" 'Add the named documentation change.'
+  expect_fail 're-quoted instruction for a different change' 'reuses authority from the accepted target history' "$repo"
+  pass 'prior trailer pairs and instruction values cannot authorize new growth'
+}
+
 test_why_structural_and_content_lines() {
   local repo
   repo=$(repo_new structural-lines 200)
@@ -377,7 +407,7 @@ test_why_structural_and_content_lines() {
   printf '%s\n' '' '## Heading' '```' '```' '  ~~~ markdown' '   ~~~   ' > "$repo/AGENTS.md"
   expect_pass 'structural exemptions' "$repo"
   for line in 'Added prose.' '- Added list item.' '> Added quote.' 'code inside a fence' \
-    '    ```' '``' '~~' "\`~\`" '  ``~'; do
+    '    ```' '``' '~~' "\`~\`" '  ``~' $'\t# untraced content'; do
     git -C "$repo" checkout -q -- AGENTS.md
     printf '%s\n' "$line" > "$repo/AGENTS.md"
     expect_fail "untraced content: $line" 'why' "$repo"
@@ -391,6 +421,9 @@ test_why_structural_and_content_lines() {
   git -C "$repo" checkout -q -- AGENTS.md
   printf '%s\n' '<!-- why: doc:docs/example.md#document -->' > "$repo/AGENTS.md"
   expect_fail 'metadata-only trace' 'visible owner pointer' "$repo"
+  git -C "$repo" checkout -q -- AGENTS.md
+  printf '%s\n' 'This rule hides <!-- docs/example.md --> its owner. <!-- why: doc:docs/example.md#document -->' > "$repo/AGENTS.md"
+  expect_fail 'owner pointer hidden in a comment' 'visible owner pointer' "$repo"
   pass 'only blank, heading, and fence delimiters receive structural exemptions'
 }
 
@@ -553,6 +586,7 @@ test_override_failure_matrix_and_exact_pair
 test_override_duplicate_pairing_and_mutation
 test_generic_captain_phrases
 test_override_does_not_bypass_why
+test_reused_override_authority
 test_why_structural_and_content_lines
 test_why_targets_locks_and_patch_like_lines
 test_modified_moved_and_deleted_lines

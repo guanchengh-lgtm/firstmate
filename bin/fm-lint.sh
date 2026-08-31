@@ -22,7 +22,8 @@
 #   AGENTS-Budget-Override: v1 base=<blob> target=<blob> before=<count> after=<count>
 #   Captain-Instruction: <the captain's exact words for this growth>
 # Both counts are calibrated bytes for the bound AGENTS.md blobs.
-# An override never bypasses file safety, the hard ceiling, or why traces.
+# An override never bypasses file safety, the hard ceiling, or why traces, and
+# its Captain-Instruction must not appear in the accepted target history.
 # firstmate-coding-guidelines owns the why-trace marker grammar.
 #
 # With no explicit paths, the file set depends on context:
@@ -205,6 +206,12 @@ fm_lint_agentsmd_validate_current() {
       fm_lint_agentsmd_error 'iconv is required to validate AGENTS.md UTF-8.'
       return 1
     }
+  "$PERL_BIN" -e 'while (read(STDIN, $chunk, 8192)) { exit 1 if index($chunk, "\0") >= 0 }' \
+    < "$path" >/dev/null 2>&1 \
+    || {
+      fm_lint_agentsmd_error 'AGENTS.md is not valid UTF-8 or contains NUL bytes.'
+      return 1
+    }
   LC_ALL=C iconv -f UTF-8 -t UTF-8 "$path" >/dev/null 2>&1 \
     || {
       fm_lint_agentsmd_error 'AGENTS.md is not valid UTF-8.'
@@ -332,11 +339,36 @@ fm_lint_agentsmd_fence_context() {  # <line-number>
   ' "$ROOT/AGENTS.md"
 }
 
+fm_lint_agentsmd_visible_line() {  # <line-number>
+  awk -v target="$1" '
+    NR <= target {
+      visible=""
+      for (i=1; i <= length($0); i++) {
+        if (!hidden && substr($0, i, 4) == "<!--") {
+          hidden=1
+          i += 3
+          continue
+        }
+        if (hidden && substr($0, i, 3) == "-->") {
+          hidden=0
+          i += 2
+          continue
+        }
+        if (!hidden) visible=visible substr($0, i, 1)
+      }
+      if (NR == target) {
+        print visible
+        exit
+      }
+    }
+  ' "$ROOT/AGENTS.md"
+}
+
 fm_lint_agentsmd_validate_added_line() {  # <line-number> <content>
   local line_number=$1 content=$2 prefix remainder owner kind target context
-  local visible_target why_prefix='<!-- why: '
+  local visible_line visible_target why_prefix='<!-- why: '
   local heading_re
-  heading_re='^[[:space:]]{0,3}#{1,6}([[:space:]]|$)'
+  heading_re='^ {0,3}#{1,6}([[:space:]]|$)'
   [[ "$content" =~ ^[[:space:]]*$ ]] && return 0
   context=$(fm_lint_agentsmd_fence_context "$line_number") \
     || {
@@ -391,7 +423,12 @@ fm_lint_agentsmd_validate_added_line() {  # <line-number> <content>
     script) visible_target=${target%--help} ;;
     lock) visible_target=$target ;;
   esac
-  case "$prefix" in
+  visible_line=$(fm_lint_agentsmd_visible_line "$line_number") \
+    || {
+      fm_lint_agentsmd_error "could not determine visible Markdown content for line $line_number."
+      return 1
+    }
+  case "$visible_line" in
     *"$visible_target"*) ;;
     *)
       fm_lint_agentsmd_error "line $line_number has why metadata without the visible owner pointer $visible_target."
@@ -424,7 +461,8 @@ fm_lint_agentsmd_validate_added_lines() {  # <base-ref>
         next
       }
       in_hunk && /^\+/ {
-        print next_line "\t" substr($0, 2)
+        print next_line
+        print substr($0, 2)
         next_line++
         next
       }
@@ -435,8 +473,9 @@ fm_lint_agentsmd_validate_added_lines() {  # <base-ref>
     fm_lint_agentsmd_error 'could not parse the zero-context AGENTS.md diff.'
     return 1
   fi
-  while IFS=$'\t' read -r line_number content || [ -n "${line_number:-}${content:-}" ]; do
-    [ -n "${line_number:-}" ] || continue
+  while IFS= read -r line_number; do
+    IFS= read -r content || content=
+    [ -n "$line_number" ] || continue
     if ! fm_lint_agentsmd_validate_added_line "$line_number" "$content"; then
       trace_rc=1
       break
@@ -448,7 +487,7 @@ fm_lint_agentsmd_validate_added_lines() {  # <base-ref>
 
 fm_lint_agentsmd_validate_override() {  # <base> <base-blob> <target-blob> <before> <after>
   local base=$1 expected_base_blob=$2 expected_target_blob=$3 before=$4 after=$5
-  local commit message trailers line value normalized
+  local commit message trailers line value normalized prior_value
   local override_count=0 captain_count=0 override_commit='' captain_commit=''
   local override_value='' captain_value=''
   local override_re
@@ -525,8 +564,9 @@ fm_lint_agentsmd_validate_override() {  # <base> <base-blob> <target-blob> <befo
     return 1
   }
   normalized=$(printf '%s\n' "$captain_value" \
-    | tr '[:upper:]' '[:lower:]' \
-    | awk '{$1=$1; print}')
+    | LC_ALL=C tr '[:upper:]' '[:lower:]' \
+    | LC_ALL=C sed 's/[^[:alnum:]]/ /g' \
+    | LC_ALL=C awk '{$1=$1; print}')
   case "$normalized" in
     approved|approval|authorized|yes|ok|okay|'growth approved'|\
     'captain approved'|'approved by captain'|'permission granted')
@@ -534,6 +574,36 @@ fm_lint_agentsmd_validate_override() {  # <base> <base-blob> <target-blob> <befo
       return 1
       ;;
   esac
+
+  while IFS= read -r commit; do
+    [ -n "$commit" ] || continue
+    message=$(git show -s --format=%B "$commit" 2>/dev/null) \
+      || {
+        fm_lint_agentsmd_error 'could not read the accepted target history for reused Captain-Instruction trailers.'
+        return 1
+      }
+    trailers=$(printf '%s\n' "$message" | git interpret-trailers --parse 2>/dev/null) \
+      || {
+        fm_lint_agentsmd_error 'could not parse the accepted target history for reused Captain-Instruction trailers.'
+        return 1
+      }
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        'Captain-Instruction:'*)
+          value=${line#Captain-Instruction:}
+          prior_value=${value# }
+          [ "$prior_value" != "$captain_value" ] || {
+            fm_lint_agentsmd_error 'the Captain-Instruction trailer reuses authority from the accepted target history.'
+            return 1
+          }
+          ;;
+      esac
+    done <<< "$trailers"
+  done < <(git rev-list "$base" 2>/dev/null)
+  git rev-list "$base" >/dev/null 2>&1 || {
+    fm_lint_agentsmd_error 'could not inspect the accepted target history for reused Captain-Instruction trailers.'
+    return 1
+  }
 }
 
 fm_lint_run_agentsmd_budget() {
@@ -593,11 +663,6 @@ fm_lint_run_agentsmd_budget() {
   else
     base_ref=$(fm_lint_changed_base_ref) || base_ref=
     if [ -z "$base_ref" ]; then
-      if [ "$current_blob" = "$head_blob" ]; then
-        printf 'fm-lint.sh: AGENTS.md %s calibrated bytes (ceiling %s)\n' \
-          "$bytes" "$AGENTS_CALIBRATED_BYTE_CEILING"
-        return 0
-      fi
       fm_lint_agentsmd_error 'the target AGENTS.md base is missing; synchronize the target branch.'
       return 1
     fi
@@ -626,10 +691,18 @@ fm_lint_run_agentsmd_budget() {
   fi
   (set -o pipefail
     git cat-file blob "$base_blob" 2>/dev/null \
+      | "$PERL_BIN" -e 'while (read(STDIN, $chunk, 8192)) { exit 1 if index($chunk, "\0") >= 0 }'
+  ) \
+    || {
+      fm_lint_agentsmd_error "target base $base has an unreadable or invalid UTF-8 AGENTS.md blob, or it contains NUL bytes."
+      return 1
+    }
+  (set -o pipefail
+    git cat-file blob "$base_blob" 2>/dev/null \
       | LC_ALL=C iconv -f UTF-8 -t UTF-8 >/dev/null 2>&1
   ) \
     || {
-      fm_lint_agentsmd_error "target base $base has an unreadable or invalid UTF-8 AGENTS.md blob."
+      fm_lint_agentsmd_error "target base $base has an unreadable or invalid UTF-8 AGENTS.md blob, or it contains NUL bytes."
       return 1
     }
   base_bytes=$(git cat-file -s "$base_blob" 2>/dev/null) \
