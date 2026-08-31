@@ -380,9 +380,7 @@ test_generic_captain_phrases() {
   local words repo after
   for words in 'captain approved' 'approved by captain' 'permission granted' \
     '  approved  ' 'Approved.' 'CAPTAIN-APPROVED!' 'Approval granted.' \
-    'Approval received.' 'Add 1.' 'Add it.' 'Add "it".' 'Add "this".' \
-    'Add `that`.' 'Add 1.0.' 'Add captain-approved.' 'Add this exact growth.' \
-    'The captain has authorized this growth request.'; do
+    'Approval received.' 'ok' 'LGTM' 'go ahead' 'Growth authorized.'; do
     repo=$(repo_new "generic-${words// /-}" 200)
     git -C "$repo" checkout -qb feature
     add_marked_line "$repo" 'docs/example.md owns growth. <!-- why: doc:docs/example.md#document -->'
@@ -390,7 +388,21 @@ test_generic_captain_phrases() {
     make_override_commit "$repo" 200 "$after" "$words"
     expect_fail "generic captain phrase: $words" 'Captain-Instruction trailer is generic' "$repo"
   done
-  pass 'generic and padded captain phrases do not grant growth authority'
+  pass 'finite generic approval shapes do not grant growth authority'
+}
+
+test_natural_language_not_certified() {
+  local words repo after
+  for words in 'Add 1.' 'Add it.' 'Add this exact growth.' \
+    'The captain has authorized this growth request.'; do
+    repo=$(repo_new "residual-${words// /-}" 200)
+    git -C "$repo" checkout -qb feature
+    add_marked_line "$repo" 'docs/example.md owns growth. <!-- why: doc:docs/example.md#document -->'
+    after=$(wc -c < "$repo/AGENTS.md" | tr -d ' ')
+    make_override_commit "$repo" 200 "$after" "$words"
+    expect_pass "residual natural-language instruction: $words" "$repo"
+  done
+  pass 'lint rejects only the finite generic list and does not certify natural language'
 }
 
 test_override_does_not_bypass_why() {
@@ -404,27 +416,21 @@ test_override_does_not_bypass_why() {
   pass 'a budget override does not bypass why-trace checks'
 }
 
-test_reused_override_authority() {
-  local repo first_after second_after
-  repo=$(repo_new reused-pair 200)
+test_stale_pair_blob_binding() {
+  local repo first_after second_after first_base first_target
+  repo=$(repo_new stale-copied-pair 200)
   add_marked_line "$repo" 'docs/example.md owns the first growth. <!-- why: doc:docs/example.md#document -->'
   first_after=$(wc -c < "$repo/AGENTS.md" | tr -d ' ')
   make_override_commit "$repo" 200 "$first_after" 'Add docs/example.md first ownership rule.'
+  first_base=$(git -C "$repo" rev-parse 'HEAD~1:AGENTS.md')
+  first_target=$(git -C "$repo" rev-parse 'HEAD:AGENTS.md')
   git -C "$repo" checkout -qb feature
   add_marked_line "$repo" 'docs/example.md owns the second growth. <!-- why: doc:docs/example.md#document -->'
   second_after=$(wc -c < "$repo/AGENTS.md" | tr -d ' ')
-  make_override_commit "$repo" "$first_after" "$second_after" 'Add docs/example.md first ownership rule.'
-  expect_fail 're-bound prior trailer pair' 'reuses authority from the accepted target history' "$repo"
-
-  repo=$(repo_new reused-instruction 200)
-  printf '%s\n' 'A named documentation change.' >> "$repo/docs/example.md"
-  commit_all "$repo" $'named documentation change\n\nCaptain-Instruction: Add docs/example.md named change.'
-  git -C "$repo" checkout -qb feature
-  add_marked_line "$repo" 'docs/example.md owns unrelated growth. <!-- why: doc:docs/example.md#document -->'
-  second_after=$(wc -c < "$repo/AGENTS.md" | tr -d ' ')
-  make_override_commit "$repo" 200 "$second_after" 'Add docs/example.md named change.'
-  expect_fail 're-quoted instruction for a different change' 'reuses authority from the accepted target history' "$repo"
-  pass 'prior trailer pairs and instruction values cannot authorize new growth'
+  make_override_commit "$repo" 200 "$second_after" 'Add docs/example.md first ownership rule.' \
+    "AGENTS-Budget-Override: v1 base=$first_base target=$first_target before=200 after=$first_after"
+  expect_fail 'copied prior trailer pair' 'stale' "$repo"
+  pass 'a copied prior trailer pair fails on blob binding'
 }
 
 test_why_structural_and_content_lines() {
@@ -642,8 +648,9 @@ test_shrink_equal_and_growth
 test_override_failure_matrix_and_exact_pair
 test_override_duplicate_pairing_and_mutation
 test_generic_captain_phrases
+test_natural_language_not_certified
 test_override_does_not_bypass_why
-test_reused_override_authority
+test_stale_pair_blob_binding
 test_why_structural_and_content_lines
 test_binary_attributes_do_not_hide_added_lines
 test_why_targets_locks_and_patch_like_lines
