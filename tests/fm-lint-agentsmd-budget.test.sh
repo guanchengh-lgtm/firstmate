@@ -37,7 +37,7 @@ cat > "$FAKEBIN/git" <<'SH'
 #!/usr/bin/env bash
 if [ "${GIT_FAIL_PATCH:-0}" -eq 1 ]; then
   case "$*" in
-    "diff --no-ext-diff --no-color --unified=0 "*) exit 86 ;;
+    "diff --no-ext-diff --no-color --text --unified=0 "*) exit 86 ;;
   esac
 fi
 if [ "${GIT_FAIL_MESSAGE:-0}" -eq 1 ]; then
@@ -250,6 +250,19 @@ test_stale_local_target() {
   pass 'a stale local target fails with synchronization guidance'
 }
 
+test_ambiguous_local_targets() {
+  local repo old_target
+  repo=$(repo_new ambiguous-local-targets 300)
+  old_target=$(git -C "$repo" rev-parse HEAD)
+  git -C "$repo" update-ref refs/remotes/origin/main "$old_target"
+  write_marked_bytes "$repo/AGENTS.md" 100
+  commit_all "$repo" newer-local-main
+  git -C "$repo" checkout -qb feature
+  write_marked_bytes "$repo/AGENTS.md" 200
+  expect_fail 'ambiguous local target refs' 'origin/main and main disagree' "$repo"
+  pass 'different local target refs fail before baseline comparison'
+}
+
 test_shrink_equal_and_growth() {
   local repo
   repo=$(repo_new replacement 300)
@@ -355,7 +368,8 @@ test_override_duplicate_pairing_and_mutation() {
 test_generic_captain_phrases() {
   local words repo after
   for words in 'captain approved' 'approved by captain' 'permission granted' \
-    '  approved  ' 'Approved.' 'CAPTAIN-APPROVED!'; do
+    '  approved  ' 'Approved.' 'CAPTAIN-APPROVED!' 'Approval granted.' \
+    'The captain has authorized this growth request.'; do
     repo=$(repo_new "generic-${words// /-}" 200)
     git -C "$repo" checkout -qb feature
     add_marked_line "$repo" 'docs/example.md owns growth. <!-- why: doc:docs/example.md#document -->'
@@ -424,7 +438,20 @@ test_why_structural_and_content_lines() {
   git -C "$repo" checkout -q -- AGENTS.md
   printf '%s\n' 'This rule hides <!-- docs/example.md --> its owner. <!-- why: doc:docs/example.md#document -->' > "$repo/AGENTS.md"
   expect_fail 'owner pointer hidden in a comment' 'visible owner pointer' "$repo"
+  git -C "$repo" checkout -q -- AGENTS.md
+  printf '%s\n' 'docs/example.md owns this rule. <!-- outer <!-- why: doc:docs/example.md#document -->' > "$repo/AGENTS.md"
+  expect_fail 'why marker nested in a comment' 'nested inside another HTML comment' "$repo"
   pass 'only blank, heading, and fence delimiters receive structural exemptions'
+}
+
+test_binary_attributes_do_not_hide_added_lines() {
+  local repo
+  repo=$(repo_new binary-attributes 200)
+  git -C "$repo" checkout -qb feature
+  printf '%s\n' 'AGENTS.md binary' > "$repo/.gitattributes"
+  printf '%s\n' 'Untraced replacement.' > "$repo/AGENTS.md"
+  expect_fail 'binary AGENTS.md diff' 'without a why trace' "$repo"
+  pass 'binary attributes cannot hide added AGENTS.md lines'
 }
 
 test_why_targets_locks_and_patch_like_lines() {
@@ -581,6 +608,7 @@ test_unchanged_and_missing_base_modes
 test_pr_local_and_main_bases
 test_deleted_wrong_type_and_utf8_bases
 test_stale_local_target
+test_ambiguous_local_targets
 test_shrink_equal_and_growth
 test_override_failure_matrix_and_exact_pair
 test_override_duplicate_pairing_and_mutation
@@ -588,6 +616,7 @@ test_generic_captain_phrases
 test_override_does_not_bypass_why
 test_reused_override_authority
 test_why_structural_and_content_lines
+test_binary_attributes_do_not_hide_added_lines
 test_why_targets_locks_and_patch_like_lines
 test_modified_moved_and_deleted_lines
 test_final_worktree_content_states

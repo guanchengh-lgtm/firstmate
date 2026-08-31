@@ -364,6 +364,31 @@ fm_lint_agentsmd_visible_line() {  # <line-number>
   ' "$ROOT/AGENTS.md"
 }
 
+fm_lint_agentsmd_why_marker_is_top_level() {  # <line-number>
+  awk -v target="$1" '
+    NR <= target {
+      for (i=1; i <= length($0); i++) {
+        if (NR == target && substr($0, i, 10) == "<!-- why: ") {
+          found=1
+          exit (hidden ? 1 : 0)
+        }
+        if (!hidden && substr($0, i, 4) == "<!--") {
+          hidden=1
+          i += 3
+          continue
+        }
+        if (hidden && substr($0, i, 3) == "-->") {
+          hidden=0
+          i += 2
+        }
+      }
+    }
+    END {
+      if (!found) exit 1
+    }
+  ' "$ROOT/AGENTS.md"
+}
+
 fm_lint_agentsmd_validate_added_line() {  # <line-number> <content>
   local line_number=$1 content=$2 prefix remainder owner kind target context
   local visible_line visible_target why_prefix='<!-- why: '
@@ -387,6 +412,11 @@ fm_lint_agentsmd_validate_added_line() {  # <line-number> <content>
       return 1
       ;;
   esac
+  fm_lint_agentsmd_why_marker_is_top_level "$line_number" \
+    || {
+      fm_lint_agentsmd_error "line $line_number has a why trace nested inside another HTML comment."
+      return 1
+    }
   prefix=${content%%"$why_prefix"*}
   remainder=${content#*"$why_prefix"}
   case "$prefix$remainder" in
@@ -444,7 +474,7 @@ fm_lint_agentsmd_validate_added_lines() {  # <base-ref>
       fm_lint_agentsmd_error 'could not create the AGENTS.md diff workspace.'
       return 1
     }
-  if ! git diff --no-ext-diff --no-color --unified=0 "$base" -- AGENTS.md \
+  if ! git diff --no-ext-diff --no-color --text --unified=0 "$base" -- AGENTS.md \
     > "$temp_dir/patch" 2>/dev/null; then
     rm -rf "$temp_dir"
     fm_lint_agentsmd_error 'could not read the zero-context AGENTS.md diff.'
@@ -487,7 +517,9 @@ fm_lint_agentsmd_validate_added_lines() {  # <base-ref>
 
 fm_lint_agentsmd_validate_override() {  # <base> <base-blob> <target-blob> <before> <after>
   local base=$1 expected_base_blob=$2 expected_target_blob=$3 before=$4 after=$5
-  local commit message trailers line value normalized prior_value
+  local commit message trailers line value normalized prior_value word
+  local generic_reason=1
+  local -a normalized_words
   local override_count=0 captain_count=0 override_commit='' captain_commit=''
   local override_value='' captain_value=''
   local override_re
@@ -567,13 +599,20 @@ fm_lint_agentsmd_validate_override() {  # <base> <base-blob> <target-blob> <befo
     | LC_ALL=C tr '[:upper:]' '[:lower:]' \
     | LC_ALL=C sed 's/[^[:alnum:]]/ /g' \
     | LC_ALL=C awk '{$1=$1; print}')
-  case "$normalized" in
-    approved|approval|authorized|yes|ok|okay|'growth approved'|\
-    'captain approved'|'approved by captain'|'permission granted')
-      fm_lint_agentsmd_error 'the Captain-Instruction trailer is generic; quote the captain exact words.'
-      return 1
-      ;;
-  esac
+  read -r -a normalized_words <<< "$normalized"
+  for word in "${normalized_words[@]}"; do
+    case "$word" in
+      a|an|the|this|that|by|for|of|to|is|was|has|been|captain|captains|\
+      growth|change|changes|request|requested|approval|approve|approved|\
+      authorization|authorize|authorized|permission|permit|permitted|\
+      grant|granted|yes|ok|okay) ;;
+      *) generic_reason=0; break ;;
+    esac
+  done
+  [ "$generic_reason" -eq 0 ] || {
+    fm_lint_agentsmd_error 'the Captain-Instruction trailer is generic; quote the captain exact words.'
+    return 1
+  }
 
   while IFS= read -r commit; do
     [ -n "$commit" ] || continue
@@ -608,7 +647,7 @@ fm_lint_agentsmd_validate_override() {  # <base> <base-blob> <target-blob> <befo
 
 fm_lint_run_agentsmd_budget() {
   local path=$ROOT/AGENTS.md bytes current_blob head_blob branch base_ref base
-  local entry mode type base_blob base_bytes target_blob diff_rc
+  local entry mode type base_blob base_bytes target_blob diff_rc base_ref_rc
   [ "$EXPLICIT_PATHS" -eq 0 ] || return 0
 
   fm_lint_agentsmd_validate_current "$path" || return 1
@@ -661,7 +700,12 @@ fm_lint_run_agentsmd_budget() {
       return 1
     fi
   else
-    base_ref=$(fm_lint_changed_base_ref) || base_ref=
+    base_ref_rc=0
+    base_ref=$(fm_lint_changed_base_ref) || base_ref_rc=$?
+    [ "$base_ref_rc" -ne 2 ] || {
+      fm_lint_agentsmd_error 'target refs origin/main and main disagree; synchronize the target branch.'
+      return 1
+    }
     if [ -z "$base_ref" ]; then
       fm_lint_agentsmd_error 'the target AGENTS.md base is missing; synchronize the target branch.'
       return 1
@@ -795,16 +839,20 @@ if [ "$FAST" -eq 1 ] && { [ "${GITHUB_ACTIONS:-}" = true ] || [ "${CI:-}" = true
   exit 2
 fi
 
-# fm_lint_changed_base_ref prints the ref to diff the working branch against:
-# the local origin/main tracking ref when present, else local main. Returns
-# nonzero when neither is resolvable, which the caller treats as "no
-# merge-base found" and falls back to a full lint.
+# fm_lint_changed_base_ref prints the unambiguous ref to diff the working branch
+# against, returns 1 when neither target exists, and returns 2 when both differ.
 fm_lint_changed_base_ref() {
-  if git rev-parse --verify -q origin/main >/dev/null 2>&1; then
+  local remote_oid= local_oid=
+  remote_oid=$(git rev-parse --verify -q 'origin/main^{commit}' 2>/dev/null) || remote_oid=
+  local_oid=$(git rev-parse --verify -q 'main^{commit}' 2>/dev/null) || local_oid=
+  if [ -n "$remote_oid" ] && [ -n "$local_oid" ] && [ "$remote_oid" != "$local_oid" ]; then
+    return 2
+  fi
+  if [ -n "$remote_oid" ]; then
     printf 'origin/main\n'
     return 0
   fi
-  if git rev-parse --verify -q main >/dev/null 2>&1; then
+  if [ -n "$local_oid" ]; then
     printf 'main\n'
     return 0
   fi
