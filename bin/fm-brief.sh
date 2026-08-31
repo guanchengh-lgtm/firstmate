@@ -6,7 +6,7 @@
 # description, acceptance criteria, and context, and may adjust other sections
 # when the task genuinely deviates (e.g. working an existing external PR instead
 # of shipping a new one).
-# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--herdr-lab]
+# Usage: fm-brief.sh <task-id> <repo-name> --mode <no-mistakes|direct-PR|local-only> [--surface <internal-only|product|mixed|uncertain>] [--herdr-lab]
 #        fm-brief.sh <task-id> <repo-name> --scout [--source <literal>]... [--herdr-lab]
 #        fm-brief.sh <task-id> --secondmate {<project>...|--no-projects}
 #        fm-brief.sh <task-id> --verifier
@@ -46,13 +46,19 @@
 #                the configured merge authority approves, firstmate merges to local main
 # no-mistakes-prod-only is a registry policy, not a task mode; resolve it to one of
 # the three concrete modes at intake before calling this script.
+# --surface names the task surface classified at intake. --mode direct-PR is
+# legal only with --surface internal-only; product, mixed, uncertain, or an
+# omitted surface is refused (bin/fm-delivery-surface-lib.sh). --mode
+# no-mistakes and local-only accept any valid surface or none. --surface is
+# refused on scout, secondmate, and --verifier scaffolds.
 # The generated ship brief keeps human-readable "Delivery contract: mode=<mode>"
 # and "Role: builder" lines in its Definition of done, and also writes unforgeable
-# machine markers beside the brief: data/<task-id>/mode (exact mode token) and
-# data/<task-id>/role (exactly builder). bin/fm-spawn.sh reads those sibling files
-# (not brief prose), requires --role builder|verifier, encodes the matching file,
-# and refuses a missing or mismatched role marker so task text and recovery appends
-# cannot forge or poison the gate.
+# machine markers beside the brief: data/<task-id>/mode (exact mode token),
+# data/<task-id>/role (exactly builder), and data/<task-id>/surface when the
+# task has a classified surface. bin/fm-spawn.sh reads these sibling files (not
+# brief prose), requires --role builder|verifier, and refuses missing or
+# mismatched delivery markers so task text and recovery appends cannot forge or
+# poison the gate.
 # --verifier is the second-context renderer, not a first-scaffold flag. It requires
 # an existing no-mistakes ship brief.md (mode marker must be no-mistakes) and writes
 # data/<task-id>/verifier-brief.md plus data/<task-id>/verifier-role (exactly
@@ -176,6 +182,8 @@ esac
 . "$SCRIPT_DIR/fm-marker-lib.sh"
 # shellcheck source=bin/fm-classify-lib.sh
 . "$SCRIPT_DIR/fm-classify-lib.sh"
+# shellcheck source=bin/fm-delivery-surface-lib.sh
+. "$SCRIPT_DIR/fm-delivery-surface-lib.sh"
 PAUSED_VERB=${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}
 
 resolve_directory_input() {
@@ -208,6 +216,8 @@ NO_PROJECTS=0
 VERIFIER=0
 MODE=
 MODE_SET=0
+SURFACE=
+SURFACE_SET=0
 SOURCE_SET=0
 SOURCES=()
 POS=()
@@ -219,6 +229,7 @@ for a in "$@"; do
     esac
     case "$want_value" in
       mode) MODE=$a; MODE_SET=1 ;;
+      surface) SURFACE=$a; SURFACE_SET=1 ;;
       source) SOURCES+=("$a"); SOURCE_SET=1 ;;
       *) echo "error: internal parser state for --$want_value" >&2; exit 1 ;;
     esac
@@ -233,6 +244,8 @@ for a in "$@"; do
     --verifier) VERIFIER=1 ;;
     --mode) want_value=mode ;;
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
+    --surface) want_value=surface ;;
+    --surface=*) SURFACE=${a#--surface=}; SURFACE_SET=1 ;;
     --source) want_value=source ;;
     --source=*) SOURCES+=("${a#--source=}"); SOURCE_SET=1 ;;
     # yolo never reaches the worker: it is firstmate's approval authority, not a
@@ -255,6 +268,10 @@ if [ "$VERIFIER" -eq 1 ]; then
     echo "error: --verifier reads mode from the task mode marker; do not pass --mode" >&2
     exit 1
   }
+  [ "$SURFACE_SET" -eq 0 ] || {
+    echo "error: --verifier reads mode from the task mode marker; do not pass --surface" >&2
+    exit 1
+  }
   [ "$HERDR_LAB" -eq 0 ] || {
     echo "error: --verifier does not take --herdr-lab" >&2
     exit 1
@@ -275,8 +292,15 @@ elif [ "$KIND" = ship ]; then
       exit 1 ;;
     *) echo "error: --mode must be one of no-mistakes, direct-PR, local-only (got '$MODE')" >&2; exit 1 ;;
   esac
+  if [ "$SURFACE_SET" -eq 1 ]; then
+    fm_delivery_assert_surface_value "$SURFACE" || exit 1
+  fi
+  fm_delivery_assert_direct_pr_surface "$MODE" "$SURFACE" "$SURFACE_SET" || exit 1
 elif [ "$MODE_SET" -eq 1 ]; then
   echo "error: --mode applies only to ship briefs; a scout delivers a report and a secondmate charter is not a delivery contract" >&2
+  exit 1
+elif [ "$SURFACE_SET" -eq 1 ]; then
+  echo "error: --surface applies only to ship briefs; a scout delivers a report and a secondmate charter is not a delivery contract" >&2
   exit 1
 fi
 if [ "$SOURCE_SET" -eq 1 ] && [ "$KIND" != scout ]; then
@@ -728,4 +752,5 @@ $DOD
 EOF
 printf '%s\n' "$MODE" > "$DATA/$ID/mode"
 printf '%s\n' builder > "$DATA/$ID/role"
+[ "$SURFACE_SET" -eq 0 ] || printf '%s\n' "$SURFACE" > "$DATA/$ID/surface"
 echo "scaffolded: $BRIEF (ship, mode=$MODE; replace {TASK})"

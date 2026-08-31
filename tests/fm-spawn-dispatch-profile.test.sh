@@ -1372,8 +1372,9 @@ test_role_verifier_encodes_verifier_brief() {
   rec=$(make_spawn_case profile-role-verifier claude "$id")
   read_case_record "$rec"
   prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
-  printf '%s\n' 'map_next=profile-next-task-z46' 'x_request=request-46' \
+  printf '%s\n' 'surface=product' 'map_next=profile-next-task-z46' 'x_request=request-46' \
     >> "$HOME_DIR/state/$id.meta"
+  printf 'product\n' > "$HOME_DIR/data/$id/surface"
   head_before=$(git -C "$WT_DIR" rev-parse HEAD)
 
   out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
@@ -1383,6 +1384,7 @@ test_role_verifier_encodes_verifier_brief() {
   meta="$HOME_DIR/state/$id.meta"
   assert_grep 'role=verifier' "$meta" "verifier spawn did not record role=verifier"
   assert_grep 'kind=ship' "$meta" "verifier spawn lost kind=ship"
+  assert_grep 'surface=product' "$meta" "verifier spawn lost the builder surface"
   assert_grep 'map_next=profile-next-task-z46' "$meta" \
     "verifier spawn lost the task successor"
   assert_grep 'x_request=request-46' "$meta" \
@@ -1420,6 +1422,25 @@ test_verifier_handoff_preserves_yolo_authority() {
     "error: verifier handoff refused: requested yolo posture 'on' does not match builder yolo posture 'off'" \
     "$meta_before" "$endpoint_before" "$id"
   pass "fm-spawn: verifier handoff preserves builder yolo authority"
+}
+
+test_verifier_handoff_refuses_surface_synthesis() {
+  local rec id out status meta_before endpoint_before
+  id=profile-verifier-surface-authority-z60
+  rec=$(make_spawn_case profile-verifier-surface-authority claude "$id")
+  read_case_record "$rec"
+  prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  printf 'product\n' > "$HOME_DIR/data/$id/surface"
+  meta_before=$(cat "$HOME_DIR/state/$id.meta")
+  endpoint_before=$(cat "$HOME_DIR/state/.fake-endpoint-state")
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --mode no-mistakes --yolo off --role verifier --surface product)
+  status=$?
+  assert_verifier_handoff_refusal_preserved "$out" "$status" \
+    "error: verifier handoff refused: requested surface 'product' but builder metadata records no surface" \
+    "$meta_before" "$endpoint_before" "$id"
+  pass "fm-spawn: verifier handoff cannot synthesize missing builder surface metadata"
 }
 
 test_verifier_handoff_retires_builder_wiring() {
@@ -2234,6 +2255,7 @@ test_non_claude_harness_ignores_config_dir
 test_active_dispatch_profile_does_not_block_secondmate_launch
 test_role_verifier_encodes_verifier_brief
 test_verifier_handoff_preserves_yolo_authority
+test_verifier_handoff_refuses_surface_synthesis
 test_verifier_handoff_retires_builder_wiring
 test_verifier_handoff_retires_builder_busy_generation
 test_verifier_handoff_refuses_dirty_builder_worktrees

@@ -13,11 +13,17 @@
 # captain's standing posture as context, and this script never looks it up.
 # Promotion always records role=builder: the scout worker becomes the implementer.
 # A later verifier is a fresh --role verifier spawn on this same task, not a
-# promote. The builder sibling markers data/<task-id>/mode and data/<task-id>/role
-# are written so a later ship respawn can pass --role from meta; spawn reads those
-# files and never scans brief prose. This script does not parse Role: lines.
+# promote. The builder sibling markers data/<task-id>/mode,
+# data/<task-id>/role, and optional data/<task-id>/surface are written. A
+# relaunch recovers the classified delivery contract from metadata, while every
+# launch validates the sibling markers and never scans brief prose. This script
+# does not parse Role: lines.
+# --surface names the task surface classified at promotion. --mode direct-PR is
+# legal only with --surface internal-only; product, mixed, uncertain, or an
+# omitted surface is refused (bin/fm-delivery-surface-lib.sh). --mode
+# no-mistakes and local-only accept any valid surface or none.
 # no-mistakes-prod-only is a registry policy rather than a task mode and is refused.
-# Usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off>
+# Usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--surface <internal-only|product|mixed|uncertain>]
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -36,10 +42,14 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-secondmate-parent-lib.sh"
 # shellcheck source=bin/fm-secondmate-registry-lib.sh
 . "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
+# shellcheck source=bin/fm-delivery-surface-lib.sh
+. "$SCRIPT_DIR/fm-delivery-surface-lib.sh"
 
 MODE=
+SURFACE=
 YOLO=
 MODE_SET=0
+SURFACE_SET=0
 YOLO_SET=0
 POS=()
 want_value=
@@ -50,6 +60,7 @@ for a in "$@"; do
     esac
     case "$want_value" in
       mode) MODE=$a; MODE_SET=1 ;;
+      surface) SURFACE=$a; SURFACE_SET=1 ;;
       yolo) YOLO=$a; YOLO_SET=1 ;;
     esac
     want_value=
@@ -58,13 +69,15 @@ for a in "$@"; do
   case "$a" in
     --mode) want_value=mode ;;
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
+    --surface) want_value=surface ;;
+    --surface=*) SURFACE=${a#--surface=}; SURFACE_SET=1 ;;
     --yolo) want_value=yolo ;;
     --yolo=*) YOLO=${a#--yolo=}; YOLO_SET=1 ;;
     *) POS+=("$a") ;;
   esac
 done
 [ -z "$want_value" ] || { echo "error: --$want_value requires a value" >&2; exit 1; }
-[ "${#POS[@]}" -ge 1 ] || { echo "usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off>" >&2; exit 1; }
+[ "${#POS[@]}" -ge 1 ] || { echo "usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--surface <internal-only|product|mixed|uncertain>]" >&2; exit 1; }
 [ "$MODE_SET" -eq 1 ] || {
   echo "error: promotion requires --mode <no-mistakes|direct-PR|local-only>; decide it now from the scout's findings and the project's registered posture in data/projects.md" >&2
   exit 1
@@ -84,6 +97,10 @@ case "$YOLO" in
   on|off) ;;
   *) echo "error: --yolo must be on or off (got '$YOLO')" >&2; exit 1 ;;
 esac
+if [ "$SURFACE_SET" -eq 1 ]; then
+  fm_delivery_assert_surface_value "$SURFACE" || exit 1
+fi
+fm_delivery_assert_direct_pr_surface "$MODE" "$SURFACE" "$SURFACE_SET" || exit 1
 
 ID=${POS[0]}
 fm_task_id_creation_valid "$ID" || { echo "error: invalid task id" >&2; exit 2; }
@@ -125,12 +142,18 @@ grep -qx 'kind=scout' "$META" || { echo "error: task $ID is not a scout task (ki
 mkdir -p "$DATA/$ID"
 printf '%s\n' "$MODE" > "$DATA/$ID/mode"
 printf '%s\n' builder > "$DATA/$ID/role"
+if [ "$SURFACE_SET" -eq 1 ]; then
+  printf '%s\n' "$SURFACE" > "$DATA/$ID/surface"
+else
+  rm -f "$DATA/$ID/surface"
+fi
 
 TMP="$META.tmp"
-grep -v -e '^kind=' -e '^mode=' -e '^yolo=' -e '^role=' "$META" > "$TMP"
+grep -v -e '^kind=' -e '^mode=' -e '^surface=' -e '^yolo=' -e '^role=' "$META" > "$TMP"
 {
   echo "kind=ship"
   echo "mode=$MODE"
+  [ "$SURFACE_SET" -eq 0 ] || echo "surface=$SURFACE"
   echo "yolo=$YOLO"
   echo "role=builder"
 } >> "$TMP"

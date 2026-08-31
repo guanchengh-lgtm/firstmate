@@ -195,14 +195,17 @@ EOF
 # one of these DOD blocks, since a broken heredoc corrupts or empties the
 # generated brief content, not just the script's own syntax.
 test_ship_modes_generate_clean_briefs() {
-  local home id mode brief status
+  local home id mode brief status extra
   home="$TMP_ROOT/ship-home"
   write_registry "$home"
 
   for id_mode in "brief-nomistakes-a1:no-mistakes" "brief-directpr-a2:direct-PR" "brief-localonly-a3:local-only"; do
     id=${id_mode%%:*}
     mode=${id_mode##*:}
-    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" >/dev/null 2>&1; status=$?
+    extra=()
+    [ "$mode" != direct-PR ] || extra=(--surface internal-only)
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode "$mode" \
+      ${extra[@]+"${extra[@]}"} >/dev/null 2>&1; status=$?
     expect_code 0 "$status" "fm-brief.sh $id --mode $mode should exit 0"
     brief="$home/data/$id/brief.md"
     assert_present "$brief" "$id: brief was not scaffolded"
@@ -249,6 +252,7 @@ test_ship_mode_is_required_and_closed_set() {
 missing --mode||ship briefs require --mode
 empty --mode value|--mode|requires a value
 unknown mode value|--mode nope|must be one of no-mistakes, direct-PR, local-only
+unknown surface value|--mode no-mistakes --surface nope|must be one of internal-only, product, mixed, uncertain
 conditional policy is not a task mode|--mode no-mistakes-prod-only|classify this task's surface
 ROWS
   pass "fm-brief.sh: ship --mode is required and closed-set validated"
@@ -298,8 +302,10 @@ mode on a scout brief|brief-refused-b3 some-proj --scout --mode direct-PR|--mode
 mode on a secondmate charter|brief-refused-b4 --secondmate --no-projects --mode no-mistakes|--mode applies only to ship briefs
 verifier on a scout|brief-refused-v1 some-proj --scout --verifier|--verifier applies only to an existing ship brief
 verifier with --mode|brief-refused-v2 some-proj --mode no-mistakes --verifier|--verifier reads mode from the task mode marker
+surface on a secondmate charter|brief-refused-b5 --secondmate --no-projects --surface=internal-only|--surface applies only to ship briefs
+surface on a verifier|brief-refused-v3 --verifier --surface internal-only|--verifier reads mode from the task mode marker
 ROWS
-  pass "fm-brief.sh: --yolo and scout/secondmate --mode are refused, never silently dropped"
+  pass "fm-brief.sh: delivery flags are refused outside ship scaffolds"
 }
 
 test_faster_paths_use_configured_authority_without_stacked_review() {
@@ -307,7 +313,7 @@ test_faster_paths_use_configured_authority_without_stacked_review() {
   home="$TMP_ROOT/configured-authority-home"
   write_registry "$home"
   id="brief-direct-authority-a4"
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" direct-proj --mode direct-PR >/dev/null 2>&1
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" direct-proj --mode direct-PR --surface internal-only >/dev/null 2>&1
   brief="$home/data/$id/brief.md"
   assert_grep "The configured merge authority decides whether to merge the PR; firstmate relays the outcome." "$brief" \
     "direct-PR brief lost configured merge authority"
@@ -325,7 +331,7 @@ test_faster_paths_use_configured_authority_without_stacked_review() {
   assert_no_grep "make \`--intent\` preserve all relevant content from this brief" "$home/data/$id/brief.md" \
     "local-only brief must not include the no-mistakes --intent contract"
   id="brief-direct-intent-a4"
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" direct-proj --mode direct-PR >/dev/null 2>&1
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" direct-proj --mode direct-PR --surface internal-only >/dev/null 2>&1
   assert_no_grep "make \`--intent\` preserve all relevant content from this brief" "$home/data/$id/brief.md" \
     "direct-PR brief must not include the no-mistakes --intent contract"
   pass "fm-brief.sh: faster paths use configured authority without stacked review"
@@ -892,7 +898,7 @@ test_verifier_brief_leads_with_verifier_contract() {
   assert_contains "$out" "requires an existing ship brief" "missing source brief was not refused"
 
   id='brief-verifier-direct'
-  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode direct-PR >/dev/null 2>&1
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" some-proj --mode direct-PR --surface internal-only >/dev/null 2>&1
   out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" --verifier 2>&1); status=$?
   [ "$status" -ne 0 ] || fail "--verifier on a direct-PR brief should exit non-zero"
   assert_contains "$out" "requires an existing no-mistakes ship brief" \
@@ -951,11 +957,65 @@ EOF
   pass "fm-brief.sh: --verifier writes a verifier-leading sibling and leaves brief.md alone"
 }
 
+test_direct_pr_requires_internal_only_surface() {
+  local home out status
+  home="$TMP_ROOT/surface-refuse-home"
+  mkdir -p "$home/data"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-surf-product some-proj --mode direct-PR --surface product 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "product + direct-PR brief should exit non-zero"
+  assert_contains "$out" "refused for product work" "product + direct-PR did not name the refused surface"
+  assert_absent "$home/data/brief-surf-product/brief.md" "product + direct-PR still wrote a brief"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-surf-mixed some-proj --mode direct-PR --surface mixed 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "mixed + direct-PR brief should exit non-zero"
+  assert_contains "$out" "refused for mixed work" "mixed + direct-PR did not name the refused surface"
+  assert_absent "$home/data/brief-surf-mixed/brief.md" "mixed + direct-PR still wrote a brief"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-surf-uncertain some-proj --mode direct-PR --surface uncertain 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "uncertain + direct-PR brief should exit non-zero"
+  assert_contains "$out" "refused for uncertain work" "uncertain + direct-PR did not name the refused surface"
+  assert_absent "$home/data/brief-surf-uncertain/brief.md" "uncertain + direct-PR still wrote a brief"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-surf-omitted some-proj --mode direct-PR 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "direct-PR without --surface should exit non-zero"
+  assert_contains "$out" "requires --surface internal-only" "omitted surface did not fail closed as uncertain"
+  assert_absent "$home/data/brief-surf-omitted/brief.md" "direct-PR without --surface still wrote a brief"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-surf-internal some-proj --mode direct-PR --surface internal-only >/dev/null 2>&1 \
+    || fail "internal-only + direct-PR brief should scaffold"
+  assert_present "$home/data/brief-surf-internal/brief.md" "internal-only + direct-PR did not write a brief"
+  assert_grep 'internal-only' "$home/data/brief-surf-internal/surface" \
+    "internal-only + direct-PR did not persist its surface marker"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-surf-nm-product some-proj --mode no-mistakes --surface=product >/dev/null 2>&1 \
+    || fail "product + no-mistakes brief should scaffold"
+  assert_present "$home/data/brief-surf-nm-product/brief.md" "product + no-mistakes did not write a brief"
+  assert_grep 'product' "$home/data/brief-surf-nm-product/surface" \
+    "equals-form product surface did not persist its marker"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-surf-local-product some-proj --mode local-only --surface product >/dev/null 2>&1 \
+    || fail "product + local-only brief should still scaffold"
+  assert_present "$home/data/brief-surf-local-product/brief.md" "product + local-only did not write a brief"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-surf-scout some-proj --scout --surface internal-only 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "a scout brief carrying --surface should exit non-zero"
+  assert_contains "$out" "--surface applies only to ship briefs" "scout brief did not refuse --surface"
+
+  pass "fm-brief.sh: product/mixed/uncertain/omitted + direct-PR refuse; internal-only and no-mistakes product still work"
+}
+
 test_script_parses
 test_no_heredoc_in_command_substitution
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
 test_ship_mode_is_required_and_closed_set
+test_direct_pr_requires_internal_only_surface
 test_ship_mode_is_explicit_not_registry
 test_delivery_flags_are_refused_where_they_do_not_apply
 test_faster_paths_use_configured_authority_without_stacked_review

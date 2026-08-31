@@ -178,7 +178,9 @@ test_direct_pr_and_scout_refresh_before_launch() {
     if [ "$contract" = scout ]; then
       out=$(run_spawn "$id" --scout)
     else
-      out=$(run_spawn "$id" --mode direct-PR --yolo off)
+      printf 'direct-PR\n' > "$HOME_DIR/data/$id/mode"
+      printf 'internal-only\n' > "$HOME_DIR/data/$id/surface"
+      out=$(run_spawn "$id" --mode direct-PR --yolo off --surface internal-only)
     fi
     status=$?
     expect_code 0 "$status" "$contract spawn should refresh a stale pooled worktree"
@@ -187,6 +189,14 @@ test_direct_pr_and_scout_refresh_before_launch() {
       || fail "$contract spawn did not start at current origin/main"
     assert_grep 'must survive a newly spawned branch' "$POOL_DIR/advanced-main.txt" \
       "$contract spawn omitted advanced-main content"
+    if [ "$contract" = direct-pr ]; then
+      assert_grep 'surface=internal-only' "$HOME_DIR/state/$id.meta" \
+        "direct-PR spawn did not persist the validated surface"
+      if [ "$(awk 'END { print NR + 0 }' "$HOME_DIR/data/$id/surface")" != 1 ] \
+        || ! grep -qx internal-only "$HOME_DIR/data/$id/surface"; then
+        fail "direct-PR spawn did not persist exactly one matching surface marker"
+      fi
+    fi
     if [ "${FM_TEST_EVIDENCE:-0}" = 1 ]; then
       printf '# observed %s spawn: %s\n' "$contract" "$(printf '%s\n' "$out" | tail -n 1)"
     fi

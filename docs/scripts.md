@@ -38,7 +38,8 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-captain-hold.sh`    | Hold, answer, complete, verify, supersede, and read captain-held tasks plus product-idea completion attestations |
 | `fm-decision-hold.sh`    | One-release compatibility mapping from the retired decision command surface to `fm-captain-hold.sh` |
 | `fm-product-idea-lib.sh` | Shared product-idea ledger row and unscheduled-count grammar for completion and Bearings |
-| `fm-brief.sh`            | Scaffold ship (explicit `--mode`), scout, secondmate-charter, Herdr-lab, and no-mistakes verifier briefs; lint worker briefs |
+| `fm-brief.sh`            | Scaffold ship (explicit `--mode` and optional validated surface), scout, secondmate-charter, Herdr-lab, and no-mistakes verifier briefs; lint worker briefs |
+| `fm-delivery-surface-lib.sh` | Own the task-surface closed set and direct-PR eligibility shared by brief, spawn, and promotion |
 | `fm-herdr-lab.sh`        | Provision and guardedly operate an isolated, never-default Herdr lab session         |
 | `fm-install-herdr.sh`    | Install CI's exact-version Herdr pin with official asset URL, SHA-256, and protocol checks |
 | `fm-install-treehouse.sh`| Install CI's exact-version Treehouse pin for real-Herdr E2E that needs spawn worktrees |
@@ -64,7 +65,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-remote-home-seed.sh` | Register and provision a whole secondmate home on an SSH-reachable host              |
 | `fm-remote-readiness-lib.sh` | Shared remote second-mate readiness gate: check and, when needed, repair then re-check through `fm-remote-doctor.sh` |
 | [`fm-project-origin-lib.sh`](../bin/fm-project-origin-lib.sh) | Accepted origin-form owner shared by both remote provisioning boundaries |
-| `fm-spawn.sh`            | Spawn crewmates, scouts, `id=repo` batches, and secondmates; require ship `--role` and enforce completed distinct OV records for each supplied `--ov`; record optional `map` and locked `map_next`; refuse a ship `--map` while fog is live |
+| `fm-spawn.sh`            | Spawn crewmates, scouts, `id=repo` batches, and secondmates; persist validated ship surfaces and revalidate them on relaunch; require ship `--role` and completed distinct OV records for each supplied `--ov`; record optional `map` and locked `map_next`; refuse a ship `--map` while fog is live |
 | `fm-backend.sh`          | Runtime-backend selection, meta helpers, selector resolution, and operation dispatch |
 | `fm-backend-hometag-lib.sh` | Shared per-installation home-tag derivation for zellij tab and cmux workspace titles |
 | `fm-composer-lib.sh`     | Single fleet-wide owner of composer shapes, capability-aware screen classification, and verdicts |
@@ -130,7 +131,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-pr-check-migrate.sh` | Quarantine older task polls without execution and rebuild only canonical polls       |
 | `fm-pr-check.sh`         | Record validated PR metadata, then atomically arm a static merge poll; require validation truth |
 | `fm-pr-merge.sh`         | Record PR metadata, pin the forge head, refuse a red or pending rollup, then merge a task's canonical full GitHub URL |
-| `fm-promote.sh`          | Promote a scout task in place to a protected ship task with an explicit delivery mode and builder role |
+| `fm-promote.sh`          | Promote a scout task in place to a protected ship task with an explicit delivery mode, optional validated surface, and builder role |
 | `fm-teardown.sh`         | Fail-closed teardown: ship-builder measure, landed ship work, scout report presence and captain-hold completion, no-mistakes validation truth, secondmate retirement |
 | `fm-harness.sh`          | Detect the running harness and resolve crew or secondmate harness, model, and effort |
 | `fm-lock.sh`             | Per-home firstmate session lock                                                      |

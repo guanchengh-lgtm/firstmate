@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Spawn a direct report: a crewmate in a treehouse or Orca worktree, or a
 # secondmate in its isolated firstmate home.
-# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> --role <builder|verifier> [--map <map-file>] [--map-next <task-id>] [--ov <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
+# Usage: fm-spawn.sh <task-id> <project-dir> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> --role <builder|verifier> [--surface <internal-only|product|mixed|uncertain>] [--map <map-file>] [--map-next <task-id>] [--ov <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
 #        fm-spawn.sh <task-id> <project-dir> --scout [--map <map-file>] [--map-next <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>]
 #        fm-spawn.sh <task-id> [<firstmate-home>] [--map-next <task-id>] [--harness <name>|harness|launch-command] [--model <name>] [--effort <level>] [--backend <name>] --secondmate
 #   --map names one build map relative to FM_HOME and records map= in task meta.
@@ -45,6 +45,16 @@
 #   to pass. When the explicit mode carries less rigor than the project's
 #   standing posture, a loud one-line deviation notice is printed and the spawn
 #   continues.
+#   --surface names the task surface classified at intake. --mode direct-PR is
+#   legal only with --surface internal-only; product, mixed, uncertain, or an
+#   omitted surface is refused (bin/fm-delivery-surface-lib.sh). --mode
+#   no-mistakes and local-only accept any valid surface or none. --surface is
+#   refused on --scout and --secondmate. A --relaunch rejects a command-line
+#   override, reloads the recorded surface, and applies the same validation.
+#   Fresh builders validate data/<id>/surface against the request; verifier
+#   handoffs validate it after builder metadata recovery; relaunches validate it
+#   against relaunch metadata. A required marker must be regular and contain one
+#   matching line; an unexpected marker is refused.
 #   no-mistakes-prod-only is a registry policy rather than a task mode and is
 #   refused as a flag value.
 #        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>]
@@ -208,9 +218,10 @@
 # it writes state/<id>.muse-session to bind the pane to muse's own session event
 # log; muse is crewmate/scout only and is refused for --secondmate.
 # On success prints: spawned <id> harness=<name> kind=<ship|scout|secondmate> [mode=<mode> yolo=<on|off> role=<builder|verifier>] window=<backend-target> worktree=<path>
-# A ship task records the explicit mode/yolo/role it was passed; a secondmate spawn records
-# mode=secondmate, yolo=off, home=, and projects=; a scout records neither, and both the
-# success line and state/<id>.meta omit them.
+# A ship task records the explicit mode/yolo/role and optional validated surface
+# it was passed; a secondmate spawn records mode=secondmate, yolo=off, home=, and
+# projects=; a scout records none of those delivery fields, and both the success
+# line and state/<id>.meta omit them.
 # Every fresh spawn or relaunch records a new spawn_gen= incarnation token so durable
 # consumers can distinguish a replacement worker that reuses the same task id.
 # When the home session's frozen trace-context decision is enabled (see
@@ -291,9 +302,41 @@ SUB_HOME_MARKER=".fm-secondmate-home"
 . "$SCRIPT_DIR/fm-trace-context-lib.sh"
 # shellcheck source=bin/fm-remote-readiness-lib.sh
 . "$SCRIPT_DIR/fm-remote-readiness-lib.sh"
+# shellcheck source=bin/fm-delivery-surface-lib.sh
+. "$SCRIPT_DIR/fm-delivery-surface-lib.sh"
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
 # a direct report (see bin/fm-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
+
+assert_task_surface_marker() {  # <expected-surface> <surface-set> <record-source>
+  local expected=$1 surface_set=$2 record_source=$3 marker marker_count marker_surface
+  marker="$DATA/$ID/surface"
+  if [ "$surface_set" -eq 0 ]; then
+    if [ -e "$marker" ] || [ -L "$marker" ]; then
+      echo "error: task $ID surface marker disagrees with $record_source: $marker exists but $record_source records no surface" >&2
+      return 1
+    fi
+    return 0
+  fi
+  if [ ! -f "$marker" ] || [ -L "$marker" ]; then
+    echo "error: task $ID requires exactly one regular surface marker at $marker matching $record_source surface=$expected" >&2
+    return 1
+  fi
+  marker_count=$(awk 'END { print NR + 0 }' "$marker" 2>/dev/null) || {
+    echo "error: task $ID surface marker cannot be read: $marker" >&2
+    return 1
+  }
+  if [ "$marker_count" -ne 1 ]; then
+    echo "error: task $ID surface marker contains $marker_count classifications; exactly one must match $record_source surface=$expected" >&2
+    return 1
+  fi
+  marker_surface=$(sed -n '1p' "$marker")
+  fm_delivery_assert_surface_value "$marker_surface" || return 1
+  if [ "$marker_surface" != "$expected" ]; then
+    echo "error: task $ID surface marker says surface=$marker_surface but $record_source says surface=$expected" >&2
+    return 1
+  fi
+}
 # Skip the watcher guard when re-exec'd for one pair of a batch (FM_SPAWN_NO_GUARD is
 # set by the batch loop below), so the guard runs once for the batch, not once per pair.
 [ -n "${FM_SPAWN_NO_GUARD:-}" ] || "$FM_ROOT/bin/fm-guard.sh" || true
@@ -304,6 +347,7 @@ MODEL=
 EFFORT=
 BACKEND_ARG=
 MODE=
+SURFACE=
 YOLO=
 ROLE=
 TRACEPARENT_ARG=
@@ -315,6 +359,7 @@ MODEL_SET=0
 EFFORT_SET=0
 BACKEND_SET=0
 MODE_SET=0
+SURFACE_SET=0
 YOLO_SET=0
 ROLE_SET=0
 RELAUNCH=0
@@ -335,6 +380,7 @@ for a in "$@"; do
       effort) EFFORT=$a; EFFORT_SET=1 ;;
       backend) BACKEND_ARG=$a; BACKEND_SET=1 ;;
       mode) MODE=$a; MODE_SET=1 ;;
+      surface) SURFACE=$a; SURFACE_SET=1 ;;
       yolo) YOLO=$a; YOLO_SET=1 ;;
       role) ROLE=$a; ROLE_SET=1 ;;
       traceparent) TRACEPARENT_ARG=$a; TRACEPARENT_SET=1 ;;
@@ -360,6 +406,8 @@ for a in "$@"; do
     --backend=*) BACKEND_ARG=${a#--backend=}; BACKEND_SET=1 ;;
     --mode) want_value=mode ;;
     --mode=*) MODE=${a#--mode=}; MODE_SET=1 ;;
+    --surface) want_value=surface ;;
+    --surface=*) SURFACE=${a#--surface=}; SURFACE_SET=1 ;;
     --yolo) want_value=yolo ;;
     --yolo=*) YOLO=${a#--yolo=}; YOLO_SET=1 ;;
     --role) want_value=role ;;
@@ -381,6 +429,7 @@ done
 [ "$EFFORT_SET" -eq 0 ] || [ -n "$EFFORT" ] || { echo "error: --effort requires a non-empty value" >&2; exit 1; }
 [ "$BACKEND_SET" -eq 0 ] || [ -n "$BACKEND_ARG" ] || { echo "error: --backend requires a non-empty value" >&2; exit 1; }
 [ "$MODE_SET" -eq 0 ] || [ -n "$MODE" ] || { echo "error: --mode requires a non-empty value" >&2; exit 1; }
+[ "$SURFACE_SET" -eq 0 ] || [ -n "$SURFACE" ] || { echo "error: --surface requires a non-empty value" >&2; exit 1; }
 [ "$YOLO_SET" -eq 0 ] || [ -n "$YOLO" ] || { echo "error: --yolo requires a non-empty value" >&2; exit 1; }
 [ "$ROLE_SET" -eq 0 ] || [ -n "$ROLE" ] || { echo "error: --role requires a non-empty value" >&2; exit 1; }
 [ "$TRACEPARENT_SET" -eq 0 ] || [ -n "$TRACEPARENT_ARG" ] || { echo "error: --traceparent requires a non-empty value" >&2; exit 1; }
@@ -413,6 +462,7 @@ if [ "$RELAUNCH" -eq 1 ]; then
   [ "$BACKEND_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded backend; --backend cannot override it" >&2; exit 1; }
   [ "$KIND_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded kind; --scout/--secondmate cannot override it" >&2; exit 1; }
   [ "$MODE_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded delivery mode; --mode cannot override it" >&2; exit 1; }
+  [ "$SURFACE_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded delivery mode; --surface cannot override it" >&2; exit 1; }
   [ "$YOLO_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded yolo posture; --yolo cannot override it" >&2; exit 1; }
   [ "$ROLE_SET" -eq 0 ] || { echo "error: --relaunch reuses the task's recorded role; --role cannot override it" >&2; exit 1; }
 elif [ "$KIND" = ship ]; then
@@ -451,9 +501,17 @@ elif [ "$KIND" = ship ]; then
     echo "error: --role verifier is legal only with --mode no-mistakes; $MODE has no second context" >&2
     exit 1
   fi
+  if [ "$SURFACE_SET" -eq 1 ]; then
+    fm_delivery_assert_surface_value "$SURFACE" || exit 1
+  fi
+  fm_delivery_assert_direct_pr_surface "$MODE" "$SURFACE" "$SURFACE_SET" || exit 1
 else
   [ "$MODE_SET" -eq 0 ] || {
     echo "error: --mode applies only to ship spawns; a scout delivers a report and a secondmate records its own fixed posture" >&2
+    exit 1
+  }
+  [ "$SURFACE_SET" -eq 0 ] || {
+    echo "error: --surface applies only to ship spawns; a scout delivers a report and a secondmate records its own fixed posture" >&2
     exit 1
   }
   [ "$YOLO_SET" -eq 0 ] || {
@@ -880,6 +938,7 @@ spawn_abort_cleanup() {
             echo "harness=$HARNESS"
             echo "kind=$KIND"
             [ -z "${MODE:-}" ] || echo "mode=$MODE"
+            [ "${SURFACE_SET:-0}" -eq 0 ] || echo "surface=$SURFACE"
             [ -z "${YOLO:-}" ] || echo "yolo=$YOLO"
             [ -z "${MAP_NEXT:-}" ] || echo "map_next=$MAP_NEXT"
             [ -z "${MAP:-}" ] || echo "map=$MAP"
@@ -1000,6 +1059,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   # harness. Each pair still re-validates it against its own brief, so a batch
   # spanning several modes is two invocations rather than a silent mixed dispatch.
   [ "$MODE_SET" -eq 0 ] || shared_args+=(--mode "$MODE")
+  [ "$SURFACE_SET" -eq 0 ] || shared_args+=(--surface "$SURFACE")
   [ "$YOLO_SET" -eq 0 ] || shared_args+=(--yolo "$YOLO")
   [ "$ROLE_SET" -eq 0 ] || shared_args+=(--role "$ROLE")
   [ "$MAP_NEXT_SET" -eq 0 ] || shared_args+=(--map-next "$MAP_NEXT")
@@ -1161,6 +1221,26 @@ if [ "$RELAUNCH" -eq 1 ]; then
   KIND=$(fm_meta_get "$RELAUNCH_META" kind)
   [ -n "$KIND" ] || KIND=ship
   MODE=$(fm_meta_get "$RELAUNCH_META" mode)
+  SURFACE=
+  SURFACE_COUNT=$(grep -c '^surface=' "$RELAUNCH_META" 2>/dev/null || true)
+  case "$SURFACE_COUNT" in
+    0) SURFACE_SET=0 ;;
+    1)
+      SURFACE=$(fm_meta_get "$RELAUNCH_META" surface)
+      SURFACE_SET=1
+      fm_delivery_assert_surface_value "$SURFACE" || exit 1
+      ;;
+    *)
+      echo "error: task $ID has ambiguous surface metadata; relaunch requires one validated surface classification" >&2
+      exit 1
+      ;;
+  esac
+  assert_task_surface_marker "$SURFACE" "$SURFACE_SET" "task metadata" || exit 1
+  if [ "$MODE" = direct-PR ] && [ "$SURFACE_SET" -eq 0 ]; then
+    echo "error: task $ID records mode=direct-PR without a surface; legacy direct-PR tasks require fresh classification before relaunch" >&2
+    exit 1
+  fi
+  fm_delivery_assert_direct_pr_surface "$MODE" "$SURFACE" "$SURFACE_SET" || exit 1
   YOLO=$(fm_meta_get "$RELAUNCH_META" yolo)
   ROLE=$(fm_meta_get "$RELAUNCH_META" role)
   RELAUNCH_WT=$(fm_meta_get "$RELAUNCH_META" worktree)
@@ -1858,6 +1938,9 @@ if [ "$KIND" = ship ]; then
     echo "error: delivery mismatch for $ID: the task mode marker says mode=$BRIEF_MODE but this spawn passed --mode $MODE; correct the flag or re-scaffold the brief so the worker's instructions and the task record agree" >&2
     exit 1
   fi
+  if [ "$RELAUNCH" -eq 0 ] && [ "$ROLE" != verifier ]; then
+    assert_task_surface_marker "$SURFACE" "$SURFACE_SET" "the spawn request" || exit 1
+  fi
   BRIEF_ROLE=
   if [ -f "$ROLE_MARKER" ]; then
     BRIEF_ROLE=$(tr -d '\r\n' < "$ROLE_MARKER")
@@ -2119,7 +2202,8 @@ git_common_dir_real() {  # <worktree>
 }
 
 verifier_handoff_preflight() {
-  local meta=$1 prior_kind prior_mode prior_yolo prior_role prior_project prior_project_real
+  local meta=$1 prior_kind prior_mode prior_surface prior_surface_count prior_yolo prior_role
+  local prior_project prior_project_real
   local prior_state worktree_common project_common status tracked_status untracked_status
   local rebase_merge rebase_apply head branch branch_status expected_branch branch_head branch_owner worktree_list
   [ -f "$meta" ] && [ ! -L "$meta" ] || {
@@ -2141,6 +2225,29 @@ verifier_handoff_preflight() {
     echo "error: verifier handoff refused: existing task must record kind=ship, mode=no-mistakes, role=builder" >&2
     return 1
   fi
+  prior_surface_count=$(grep -c '^surface=' "$meta" 2>/dev/null || true)
+  case "$prior_surface_count" in
+    0)
+      if [ "$SURFACE_SET" -eq 1 ]; then
+        echo "error: verifier handoff refused: requested surface '$SURFACE' but builder metadata records no surface" >&2
+        return 1
+      fi
+      ;;
+    1)
+      prior_surface=$(fm_meta_get "$meta" surface)
+      fm_delivery_assert_surface_value "$prior_surface" || return 1
+      if [ "$SURFACE_SET" -eq 1 ] && [ "$SURFACE" != "$prior_surface" ]; then
+        echo "error: verifier handoff refused: requested surface '$SURFACE' does not match builder surface '$prior_surface'" >&2
+        return 1
+      fi
+      SURFACE=$prior_surface
+      SURFACE_SET=1
+      ;;
+    *)
+      echo "error: verifier handoff refused: builder metadata has an ambiguous surface classification" >&2
+      return 1
+      ;;
+  esac
   if [ "$prior_yolo" != "$YOLO" ]; then
     echo "error: verifier handoff refused: requested yolo posture '$YOLO' does not match builder yolo posture '${prior_yolo:-none}'" >&2
     return 1
@@ -2295,6 +2402,7 @@ verifier_handoff_retire_herdr_projection() {  # <journal>
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ] && [ "$ROLE" = verifier ]; then
   VERIFIER_HANDOFF_META="$STATE/$ID.meta"
   verifier_handoff_preflight "$VERIFIER_HANDOFF_META" || exit 1
+  assert_task_surface_marker "$SURFACE" "$SURFACE_SET" "builder metadata" || exit 1
 fi
 
 W="fm-$ID"
@@ -3205,7 +3313,7 @@ fi
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo role map_next map ov ov_harness session tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode surface yolo role map_next map ov ov_harness session tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -3217,7 +3325,7 @@ preserve_verifier_handoff_meta() {
     -v map_set="$MAP_SET" \
     -v ov_set="$OV_SET" '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo role tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode surface yolo role tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
       for (i in keys) owned[keys[i]] = 1
       if (map_next_set == 1) owned["map_next"] = 1
       if (map_set == 1) owned["map"] = 1
@@ -3237,6 +3345,12 @@ OV_HARNESS=
 if [ -n "${OV:-}" ] && [ -f "$STATE/$OV.meta" ] && [ ! -L "$STATE/$OV.meta" ]; then
   OV_HARNESS=$(sed -n 's/^harness=//p' "$STATE/$OV.meta" 2>/dev/null | tail -1)
 fi
+if [ "$KIND" = ship ] && [ "$SURFACE_SET" -eq 1 ]; then
+  printf '%s\n' "$SURFACE" > "$DATA/$ID/surface" || {
+    echo "error: could not persist task $ID surface marker at $DATA/$ID/surface" >&2
+    exit 1
+  }
+fi
 if ! {
   echo "window=$META_WINDOW"
   echo "endpoint_task_id=$ID"
@@ -3245,6 +3359,7 @@ if ! {
   echo "harness=$HARNESS"
   echo "kind=$KIND"
   [ -z "$MODE" ] || echo "mode=$MODE"
+  [ "$SURFACE_SET" -eq 0 ] || echo "surface=$SURFACE"
   [ -z "$YOLO" ] || echo "yolo=$YOLO"
   [ -z "${ROLE:-}" ] || echo "role=$ROLE"
   [ -z "$MAP_NEXT" ] || echo "map_next=$MAP_NEXT"
