@@ -28,6 +28,24 @@ It takes `--source <name>` when the adapter knows the source natively, and other
 | `resume`, `reload`, `fork` | Delegate to the nudge wrapper | Prior context is restored, so re-running is redundant when the lock is still ours and an instruction is enough when a new process resumed an old session. |
 | unreadable or unrecognized | Full digest | Taking the helm redundantly is cheap and idempotent; not taking it is the bug this tier exists to fix. |
 
+### In-place session replacement
+
+Claude's `/clear`, its `/new` alias, and its interactive `/resume` replace the session inside the SAME operating-system process.
+The durable harness pid recorded in `state/.lock` therefore stays live and stays in the new session's own verified ancestry, while `state/.lock.session` still names the session id that just went away.
+`bin/fm-session-lock-lib.sh` gives a valid sidecar priority over ancestry, so without a repair every later hook treats the session as a competitor of itself: the whole digest goes read-only and the Stop auto-arm correctly refuses to recover it.
+
+`bin/fm-sessionstart-run.sh` is the only grantor of the narrow replacement-acquisition intent that repairs that sidecar, and it grants it only when every one of these facts holds:
+
+- the source came from a NATIVE JSON hook payload on stdin, never from an explicit `--source` argument;
+- `hook_event_name` is exactly `SessionStart`;
+- `source` is exactly `clear` or `resume`;
+- the payload's `session_id` is valid and identical to this process's resolved Claude session identity.
+
+`compact`, `fork`, `startup`, an unrecognized source, and a malformed payload all fall through with no intent, and the acquisition runs before the completion check above so a repaired `clear` selects the intended re-emit.
+`bin/fm-lock.sh`'s header owns what the intent may then do; in short it still refuses every shape except a live recorded owner inside this session's own verified ancestry, so a background Claude job with its own session id can never take the home.
+That background refusal is the guarantee PR #74 added, and neither `bin/fm-session-lock-lib.sh` nor `bin/fm-claude-stop-autoarm.sh` participates in this exception: a Stop probe and a forked background session keep standing down exactly as before.
+`/branch` is deliberately uncovered, because a source that cannot be distinguished from a background `/fork` is not evidence of an in-place replacement.
+
 This deliberately inverts the previous nudge matcher, which fired on `startup|resume|clear` and excluded `compact`.
 Compaction is covered where a tracked adapter delivers that source because a compacted session has lost exactly the digest it needs, and resume is excluded from the run because it restores that digest instead of losing it.
 
@@ -94,12 +112,15 @@ That alternative expands trust and writes outside this repository, so Firstmate 
 `tests/fm-sessionstart-nudge.test.sh` proves the nudge wrapper's silence for both gate signals, an unmarked linked worktree, a missing state directory, and an already-owned lock, plus its exact U+2063 `FIRSTMATE_OP:`-prefixed, `session-start`-typed one-line output and a marked secondmate home including a treehouse-leased linked worktree.
 It separately proves the run wrapper's silence for the gate environment and an unmarked linked worktree.
 It proves the run wrapper's source routing end to end against a real `fm-session-start.sh`, including completion-gated `--reemit` selection, resume delegation, Pi CLI continuation classification, an unrecognized source falling through to the full digest, and bounded loud delivery of an oversized Pi digest.
+It proves in-place session replacement in a real Claude-named process: a native `SessionStart` `clear` payload reclaims the session's own lock and re-emits, a native `resume` payload repairs the sidecar before the silent nudge, and an explicit `--source`, a foreign event, a missing, invalid, or mismatched payload id, `fork`, and `compact` all leave the recorded pair untouched.
+`tests/fm-session-lock-ancestry.test.sh` owns the matching lock-policy cases, including the unchanged PR #74 background refusal, the same-tree Stop probe's inertness, and the replacement intent's own refusals for a foreign live owner, a dead owner, and an old lock with no sidecar.
 `tests/fm-session-start.test.sh` proves the runtime bound through the forced pure-Bash fallback: a TERM-resistant digest that exceeds its budget is force-killed with its grandchild, still emits its completed stages, names the incomplete stage and every stage it never reached, leaves no completion proof, and exits 0.
 `tests/fm-pi-primary-live-e2e.test.sh` and `tests/fm-opencode-primary-live-e2e.test.sh` exercise native startup paths with first-message and later-message Ahoy regressions.
 `tests/fm-cursor-primary.test.sh` proves the Cursor adapter over real processes: `sessionStart` emits the whole digest as `additional_context` with a caller-supplied `--source`, stays silent in a child worktree, lets the run wrapper stand down on the Cursor-delivered duplicate, and keeps `preCompact` unregistered so the deferred surface cannot be reintroduced unnoticed.
 `FM_CURSOR_PRIMARY_LIVE_E2E=1 tests/fm-cursor-primary-live-e2e.test.sh` proves the injected digest actually reaches model context in a real cursor-agent session.
 `tests/fm-sessionstart-hook-live-e2e.test.sh` is the opt-in live guard for the Claude, Codex exec, and Pi run-tier adapters; it confirms each installed adapter in that suite invokes the run wrapper and delivers its output into context.
 It verifies context-preserving reopen sources for those adapters and context-reset delivery wherever their tracked TUI surface is reachable.
+For Claude it also drives `/clear`, `/new`, `/resume`, and `/fork` against the real wrapper and lock in a throwaway lab, and pins the in-place shape the replacement intent depends on: the same durable pid, a new session id, a payload id equal to the environment id, a rewritten sidecar, and an inert background `/fork` and Stop probe.
 Cursor uses the separate primary live guard named above because its source-free `sessionStart` and stop-hook park are validated together.
 `tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh` is the separate opt-in real-Pi guard for a post-start AGENTS.md update followed by compaction.
 `tests/fm-turnend-guard.test.sh`, `tests/fm-pi-watch-extension.test.sh`, and `tests/fm-daemon.test.sh` cover marked guard, monitoring, and away-mode delivery.

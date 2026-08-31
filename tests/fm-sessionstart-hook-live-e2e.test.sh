@@ -15,6 +15,13 @@
 #       (bin/fm-startup-network.sh), so a harness that reaps the hook's process
 #       tree would silently stop running the sweeps entirely. Whether it does is
 #       a vendor behavior no portable test can see.
+#   (d) Claude only: which of its session-open commands replace the session IN
+#       PLACE. bin/fm-sessionstart-run.sh grants the session-lock replacement
+#       intent on `clear` and `resume` alone, and that is safe only while the
+#       vendor keeps the shape this guard measures: the same durable harness
+#       pid, a new session id, and a payload id equal to the environment id.
+#       `/fork` must stay a background copy that cannot rewrite the lock, and a
+#       background Stop probe inside the same process tree must stay inert.
 #
 # docs/sessionstart-nudge.md owns the routing facts (a) and (b) feed, and
 # tests/fm-sessionstart-nudge.test.sh pins that routing portably with real
@@ -321,6 +328,255 @@ probe_context_reset() {  # <harness> <version> <lab> <clear-command> <launch-arg
   tmux -L "$SOCKET" kill-session -t "$session" >/dev/null 2>&1 || true
 }
 
+# --- (d) Claude in-place session replacement ----------------------------------
+#
+# This lab runs the REAL wrapper, lock, and nudge against a stub session start,
+# so the recorded lock pair is the shipped logic's own outcome rather than a
+# re-creation of it. A shim in front of the wrapper records what the vendor
+# supplied and what the lock pair looked like on both sides of each open.
+make_replacement_lab() {  # -> echoes lab dir
+  local lab="$LAB/claude-replacement" script
+  mkdir -p "$lab/bin" "$lab/state" "$lab/.claude"
+  git init -q -b main "$lab"
+  git -C "$lab" config user.email fmtest@example.invalid
+  git -C "$lab" config user.name fmtest
+  printf '# Firstmate lab\n' > "$lab/AGENTS.md"
+  git -C "$lab" add -A >/dev/null 2>&1 || true
+  git -C "$lab" commit -q -m init >/dev/null 2>&1 || true
+  # One task in flight, so the Stop probe's supervision-need gate passes and
+  # only session identity decides whether it stands down.
+  : > "$lab/state/task.meta"
+  cp "$ROOT/.claude/settings.json" "$lab/.claude/settings.json"
+
+  for script in fm-turnend-guard.sh fm-arm-pretool-check.sh fm-cd-pretool-check.sh \
+    fm-owner-invoke-wait-check.sh fm-subagent-pretool-check.sh; do
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$lab/bin/$script"
+    chmod +x "$lab/bin/$script"
+  done
+  for script in fm-sessionstart-nudge.sh fm-lock.sh fm-session-lock-lib.sh fm-cursor-lib.sh \
+    fm-wake-lib.sh fm-gate-refuse-lib.sh fm-primary-scope-lib.sh fm-hook-host-lib.sh \
+    fm-operational-input.sh fm-supervision-lib.sh; do
+    ln -sf "$ROOT/bin/$script" "$lab/bin/$script"
+  done
+  ln -sf "$ROOT/bin/fm-sessionstart-run.sh" "$lab/bin/fm-sessionstart-run-real.sh"
+  ln -sf "$ROOT/bin/fm-claude-stop-autoarm.sh" "$lab/bin/fm-claude-stop-autoarm-real.sh"
+
+  cat > "$lab/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$$" >> "$FM_HOME/state/arm-ran"
+exit 0
+SH
+  # Stands in for the digest: it takes the lock and records completion exactly
+  # where the real digest does, and nothing else, so no lab open can reach the
+  # fleet, the network, or a watcher.
+  cat > "$lab/bin/fm-session-start.sh" <<'SH'
+#!/usr/bin/env bash
+set -u
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+reemit=0
+source=none
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --reemit) reemit=1; shift ;;
+    --source) source=${2:-none}; shift 2 || shift ;;
+    *) shift ;;
+  esac
+done
+if [ "$reemit" -eq 0 ]; then
+  "$SCRIPT_DIR/fm-lock.sh" > "$FM_HOME/state/lock.out" 2>&1 || true
+  if [ -f "$FM_HOME/state/.lock" ]; then
+    cp "$FM_HOME/state/.lock" "$FM_HOME/state/.session-start-complete"
+  fi
+fi
+printf 'FMSTART-%s-reemit%s\n' "$source" "$reemit"
+exit 0
+SH
+  # The interactive pane must not arm supervision on every turn, and the point
+  # of the probe is one background Stop hook inside that pane's own process
+  # tree, so only the marked probe reaches the real auto-arm.
+  cat > "$lab/bin/fm-claude-stop-autoarm.sh" <<'SH'
+#!/usr/bin/env bash
+set -u
+[ "${FM_LIVE_STOP_PROBE:-0}" = 1 ] || exit 0
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+printf '%s|%s|%s\n' "${CLAUDE_CODE_SESSION_ID:-absent}" \
+  "$(cat "$FM_HOME/state/.lock" 2>/dev/null || printf absent)" \
+  "$(cat "$FM_HOME/state/.lock.session" 2>/dev/null || printf absent)" \
+  >> "$FM_HOME/state/stop-probe.log"
+exec "$SCRIPT_DIR/fm-claude-stop-autoarm-real.sh" "$@"
+SH
+  cat > "$lab/bin/fm-sessionstart-run.sh" <<'SH'
+#!/usr/bin/env bash
+# Records what the vendor delivered and what the shipped wrapper then did with
+# the lock pair, and forwards the payload untouched so the wrapper's own stdout
+# still reaches model context.
+set -u
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+. "$SCRIPT_DIR/fm-session-lock-lib.sh"
+record=${FM_LIVE_RECORD:?}
+payload=$(cat 2>/dev/null || true)
+field() {
+  printf '%s' "$payload" | awk -v key="$1" '
+    BEGIN { RS = "\"" }
+    seen == 2 { print; exit }
+    seen == 1 && $0 ~ /^[[:space:]]*:[[:space:]]*$/ { seen = 2; next }
+    seen == 1 { seen = 0 }
+    $0 == key { seen = 1 }
+  '
+}
+read_state() { cat "$FM_HOME/state/$1" 2>/dev/null || printf absent; }
+event=$(field hook_event_name)
+source=$(field source)
+payload_session=$(field session_id)
+lock_before=$(read_state .lock)
+sidecar_before=$(read_state .lock.session)
+outer=absent
+fm_session_lock_identity && outer=$FM_SESSION_ANCESTRY_PID
+printf '%s' "$payload" | "$SCRIPT_DIR/fm-sessionstart-run-real.sh" || true
+printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "${event:-absent}" "${source:-absent}" \
+  "${payload_session:-absent}" "${CLAUDE_CODE_SESSION_ID:-absent}" \
+  "$lock_before" "$sidecar_before" "$(read_state .lock)" "$(read_state .lock.session)" \
+  "$outer" >> "$record"
+exit 0
+SH
+  chmod +x "$lab/bin/fm-sessionstart-run.sh" "$lab/bin/fm-session-start.sh" \
+    "$lab/bin/fm-claude-stop-autoarm.sh" "$lab/bin/fm-watch-arm.sh"
+  printf '%s\n' "$lab"
+}
+
+REPLACEMENT_RECORD=
+replacement_field() {  # <line-number> <field-number>
+  sed -n "${1}p" "$REPLACEMENT_RECORD" | cut -d'|' -f"$2"
+}
+
+wait_for_open() {  # <line-number> [attempts]
+  local line=$1 attempts=${2:-40} i=0
+  while [ "$i" -lt "$attempts" ]; do
+    [ -n "$(replacement_field "$line" 1)" ] && return 0
+    sleep 3
+    i=$((i + 1))
+  done
+  return 1
+}
+
+# One in-place replacement command: the vendor must keep the durable pid, issue
+# a new session id, agree with its own payload, and leave the shipped wrapper
+# holding a lock whose sidecar is the NEW id on the SAME pid.
+assert_in_place_replacement() {  # <version> <command> <line> <session-pane>
+  local version=$1 command=$2 line=$3 pane=$4
+  local event source payload_session env_session lock_before sidecar_before
+  local lock_after sidecar_after outer previous_pid previous_session
+  wait_for_open "$line" \
+    || { capture "$pane" >&2; fail "claude $version: '$command' fired no session-open hook at all"; }
+  event=$(replacement_field "$line" 1)
+  source=$(replacement_field "$line" 2)
+  payload_session=$(replacement_field "$line" 3)
+  env_session=$(replacement_field "$line" 4)
+  lock_before=$(replacement_field "$line" 5)
+  sidecar_before=$(replacement_field "$line" 6)
+  lock_after=$(replacement_field "$line" 7)
+  sidecar_after=$(replacement_field "$line" 8)
+  outer=$(replacement_field "$line" 9)
+  previous_pid=$(replacement_field "$((line - 1))" 7)
+  previous_session=$(replacement_field "$((line - 1))" 8)
+
+  [ "$event" = SessionStart ] \
+    || fail "claude $version: '$command' delivered event '$event', so the wrapper's native-payload gate would refuse it"
+  case "$source" in
+    clear|resume) : ;;
+    *) fail "claude $version: '$command' reported source '$source', which bin/fm-sessionstart-run.sh does NOT accept as an in-place replacement; refresh docs/verification/supervision.md before trusting this coverage" ;;
+  esac
+  [ "$payload_session" = "$env_session" ] \
+    || fail "claude $version: '$command' payload id '$payload_session' differs from the environment id '$env_session', so the wrapper cannot tie the event to this session"
+  [ "$env_session" != "$previous_session" ] \
+    || fail "claude $version: '$command' kept session id '$env_session', so this case proved no replacement at all"
+  [ "$lock_before" = "$previous_pid" ] && [ "$sidecar_before" = "$previous_session" ] \
+    || fail "claude $version: '$command' did not meet the recorded stale pair (lock $previous_pid, sidecar $previous_session); it saw $lock_before/$sidecar_before"
+  [ "$outer" = "$previous_pid" ] \
+    || fail "claude $version: '$command' resolved durable pid $outer, not the recorded $previous_pid, so it is not an in-place replacement on this version"
+  [ "$lock_after" = "$previous_pid" ] \
+    || fail "claude $version: '$command' moved the lock from $previous_pid to $lock_after"
+  [ "$sidecar_after" = "$env_session" ] \
+    || fail "claude $version: '$command' left sidecar '$sidecar_after' instead of the current session '$env_session', so the session stays locked out of its own home"
+  pass "claude $version: '$command' replaces the session in place and the wrapper reclaims its own lock"
+}
+
+probe_claude_session_replacement() {  # <version>
+  local version=$1 lab pane n line lock_pair_before probe_line
+  lab=$(make_replacement_lab)
+  REPLACEMENT_RECORD="$lab/record"
+  : > "$REPLACEMENT_RECORD"
+  pane=fmss-claude-replacement
+  tmux -L "$SOCKET" new-session -d -s "$pane" -c "$lab" -x 200 -y 50 \
+    -e FM_LIVE_RECORD="$REPLACEMENT_RECORD" -e FM_ROOT_OVERRIDE="$lab" -e FM_HOME="$lab" \
+    -e FM_GATE_REFUSE_BYPASS=0 \
+    "claude --permission-mode bypassPermissions" \
+    || fail "claude $version: could not start the in-place replacement lab session"
+
+  n=0
+  while [ "$n" -lt 60 ] && ! wait_for_open 1 1; do
+    if capture "$pane" | grep -qiE 'trust (this|the|parent)?[[:space:]]*(folder|project)'; then
+      tmux -L "$SOCKET" send-keys -t "$pane" Enter
+      sleep 5
+    fi
+    n=$((n + 1))
+  done
+  wait_for_open 1 \
+    || { capture "$pane" >&2; fail "claude $version: the replacement lab fired no cold session-open hook"; }
+  [ "$(replacement_field 1 8)" = "$(replacement_field 1 4)" ] \
+    || fail "claude $version: the cold open did not record its own session id as the lock sidecar"
+
+  send_line "$pane" /clear
+  assert_in_place_replacement "$version" /clear 2 "$pane"
+  send_line "$pane" /new
+  assert_in_place_replacement "$version" /new 3 "$pane"
+
+  # The picker's default selection is the most recent conversation, so a bare
+  # Enter takes it. A version that changes that shape must fail loudly here
+  # rather than let the ship keep claiming resume coverage.
+  send_line "$pane" /resume
+  sleep 5
+  tmux -L "$SOCKET" send-keys -t "$pane" Enter
+  assert_in_place_replacement "$version" /resume 4 "$pane"
+
+  # /fork copies the conversation into a BACKGROUND session while this one keeps
+  # running, so it must never be able to rewrite the primary's lock pair.
+  lock_pair_before="$(cat "$lab/state/.lock" 2>/dev/null)|$(cat "$lab/state/.lock.session" 2>/dev/null)"
+  send_line "$pane" /fork
+  sleep 20
+  if wait_for_open 5 1; then
+    [ "$(replacement_field 5 2)" = fork ] \
+      || fail "claude $version: /fork reported source '$(replacement_field 5 2)', which the wrapper would not exclude from replacement"
+  else
+    note "claude $version: /fork fired no session-open hook in this lab; only its lock-pair inertness was proven"
+  fi
+  [ "$lock_pair_before" = "$(cat "$lab/state/.lock" 2>/dev/null)|$(cat "$lab/state/.lock.session" 2>/dev/null)" ] \
+    || fail "claude $version: /fork rewrote the primary session's lock pair"
+  pass "claude $version: /fork cannot rewrite the live primary session's lock pair"
+
+  # A background Stop probe inside THIS pane's own process tree: the exact PR #74
+  # shape, where the recorded owner is live and in the probe's own ancestry and
+  # only the session id differs. It must stand down, not claim the home.
+  rm -f "$lab/state/arm-ran" "$lab/state/stop-probe.log"
+  lock_pair_before="$(cat "$lab/state/.lock" 2>/dev/null)|$(cat "$lab/state/.lock.session" 2>/dev/null)"
+  send_line "$pane" "Run this with your Bash tool exactly once, then reply only PROBEDONE: FM_LIVE_STOP_PROBE=1 claude -p --permission-mode bypassPermissions 'Say only OK.'"
+  wait_for_text "$pane" PROBEDONE 120 \
+    || { capture "$pane" >&2; fail "claude $version: the background Stop probe never completed"; }
+  [ -s "$lab/state/stop-probe.log" ] \
+    || { capture "$pane" >&2; fail "claude $version: no background Stop hook ran, so its inertness was NOT proven"; }
+  probe_line=$(tail -n 1 "$lab/state/stop-probe.log")
+  [ "$(printf '%s' "$probe_line" | cut -d'|' -f1)" != "$(printf '%s' "$probe_line" | cut -d'|' -f3)" ] \
+    || fail "claude $version: the background Stop probe carried the owner's own session id, so it proved nothing"
+  [ "$lock_pair_before" = "$(cat "$lab/state/.lock" 2>/dev/null)|$(cat "$lab/state/.lock.session" 2>/dev/null)" ] \
+    || fail "claude $version: a background Stop probe rewrote the live owner's lock pair"
+  [ ! -e "$lab/state/arm-ran" ] \
+    || fail "claude $version: a background Stop probe armed supervision for a home it does not own"
+  pass "claude $version: a background Stop probe in the owner's own process tree stays inert"
+
+  tmux -L "$SOCKET" kill-session -t "$pane" >/dev/null 2>&1 || true
+}
+
 # --- per-harness drivers ------------------------------------------------------
 
 for harness in claude codex pi; do
@@ -340,6 +596,7 @@ for harness in claude codex pi; do
         -- claude --continue -p --permission-mode bypassPermissions
       probe_context_reset claude "$version" "$lab" /clear \
         claude --permission-mode bypassPermissions
+      probe_claude_session_replacement "$version"
       ;;
     codex)
       probe_process_opens codex "$version" "$lab" resume \

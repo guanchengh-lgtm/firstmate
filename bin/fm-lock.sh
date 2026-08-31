@@ -3,6 +3,19 @@
 # Writes the durable ancestry PID selected by bin/fm-session-lock-lib.sh.
 # Usage: fm-lock.sh           acquire; exit 1 unless ownership is verified
 #        fm-lock.sh status    print holder and liveness; always exits 0
+#        fm-lock.sh --session-replacement
+#                             INTERNAL, granted only by bin/fm-sessionstart-run.sh
+#                             for a validated native Claude SessionStart payload
+#                             whose source is an in-place replacement. It permits
+#                             exactly one extra shape: a live recorded owner that
+#                             is a member of THIS session's verified harness
+#                             ancestry while the recorded sidecar names a
+#                             different valid session, which is what a same-process
+#                             /clear leaves behind. Every other shape - an absent
+#                             lock, a dead owner, a live owner outside that
+#                             ancestry - exits 1 and changes nothing, so the mode
+#                             can never widen ownership the way a generic ancestry
+#                             reclaim would (PR #74).
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -29,6 +42,12 @@ if [ "${1:-}" = "status" ]; then
   }
   if fm_harness_pid_alive "$old"; then echo "lock: held by live harness pid $old"; else echo "lock: stale (pid $old dead or not a harness)"; fi
   exit 0
+fi
+
+session_replacement=0
+if [ "${1:-}" = "--session-replacement" ]; then
+  session_replacement=1
+  shift
 fi
 
 fm_session_lock_identity || { echo "error: cannot locate harness process in ancestry" >&2; exit 1; }
@@ -103,9 +122,38 @@ trap release_claim_lock EXIT
 trap 'exit 1' HUP INT TERM
 
 matching_session=0
+replacement_permitted=0
+
+# True when pid $1 belongs to this session's own contiguous verified-harness
+# ancestry. Equality with the recorded lock pid alone is not enough: only
+# membership in that resolved run proves the pid is THIS process's session.
+pid_in_session_ancestry() {  # <pid>
+  local pid=$1 candidate
+  [ -n "$pid" ] || return 1
+  while IFS= read -r candidate; do
+    [ "$candidate" = "$pid" ] && return 0
+  done <<EOF
+$FM_SESSION_ANCESTRY_PIDS
+EOF
+  return 1
+}
+
+# In replacement mode nothing but the matching-sidecar reacquire and the
+# same-ancestry replacement may proceed. An absent lock, a dead owner, and a
+# live owner outside this ancestry keep belonging to the ordinary path, so the
+# intent can never be widened into a general reclaim.
+refuse_unless_replacement_applies() {
+  [ "$session_replacement" -eq 1 ] || return 0
+  [ "$matching_session" -eq 1 ] && return 0
+  [ "$replacement_permitted" -eq 1 ] && return 0
+  echo "error: no in-place session replacement applies to this session lock; leaving it unchanged" >&2
+  exit 1
+}
+
 lock_refuses_current_session() {  # <recorded-pid>
   local old=$1 holder_session=''
   matching_session=0
+  replacement_permitted=0
   if [ -n "$session_id" ]; then
     holder_session=$(fm_session_lock_read_session_id "$STATE" 2>/dev/null || true)
   fi
@@ -115,6 +163,13 @@ lock_refuses_current_session() {  # <recorded-pid>
       return 1
     fi
     if fm_harness_pid_alive "$old"; then
+      # A native in-place session replacement keeps this OS process and only
+      # issues a new session id, so the live owner it names is this very
+      # session. Every other live sidecar mismatch stays a competing session.
+      if [ "$session_replacement" -eq 1 ] && pid_in_session_ancestry "$old"; then
+        replacement_permitted=1
+        return 1
+      fi
       echo "error: another live firstmate session holds the lock (pid $old, Claude session $holder_session); operate read-only until resolved" >&2
       return 0
     fi
@@ -134,11 +189,14 @@ if [ -f "$LOCK" ] && [ ! -L "$LOCK" ]; then
     exit 1
   fi
 fi
+refuse_unless_replacement_applies
 
 if ! fm_lock_try_acquire "$CLAIM_LOCK"; then
   sweep_pid=$(sed -n 's/^pid=//p' "$STATE/.startup-network.status" 2>/dev/null | tail -1)
   if [ -n "${FM_LOCK_HELD_PID:-}" ] && [ "$FM_LOCK_HELD_PID" = "$sweep_pid" ]; then
-    if [ "$matching_session" -ne 1 ]; then
+    # A permitted replacement is the same OS process, so the sweep that claim
+    # belongs to is this session's own and is waited for, not refused.
+    if [ "$matching_session" -ne 1 ] && [ "$replacement_permitted" -ne 1 ]; then
       echo "error: the prior session's bounded startup sweep is finishing; operate read-only until it releases the fleet lock" >&2
       exit 1
     fi
@@ -147,6 +205,8 @@ if ! fm_lock_try_acquire "$CLAIM_LOCK"; then
 fi
 CLAIM_LOCK_HELD=1
 
+matching_session=0
+replacement_permitted=0
 if [ -e "$LOCK" ] || [ -L "$LOCK" ]; then
   if [ ! -f "$LOCK" ] || [ -L "$LOCK" ]; then
     echo "error: session lock is not a regular file; operate read-only until resolved" >&2
@@ -170,6 +230,7 @@ if [ -e "$LOCK" ] || [ -L "$LOCK" ]; then
 else
   rollback_remove_lock=1
 fi
+refuse_unless_replacement_applies
 if [ -f "$LOCK_SESSION" ] && [ ! -L "$LOCK_SESSION" ]; then
   rollback_session_tmp=$(mktemp "$STATE/.lock-session-rollback.XXXXXX" 2>/dev/null) || {
     echo "error: cannot prepare session lock rollback; operate read-only until resolved" >&2

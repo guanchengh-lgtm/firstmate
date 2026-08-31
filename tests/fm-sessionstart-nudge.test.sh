@@ -462,6 +462,131 @@ JS
   pass "Pi retains a bounded digest prefix and loudly marks oversized delivery"
 }
 
+# --- native in-place session replacement -------------------------------------
+#
+# Claude's /clear and its interactive /resume replace the session inside the
+# SAME process: state/.lock still names this process, while state/.lock.session
+# names the session id that just went away. Only a validated native SessionStart
+# payload may repair that sidecar, so these cases run a real Claude-named
+# process and drive the real wrapper, lock, and digest.
+
+CLAUDE_BIN="$(fm_fakebin "$TMP_ROOT/claude-harness")/claude"
+ln -s /bin/bash "$CLAUDE_BIN"
+OWNER_SESSION=aaaaaaaa-1111-4111-8111-111111111111
+CURRENT_SESSION=bbbbbbbb-2222-4222-8222-222222222222
+
+run_claude_session() {  # <root> <script> [env-assignment...]
+  local root=$1 script=$2
+  shift 2
+  env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
+    FM_GATE_REFUSE_BYPASS=0 FM_ROOT_OVERRIDE="$root" FM_HOME="$root" FM_RUN="$RUN" \
+    PATH="$RUN_PATH" "$@" "$CLAUDE_BIN" -c "$script"
+}
+
+# Take the helm as one session, then reopen the SAME process as another, exactly
+# as a native replacement does. The recorded pair is captured between the two
+# opens so the reopen's effect on it is visible.
+# shellcheck disable=SC2016 # single quotes are deliberate: these expand inside the fixture child
+REPLACEMENT_SCRIPT='
+  export CLAUDE_CODE_SESSION_ID=$FM_OWNER_SESSION
+  "$FM_RUN" --source startup </dev/null > "$FM_HOME/startup.out" 2>&1
+  cp "$FM_HOME/state/.lock" "$FM_HOME/lock-before"
+  cp "$FM_HOME/state/.lock.session" "$FM_HOME/sidecar-before"
+  export CLAUDE_CODE_SESSION_ID=$FM_CURRENT_SESSION
+  printf "%s" "$FM_PAYLOAD" | "$FM_RUN" > "$FM_HOME/reopen.out" 2>&1
+'
+
+# The same stale state without the cost of a first digest: a live lock pid in
+# this very process, recorded against the earlier session id.
+# shellcheck disable=SC2016 # single quotes are deliberate: these expand inside the fixture child
+STALE_SCRIPT='
+  export CLAUDE_CODE_SESSION_ID=$FM_CURRENT_SESSION
+  printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+  printf "%s\n" "$FM_OWNER_SESSION" > "$FM_HOME/state/.lock.session"
+  printf "%s\n" "$$" > "$FM_HOME/state/.session-start-complete"
+  printf "%s\n" "$$" > "$FM_HOME/probe-pid"
+  case "$FM_DELIVERY" in
+    --source=*) "$FM_RUN" "$FM_DELIVERY" </dev/null > "$FM_HOME/reopen.out" 2>&1 ;;
+    *) printf "%s" "$FM_DELIVERY" | "$FM_RUN" > "$FM_HOME/reopen.out" 2>&1 ;;
+  esac
+'
+
+payload_for() {  # <event> <source> [session-id]
+  local event=$1 source=$2 session=${3:-}
+  if [ -n "$session" ]; then
+    printf '{"hook_event_name":"%s","source":"%s","session_id":"%s","cwd":"/nowhere"}' \
+      "$event" "$source" "$session"
+  else
+    printf '{"hook_event_name":"%s","source":"%s","cwd":"/nowhere"}' "$event" "$source"
+  fi
+}
+
+test_run_clear_payload_reclaims_its_own_session_lock() {
+  local root="$TMP_ROOT/run-clear-replacement" out
+  make_run_primary "$root"
+  run_claude_session "$root" "$REPLACEMENT_SCRIPT" \
+    FM_OWNER_SESSION="$OWNER_SESSION" FM_CURRENT_SESSION="$CURRENT_SESSION" \
+    FM_PAYLOAD="$(payload_for SessionStart clear "$CURRENT_SESSION")"
+
+  [ "$(cat "$root/sidecar-before")" = "$OWNER_SESSION" ] \
+    || fail "the startup open did not record the first session id"
+  [ "$(cat "$root/state/.lock")" = "$(cat "$root/lock-before")" ] \
+    || fail "the clear reopen moved the lock off its own live process"
+  [ "$(cat "$root/state/.lock.session")" = "$CURRENT_SESSION" ] \
+    || fail "the clear reopen did not repair the stale session sidecar"
+  out=$(cat "$root/reopen.out")
+  assert_contains "$out" "$REEMIT_BANNER$root" "the repaired clear reopen did not re-emit the digest"
+  assert_not_contains "$out" "READ-ONLY SESSION" \
+    "a native clear left its own session locked out of its home"
+  pass "run wrapper: a native clear payload reclaims its own session lock and re-emits"
+}
+
+test_run_resume_payload_repairs_the_sidecar_before_the_nudge() {
+  local root="$TMP_ROOT/run-resume-replacement" out
+  make_run_primary "$root"
+  run_claude_session "$root" "$REPLACEMENT_SCRIPT" \
+    FM_OWNER_SESSION="$OWNER_SESSION" FM_CURRENT_SESSION="$CURRENT_SESSION" \
+    FM_PAYLOAD="$(payload_for SessionStart resume "$CURRENT_SESSION")"
+
+  [ "$(cat "$root/state/.lock")" = "$(cat "$root/lock-before")" ] \
+    || fail "the resume reopen moved the lock off its own live process"
+  [ "$(cat "$root/state/.lock.session")" = "$CURRENT_SESSION" ] \
+    || fail "the resume reopen did not repair the stale session sidecar before delegating"
+  out=$(cat "$root/reopen.out")
+  [ -z "$out" ] \
+    || fail "an in-place resume should stay silent once its own lock is repaired, got: $out"
+  pass "run wrapper: a native resume payload repairs the sidecar and the nudge stays silent"
+}
+
+test_run_refuses_replacement_without_native_evidence() {
+  local case_name delivery root probe_pid
+  # Everything a background job, another harness adapter, or a malformed hook
+  # could deliver. None of them proves an in-place replacement, so the recorded
+  # pair must survive each one untouched (PR #74).
+  for case_name in explicit-source foreign-event missing-id invalid-id mismatched-id fork compact; do
+    case "$case_name" in
+      explicit-source) delivery='--source=clear' ;;
+      foreign-event) delivery=$(payload_for Stop clear "$CURRENT_SESSION") ;;
+      missing-id) delivery=$(payload_for SessionStart clear) ;;
+      invalid-id) delivery=$(payload_for SessionStart clear 'not a session id') ;;
+      mismatched-id) delivery=$(payload_for SessionStart clear cccccccc-3333-4333-8333-333333333333) ;;
+      fork) delivery=$(payload_for SessionStart fork "$CURRENT_SESSION") ;;
+      compact) delivery=$(payload_for SessionStart compact "$CURRENT_SESSION") ;;
+    esac
+    root="$TMP_ROOT/run-replacement-$case_name"
+    make_run_primary "$root"
+    run_claude_session "$root" "$STALE_SCRIPT" \
+      FM_OWNER_SESSION="$OWNER_SESSION" FM_CURRENT_SESSION="$CURRENT_SESSION" \
+      FM_DELIVERY="$delivery"
+    probe_pid=$(cat "$root/probe-pid")
+    [ "$(cat "$root/state/.lock.session")" = "$OWNER_SESSION" ] \
+      || fail "$case_name granted a session replacement it cannot prove"
+    [ "$(cat "$root/state/.lock")" = "$probe_pid" ] \
+      || fail "$case_name moved the recorded lock pid"
+  done
+  pass "run wrapper: only a native SessionStart clear or resume payload may replace the sidecar"
+}
+
 test_run_resume_delegates_to_the_nudge() {
   local root="$TMP_ROOT/run-resume" out status=0
   make_run_primary "$root"
@@ -548,6 +673,9 @@ test_run_compact_without_completion_refreshes_before_finishing_startup
 test_run_clear_without_completion_finishes_startup
 test_run_clear_rejects_previous_owner_completion
 test_run_resume_delegates_to_the_nudge
+test_run_clear_payload_reclaims_its_own_session_lock
+test_run_resume_payload_repairs_the_sidecar_before_the_nudge
+test_run_refuses_replacement_without_native_evidence
 test_run_reads_source_from_the_hook_payload
 test_run_unknown_source_takes_the_helm
 test_run_gate_and_scope_are_silent

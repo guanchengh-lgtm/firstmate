@@ -67,6 +67,24 @@ Codex's interactive TUI fired no project `SessionStart` hook at all in the same 
 Codex's run tier is therefore verified only for `codex exec` startup and context-preserving resume.
 The interactive TUI is a known uncovered gap: Firstmate has no tracked session-open, compaction, or re-emit channel there, ships no global hook, and does not claim instruction-refresh delivery for that surface.
 
+### Claude in-place session replacement
+
+Claude's `/clear` replaces the session INSIDE the running process, and that shape is what the session-lock replacement intent depends on.
+It was reproduced on 2026-08-31 with Claude Code 2.1.251 in a live primary home: after `/clear`, `state/.lock` still named the live harness pid 51150 while `state/.lock.session` still named the previous session `c9d349e6-...` and the new session reported `052724b5-...`.
+Every session start after that refused as read-only, and `bin/fm-claude-stop-autoarm.sh` correctly stayed inert because the recorded owner was alive, so the home could not recover on its own.
+`bin/fm-sessionstart-run.sh` now grants `bin/fm-lock.sh` a narrow replacement acquisition for exactly this event; [`../sessionstart-nudge.md`](../sessionstart-nudge.md#in-place-session-replacement) owns the discriminator and its exclusions.
+
+The vendor facts that discriminator rests on are refreshed by the opt-in run-tier guard:
+
+```sh
+claude --version
+FM_SESSIONSTART_HOOK_LIVE_E2E=1 tests/fm-sessionstart-hook-live-e2e.test.sh
+```
+
+Its Claude replacement lab drives `/clear`, `/new`, `/resume`, and `/fork` against the real wrapper and lock, and fails loudly rather than degrading when any of them stops proving that `/clear`, `/new`, and interactive `/resume` keep the durable harness pid, issue a new session id, agree with their own payload id, and end with the sidecar rewritten on the unchanged pid, while `/fork` and a background Stop probe inside the same process tree leave the recorded pair untouched.
+Refresh this record after every Claude upgrade; the `/new`, `/resume`, and `/fork` shapes are pinned by that guard and were not separately re-measured for 2.1.251 here.
+`tests/fm-sessionstart-nudge.test.sh` and `tests/fm-session-lock-ancestry.test.sh` cover the same policy portably, including the unchanged PR #74 refusal of a background Claude job.
+
 Pi compaction was verified on 2026-08-05 with Pi 0.82.0 in the same throwaway lab after setting `.pi/settings.json` `compaction.keepRecentTokens` to 200 and completing one substantial assistant-prose turn before issuing `/compact`.
 Pi reported `Compacted from 7,697 tokens`, the recorder observed `session_compact`, and the model quoted the freshly injected `source=compact` token back.
 Both preconditions are load-bearing: the stock 20,000-token keep window exceeds a small lab session, and `AgentSession.compact()` aborts an in-flight turn before measuring compactable history, which otherwise discards that turn and reports `Nothing to compact (session too small)`.

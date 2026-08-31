@@ -17,6 +17,14 @@
 #             treated as `startup`, because taking the helm redundantly is
 #             cheap and idempotent while not taking it is the whole bug.
 #
+# In-place session replacement (Claude /clear, /new, or an interactive /resume)
+# keeps this OS process and only issues a NEW session id, so the recorded
+# state/.lock.session names a session that no longer exists while state/.lock
+# still names this session's own pid. This wrapper is the one grantor of
+# bin/fm-lock.sh's narrow replacement-acquisition intent, because a validated
+# NATIVE SessionStart payload is the only evidence that separates that event
+# from a background Claude job whose own session id also differs (PR #74).
+#
 # Source routing (see docs/sessionstart-nudge.md for the per-harness names):
 #   startup, new            full digest - this process has not taken the helm
 #   clear, compact          `--reemit` digest only when this lock owner recorded
@@ -52,6 +60,9 @@ COMPLETION_FILE="$STATE/.session-start-complete"
 . "$SCRIPT_DIR/fm-hook-host-lib.sh"
 
 SOURCE=
+PAYLOAD_EVENT=
+PAYLOAD_SESSION_ID=
+PAYLOAD_DELIVERED=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --source)
@@ -71,6 +82,21 @@ done
 fm_is_gate_agent "$FM_ROOT" && exit 0
 fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
 
+# Print JSON string field <key> from payload <payload>, or nothing.
+# Splitting on the quote character finds the FIRST occurrence of the key and its
+# value without depending on greedy-regex luck, and it cannot mistake a string
+# VALUE equal to the key for the key itself, because only a key is followed by a
+# bare colon. Parsed without jq so a host missing it still routes correctly.
+payload_string_field() {  # <payload> <key>
+  printf '%s' "$1" | awk -v key="$2" '
+    BEGIN { RS = "\"" }
+    seen == 2 { print; exit }
+    seen == 1 && $0 ~ /^[[:space:]]*:[[:space:]]*$/ { seen = 2; next }
+    seen == 1 { seen = 0 }
+    $0 == key { seen = 1 }
+  '
+}
+
 session_start_completed() {
   local lock_pid completion_pid
   [ -f "$STATE/.lock" ] && [ ! -L "$STATE/.lock" ] || return 1
@@ -84,13 +110,9 @@ session_start_completed() {
 
 if [ -z "$SOURCE" ] && [ ! -t 0 ]; then
   # Claude and Codex both deliver a JSON SessionStart payload on stdin whose
-  # `source` field carries startup|resume|clear|compact. Parsed without jq so a
-  # host missing it still gets correct routing rather than silent full runs.
+  # `source` field carries startup|resume|clear|compact.
   # A terminal stdin is skipped outright: a hook always pipes its payload, and
   # an operator running this by hand must not be left waiting on a read.
-  # Splitting on the quote character finds the FIRST "source" key and its value
-  # without depending on greedy-regex luck, and it cannot mistake a string VALUE
-  # of "source" for the key, because only a key is followed by a bare colon.
   PAYLOAD=$(cat 2>/dev/null || true)
   # Cursor loads the tracked Claude settings as well as its own registration,
   # so a Cursor-delivered payload here is the duplicate: bin/fm-sessionstart-
@@ -100,13 +122,32 @@ if [ -z "$SOURCE" ] && [ ! -t 0 ]; then
   if fm_hook_payload_is_foreign_host "$PAYLOAD"; then
     exit 0
   fi
-  SOURCE=$(printf '%s' "$PAYLOAD" | awk '
-    BEGIN { RS = "\"" }
-    seen == 2 { print; exit }
-    seen == 1 && $0 ~ /^[[:space:]]*:[[:space:]]*$/ { seen = 2; next }
-    seen == 1 { seen = 0 }
-    $0 == "source" { seen = 1 }
-  ')
+  SOURCE=$(payload_string_field "$PAYLOAD" source)
+  # Retained only for the replacement-acquisition decision below, which needs
+  # the event's own provenance rather than a source name any caller can supply.
+  PAYLOAD_EVENT=$(payload_string_field "$PAYLOAD" hook_event_name)
+  PAYLOAD_SESSION_ID=$(payload_string_field "$PAYLOAD" session_id)
+  PAYLOAD_DELIVERED=1
+fi
+
+# Repair a stale session sidecar left behind by an in-place replacement, before
+# the completion check below reads ownership. Everything here is required: a
+# native payload (never an explicit --source), the SessionStart event itself,
+# one of the two in-place replacement sources, and a payload session id that is
+# valid and identical to this process's resolved Claude identity. `compact`,
+# `fork`, `startup`, an unknown source, and a malformed payload all fall
+# through unchanged, and bin/fm-lock.sh still refuses every shape but its own
+# same-ancestry replacement, so a background Claude job cannot take the home.
+if [ "$PAYLOAD_DELIVERED" -eq 1 ] && [ "$PAYLOAD_EVENT" = SessionStart ] \
+  && fm_session_id_valid "$PAYLOAD_SESSION_ID"; then
+  case "$SOURCE" in
+    clear|resume)
+      if fm_session_lock_identity && [ -n "$FM_SESSION_ID" ] \
+        && [ "$FM_SESSION_ID" = "$PAYLOAD_SESSION_ID" ]; then
+        "$SCRIPT_DIR/fm-lock.sh" --session-replacement >/dev/null 2>&1 || true
+      fi
+      ;;
+  esac
 fi
 
 case "$SOURCE" in
