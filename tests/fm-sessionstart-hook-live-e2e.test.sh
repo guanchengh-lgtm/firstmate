@@ -411,7 +411,8 @@ SH
 set -u
 [ "${FM_LIVE_STOP_PROBE:-0}" = 1 ] || exit 0
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-printf '%s|%s|%s\n' "${CLAUDE_CODE_SESSION_ID:-absent}" \
+printf '%s|%s|%s|%s\n' "${CLAUDE_CODE_SESSION_ID:-absent}" \
+  "${CLAUDE_PID:-absent}" \
   "$(cat "$FM_HOME/state/.lock" 2>/dev/null || printf absent)" \
   "$(cat "$FM_HOME/state/.lock.session" 2>/dev/null || printf absent)" \
   >> "$FM_HOME/state/stop-probe.log"
@@ -518,7 +519,7 @@ assert_in_place_replacement() {  # <version> <command> <line> <session-pane>
 }
 
 probe_claude_session_replacement() {  # <version>
-  local version=$1 lab pane n line lock_pair_before probe_line
+  local version=$1 lab pane n line lock_pair_before probe_line probe_claude_pid probe_lock_pid
   lab=$(make_replacement_lab)
   REPLACEMENT_RECORD="$lab/record"
   : > "$REPLACEMENT_RECORD"
@@ -596,7 +597,14 @@ probe_claude_session_replacement() {  # <version>
   [ -s "$lab/state/stop-probe.log" ] \
     || { capture "$pane" >&2; fail "claude $version: no background Stop hook ran, so its inertness was NOT proven"; }
   probe_line=$(tail -n 1 "$lab/state/stop-probe.log")
-  [ "$(printf '%s' "$probe_line" | cut -d'|' -f1)" != "$(printf '%s' "$probe_line" | cut -d'|' -f3)" ] \
+  probe_claude_pid=$(printf '%s' "$probe_line" | cut -d'|' -f2)
+  probe_lock_pid=$(printf '%s' "$probe_line" | cut -d'|' -f3)
+  case "$probe_claude_pid" in
+    ''|*[!0-9]*) fail "claude $version: the background Stop probe had no valid vendor-set CLAUDE_PID" ;;
+  esac
+  [ "$probe_claude_pid" != "$probe_lock_pid" ] \
+    || fail "claude $version: the background Stop probe inherited the lock owner's CLAUDE_PID, so replacement isolation is unproven"
+  [ "$(printf '%s' "$probe_line" | cut -d'|' -f1)" != "$(printf '%s' "$probe_line" | cut -d'|' -f4)" ] \
     || fail "claude $version: the background Stop probe carried the owner's own session id, so it proved nothing"
   [ "$lock_pair_before" = "$(cat "$lab/state/.lock" 2>/dev/null)|$(cat "$lab/state/.lock.session" 2>/dev/null)" ] \
     || fail "claude $version: a background Stop probe rewrote the live owner's lock pair"
