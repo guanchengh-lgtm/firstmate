@@ -69,11 +69,16 @@ jobs:
           set -eu
           npm install -g tasks-axi
           tasks-axi --version
+      - name: Install pinned Pi typecheck dependencies
+        run: |
+          set -eu
+          npm install -g @earendil-works/pi-coding-agent@0.84.4 typescript@5.9.3
       - name: Run portable parallel shard 1
         run: |
           set -eu
           mkdir -p "$RUNNER_TEMP/fm-test"
           bin/fm-test-run.sh --lane portable-parallel-1 \
+            --fail-on-gate-skip 'Pi extension typecheck unavailable' \
             --json "$RUNNER_TEMP/fm-test/fm-test-timing-portable-parallel-1.json"
       - name: Upload shard 1 timing artifact
         if: always()
