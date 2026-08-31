@@ -1,0 +1,23 @@
+ok - no --model/--effort records defaults and types the claude launch instructions
+ok - non-cursor launches clear inherited Cursor identity markers
+ok - relative home overrides ignore CDPATH and become absolute before spawn launch construction
+ok - FM_HOME defaults resolve relative paths and preserve absolute spellings
+ok - absolute override spellings are preserved in spawn launch paths
+ok - unresolvable relative spawn overrides fail with named diagnostics
+ok - active crew-dispatch profile requires an explicit harness for ship spawns
+ok - active crew-dispatch profile requires an explicit harness for scout spawns
+ok - active crew-dispatch profile requires an explicit model for ship spawns
+ok - active crew-dispatch profile requires an explicit effort for ship spawns
+ok - active crew-dispatch profile allows an explicit resolved harness
+ok - active crew-dispatch profile allows the legacy positional harness form
+ok - active crew-dispatch profile allows the raw launch-command escape hatch
+ok - claude receives --model and --effort profile flags
+ok - codex receives --model and model_reasoning_effort profile flags
+ok - codex omits unsupported max effort instead of passing a bad config value
+ok - grok receives --model and --reasoning-effort profile flags
+ok - grok omits unsupported max reasoning effort
+ok - grok receives --reasoning-effort xhigh
+ok - opencode receives --model and omits the unsupported effort axis
+not ok - pi launch did not force the regular TUI while threading the requested model and max thinking level (missing: 'FM_PI_HARNESS=pi FM_PI_CALM_WORKER=1 '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-dispatch-profile.Z66YnS/profile-pi/fake/fakebin/pi' --tui-mode regular --model 'openai-codex/gpt-5.6-sol' --thinking 'max' -e')
+--- output ---
+env -u CURSOR_AGENT -u CURSOR_INVOKED_AS FM_PI_HARNESS=pi FM_PI_HARNESS=pi FM_PI_CALM_WORKER=0 '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-dispatch-profile.Z66YnS/profile-pi/fake/fakebin/pi' --tui-mode regular --model 'openai-codex/gpt-5.6-sol' --thinking 'max' -e '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-dispatch-profile.Z66YnS/profile-pi/home/state/profile-pi-z8.pi-ext.ts' "$('/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1CDEK76RFND7EJKW9MSZ5EN/bin/fm-operational-input.sh' encode launch-brief < '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-dispatch-profile.Z66YnS/profile-pi/home/data/profile-pi-z8/brief.md')"
