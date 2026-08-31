@@ -10,14 +10,14 @@
 # no-mistakes keep the full-analysis no-argument default.
 # Tests stop source analysis at imported production modules because every
 # production shell is already a canonical, source-aware root of this same run.
-# The default (no explicit-path) path also runs bin/fm-lint-workflows.sh so a
-# malformed GitHub workflow, including a self-broken ci.yml, fails locally
-# before merge instead of only failing to run as CI.
-# The same default path validates AGENTS.md as safe UTF-8 text, enforces its
+# The default (no explicit-path) path also runs the AGENTS.md companion gate
+# and bin/fm-lint-workflows.sh, so a malformed GitHub workflow, including a
+# self-broken ci.yml, fails locally before merge instead of only failing as CI.
+# The AGENTS.md gate validates safe UTF-8 text, enforces its
 # calibrated-byte hard ceiling, and compares final content with the accepted
 # target base for net-zero growth and new-line why traces.
 # Pull request CI supplies FM_LINT_BASE_SHA, local branches use the current
-# origin/main or main ancestor, and main-push CI uses HEAD^1.
+# origin/main or main ancestor, and the main branch uses HEAD^1.
 # Growth needs exactly one paired trailer set in the accepted branch range:
 #   AGENTS-Budget-Override: v1 base=<blob> target=<blob> before=<count> after=<count>
 #   Captain-Instruction: <the captain's exact words for this growth>
@@ -37,9 +37,10 @@
 #     only the canonical-set files changed since that merge-base, including
 #     uncommitted local edits, via plain local `git diff` (no network, no
 #     `gh`). A branch with zero matching changed files skips ShellCheck and
-#     prints a "no changed lint targets" note, then still validates workflows.
+#     prints a "no changed lint targets" note, then still runs both companion
+#     gates.
 # Explicit paths always bypass this file-set selection and lint exactly the
-# given paths, matching the same config, without the workflow YAML check.
+# given paths, matching the same config, without either companion gate.
 #
 # Canonical lint defaults to two bounded workers over two stable logical shards.
 # Each shard writes separate diagnostics, and the parent replays those outputs in
