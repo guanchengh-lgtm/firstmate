@@ -158,14 +158,13 @@ EOF
   return 1
 }
 
-# In replacement mode nothing but the matching-sidecar reacquire and the
-# own-client-process replacement may proceed. An absent lock, a dead owner, a
-# live owner outside this ancestry, and a live owner that is not this hook's
-# own Claude client keep belonging to the ordinary path, so the intent can
-# never be widened into a general reclaim.
+# In replacement mode only the own-client-process replacement may proceed. An
+# absent lock, a matching sidecar, a dead owner, a live owner outside this
+# ancestry, and a live owner that is not this hook's own Claude client keep
+# belonging to the ordinary path, so the intent can never be widened into a
+# general reclaim.
 refuse_unless_replacement_applies() {
   [ "$session_replacement" -eq 1 ] || return 0
-  [ "$matching_session" -eq 1 ] && return 0
   [ "$replacement_permitted" -eq 1 ] && return 0
   echo "error: no in-place session replacement applies to this session lock; leaving it unchanged" >&2
   exit 1

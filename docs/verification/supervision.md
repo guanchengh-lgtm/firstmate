@@ -83,8 +83,9 @@ FM_SESSIONSTART_HOOK_LIVE_E2E=1 tests/fm-sessionstart-hook-live-e2e.test.sh
 ```
 
 Its Claude replacement lab drives `/clear`, `/new`, `/resume`, and `/fork` against the real wrapper and lock, and fails loudly when any required hook is absent.
-It proves that `/clear` and `/new` report `clear`, interactive `/resume` reports `resume`, each accepted transition keeps the durable harness pid, and `/fork` reports `fork`.
-It also proves that `/fork` and a background Stop probe inside the same process tree leave the recorded pair untouched.
+It proves that `/clear` and `/new` report `clear`, interactive `/resume` reports `resume`, and each accepted transition keeps the durable harness pid.
+For `/fork`, the guard accepts a parked background fork without a session-open hook until its first prompt or a `fork` source hook record that the wrapper excludes from replacement.
+Both supported `/fork` results and a background Stop probe inside the same process tree leave the recorded pair untouched.
 Refresh this record after every Claude upgrade; the `/new`, `/resume`, and `/fork` shapes are pinned by that guard and were not separately re-measured for 2.1.251 here.
 `tests/fm-sessionstart-nudge.test.sh` and `tests/fm-session-lock-ancestry.test.sh` cover the same policy portably, including the unchanged PR #74 refusal of a background Claude job.
 

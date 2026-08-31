@@ -546,19 +546,19 @@ test_session_replacement_reclaims_its_own_stale_sidecar() {
   pass "session-lock executable: a granted replacement reclaims its own stale sidecar"
 }
 
-test_session_replacement_is_idempotent_for_a_matching_sidecar() {
+test_session_replacement_refuses_a_matching_sidecar() {
   local dir holder_pid
   dir="$TMP_ROOT/replacement-matching"
   make_lock_identity_home "$dir"
   run_lock_pair "$dir" session-unchanged session-unchanged 0 --session-replacement holder
-  expect_code 0 "$(cat "$dir/state/contender.rc")" \
-    "a replacement acquisition must still succeed when the sidecar already matches"
+  expect_code 1 "$(cat "$dir/state/contender.rc")" \
+    "a replacement acquisition must refuse when the sidecar already matches"
   holder_pid=$(cat "$dir/state/holder-pid")
   [ "$(cat "$dir/state/.lock")" = "$holder_pid" ] \
-    || fail "an already-matching replacement acquisition moved the durable ancestry pid"
+    || fail "a refused matching-sidecar replacement moved the durable ancestry pid"
   [ "$(cat "$dir/state/.lock.session")" = session-unchanged ] \
-    || fail "an already-matching replacement acquisition changed the session sidecar"
-  pass "session-lock executable: a granted replacement is idempotent for a matching sidecar"
+    || fail "a refused matching-sidecar replacement changed the session sidecar"
+  pass "session-lock executable: a replacement refuses a matching sidecar"
 }
 
 test_session_replacement_refuses_a_nested_background_contender() {
@@ -1131,7 +1131,7 @@ test_same_claude_session_reacquires_with_durable_pid
 test_same_claude_session_reacquires_during_startup_lease
 test_background_claude_session_is_refused_under_live_holder
 test_session_replacement_reclaims_its_own_stale_sidecar
-test_session_replacement_is_idempotent_for_a_matching_sidecar
+test_session_replacement_refuses_a_matching_sidecar
 test_session_replacement_refuses_a_nested_background_contender
 test_session_replacement_refuses_a_live_owner_outside_the_ancestry
 test_session_replacement_refuses_a_dead_owner
