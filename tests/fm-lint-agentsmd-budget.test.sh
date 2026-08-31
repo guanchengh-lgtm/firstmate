@@ -210,6 +210,23 @@ test_pr_local_and_main_bases() {
   pass 'PR, local feature, and main-push modes select the expected base blob'
 }
 
+test_ci_base_must_be_ancestor() {
+  local repo base
+  repo=$(repo_new ci-unrelated-base 200)
+  git -C "$repo" checkout -qb feature
+  write_marked_bytes "$repo/AGENTS.md" 250
+  commit_all "$repo" feature-content
+  git -C "$repo" checkout -q --orphan unrelated
+  write_marked_bytes "$repo/AGENTS.md" 300
+  commit_all "$repo" unrelated-base
+  base=$(git -C "$repo" rev-parse HEAD)
+  git -C "$repo" checkout -q feature
+  TEST_FM_LINT_BASE_SHA=$base TEST_GITHUB_EVENT_NAME=pull_request \
+    TEST_CI=true TEST_GITHUB_ACTIONS=true \
+    expect_fail 'unrelated CI base' 'stale or unrelated' "$repo"
+  pass 'CI requires its supplied target base to be a HEAD ancestor'
+}
+
 test_generic_ci_feature_uses_target_base() {
   local repo
   repo=$(repo_new generic-ci-feature 200)
@@ -234,8 +251,8 @@ test_deleted_wrong_type_and_utf8_bases() {
     esac
     git -C "$repo" commit -qm "bad $kind base"
     bad_base=$(git -C "$repo" rev-parse HEAD)
-    git -C "$repo" checkout -q main
     git -C "$repo" checkout -qb feature
+    rm -f "$repo/AGENTS.md"
     write_marked_bytes "$repo/AGENTS.md" 199
     case "$kind" in
       deleted) TEST_FM_LINT_BASE_SHA=$bad_base TEST_CI=true TEST_GITHUB_ACTIONS=true expect_fail 'deleted base AGENTS.md' 'no regular AGENTS.md blob' "$repo" ;;
@@ -657,6 +674,7 @@ test_calibrated_byte_ceiling
 test_file_safety_and_utf8
 test_unchanged_and_missing_base_modes
 test_pr_local_and_main_bases
+test_ci_base_must_be_ancestor
 test_generic_ci_feature_uses_target_base
 test_deleted_wrong_type_and_utf8_bases
 test_stale_local_target

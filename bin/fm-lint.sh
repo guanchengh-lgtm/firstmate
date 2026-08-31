@@ -719,17 +719,17 @@ fm_lint_run_agentsmd_budget() {
       fm_lint_agentsmd_error 'the target AGENTS.md base is missing; synchronize the target branch.'
       return 1
     fi
-    git merge-base --is-ancestor "$base_ref" HEAD >/dev/null 2>&1 \
-      || {
-        fm_lint_agentsmd_error "target ref $base_ref is stale; synchronize the branch before lint."
-        return 1
-      }
     base=$base_ref
   fi
 
   git cat-file -e "$base^{commit}" >/dev/null 2>&1 \
     || {
       fm_lint_agentsmd_error "target base $base is unreadable; fetch the exact base commit and retry."
+      return 1
+    }
+  git merge-base --is-ancestor "$base" HEAD >/dev/null 2>&1 \
+    || {
+      fm_lint_agentsmd_error "target base $base is stale or unrelated; fetch the exact target commit or synchronize the branch."
       return 1
     }
   entry=$(git ls-tree "$base" -- AGENTS.md 2>/dev/null) \
