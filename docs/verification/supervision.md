@@ -72,7 +72,7 @@ The interactive TUI is a known uncovered gap: Firstmate has no tracked session-o
 Claude's `/clear` replaces the session INSIDE the running process, and that shape is what the session-lock replacement intent depends on.
 It was reproduced on 2026-08-31 with Claude Code 2.1.251 in a live primary home: after `/clear`, `state/.lock` still named the live harness pid 51150 while `state/.lock.session` still named the previous session `c9d349e6-...` and the new session reported `052724b5-...`.
 Every session start after that refused as read-only, and `bin/fm-claude-stop-autoarm.sh` correctly stayed inert because the recorded owner was alive, so the home could not recover on its own.
-`bin/fm-sessionstart-run.sh` now grants `bin/fm-lock.sh` a narrow replacement acquisition for exactly this event; [`../sessionstart-nudge.md`](../sessionstart-nudge.md#in-place-session-replacement) owns the discriminator and its exclusions.
+`bin/fm-sessionstart-run.sh` now grants `bin/fm-lock.sh` a narrow replacement acquisition only after the native `SessionEnd` and `SessionStart` payloads prove one matching transition; [`../sessionstart-nudge.md`](../sessionstart-nudge.md#in-place-session-replacement) owns the discriminator and its exclusions.
 
 The vendor facts that discriminator rests on are refreshed by the opt-in run-tier guard:
 
@@ -81,7 +81,9 @@ claude --version
 FM_SESSIONSTART_HOOK_LIVE_E2E=1 tests/fm-sessionstart-hook-live-e2e.test.sh
 ```
 
-Its Claude replacement lab drives `/clear`, `/new`, `/resume`, and `/fork` against the real wrapper and lock, and fails loudly rather than degrading when any of them stops proving that `/clear`, `/new`, and interactive `/resume` keep the durable harness pid, issue a new session id, agree with their own payload id, and end with the sidecar rewritten on the unchanged pid, while `/fork` and a background Stop probe inside the same process tree leave the recorded pair untouched.
+Its Claude replacement lab drives `/clear`, `/new`, `/resume`, and `/fork` against the real wrapper and lock, and fails loudly when any required hook is absent.
+It proves that `/clear` and `/new` report `clear`, interactive `/resume` reports `resume`, each accepted transition keeps the durable harness pid, and `/fork` reports `fork`.
+It also proves that `/fork` and a background Stop probe inside the same process tree leave the recorded pair untouched.
 Refresh this record after every Claude upgrade; the `/new`, `/resume`, and `/fork` shapes are pinned by that guard and were not separately re-measured for 2.1.251 here.
 `tests/fm-sessionstart-nudge.test.sh` and `tests/fm-session-lock-ancestry.test.sh` cover the same policy portably, including the unchanged PR #74 refusal of a background Claude job.
 

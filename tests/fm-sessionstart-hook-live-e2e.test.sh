@@ -416,6 +416,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 record=${FM_LIVE_RECORD:?}
 payload=$(cat 2>/dev/null || true)
+if [ "${1:-}" = --session-end ]; then
+  printf '%s' "$payload" | "$SCRIPT_DIR/fm-sessionstart-run-real.sh" "$@" || true
+  exit 0
+fi
 field() {
   printf '%s' "$payload" | awk -v key="$1" '
     BEGIN { RS = "\"" }
@@ -466,7 +470,7 @@ wait_for_open() {  # <line-number> [attempts]
 assert_in_place_replacement() {  # <version> <command> <line> <session-pane>
   local version=$1 command=$2 line=$3 pane=$4
   local event source payload_session env_session lock_before sidecar_before
-  local lock_after sidecar_after outer previous_pid previous_session
+  local lock_after sidecar_after outer previous_pid previous_session expected_source
   wait_for_open "$line" \
     || { capture "$pane" >&2; fail "claude $version: '$command' fired no session-open hook at all"; }
   event=$(replacement_field "$line" 1)
@@ -483,10 +487,13 @@ assert_in_place_replacement() {  # <version> <command> <line> <session-pane>
 
   [ "$event" = SessionStart ] \
     || fail "claude $version: '$command' delivered event '$event', so the wrapper's native-payload gate would refuse it"
-  case "$source" in
-    clear|resume) : ;;
-    *) fail "claude $version: '$command' reported source '$source', which bin/fm-sessionstart-run.sh does NOT accept as an in-place replacement; refresh docs/verification/supervision.md before trusting this coverage" ;;
+  case "$command" in
+    /clear|/new) expected_source=clear ;;
+    /resume) expected_source=resume ;;
+    *) fail "claude $version: the live guard has no expected source for '$command'" ;;
   esac
+  [ "$source" = "$expected_source" ] \
+    || fail "claude $version: '$command' reported source '$source', not '$expected_source'; refresh docs/verification/supervision.md before trusting this coverage"
   [ "$payload_session" = "$env_session" ] \
     || fail "claude $version: '$command' payload id '$payload_session' differs from the environment id '$env_session', so the wrapper cannot tie the event to this session"
   [ "$env_session" != "$previous_session" ] \
@@ -544,13 +551,10 @@ probe_claude_session_replacement() {  # <version>
   # running, so it must never be able to rewrite the primary's lock pair.
   lock_pair_before="$(cat "$lab/state/.lock" 2>/dev/null)|$(cat "$lab/state/.lock.session" 2>/dev/null)"
   send_line "$pane" /fork
-  sleep 20
-  if wait_for_open 5 1; then
-    [ "$(replacement_field 5 2)" = fork ] \
-      || fail "claude $version: /fork reported source '$(replacement_field 5 2)', which the wrapper would not exclude from replacement"
-  else
-    note "claude $version: /fork fired no session-open hook in this lab; only its lock-pair inertness was proven"
-  fi
+  wait_for_open 5 20 \
+    || { capture "$pane" >&2; fail "claude $version: /fork fired no session-open hook, so its exclusion was NOT proven"; }
+  [ "$(replacement_field 5 2)" = fork ] \
+    || fail "claude $version: /fork reported source '$(replacement_field 5 2)', which the wrapper would not exclude from replacement"
   [ "$lock_pair_before" = "$(cat "$lab/state/.lock" 2>/dev/null)|$(cat "$lab/state/.lock.session" 2>/dev/null)" ] \
     || fail "claude $version: /fork rewrote the primary session's lock pair"
   pass "claude $version: /fork cannot rewrite the live primary session's lock pair"

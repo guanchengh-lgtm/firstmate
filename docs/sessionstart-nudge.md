@@ -37,11 +37,14 @@ The durable harness pid recorded in `state/.lock` therefore stays live and stays
 `bin/fm-sessionstart-run.sh` is the only grantor of the narrow replacement-acquisition intent that repairs that sidecar, and it grants it only when every one of these facts holds:
 
 - the source came from a NATIVE JSON hook payload on stdin, never from an explicit `--source` argument;
+- a native `SessionEnd` payload first recorded the current lock owner, current sidecar, and matching `clear` or `resume` reason;
 - `hook_event_name` is exactly `SessionStart`;
 - `source` is exactly `clear` or `resume`;
 - the payload's `session_id` is valid and identical to this process's resolved Claude session identity.
 
-`compact`, `fork`, `startup`, an unrecognized source, and a malformed payload all fall through with no intent, and the acquisition runs before the completion check above so a repaired `clear` selects the intended re-emit.
+The SessionStart hook consumes that transition record once, requires its live lock pid in the current verified ancestry, and accepts it for 60 seconds.
+`compact`, `fork`, `startup`, an unrecognized source, a malformed payload, and an explicit or nested resume process all fall through with no intent.
+The acquisition runs before the completion check above so a repaired `clear` selects the intended re-emit.
 `bin/fm-lock.sh`'s header owns what the intent may then do; in short it still refuses every shape except a live recorded owner inside this session's own verified ancestry, so a background Claude job with its own session id can never take the home.
 That background refusal is the guarantee PR #74 added, and neither `bin/fm-session-lock-lib.sh` nor `bin/fm-claude-stop-autoarm.sh` participates in this exception: a Stop probe and a forked background session keep standing down exactly as before.
 `/branch` is deliberately uncovered, because a source that cannot be distinguished from a background `/fork` is not evidence of an in-place replacement.
@@ -85,7 +88,7 @@ A lock another session holds and a truncated digest therefore surface as digest 
 
 | Harness | Tier | Tracked transport | Current compatibility |
 | --- | --- | --- | --- |
-| Claude | Run | `.claude/settings.json` registers one unmatched `SessionStart` hook, invoked through `CLAUDE_PROJECT_DIR` with a 180s timeout; the wrapper reads `source` from the hook payload. | Native stdout context injection is supported. |
+| Claude | Run | `.claude/settings.json` registers one unmatched `SessionStart` hook and one `clear|resume` `SessionEnd` transition hook, invoked through `CLAUDE_PROJECT_DIR`; the wrapper reads native payloads from stdin. | Native stdout context injection is supported. |
 | Codex exec | Run | `.codex/hooks.json` anchors to the hook process working directory, verifies a Firstmate-shaped hook-bearing root, and pipes the hook payload into the wrapper with a 180s timeout. | Native stdout context injection is supported under `codex exec`. |
 | Codex interactive TUI | Uncovered | None. | Codex 0.146.0 does not fire the tracked project `SessionStart` hook in its interactive TUI; Firstmate ships no global hook, has no tracked compaction or re-emit channel, and does not claim instruction-refresh delivery for this surface. |
 | Pi / pi-signed | Run | `.pi/extensions/fm-primary-turnend-guard.ts` maps `session_start` reasons `startup`, `new`, `resume`, and `fork` onto wrapper sources, refines a Pi-reported `startup` to `resume` only when a continuation, resume-selection, or explicit-session flag accompanies a session header older than the current process, maps a fork flag to `fork`, handles `session_compact` as the compaction equivalent, and injects the output with `pi.sendMessage`; setup-created entries such as `--name` are not restoration evidence. | The custom message reaches model context without racing an initial positional prompt; Pi's `reload` reason is deliberately unmapped, as it always was. |
@@ -112,7 +115,7 @@ That alternative expands trust and writes outside this repository, so Firstmate 
 `tests/fm-sessionstart-nudge.test.sh` proves the nudge wrapper's silence for both gate signals, an unmarked linked worktree, a missing state directory, and an already-owned lock, plus its exact U+2063 `FIRSTMATE_OP:`-prefixed, `session-start`-typed one-line output and a marked secondmate home including a treehouse-leased linked worktree.
 It separately proves the run wrapper's silence for the gate environment and an unmarked linked worktree.
 It proves the run wrapper's source routing end to end against a real `fm-session-start.sh`, including completion-gated `--reemit` selection, resume delegation, Pi CLI continuation classification, an unrecognized source falling through to the full digest, and bounded loud delivery of an oversized Pi digest.
-It proves in-place session replacement in a real Claude-named process: a native `SessionStart` `clear` payload reclaims the session's own lock and re-emits, a native `resume` payload repairs the sidecar before the silent nudge, and an explicit `--source`, a foreign event, a missing, invalid, or mismatched payload id, `fork`, and `compact` all leave the recorded pair untouched.
+It proves in-place session replacement in a real Claude-named process: matching native `SessionEnd` and `SessionStart` transitions reclaim `clear` and `resume`, while all explicit `--source` forms, a nested resume, a foreign event, a missing, invalid, or mismatched payload id, a malformed document, `fork`, and `compact` leave the recorded pair untouched.
 `tests/fm-session-lock-ancestry.test.sh` owns the matching lock-policy cases, including the unchanged PR #74 background refusal, the same-tree Stop probe's inertness, and the replacement intent's own refusals for a foreign live owner, a dead owner, and an old lock with no sidecar.
 `tests/fm-session-start.test.sh` proves the runtime bound through the forced pure-Bash fallback: a TERM-resistant digest that exceeds its budget is force-killed with its grandchild, still emits its completed stages, names the incomplete stage and every stage it never reached, leaves no completion proof, and exits 0.
 `tests/fm-pi-primary-live-e2e.test.sh` and `tests/fm-opencode-primary-live-e2e.test.sh` exercise native startup paths with first-message and later-message Ahoy regressions.
@@ -120,7 +123,7 @@ It proves in-place session replacement in a real Claude-named process: a native 
 `FM_CURSOR_PRIMARY_LIVE_E2E=1 tests/fm-cursor-primary-live-e2e.test.sh` proves the injected digest actually reaches model context in a real cursor-agent session.
 `tests/fm-sessionstart-hook-live-e2e.test.sh` is the opt-in live guard for the Claude, Codex exec, and Pi run-tier adapters; it confirms each installed adapter in that suite invokes the run wrapper and delivers its output into context.
 It verifies context-preserving reopen sources for those adapters and context-reset delivery wherever their tracked TUI surface is reachable.
-For Claude it also drives `/clear`, `/new`, `/resume`, and `/fork` against the real wrapper and lock in a throwaway lab, and pins the in-place shape the replacement intent depends on: the same durable pid, a new session id, a payload id equal to the environment id, a rewritten sidecar, and an inert background `/fork` and Stop probe.
+For Claude it also drives `/clear`, `/new`, `/resume`, and `/fork` against the real wrapper and lock in a throwaway lab, and pins the complete native transition, the exact per-command source, the same durable pid, a new session id, a payload id equal to the environment id, a rewritten sidecar, and an inert background `/fork` and Stop probe.
 Cursor uses the separate primary live guard named above because its source-free `sessionStart` and stop-hook park are validated together.
 `tests/fm-sessionstart-instruction-refresh-live-e2e.test.sh` is the separate opt-in real-Pi guard for a post-start AGENTS.md update followed by compaction.
 `tests/fm-turnend-guard.test.sh`, `tests/fm-pi-watch-extension.test.sh`, and `tests/fm-daemon.test.sh` cover marked guard, monitoring, and away-mode delivery.
