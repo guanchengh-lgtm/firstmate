@@ -86,9 +86,9 @@ run_lint() { # <repo> [lint args...]
   (
     cd "$repo" || exit 125
     PATH="$FAKEBIN:$PATH" SHELLCHECK_LOG="$SHELLCHECK_LOG" FM_LINT_JOBS=1 \
-      GITHUB_ACTIONS="${GITHUB_ACTIONS:-}" CI="${CI:-}" \
-      GITHUB_EVENT_NAME="${GITHUB_EVENT_NAME:-}" \
-      FM_LINT_BASE_SHA="${FM_LINT_BASE_SHA:-}" REAL_GIT="$REAL_GIT" \
+      GITHUB_ACTIONS="${TEST_GITHUB_ACTIONS:-}" CI="${TEST_CI:-}" \
+      GITHUB_EVENT_NAME="${TEST_GITHUB_EVENT_NAME:-}" \
+      FM_LINT_BASE_SHA="${TEST_FM_LINT_BASE_SHA:-}" REAL_GIT="$REAL_GIT" \
       GIT_FAIL_PATCH="${GIT_FAIL_PATCH:-0}" \
       GIT_FAIL_MESSAGE="${GIT_FAIL_MESSAGE:-0}" \
       GIT_FAIL_BLOB="${GIT_FAIL_BLOB:-0}" "$repo/bin/fm-lint.sh" "$@"
@@ -191,7 +191,7 @@ test_pr_local_and_main_bases() {
     repo=$(repo_new "base-$mode" 200)
     base=$(git -C "$repo" rev-parse HEAD)
     case "$mode" in
-      pr) git -C "$repo" checkout -qb feature; write_marked_bytes "$repo/AGENTS.md" 199; FM_LINT_BASE_SHA=$base GITHUB_EVENT_NAME=pull_request CI=true GITHUB_ACTIONS=true expect_pass 'PR base SHA' "$repo" ;;
+      pr) git -C "$repo" checkout -qb feature; write_marked_bytes "$repo/AGENTS.md" 199; TEST_FM_LINT_BASE_SHA=$base TEST_GITHUB_EVENT_NAME=pull_request TEST_CI=true TEST_GITHUB_ACTIONS=true expect_pass 'PR base SHA' "$repo" ;;
       local) git -C "$repo" checkout -qb feature; write_marked_bytes "$repo/AGENTS.md" 199; expect_pass 'local target base' "$repo" ;;
       main) write_marked_bytes "$repo/AGENTS.md" 199; commit_all "$repo" main-change; expect_pass 'main parent base' "$repo" ;;
     esac
@@ -199,13 +199,13 @@ test_pr_local_and_main_bases() {
   repo=$(repo_new pr-missing-base 200)
   git -C "$repo" checkout -qb feature
   write_marked_bytes "$repo/AGENTS.md" 199
-  GITHUB_EVENT_NAME=pull_request CI=true GITHUB_ACTIONS=true \
+  TEST_GITHUB_EVENT_NAME=pull_request TEST_CI=true TEST_GITHUB_ACTIONS=true \
     expect_fail 'PR without base SHA' 'FM_LINT_BASE_SHA is required' "$repo"
   repo=$(repo_new local-explicit-base 200)
   base=$(git -C "$repo" rev-parse HEAD)
   git -C "$repo" checkout -qb feature
   write_marked_bytes "$repo/AGENTS.md" 199
-  FM_LINT_BASE_SHA=$base \
+  TEST_FM_LINT_BASE_SHA=$base \
     expect_fail 'local explicit base SHA' 'FM_LINT_BASE_SHA is CI-only' "$repo"
   pass 'PR, local feature, and main-push modes select the expected base blob'
 }
@@ -217,7 +217,7 @@ test_generic_ci_feature_uses_target_base() {
   add_marked_line "$repo" 'docs/example.md owns growth. <!-- why: doc:docs/example.md#document -->'
   commit_all "$repo" growth
   git -C "$repo" commit --allow-empty -qm follow-up
-  CI=true expect_fail 'generic CI feature baseline' 'AGENTS-Budget-Override' "$repo"
+  TEST_CI=true expect_fail 'generic CI feature baseline' 'AGENTS-Budget-Override' "$repo"
   pass 'generic CI feature builds compare against the accepted target base'
 }
 
@@ -238,10 +238,10 @@ test_deleted_wrong_type_and_utf8_bases() {
     git -C "$repo" checkout -qb feature
     write_marked_bytes "$repo/AGENTS.md" 199
     case "$kind" in
-      deleted) FM_LINT_BASE_SHA=$bad_base CI=true GITHUB_ACTIONS=true expect_fail 'deleted base AGENTS.md' 'no regular AGENTS.md blob' "$repo" ;;
-      symlink) FM_LINT_BASE_SHA=$bad_base CI=true GITHUB_ACTIONS=true expect_fail 'symlink-mode base AGENTS.md' 'no regular AGENTS.md blob' "$repo" ;;
-      utf8) FM_LINT_BASE_SHA=$bad_base CI=true GITHUB_ACTIONS=true expect_fail 'invalid UTF-8 base AGENTS.md' 'unreadable or invalid UTF-8' "$repo" ;;
-      nul) FM_LINT_BASE_SHA=$bad_base CI=true GITHUB_ACTIONS=true expect_fail 'NUL base AGENTS.md' 'contains NUL bytes' "$repo" ;;
+      deleted) TEST_FM_LINT_BASE_SHA=$bad_base TEST_CI=true TEST_GITHUB_ACTIONS=true expect_fail 'deleted base AGENTS.md' 'no regular AGENTS.md blob' "$repo" ;;
+      symlink) TEST_FM_LINT_BASE_SHA=$bad_base TEST_CI=true TEST_GITHUB_ACTIONS=true expect_fail 'symlink-mode base AGENTS.md' 'no regular AGENTS.md blob' "$repo" ;;
+      utf8) TEST_FM_LINT_BASE_SHA=$bad_base TEST_CI=true TEST_GITHUB_ACTIONS=true expect_fail 'invalid UTF-8 base AGENTS.md' 'unreadable or invalid UTF-8' "$repo" ;;
+      nul) TEST_FM_LINT_BASE_SHA=$bad_base TEST_CI=true TEST_GITHUB_ACTIONS=true expect_fail 'NUL base AGENTS.md' 'contains NUL bytes' "$repo" ;;
     esac
   done
   pass 'deleted, wrong-type, and invalid UTF-8 base AGENTS.md blobs fail precisely'
@@ -620,7 +620,7 @@ test_shallow_ci_fails_closed() {
   add_marked_line "$repo" 'docs/example.md owns CI content. <!-- why: doc:docs/example.md#document -->'
   commit_all "$repo" ci-content
   git clone -q --depth 1 "file://$repo" "$TMP_ROOT/shallow"
-  FM_LINT_BASE_SHA=$base CI=true GITHUB_ACTIONS=true \
+  TEST_FM_LINT_BASE_SHA=$base TEST_CI=true TEST_GITHUB_ACTIONS=true \
     expect_fail 'shallow CI base' 'fetch' "$TMP_ROOT/shallow"
 
   repo=$(repo_new shallow-ancestry-source 200)
@@ -631,7 +631,7 @@ test_shallow_ci_fails_closed() {
   after=$(wc -c < "$repo/AGENTS.md" | tr -d ' ')
   make_override_commit "$repo" 200 "$after" 'Add docs/example.md ownership rule to AGENTS.md.'
   git clone -q --depth 2 "file://$repo" "$TMP_ROOT/shallow-ancestry"
-  FM_LINT_BASE_SHA=$base CI=true GITHUB_ACTIONS=true \
+  TEST_FM_LINT_BASE_SHA=$base TEST_CI=true TEST_GITHUB_ACTIONS=true \
     expect_fail 'present base with shallow ancestry' 'full target history' "$TMP_ROOT/shallow-ancestry"
   pass 'CI rejects absent bases and present bases with shallow ancestry'
 }

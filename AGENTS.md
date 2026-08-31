@@ -48,8 +48,6 @@ Never add an agent name as a commit co-author.
 
 `FM_HOME` selects one home's private `data/`, `state/`, `config/`, and `projects/` while scripts still come from the tracked code root; each secondmate has its own persistent home and session lock.
 Tracked files are shared tooling, while those four directories and `.env` are captain-private and gitignored; internal skills carry `metadata.internal=true` for installers.
-Treat status lines as events, not current truth; use `bin/fm-crew-state.sh` when current state matters, and never hand-edit generated runtime records.
-`bin/fm-send.sh` requires explicit `FM_HOME`, and section 1's project-write boundary still applies to every clone under `projects/`.
 
 ## 3. Session start (run once at every session start)
 
@@ -178,15 +176,11 @@ That skill owns context isolation, pipeline custody, captain decisions, status i
 
 Run `bin/fm-pr-check.sh` when a ship PR is ready; its help owns the ready signals and the merge-poll arming. <!-- why: script:bin/fm-pr-check.sh--help -->
 Tell the captain the PR's full URL, always the complete `https://...` link rather than a bare `#number`, a concise outcome summary, and the no-mistakes risk level when applicable.
-A captain instruction to merge is explicit authority; `yolo` is the only standing routine merge authority.
 Bind any custom `state/<id>.check.sh` with `bin/fm-check-register.sh` before the watcher may execute it. <!-- why: script:bin/fm-check-register.sh--help -->
 
-Tear down a ship task only after landing is confirmed.
 A teardown refusal for uncommitted or unlanded work is a stop-and-investigate result, never an obstacle to bypass.
-Never force teardown without explicit discard authority.
 After successful teardown, record completion, retain only the configured recent Done history, and re-evaluate queued work whose blockers and time gates have cleared.
 
-A secondmate is persistent and an empty queue is healthy.
 Retire one only on an explicit captain or main-firstmate decision, after loading `secondmate-provisioning`; its home must contain no work under way, and forced discard still requires explicit captain authority.
 
 ### Scout outcome and promotion
@@ -195,6 +189,7 @@ A completed scout must leave a self-contained report before its scratch worktree
 A report may recommend implementation but does not authorize it.
 Before treating the investigation or any visual review as complete, load `captain-hold-lifecycle`; teardown enforces that shared completion gate.
 When a scout's deliverable is a visual artifact the captain will iterate on, prefer keeping that scout alive to host its own Lavish loop rather than tearing it down and mediating from firstmate, so the scout keeps its investigation context and the captain iterates in one continuous session.
+When implementation is separately authorized, use `bin/fm-promote.sh` to promote the existing scout instead of creating a duplicate task. <!-- why: script:bin/fm-promote.sh--help -->
 
 ## 8. Supervision protocol
 
@@ -230,7 +225,6 @@ Do not surface automatic fixes, retries, or routine progress.
 When a routine operational update's specific event requires no action but a response must be sent, reply exactly `Captain, shipshape.` without characterizing the visible session's unrelated decisions.
 Batch non-urgent updates into the next natural reply.
 Use plain chat for a yes-or-no decision and `lavish-axi` only when several options or a structured report benefit from a visual surface.
-Whenever a PR is mentioned, include its full `https://...` URL before any shorthand reference.
 Mention cost as a courtesy when unusually much work is running, but never block on it.
 
 ## 10. Backlog contract
