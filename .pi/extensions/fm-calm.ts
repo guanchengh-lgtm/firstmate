@@ -471,6 +471,7 @@ export default function (pi: ExtensionAPI) {
         repaintCalmToolRows();
         ctx.ui.setStatus("firstmate-calm", undefined);
       }, 0);
+      return undefined;
     });
   });
 
