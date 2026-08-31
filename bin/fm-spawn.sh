@@ -1934,7 +1934,7 @@ if [ "$KIND" = ship ]; then
     echo "error: delivery mismatch for $ID: the task mode marker says mode=$BRIEF_MODE but this spawn passed --mode $MODE; correct the flag or re-scaffold the brief so the worker's instructions and the task record agree" >&2
     exit 1
   fi
-  if [ "$RELAUNCH" -eq 0 ]; then
+  if [ "$RELAUNCH" -eq 0 ] && [ "$ROLE" != verifier ]; then
     assert_task_surface_marker "$SURFACE" "$SURFACE_SET" "the spawn request" || exit 1
   fi
   BRIEF_ROLE=
@@ -2393,6 +2393,7 @@ verifier_handoff_retire_herdr_projection() {  # <journal>
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ] && [ "$ROLE" = verifier ]; then
   VERIFIER_HANDOFF_META="$STATE/$ID.meta"
   verifier_handoff_preflight "$VERIFIER_HANDOFF_META" || exit 1
+  assert_task_surface_marker "$SURFACE" "$SURFACE_SET" "builder metadata" || exit 1
 fi
 
 W="fm-$ID"
