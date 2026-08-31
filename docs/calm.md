@@ -2,6 +2,11 @@
 
 Calm is a Pi-only conversation presentation toggle.
 It is off by default, and the last `/calm` choice persists for the effective Firstmate home across Pi session starts and resumes.
+Ordinary Firstmate Pi workers keep every Calm copy inert through a process-scoped launch marker.
+They keep Pi extension discovery enabled and keep the generated task extension explicit.
+The tracked project copy owns Calm for a primary Pi session inside a Firstmate clone, including a second mate.
+A different user-level copy stays inert when that tracked project copy exists.
+The user-level copy remains available to a primary Pi session when the current project has no tracked Calm copy.
 
 While Calm is active and an agent run is under way, Calm hides Pi's built-in `Working...` row and shows a small two-row animated boat in its place, and no separate Calm status row is added.
 The water fills the usable width in standard ANSI blue and the complete boat is standard ANSI yellow.
