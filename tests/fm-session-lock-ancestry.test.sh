@@ -318,10 +318,21 @@ make_lock_identity_home() {  # <dir>
   cat > "$dir/contender.sh" <<'SH'
 #!/usr/bin/env bash
 export CLAUDE_CODE_SESSION_ID=${FM_CONTENDER_SESSION_ID:?}
-export CLAUDE_PID=$$
+# The vendor sets CLAUDE_PID to each hook's own direct Claude client. A hook
+# fired by the surviving in-place-replaced client sees the HOLDER pid; a
+# nested background job always sees its own.
+if [ "${FM_CONTENDER_CLAUDE_PID:-self}" = holder ]; then
+  export CLAUDE_PID=${FM_HOLDER_PID:?}
+else
+  export CLAUDE_PID=$$
+fi
 export CLAUDE_CODE_CHILD_SESSION=1
 rc=0
-"$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/contender.out" 2>&1 || rc=$?
+if [ -n "${FM_CONTENDER_FLAG:-}" ]; then
+  "$FM_HOME/bin/fm-lock.sh" "$FM_CONTENDER_FLAG" > "$FM_HOME/state/contender.out" 2>&1 || rc=$?
+else
+  "$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/contender.out" 2>&1 || rc=$?
+fi
 printf '%s\n' "$rc" > "$FM_HOME/state/contender.rc"
 printf '%s\n' "$$" > "$FM_HOME/state/contender-pid"
 SH
@@ -337,17 +348,39 @@ if [ "${FM_OLD_LOCK:-0}" = 1 ]; then
 else
   "$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/holder.out" 2>&1 || exit $?
 fi
-FM_CONTENDER_SESSION_ID=${FM_CONTENDER_SESSION_ID:?} \
+FM_CONTENDER_SESSION_ID=${FM_CONTENDER_SESSION_ID:?} FM_HOLDER_PID=$$ \
   "$FM_CONTENDER_BIN" "$FM_HOME/contender.sh"
 SH
   chmod +x "$dir/contender.sh" "$dir/holder.sh"
 }
 
-run_lock_pair() {  # <dir> <holder-session> <contender-session> [old-lock]
-  local dir=$1 holder_session=$2 contender_session=$3 old_lock=${4:-0}
+run_lock_pair() {  # <dir> <holder-session> <contender-session> [old-lock] [contender-flag] [contender-claude-pid]
+  local dir=$1 holder_session=$2 contender_session=$3 old_lock=${4:-0} contender_flag=${5:-}
+  local contender_claude_pid=${6:-self}
   FM_HOME="$dir" FM_HOLDER_SESSION_ID="$holder_session" \
     FM_CONTENDER_SESSION_ID="$contender_session" FM_CONTENDER_BIN="$NAMED_CLAUDE" \
+    FM_CONTENDER_FLAG="$contender_flag" FM_CONTENDER_CLAUDE_PID="$contender_claude_pid" \
     FM_OLD_LOCK="$old_lock" "$NAMED_CLAUDE" "$dir/holder.sh"
+}
+
+# Run one lock acquisition in its own Claude-named process whose ancestry stops
+# at this suite, with <setup> executed inside that process first. The state the
+# setup writes is therefore recorded by a live pid the acquisition can see in
+# its own ancestry, which is exactly the same-process shape /clear leaves.
+OWN_ANCESTRY_RC=0
+run_own_ancestry_lock() {  # <dir> <session-id> <setup> [lock-args...]
+  local dir=$1 session_id=$2 setup=$3
+  shift 3
+  OWN_ANCESTRY_RC=0
+  FM_HOME="$dir" FM_FIXTURE_SESSION_ID="$session_id" FM_FIXTURE_SETUP="$setup" \
+    "$NAMED_CLAUDE" -c '
+      export CLAUDE_CODE_SESSION_ID=${FM_FIXTURE_SESSION_ID:?}
+      export CLAUDE_PID=$$
+      export CLAUDE_CODE_CHILD_SESSION=1
+      printf "%s\n" "$$" > "$FM_HOME/state/current-pid"
+      eval "$FM_FIXTURE_SETUP"
+      "$FM_HOME/bin/fm-lock.sh" "$@" > "$FM_HOME/state/current.out" 2>&1
+    ' _ "$@" || OWN_ANCESTRY_RC=$?
 }
 
 hook_rc() {
@@ -487,6 +520,178 @@ test_background_claude_session_is_refused_under_live_holder() {
   grep -F 'Claude session session-holder' "$dir/state/contender.out" >/dev/null \
     || fail "the live-holder refusal did not name the holder session id"
   pass "session-lock executable: background Claude session is refused under its live holder"
+}
+
+# --- in-place session replacement -------------------------------------------
+#
+# Claude's /clear replaces the session inside the SAME OS process: the recorded
+# lock pid stays live and stays in this session's own ancestry, while the
+# recorded sidecar names the session id that no longer exists. Only
+# bin/fm-sessionstart-run.sh grants the replacement intent, and only for a
+# validated native SessionStart payload; these cases pin what the intent may and
+# may not do once granted.
+
+test_session_replacement_reclaims_its_own_stale_sidecar() {
+  local dir holder_pid
+  dir="$TMP_ROOT/replacement-reclaim"
+  make_lock_identity_home "$dir"
+  run_lock_pair "$dir" session-before session-after 0 --session-replacement holder
+  expect_code 0 "$(cat "$dir/state/contender.rc")" \
+    "a replacement acquisition must reclaim the stale sidecar of its own client process"
+  holder_pid=$(cat "$dir/state/holder-pid")
+  [ "$(cat "$dir/state/.lock")" = "$holder_pid" ] \
+    || fail "the replacement acquisition moved the durable ancestry pid"
+  [ "$(cat "$dir/state/.lock.session")" = session-after ] \
+    || fail "the replacement acquisition did not publish the new session id"
+  pass "session-lock executable: a granted replacement reclaims its own stale sidecar"
+}
+
+test_session_replacement_refuses_a_matching_sidecar() {
+  local dir holder_pid
+  dir="$TMP_ROOT/replacement-matching"
+  make_lock_identity_home "$dir"
+  run_lock_pair "$dir" session-unchanged session-unchanged 0 --session-replacement holder
+  expect_code 1 "$(cat "$dir/state/contender.rc")" \
+    "a replacement acquisition must refuse when the sidecar already matches"
+  holder_pid=$(cat "$dir/state/holder-pid")
+  [ "$(cat "$dir/state/.lock")" = "$holder_pid" ] \
+    || fail "a refused matching-sidecar replacement moved the durable ancestry pid"
+  [ "$(cat "$dir/state/.lock.session")" = session-unchanged ] \
+    || fail "a refused matching-sidecar replacement changed the session sidecar"
+  pass "session-lock executable: a replacement refuses a matching sidecar"
+}
+
+test_session_replacement_refuses_a_nested_background_contender() {
+  local dir holder_pid
+  dir="$TMP_ROOT/replacement-nested-contender"
+  make_lock_identity_home "$dir"
+  # The exact PR #74 shape armed with the intent itself: the nested contender
+  # holds the replacement flag, sees the live holder pid in its own contiguous
+  # ancestry, and presents matching ids, but its vendor-reset CLAUDE_PID names
+  # itself rather than the recorded owner, so nothing may change.
+  run_lock_pair "$dir" session-holder session-background 0 --session-replacement self
+  expect_code 1 "$(cat "$dir/state/contender.rc")" \
+    "a nested background contender must not win even with the replacement intent"
+  holder_pid=$(cat "$dir/state/holder-pid")
+  [ "$(cat "$dir/state/.lock")" = "$holder_pid" ] \
+    || fail "the nested replacement contender replaced the holder pid"
+  [ "$(cat "$dir/state/.lock.session")" = session-holder ] \
+    || fail "the nested replacement contender replaced the holder session id"
+  pass "session-lock executable: a nested background contender is refused even with the intent"
+}
+
+test_session_replacement_refuses_a_live_owner_outside_the_ancestry() {
+  local dir foreign_pid
+  dir="$TMP_ROOT/replacement-foreign-owner"
+  make_lock_identity_home "$dir"
+  "$NAMED_CLAUDE" -c 'sleep 30' &
+  foreign_pid=$!
+  printf '%s\n' "$foreign_pid" > "$dir/state/.lock"
+  printf 'session-foreign\n' > "$dir/state/.lock.session"
+  run_own_ancestry_lock "$dir" session-current : --session-replacement
+  kill "$foreign_pid" 2>/dev/null || true
+  wait "$foreign_pid" 2>/dev/null || true
+  expect_code 1 "$OWN_ANCESTRY_RC" \
+    "a replacement acquisition must refuse a live owner outside this session's ancestry"
+  [ "$(cat "$dir/state/.lock")" = "$foreign_pid" ] \
+    || fail "the refused replacement replaced another live session's lock pid"
+  [ "$(cat "$dir/state/.lock.session")" = session-foreign ] \
+    || fail "the refused replacement replaced another live session's sidecar"
+  pass "session-lock executable: a replacement refuses a live owner outside its ancestry"
+}
+
+test_session_replacement_refuses_a_dead_owner() {
+  local dir
+  dir="$TMP_ROOT/replacement-dead-owner"
+  make_lock_identity_home "$dir"
+  printf '9999999\n' > "$dir/state/.lock"
+  printf 'session-dead\n' > "$dir/state/.lock.session"
+  run_own_ancestry_lock "$dir" session-current : --session-replacement
+  expect_code 1 "$OWN_ANCESTRY_RC" \
+    "a replacement acquisition must leave a dead owner to the ordinary stale takeover"
+  [ "$(cat "$dir/state/.lock")" = 9999999 ] \
+    || fail "the replacement intent performed a stale takeover of its own"
+  [ "$(cat "$dir/state/.lock.session")" = session-dead ] \
+    || fail "the replacement intent rewrote a dead owner's sidecar"
+  pass "session-lock executable: a replacement refuses a dead owner"
+}
+
+test_session_replacement_refuses_a_missing_sidecar() {
+  local dir current_pid
+  dir="$TMP_ROOT/replacement-missing-sidecar"
+  make_lock_identity_home "$dir"
+  run_own_ancestry_lock "$dir" session-current \
+    'printf "%s\n" "$$" > "$FM_HOME/state/.lock"; rm -f "$FM_HOME/state/.lock.session"' \
+    --session-replacement
+  expect_code 1 "$OWN_ANCESTRY_RC" \
+    "a replacement acquisition must refuse an old lock that carries no sidecar"
+  current_pid=$(cat "$dir/state/current-pid")
+  [ "$(cat "$dir/state/.lock")" = "$current_pid" ] \
+    || fail "the refused replacement changed the old-format lock pid"
+  [ ! -e "$dir/state/.lock.session" ] \
+    || fail "the refused replacement upgraded an old-format lock with a sidecar"
+  pass "session-lock executable: a replacement refuses an old lock with no sidecar"
+}
+
+test_session_replacement_waits_for_its_own_startup_sweep() {
+  local dir current_pid
+  dir="$TMP_ROOT/replacement-startup-sweep"
+  make_lock_identity_home "$dir"
+  # The claim is held by this same process's earlier bounded startup sweep, so
+  # the replacement must wait for it rather than refuse as a prior session.
+  run_own_ancestry_lock "$dir" session-after '
+    printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+    printf "session-before\n" > "$FM_HOME/state/.lock.session"
+    sleep 30 &
+    lease_pid=$!
+    # Off the job table, so reaping the killed lease cannot print a job-control
+    # notice into the suite output.
+    disown "$lease_pid" 2>/dev/null || true
+    mkdir "$FM_HOME/state/.lock.acquire"
+    printf "%s\n" "$lease_pid" > "$FM_HOME/state/.lock.acquire/pid"
+    printf "pid=%s\n" "$lease_pid" > "$FM_HOME/state/.startup-network.status"
+    (
+      sleep 2
+      rm -f "$FM_HOME/state/.lock.acquire/pid"
+      rmdir "$FM_HOME/state/.lock.acquire" 2>/dev/null || true
+      kill "$lease_pid" 2>/dev/null || true
+    ) &
+  ' --session-replacement
+  expect_code 0 "$OWN_ANCESTRY_RC" \
+    "a replacement must wait for its own session's startup sweep instead of refusing"
+  current_pid=$(cat "$dir/state/current-pid")
+  [ "$(cat "$dir/state/.lock")" = "$current_pid" ] \
+    || fail "the replacement after the startup sweep did not keep this session's pid"
+  [ "$(cat "$dir/state/.lock.session")" = session-after ] \
+    || fail "the replacement after the startup sweep did not publish the new session id"
+  if grep -F 'bounded startup sweep' "$dir/state/current.out" >/dev/null; then
+    fail "the replacement treated its own session's startup sweep as a prior session"
+  fi
+  pass "session-lock executable: a replacement waits for its own startup sweep"
+}
+
+test_lock_help_is_read_only() {
+  local dir out rc=0
+  dir="$TMP_ROOT/lock-help"
+  # No home is prepared on purpose: help must answer before any state
+  # creation or acquisition, so nothing may appear on disk.
+  out=$(FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" "$ROOT/bin/fm-lock.sh" --help 2>&1) || rc=$?
+  expect_code 0 "$rc" "fm-lock.sh --help must exit 0"
+  case "$out" in
+    usage:*) : ;;
+    *) fail "fm-lock.sh --help did not print usage, got: $out" ;;
+  esac
+  case "$out" in
+    *'lock acquired'*) fail "fm-lock.sh --help performed an acquisition" ;;
+  esac
+  [ ! -e "$dir" ] \
+    || fail "fm-lock.sh --help created state on disk"
+  rc=0
+  out=$(FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" "$ROOT/bin/fm-lock.sh" -h 2>&1) || rc=$?
+  expect_code 0 "$rc" "fm-lock.sh -h must exit 0"
+  [ ! -e "$dir" ] \
+    || fail "fm-lock.sh -h created state on disk"
+  pass "session-lock executable: --help answers read-only before any state creation"
 }
 
 test_foreign_session_takes_over_dead_holder() {
@@ -839,7 +1044,7 @@ SH
 }
 
 test_foreign_stop_hook_stands_down_with_session_reason() {
-  local dir rc=0
+  local dir rc=0 holder_hook_pid
   dir="$TMP_ROOT/e2e-foreign-hook"
   make_primary_home "$dir"
   cat > "$dir/foreign-hook.sh" <<'SH'
@@ -855,10 +1060,13 @@ SH
 export CLAUDE_CODE_SESSION_ID=session-hook-holder
 export CLAUDE_PID=$$
 export CLAUDE_CODE_CHILD_SESSION=1
+printf '%s\n' "$$" > "$FM_HOME/state/holder-hook-pid"
 "$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/holder-lock.out" 2>&1 || exit $?
 "$FM_FOREIGN_BIN" "$FM_HOME/foreign-hook.sh"
 mv "$FM_HOME/state/foreign-hook.out" "$FM_HOME/state/foreign-stable.out"
 mv "$FM_HOME/state/foreign-hook.rc" "$FM_HOME/state/foreign-stable.rc"
+cp "$FM_HOME/state/.lock" "$FM_HOME/state/lock-after-foreign"
+cp "$FM_HOME/state/.lock.session" "$FM_HOME/state/lock-session-after-foreign"
 mkdir "$FM_HOME/state/.lock.acquire"
 rm -f "$FM_HOME/state/.lock.session"
 "$FM_FOREIGN_BIN" "$FM_HOME/foreign-hook.sh"
@@ -871,6 +1079,15 @@ SH
   grep -F 'standing down: lock belongs to Claude session session-hook-holder, not session-foreign-hook' \
     "$dir/state/foreign-stable.out" >/dev/null \
     || fail "the foreign Stop hook did not give one clear session-identity reason"
+  # The exact PR #74 shape: the probe's own Claude ancestry contains the live
+  # lock pid, and only the sidecar separates it from the owner. A Stop probe
+  # never receives the SessionStart replacement intent, so it must leave both
+  # lock files exactly as the holder published them.
+  holder_hook_pid=$(cat "$dir/state/holder-hook-pid")
+  [ "$(cat "$dir/state/lock-after-foreign")" = "$holder_hook_pid" ] \
+    || fail "the same-tree foreign Stop probe rewrote the holder's lock pid"
+  [ "$(cat "$dir/state/lock-session-after-foreign")" = session-hook-holder ] \
+    || fail "the same-tree foreign Stop probe rewrote the holder's session sidecar"
   expect_code 0 "$(cat "$dir/state/foreign-hook.rc")" "a hook during identity publication must exit cleanly"
   grep -F 'standing down: session lock identity update in progress' \
     "$dir/state/foreign-hook.out" >/dev/null \
@@ -913,6 +1130,14 @@ test_e2e_daemon_parented_version_named_session_keeps_its_lock
 test_same_claude_session_reacquires_with_durable_pid
 test_same_claude_session_reacquires_during_startup_lease
 test_background_claude_session_is_refused_under_live_holder
+test_session_replacement_reclaims_its_own_stale_sidecar
+test_session_replacement_refuses_a_matching_sidecar
+test_session_replacement_refuses_a_nested_background_contender
+test_session_replacement_refuses_a_live_owner_outside_the_ancestry
+test_session_replacement_refuses_a_dead_owner
+test_session_replacement_refuses_a_missing_sidecar
+test_session_replacement_waits_for_its_own_startup_sweep
+test_lock_help_is_read_only
 test_foreign_session_takes_over_dead_holder
 test_dead_claude_pid_does_not_change_ancestry_pid
 test_non_claude_ancestry_ignores_inherited_claude_environment

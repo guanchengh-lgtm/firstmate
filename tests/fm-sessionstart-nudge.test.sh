@@ -462,6 +462,222 @@ JS
   pass "Pi retains a bounded digest prefix and loudly marks oversized delivery"
 }
 
+# --- native in-place session replacement -------------------------------------
+#
+# Claude's /clear and its interactive /resume replace the session inside the
+# SAME process: state/.lock still names this process, while state/.lock.session
+# names the session id that just went away. Only a validated native SessionStart
+# payload whose hook still runs under the recorded owner as its own direct
+# Claude client (the vendor-set CLAUDE_PID) may repair that sidecar, so these
+# cases run a real Claude-named process and drive the real wrapper, lock, and
+# digest.
+
+CLAUDE_BIN="$(fm_fakebin "$TMP_ROOT/claude-harness")/claude"
+ln -s /bin/bash "$CLAUDE_BIN"
+NO_PYTHON_PATH="$(fm_fakebin "$TMP_ROOT/no-python")"
+for tool in awk bash basename cat dirname env git grep ps tr; do
+  ln -s "$(PATH="$RUN_PATH" command -v "$tool")" "$NO_PYTHON_PATH/$tool"
+done
+OWNER_SESSION=aaaaaaaa-1111-4111-8111-111111111111
+CURRENT_SESSION=bbbbbbbb-2222-4222-8222-222222222222
+
+run_claude_session() {  # <root> <script> [env-assignment...]
+  local root=$1 script=$2
+  shift 2
+  env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
+    FM_GATE_REFUSE_BYPASS=0 FM_ROOT_OVERRIDE="$root" FM_HOME="$root" FM_RUN="$RUN" \
+    PATH="$RUN_PATH" "$@" "$CLAUDE_BIN" -c "$script"
+}
+
+# Take the helm as one session, then reopen the SAME process as another, exactly
+# as a native replacement does: the vendor keeps CLAUDE_PID on the surviving
+# client process while only the session id changes. The recorded pair is
+# captured between the two opens so the reopen's effect on it is visible.
+# shellcheck disable=SC2016 # single quotes are deliberate: these expand inside the fixture child
+REPLACEMENT_SCRIPT='
+  export CLAUDE_CODE_SESSION_ID=$FM_OWNER_SESSION
+  export CLAUDE_PID=$$
+  "$FM_RUN" --source startup </dev/null > "$FM_HOME/startup.out" 2>&1
+  cp "$FM_HOME/state/.lock" "$FM_HOME/lock-before"
+  cp "$FM_HOME/state/.lock.session" "$FM_HOME/sidecar-before"
+  export CLAUDE_CODE_SESSION_ID=$FM_CURRENT_SESSION
+  printf "%s" "$FM_PAYLOAD" | "$FM_RUN" > "$FM_HOME/reopen.out" 2>&1
+'
+
+# The same stale state without the cost of a first digest: a live lock pid in
+# this very process, recorded against the earlier session id. CLAUDE_PID names
+# this process too, exactly as a real hook under the surviving client sees it,
+# so each negative case below is refused by its OWN defect rather than by an
+# unrelated process mismatch.
+# shellcheck disable=SC2016 # single quotes are deliberate: these expand inside the fixture child
+STALE_SCRIPT='
+  export CLAUDE_CODE_SESSION_ID=$FM_CURRENT_SESSION
+  export CLAUDE_PID=${FM_FIXTURE_CLAUDE_PID:-$$}
+  if [ "${FM_UNSET_CLAUDE_PID:-0}" = 1 ]; then unset CLAUDE_PID; fi
+  printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+  printf "%s\n" "$FM_OWNER_SESSION" > "$FM_HOME/state/.lock.session"
+  printf "%s\n" "$$" > "$FM_HOME/state/.session-start-complete"
+  printf "%s\n" "$$" > "$FM_HOME/probe-pid"
+  case "${FM_CALL:-payload}" in
+    source) printf "%s" "$FM_DELIVERY" | "$FM_RUN" --source clear > "$FM_HOME/reopen.out" 2>&1 ;;
+    source-empty) printf "%s" "$FM_DELIVERY" | "$FM_RUN" --source= > "$FM_HOME/reopen.out" 2>&1 ;;
+    source-bare) printf "%s" "$FM_DELIVERY" | "$FM_RUN" --source > "$FM_HOME/reopen.out" 2>&1 ;;
+    payload) printf "%s" "$FM_DELIVERY" | "$FM_RUN" > "$FM_HOME/reopen.out" 2>&1 ;;
+  esac
+'
+
+payload_for() {  # <event> <source> [session-id]
+  local event=$1 source=$2 session=${3:-}
+  if [ -n "$session" ]; then
+    printf '{"hook_event_name":"%s","source":"%s","session_id":"%s","cwd":"/nowhere"}' \
+      "$event" "$source" "$session"
+  else
+    printf '{"hook_event_name":"%s","source":"%s","cwd":"/nowhere"}' "$event" "$source"
+  fi
+}
+
+test_run_clear_payload_reclaims_its_own_session_lock() {
+  local root="$TMP_ROOT/run-clear-replacement" out
+  make_run_primary "$root"
+  run_claude_session "$root" "$REPLACEMENT_SCRIPT" \
+    FM_OWNER_SESSION="$OWNER_SESSION" FM_CURRENT_SESSION="$CURRENT_SESSION" \
+    FM_PAYLOAD="$(payload_for SessionStart clear "$CURRENT_SESSION")"
+
+  [ "$(cat "$root/sidecar-before")" = "$OWNER_SESSION" ] \
+    || fail "the startup open did not record the first session id"
+  [ "$(cat "$root/state/.lock")" = "$(cat "$root/lock-before")" ] \
+    || fail "the clear reopen moved the lock off its own live process"
+  [ "$(cat "$root/state/.lock.session")" = "$CURRENT_SESSION" ] \
+    || fail "the clear reopen did not repair the stale session sidecar"
+  out=$(cat "$root/reopen.out")
+  assert_contains "$out" "$REEMIT_BANNER$root" "the repaired clear reopen did not re-emit the digest"
+  assert_not_contains "$out" "READ-ONLY SESSION" \
+    "a native clear left its own session locked out of its home"
+  pass "run wrapper: a native clear payload reclaims its own session lock and re-emits"
+}
+
+test_run_resume_payload_repairs_the_sidecar_before_the_nudge() {
+  local root="$TMP_ROOT/run-resume-replacement" out
+  make_run_primary "$root"
+  run_claude_session "$root" "$REPLACEMENT_SCRIPT" \
+    FM_OWNER_SESSION="$OWNER_SESSION" FM_CURRENT_SESSION="$CURRENT_SESSION" \
+    FM_PAYLOAD="$(payload_for SessionStart resume "$CURRENT_SESSION")"
+
+  [ "$(cat "$root/state/.lock")" = "$(cat "$root/lock-before")" ] \
+    || fail "the resume reopen moved the lock off its own live process"
+  [ "$(cat "$root/state/.lock.session")" = "$CURRENT_SESSION" ] \
+    || fail "the resume reopen did not repair the stale session sidecar before delegating"
+  out=$(cat "$root/reopen.out")
+  [ -z "$out" ] \
+    || fail "an in-place resume should stay silent once its own lock is repaired, got: $out"
+  pass "run wrapper: a native resume payload repairs the sidecar and the nudge stays silent"
+}
+
+test_run_refuses_replacement_without_native_evidence() {
+  local case_name delivery root probe_pid call unset_claude_pid fixture_claude_pid fixture_path
+  # Everything a background job, another harness adapter, or a malformed hook
+  # could deliver. None of them proves an in-place replacement, so the recorded
+  # pair must survive each one untouched (PR #74).
+  for case_name in explicit-source explicit-source-empty explicit-source-bare \
+    foreign-event missing-id invalid-id mismatched-id malformed trailing-object \
+    duplicate-keys fork compact startup unknown no-python3 no-claude-pid foreign-claude-pid; do
+    call=payload
+    unset_claude_pid=0
+    fixture_claude_pid=
+    fixture_path=$RUN_PATH
+    delivery=$(payload_for SessionStart clear "$CURRENT_SESSION")
+    case "$case_name" in
+      explicit-source) call=source ;;
+      explicit-source-empty) call='source-empty' ;;
+      explicit-source-bare) call='source-bare' ;;
+      foreign-event) delivery=$(payload_for Stop clear "$CURRENT_SESSION") ;;
+      missing-id) delivery=$(payload_for SessionStart clear) ;;
+      invalid-id) delivery=$(payload_for SessionStart clear 'not a session id') ;;
+      mismatched-id) delivery=$(payload_for SessionStart clear cccccccc-3333-4333-8333-333333333333) ;;
+      malformed) delivery='{"hook_event_name":"SessionStart","source":"clear","session_id":"bbbbbbbb-2222-4222-8222-222222222222"' ;;
+      trailing-object)
+        # A second top-level value after a valid object is not one complete
+        # document and must not validate, whatever parser the host has.
+        delivery="$(payload_for SessionStart clear "$CURRENT_SESSION"){}"
+        ;;
+      duplicate-keys)
+        delivery='{"hook_event_name":"SessionStart","source":"fork","source":"clear","session_id":"bbbbbbbb-2222-4222-8222-222222222222"}'
+        ;;
+      fork) delivery=$(payload_for SessionStart fork "$CURRENT_SESSION") ;;
+      compact) delivery=$(payload_for SessionStart compact "$CURRENT_SESSION") ;;
+      startup) delivery=$(payload_for SessionStart startup "$CURRENT_SESSION") ;;
+      unknown) delivery=$(payload_for SessionStart future-source "$CURRENT_SESSION") ;;
+      no-python3)
+        delivery=$(payload_for SessionStart resume "$CURRENT_SESSION")
+        fixture_path=$NO_PYTHON_PATH
+        ;;
+      no-claude-pid) unset_claude_pid=1 ;;
+      foreign-claude-pid) fixture_claude_pid=1 ;;
+    esac
+    root="$TMP_ROOT/run-replacement-$case_name"
+    make_run_primary "$root"
+    run_claude_session "$root" "$STALE_SCRIPT" \
+      FM_OWNER_SESSION="$OWNER_SESSION" FM_CURRENT_SESSION="$CURRENT_SESSION" \
+      FM_DELIVERY="$delivery" FM_CALL="$call" \
+      FM_UNSET_CLAUDE_PID="$unset_claude_pid" \
+      FM_FIXTURE_CLAUDE_PID="$fixture_claude_pid" PATH="$fixture_path"
+    probe_pid=$(cat "$root/probe-pid")
+    [ "$(cat "$root/state/.lock.session")" = "$OWNER_SESSION" ] \
+      || fail "$case_name granted a session replacement it cannot prove"
+    [ "$(cat "$root/state/.lock")" = "$probe_pid" ] \
+      || fail "$case_name moved the recorded lock pid"
+  done
+  pass "run wrapper: only a validated native replacement in its own client process may replace the sidecar"
+}
+
+test_run_routes_payload_without_python3() {
+  local root="$TMP_ROOT/run-routing-no-python" out status=0
+  make_run_primary "$root"
+  out=$(printf '%s' "$(payload_for SessionStart resume "$CURRENT_SESSION")" |
+    env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
+      FM_GATE_REFUSE_BYPASS=0 FM_ROOT_OVERRIDE="$root" FM_HOME="$root" \
+      PATH="$NO_PYTHON_PATH" "$RUN") || status=$?
+  expect_code 0 "$status" "run wrapper payload routing without python3"
+  assert_contains "$out" "FIRSTMATE_OP" \
+    "a host without python3 did not route a resume payload through the nudge"
+  assert_not_contains "$out" "SESSION START" \
+    "a host without python3 misrouted a resume payload to the full digest"
+  pass "run wrapper: loose source routing still works without python3"
+}
+
+test_run_nested_session_cannot_reclaim_the_primary_lock() {
+  local source root owner_pid
+  # A nested background Claude job sees the SAME native source, matching ids,
+  # and the primary's live lock pid in its own contiguous ancestry, but the
+  # vendor resets CLAUDE_PID to the nested process itself, and that is what
+  # keeps the primary's lock pair out of its reach (PR #74).
+  for source in resume clear; do
+    root="$TMP_ROOT/run-nested-$source"
+    make_run_primary "$root"
+    # shellcheck disable=SC2016 # The fixture script expands inside run_claude_session.
+    run_claude_session "$root" '
+      export CLAUDE_CODE_SESSION_ID=$FM_OWNER_SESSION
+      export CLAUDE_PID=$$
+      "$FM_RUN" --source startup </dev/null > "$FM_HOME/startup.out" 2>&1
+      cp "$FM_HOME/state/.lock" "$FM_HOME/lock-before"
+      FM_CURRENT_SESSION=$FM_CURRENT_SESSION FM_PAYLOAD=$FM_PAYLOAD FM_RUN=$FM_RUN \
+        FM_HOME=$FM_HOME "$FM_CLAUDE_BIN" -c '\''
+          export CLAUDE_CODE_SESSION_ID=$FM_CURRENT_SESSION
+          export CLAUDE_PID=$$
+          printf "%s" "$FM_PAYLOAD" | "$FM_RUN" > "$FM_HOME/nested.out" 2>&1
+        '\''
+    ' FM_OWNER_SESSION="$OWNER_SESSION" FM_CURRENT_SESSION="$CURRENT_SESSION" \
+      FM_PAYLOAD="$(payload_for SessionStart "$source" "$CURRENT_SESSION")" \
+      FM_CLAUDE_BIN="$CLAUDE_BIN"
+    owner_pid=$(cat "$root/lock-before")
+    [ "$(cat "$root/state/.lock")" = "$owner_pid" ] \
+      || fail "a nested $source moved the primary lock pid"
+    [ "$(cat "$root/state/.lock.session")" = "$OWNER_SESSION" ] \
+      || fail "a nested $source replaced the primary session sidecar"
+  done
+  pass "run wrapper: a nested clear or resume cannot reclaim the primary session lock"
+}
+
 test_run_resume_delegates_to_the_nudge() {
   local root="$TMP_ROOT/run-resume" out status=0
   make_run_primary "$root"
@@ -548,6 +764,11 @@ test_run_compact_without_completion_refreshes_before_finishing_startup
 test_run_clear_without_completion_finishes_startup
 test_run_clear_rejects_previous_owner_completion
 test_run_resume_delegates_to_the_nudge
+test_run_clear_payload_reclaims_its_own_session_lock
+test_run_resume_payload_repairs_the_sidecar_before_the_nudge
+test_run_refuses_replacement_without_native_evidence
+test_run_routes_payload_without_python3
+test_run_nested_session_cannot_reclaim_the_primary_lock
 test_run_reads_source_from_the_hook_payload
 test_run_unknown_source_takes_the_helm
 test_run_gate_and_scope_are_silent

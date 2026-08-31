@@ -67,6 +67,40 @@ Codex's interactive TUI fired no project `SessionStart` hook at all in the same 
 Codex's run tier is therefore verified only for `codex exec` startup and context-preserving resume.
 The interactive TUI is a known uncovered gap: Firstmate has no tracked session-open, compaction, or re-emit channel there, ships no global hook, and does not claim instruction-refresh delivery for that surface.
 
+### Claude in-place session replacement
+
+Claude's `/clear` replaces the session INSIDE the running process, and that shape is what the session-lock replacement intent depends on.
+It was reproduced on 2026-08-31 with Claude Code 2.1.251 in a live primary home: after `/clear`, `state/.lock` still named the live harness pid 51150 while `state/.lock.session` still named the previous session `c9d349e6-...` and the new session reported `052724b5-...`.
+Every session start after that refused as read-only, and `bin/fm-claude-stop-autoarm.sh` correctly stayed inert because the recorded owner was alive, so the home could not recover on its own.
+`bin/fm-sessionstart-run.sh` now grants `bin/fm-lock.sh` a narrow replacement acquisition only for a strictly parsed native `SessionStart` payload, and the lock accepts it only when the recorded live owner IS this hook's own direct Claude client process - the vendor-set `CLAUDE_PID` - inside the verified ancestry; [`../sessionstart-nudge.md`](../sessionstart-nudge.md#in-place-session-replacement) owns the discriminator and its exclusions.
+`CLAUDE_PID` was probed on 2026-08-31 with Claude Code 2.1.251: every hook receives it, it names the hook's direct Claude client process, and Claude overrides an inherited `CLAUDE_PID` and `CLAUDE_CODE_SESSION_ID` with its own values for its own hooks, so a nested job cannot present the recorded owner's identity.
+
+The vendor facts that discriminator rests on are refreshed by the opt-in run-tier guard:
+
+```sh
+claude --version
+FM_SESSIONSTART_HOOK_LIVE_E2E=1 bin/fm-test-run.sh tests/fm-sessionstart-hook-live-e2e.test.sh
+```
+
+The full guard ran on 2026-08-31 and exited 0 after 368799 ms with every assertion returning `ok`.
+The runner reported this exact summary:
+
+```text
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=368799
+```
+
+Claude Code 2.1.251 passed startup source and hook stdout injection, detached worker survival, and a context-preserving reopen reported as `resume`.
+It also passed `/clear` as `clear` with re-injection, compaction as `compact` with re-injection, and in-place replacement through `/clear`, `/new`, and `/resume` with the wrapper reclaiming its own lock.
+Its `/fork` parked a background session without changing the primary lock pair, and its background Stop probe stayed inert in the owner process tree.
+Codex codex-cli 0.147.0-alpha.6.5 passed startup, detached worker survival, and a context-preserving resume reopen.
+Pi 0.84.4 passed startup, detached worker survival, a resume reopen, `/new` as `clear` with re-injection, and compaction as `compact` with re-injection.
+The guard's Claude replacement lab drives `/clear`, `/new`, `/resume`, and `/fork` against the real wrapper and lock, and fails loudly when any required hook is absent.
+It proves that `/clear` and `/new` report `clear`, interactive `/resume` reports `resume`, and each accepted transition keeps the durable harness pid.
+For `/fork`, the guard accepts a parked background fork without a session-open hook until its first prompt or a `fork` source hook record that the wrapper excludes from replacement.
+Both supported `/fork` results and a background Stop probe inside the same process tree leave the recorded pair untouched.
+Refresh this record after every Claude upgrade because the guard pins the `/new`, `/resume`, and `/fork` shapes.
+`tests/fm-sessionstart-nudge.test.sh` and `tests/fm-session-lock-ancestry.test.sh` cover the same policy portably, including the unchanged PR #74 refusal of a background Claude job.
+
 Pi compaction was verified on 2026-08-05 with Pi 0.82.0 in the same throwaway lab after setting `.pi/settings.json` `compaction.keepRecentTokens` to 200 and completing one substantial assistant-prose turn before issuing `/compact`.
 Pi reported `Compacted from 7,697 tokens`, the recorder observed `session_compact`, and the model quoted the freshly injected `source=compact` token back.
 Both preconditions are load-bearing: the stock 20,000-token keep window exceeds a small lab session, and `AgentSession.compact()` aborts an in-flight turn before measuring compactable history, which otherwise discards that turn and reports `Nothing to compact (session too small)`.
@@ -319,7 +353,7 @@ Session-lock ownership in `bin/fm-session-lock-lib.sh` resolves the contiguous h
 On 2026-08-30, a Claude Code 2.1.251 print-mode lab launch explicitly unset `CLAUDE_CODE_SESSION_ID`, `CLAUDE_PID`, and `CLAUDE_CODE_CHILD_SESSION`, then started `claude -p --session-id 15f2cb7b-0000-4000-8000-000000000003 --model haiku --effort low --settings <lab>/settings.json --setting-sources project --no-session-persistence`.
 Its Stop hook recorded `CLAUDE_CODE_SESSION_ID=15f2cb7b-0000-4000-8000-000000000003`, `CLAUDE_PID=63077`, and `CLAUDE_CODE_CHILD_SESSION=1`; from that hook, `ps -o comm=,ppid= -p "$CLAUDE_PID"` returned `claude 62978`.
 A separate interactive session with id `15f2cb7b-0000-4000-8000-000000000004` recorded its own id, `CLAUDE_PID=77839`, and `CLAUDE_CODE_CHILD_SESSION=1`; its Stop hook ran the same `ps` command and returned `claude 59346`.
-These probes prove that each Stop hook carried its session's own id; `CLAUDE_PID` appears only in this dated evidence, and session-lock decisions do not use it.
+These probes prove that each Stop hook carried its session's own id; replacement acquisition alone uses the vendor-set `CLAUDE_PID`, and every other session-lock decision remains `CLAUDE_PID`-free.
 Harness identity is read from the executable path and `argv[0]` as well as the command basename, because Claude Code's native installer names the per-session executable by its version (`.../share/claude/versions/2.1.220`): `ps -o comm=` reports that path on macOS and the bare version string on Linux, and neither basename names a harness.
 `tests/fm-session-lock-ancestry.test.sh` pins both platforms' reporting semantics behind a deterministic process table and runs the real Stop auto-arm in version-named, daemon-parented, and combined real process trees.
 `tests/fm-watch-arm.test.sh` coverage for undrained-queue redelivery and attached-cycle reason recovery is owned by [`watcher-continuity.md`](../watcher-continuity.md#regression-coverage).
