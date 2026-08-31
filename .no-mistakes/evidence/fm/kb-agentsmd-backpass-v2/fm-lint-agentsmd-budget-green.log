@@ -1,0 +1,27 @@
+ok - calibrated-byte ceiling accepts 29249 and 29250, then rejects 29251
+ok - missing, unsafe, unreadable, and invalid UTF-8 AGENTS.md files fail closed
+ok - main root content needs no base while feature branches require a target ref
+ok - PR, local feature, and main-push modes select the expected base blob
+ok - CI requires its supplied target base to be a HEAD ancestor
+ok - generic CI feature builds compare against the accepted target base
+ok - deleted, wrong-type, and invalid UTF-8 base AGENTS.md blobs fail precisely
+ok - a stale local target fails with synchronization guidance
+ok - origin/main remains the target when local main differs
+ok - shrink and equal replacement pass while unapproved growth fails
+ok - all trailer failures reject and one exact content-bound pair passes
+ok - duplicate, split, and mutated trailer pairs fail precisely
+ok - finite generic approval shapes do not grant growth authority
+ok - lint rejects only the finite generic list and does not certify natural language
+ok - a budget override does not bypass why-trace checks
+ok - a copied prior trailer pair fails on blob binding
+ok - only blank, heading, and fence delimiters receive structural exemptions
+ok - binary attributes cannot hide added AGENTS.md lines
+ok - why target kinds, stable locks, and patch-like content parse safely
+ok - modified and moved lines need trace while a delete-only diff passes
+ok - unstaged, staged, and committed final content uses one measurement path
+ok - --list-files and explicit paths stay shell-only, and both lint exits remain deterministic
+ok - default-path ShellCheck exit wins while both lint diagnostics remain visible
+ok - missing Git state and failed Git reads cannot skip the budget gate
+ok - zero changed shell targets still run the budget and workflow companions
+ok - runner listings retain the old safety test and route the new test exactly
+ok - CI rejects absent bases and present bases with shallow ancestry

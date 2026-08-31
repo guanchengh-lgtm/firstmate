@@ -1,0 +1,7 @@
+usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--surface <internal-only|product|mixed|uncertain>]
+Promote the existing scout in place instead of creating a duplicate task.
+Inventory its scratch state, return to a clean default-branch base, and carry over only intended fix changes.
+Create the ship branch, follow the selected delivery path, and leave scratch commits and debug edits behind.
+Turn a reproduced bug into the regression test.
+exit_code=0
+runtime_state=absent

@@ -1,0 +1,8 @@
+base_commit=680c82751062909720a31cd906d3472075746fbe
+target_commit=9e01c661d6702d2e301be72367c29d4c1894ebff
+base_calibrated_bytes=31011
+target_calibrated_bytes=29248
+worktree_calibrated_bytes=29248
+hard_ceiling_calibrated_bytes=29250
+remaining_bytes=2
+net_change_bytes=-1763

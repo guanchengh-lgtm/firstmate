@@ -1,0 +1,5 @@
+ok - fm-lint.sh --help reports the complete executable interface
+ok - fm-lint.sh --list-files reports the complete shell inventory
+not ok - fast lint mode failed
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.1)
+fm-lint.sh: ShellCheck 0.11.1 required for CI parity, found 0.11.0. Install 0.11.1 with bin/fm-install-shellcheck.sh <destination-directory>.

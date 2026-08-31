@@ -1,0 +1,13 @@
+ok - fm-spawn: a ship spawn requires a valid explicit mode, yolo, and role before anything is created
+ok - fm-spawn: scout and secondmate spawns refuse ship delivery flags
+ok - fm-spawn: the brief's recorded mode and the spawn's explicit mode must agree
+ok - fm-spawn: --role selects the role file and refuses a missing or mismatched role marker
+ok - fm-spawn: a rigor downgrade against the registered posture is announced, never blocked
+ok - fm-spawn: a scout spawn resolves no delivery posture from the registry
+not ok - promotion help did not preserve the no-duplicate-task workflow (missing: 'existing scout in place')
+--- output ---
+usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--surface <internal-only|product|mixed|uncertain>]
+Promote the scout by creating a duplicate task.
+Inventory its scratch state, return to a clean default-branch base, and carry over only intended fix changes.
+Create the ship branch, follow the selected delivery path, and leave scratch commits and debug edits behind.
+Turn a reproduced bug into the regression test.
