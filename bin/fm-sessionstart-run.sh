@@ -10,22 +10,20 @@
 # model context, running the digest here removes that discretion - the helm is
 # taken before the model's first turn, whatever the first turn is.
 #
-# Usage: fm-sessionstart-run.sh [--source <source>] [--session-end]
+# Usage: fm-sessionstart-run.sh [--source <source>]
 #   --source  The harness's own session-open source. When omitted, the source is
 #             read from a Claude/Codex-shaped JSON hook payload on stdin
 #             (the `source` field). An unreadable or unrecognized source is
 #             treated as `startup`, because taking the helm redundantly is
 #             cheap and idempotent while not taking it is the whole bug.
-#   --session-end
-#             INTERNAL Claude SessionEnd transport. It records a proven
-#             clear/resume transition for the following native SessionStart.
 #
 # In-place session replacement (Claude /clear, /new, or an interactive /resume)
 # keeps this OS process and only issues a NEW session id, so the recorded
 # state/.lock.session names a session that no longer exists while state/.lock
 # still names this session's own pid. This wrapper is the one grantor of
-# bin/fm-lock.sh's narrow replacement-acquisition intent, because a matching
-# native SessionEnd and SessionStart transition separates that event from a
+# bin/fm-lock.sh's narrow replacement-acquisition intent; the lock itself then
+# requires the recorded owner to be this hook's own direct Claude client
+# process (the vendor-set CLAUDE_PID), which separates that event from a
 # background Claude job whose own session id also differs (PR #74).
 #
 # Source routing (see docs/sessionstart-nudge.md for the per-harness names):
@@ -64,13 +62,10 @@ COMPLETION_FILE="$STATE/.session-start-complete"
 
 SOURCE=
 SOURCE_EXPLICIT=0
-SESSION_END=0
 PAYLOAD_EVENT=
-PAYLOAD_REASON=
 PAYLOAD_SESSION_ID=
 PAYLOAD_DELIVERED=0
 PAYLOAD_VALID=0
-REPLACEMENT_END="$STATE/.session-replacement-end"
 while [ $# -gt 0 ]; do
   case "$1" in
     --source)
@@ -81,7 +76,6 @@ while [ $# -gt 0 ]; do
       if [ $# -ge 2 ]; then shift 2; else shift; fi
       ;;
     --source=*) SOURCE_EXPLICIT=1; SOURCE=${1#--source=}; shift ;;
-    --session-end) SESSION_END=1; shift ;;
     *) shift ;;
   esac
 done
@@ -107,23 +101,15 @@ payload_string_field() {  # <payload> <key>
   '
 }
 
+# Print "hook_event_name|source|session_id" from payload <payload>, or fail.
+# One strict parser and one policy on purpose: the document must be exactly one
+# complete top-level JSON object, a duplicated field anywhere is rejected, and
+# every consumed field must be a string of lock-safe characters. A host with no
+# python3 fails closed here - the replacement grant below is then never made -
+# while source ROUTING still works through the loose awk extraction above.
 payload_native_fields() {  # <payload>
-  if command -v jq >/dev/null 2>&1; then
-    printf '%s' "$1" | jq -er '
-      select(type == "object")
-      | [
-          (.hook_event_name | select(type == "string")),
-          (.source // "" | select(type == "string")),
-          (.reason // "" | select(type == "string")),
-          (.session_id | select(type == "string"))
-        ]
-      | select(all(.[]; test("^[A-Za-z0-9-]*$")))
-      | join("|")
-    ' 2>/dev/null
-    return
-  fi
-  if command -v python3 >/dev/null 2>&1; then
-    printf '%s' "$1" | python3 -c '
+  command -v python3 >/dev/null 2>&1 || return 1
+  printf '%s' "$1" | python3 -c '
 import json
 import re
 import sys
@@ -140,19 +126,18 @@ def reject_duplicates(pairs):
     return result
 
 try:
-    value = json.load(
-        sys.stdin,
+    value = json.loads(
+        sys.stdin.read(),
         parse_constant=reject_constant,
         object_pairs_hook=reject_duplicates,
     )
+    if not isinstance(value, dict):
+        raise ValueError("root")
     fields = [
         value["hook_event_name"],
         value.get("source", ""),
-        value.get("reason", ""),
         value["session_id"],
     ]
-    if not isinstance(value, dict):
-        raise ValueError("root")
     if not all(isinstance(field, str) for field in fields):
         raise ValueError("field type")
     if not all(re.fullmatch(r"[A-Za-z0-9-]*", field) for field in fields):
@@ -161,69 +146,6 @@ try:
 except (KeyError, TypeError, ValueError, json.JSONDecodeError):
     raise SystemExit(1)
 ' 2>/dev/null
-    return
-  fi
-  return 1
-}
-
-pid_in_resolved_ancestry() {  # <pid>
-  local expected=$1 candidate
-  while IFS= read -r candidate; do
-    [ "$candidate" = "$expected" ] && return 0
-  done <<EOF
-$FM_SESSION_ANCESTRY_PIDS
-EOF
-  return 1
-}
-
-record_session_replacement_end() {
-  local lock_pid lock_session now marker_tmp
-  [ "$PAYLOAD_VALID" -eq 1 ] || return 0
-  [ "$PAYLOAD_EVENT" = SessionEnd ] || return 0
-  case "$PAYLOAD_REASON" in clear|resume) ;; *) return 0 ;; esac
-  fm_session_id_valid "$PAYLOAD_SESSION_ID" || return 0
-  fm_session_lock_identity || return 0
-  [ -n "$FM_SESSION_ID" ] && [ "$FM_SESSION_ID" = "$PAYLOAD_SESSION_ID" ] || return 0
-  fm_session_lock_owned_by_self "$STATE" || return 0
-  lock_pid=$(cat "$STATE/.lock" 2>/dev/null) || return 0
-  lock_session=$(fm_session_lock_read_session_id "$STATE" 2>/dev/null || true)
-  [ "$lock_session" = "$PAYLOAD_SESSION_ID" ] || return 0
-  pid_in_resolved_ancestry "$lock_pid" || return 0
-  now=$(date +%s 2>/dev/null || true)
-  case "$now" in ''|*[!0-9]*) return 0 ;; esac
-  marker_tmp=$(mktemp "$STATE/.session-replacement-end.XXXXXX" 2>/dev/null) || return 0
-  if ! printf '%s|%s|%s|%s\n' "$lock_pid" "$lock_session" "$PAYLOAD_REASON" "$now" \
-    > "$marker_tmp" 2>/dev/null; then
-    rm -f "$marker_tmp" 2>/dev/null || true
-    return 0
-  fi
-  mv "$marker_tmp" "$REPLACEMENT_END" 2>/dev/null || rm -f "$marker_tmp" 2>/dev/null || true
-}
-
-consume_session_replacement_end() {  # <source>
-  local source=$1 consumed marker marker_pid marker_session marker_reason marker_time
-  local lock_pid lock_session now age
-  [ -f "$REPLACEMENT_END" ] && [ ! -L "$REPLACEMENT_END" ] || return 1
-  consumed="$REPLACEMENT_END.consume.$$"
-  mv "$REPLACEMENT_END" "$consumed" 2>/dev/null || return 1
-  marker=$(cat "$consumed" 2>/dev/null || true)
-  rm -f "$consumed" 2>/dev/null || true
-  IFS='|' read -r marker_pid marker_session marker_reason marker_time <<EOF
-$marker
-EOF
-  [ "$marker" = "$marker_pid|$marker_session|$marker_reason|$marker_time" ] || return 1
-  case "$marker_pid" in ''|*[!0-9]*) return 1 ;; esac
-  fm_session_id_valid "$marker_session" || return 1
-  case "$marker_reason:$source" in clear:clear|resume:resume) ;; *) return 1 ;; esac
-  case "$marker_time" in ''|*[!0-9]*) return 1 ;; esac
-  now=$(date +%s 2>/dev/null || true)
-  case "$now" in ''|*[!0-9]*) return 1 ;; esac
-  age=$((now - marker_time))
-  [ "$age" -ge 0 ] && [ "$age" -le 60 ] || return 1
-  lock_pid=$(cat "$STATE/.lock" 2>/dev/null) || return 1
-  lock_session=$(fm_session_lock_read_session_id "$STATE" 2>/dev/null || true)
-  [ "$lock_pid" = "$marker_pid" ] && [ "$lock_session" = "$marker_session" ] || return 1
-  pid_in_resolved_ancestry "$lock_pid"
 }
 
 session_start_completed() {
@@ -237,7 +159,7 @@ session_start_completed() {
   [ "$completion_pid" = "$lock_pid" ]
 }
 
-if { [ -z "$SOURCE" ] || [ "$SESSION_END" -eq 1 ]; } && [ ! -t 0 ]; then
+if [ -z "$SOURCE" ] && [ ! -t 0 ]; then
   # Claude and Codex deliver JSON hook payloads on stdin. SessionStart carries
   # a `source` field with startup|resume|clear|compact.
   # A terminal stdin is skipped outright: a hook always pipes its payload, and
@@ -252,42 +174,34 @@ if { [ -z "$SOURCE" ] || [ "$SESSION_END" -eq 1 ]; } && [ ! -t 0 ]; then
     exit 0
   fi
   SOURCE=$(payload_string_field "$PAYLOAD" source)
-  # Retained only for the replacement-acquisition decision below, which needs
-  # the event's own provenance rather than a source name any caller can supply.
-  PAYLOAD_EVENT=$(payload_string_field "$PAYLOAD" hook_event_name)
-  PAYLOAD_REASON=$(payload_string_field "$PAYLOAD" reason)
-  PAYLOAD_SESSION_ID=$(payload_string_field "$PAYLOAD" session_id)
   PAYLOAD_DELIVERED=1
   NATIVE_FIELDS=$(payload_native_fields "$PAYLOAD" 2>/dev/null || true)
   if [ -n "$NATIVE_FIELDS" ]; then
-    IFS='|' read -r PAYLOAD_EVENT NATIVE_SOURCE PAYLOAD_REASON PAYLOAD_SESSION_ID <<EOF
+    IFS='|' read -r PAYLOAD_EVENT NATIVE_SOURCE PAYLOAD_SESSION_ID <<EOF
 $NATIVE_FIELDS
 EOF
     PAYLOAD_VALID=1
-    [ "$SESSION_END" -eq 1 ] || SOURCE=$NATIVE_SOURCE
+    SOURCE=$NATIVE_SOURCE
   fi
-fi
-
-if [ "$SESSION_END" -eq 1 ]; then
-  [ "$SOURCE_EXPLICIT" -eq 0 ] && record_session_replacement_end
-  exit 0
 fi
 
 # Repair a stale session sidecar left behind by an in-place replacement, before
 # the completion check below reads ownership. Everything here is required: a
-# native payload (never an explicit --source), a matching native SessionEnd
-# transition, the SessionStart event itself, one of the two in-place replacement
-# sources, and a payload session id that is valid and identical to this process's
-# resolved Claude identity. `compact`, `fork`, `startup`, an unknown source, and
-# a malformed payload all fall through unchanged.
+# native payload (never an explicit --source), the SessionStart event itself,
+# one of the two in-place replacement sources, and a payload session id that is
+# valid and identical to this process's resolved Claude identity. `compact`,
+# `fork`, `startup`, an unknown source, and a malformed payload all fall through
+# unchanged. bin/fm-lock.sh then owns the process-bound rule: the recorded
+# owner must be this hook's own direct Claude client process (CLAUDE_PID) and
+# a member of the verified ancestry, so a nested background Claude job that
+# also sees `resume` with its own matching ids still changes nothing (PR #74).
 if [ "$SOURCE_EXPLICIT" -eq 0 ] && [ "$PAYLOAD_DELIVERED" -eq 1 ] \
   && [ "$PAYLOAD_VALID" -eq 1 ] && [ "$PAYLOAD_EVENT" = SessionStart ] \
   && fm_session_id_valid "$PAYLOAD_SESSION_ID"; then
   case "$SOURCE" in
     clear|resume)
       if fm_session_lock_identity && [ -n "$FM_SESSION_ID" ] \
-        && [ "$FM_SESSION_ID" = "$PAYLOAD_SESSION_ID" ] \
-        && consume_session_replacement_end "$SOURCE"; then
+        && [ "$FM_SESSION_ID" = "$PAYLOAD_SESSION_ID" ]; then
         "$SCRIPT_DIR/fm-lock.sh" --session-replacement >/dev/null 2>&1 || true
       fi
       ;;

@@ -318,7 +318,14 @@ make_lock_identity_home() {  # <dir>
   cat > "$dir/contender.sh" <<'SH'
 #!/usr/bin/env bash
 export CLAUDE_CODE_SESSION_ID=${FM_CONTENDER_SESSION_ID:?}
-export CLAUDE_PID=$$
+# The vendor sets CLAUDE_PID to each hook's own direct Claude client. A hook
+# fired by the surviving in-place-replaced client sees the HOLDER pid; a
+# nested background job always sees its own.
+if [ "${FM_CONTENDER_CLAUDE_PID:-self}" = holder ]; then
+  export CLAUDE_PID=${FM_HOLDER_PID:?}
+else
+  export CLAUDE_PID=$$
+fi
 export CLAUDE_CODE_CHILD_SESSION=1
 rc=0
 if [ -n "${FM_CONTENDER_FLAG:-}" ]; then
@@ -341,17 +348,18 @@ if [ "${FM_OLD_LOCK:-0}" = 1 ]; then
 else
   "$FM_HOME/bin/fm-lock.sh" > "$FM_HOME/state/holder.out" 2>&1 || exit $?
 fi
-FM_CONTENDER_SESSION_ID=${FM_CONTENDER_SESSION_ID:?} \
+FM_CONTENDER_SESSION_ID=${FM_CONTENDER_SESSION_ID:?} FM_HOLDER_PID=$$ \
   "$FM_CONTENDER_BIN" "$FM_HOME/contender.sh"
 SH
   chmod +x "$dir/contender.sh" "$dir/holder.sh"
 }
 
-run_lock_pair() {  # <dir> <holder-session> <contender-session> [old-lock] [contender-flag]
+run_lock_pair() {  # <dir> <holder-session> <contender-session> [old-lock] [contender-flag] [contender-claude-pid]
   local dir=$1 holder_session=$2 contender_session=$3 old_lock=${4:-0} contender_flag=${5:-}
+  local contender_claude_pid=${6:-self}
   FM_HOME="$dir" FM_HOLDER_SESSION_ID="$holder_session" \
     FM_CONTENDER_SESSION_ID="$contender_session" FM_CONTENDER_BIN="$NAMED_CLAUDE" \
-    FM_CONTENDER_FLAG="$contender_flag" \
+    FM_CONTENDER_FLAG="$contender_flag" FM_CONTENDER_CLAUDE_PID="$contender_claude_pid" \
     FM_OLD_LOCK="$old_lock" "$NAMED_CLAUDE" "$dir/holder.sh"
 }
 
@@ -527,9 +535,9 @@ test_session_replacement_reclaims_its_own_stale_sidecar() {
   local dir holder_pid
   dir="$TMP_ROOT/replacement-reclaim"
   make_lock_identity_home "$dir"
-  run_lock_pair "$dir" session-before session-after 0 --session-replacement
+  run_lock_pair "$dir" session-before session-after 0 --session-replacement holder
   expect_code 0 "$(cat "$dir/state/contender.rc")" \
-    "a replacement acquisition must reclaim the stale sidecar of its own live ancestry"
+    "a replacement acquisition must reclaim the stale sidecar of its own client process"
   holder_pid=$(cat "$dir/state/holder-pid")
   [ "$(cat "$dir/state/.lock")" = "$holder_pid" ] \
     || fail "the replacement acquisition moved the durable ancestry pid"
@@ -542,7 +550,7 @@ test_session_replacement_is_idempotent_for_a_matching_sidecar() {
   local dir holder_pid
   dir="$TMP_ROOT/replacement-matching"
   make_lock_identity_home "$dir"
-  run_lock_pair "$dir" session-unchanged session-unchanged 0 --session-replacement
+  run_lock_pair "$dir" session-unchanged session-unchanged 0 --session-replacement holder
   expect_code 0 "$(cat "$dir/state/contender.rc")" \
     "a replacement acquisition must still succeed when the sidecar already matches"
   holder_pid=$(cat "$dir/state/holder-pid")
@@ -551,6 +559,25 @@ test_session_replacement_is_idempotent_for_a_matching_sidecar() {
   [ "$(cat "$dir/state/.lock.session")" = session-unchanged ] \
     || fail "an already-matching replacement acquisition changed the session sidecar"
   pass "session-lock executable: a granted replacement is idempotent for a matching sidecar"
+}
+
+test_session_replacement_refuses_a_nested_background_contender() {
+  local dir holder_pid
+  dir="$TMP_ROOT/replacement-nested-contender"
+  make_lock_identity_home "$dir"
+  # The exact PR #74 shape armed with the intent itself: the nested contender
+  # holds the replacement flag, sees the live holder pid in its own contiguous
+  # ancestry, and presents matching ids, but its vendor-reset CLAUDE_PID names
+  # itself rather than the recorded owner, so nothing may change.
+  run_lock_pair "$dir" session-holder session-background 0 --session-replacement self
+  expect_code 1 "$(cat "$dir/state/contender.rc")" \
+    "a nested background contender must not win even with the replacement intent"
+  holder_pid=$(cat "$dir/state/holder-pid")
+  [ "$(cat "$dir/state/.lock")" = "$holder_pid" ] \
+    || fail "the nested replacement contender replaced the holder pid"
+  [ "$(cat "$dir/state/.lock.session")" = session-holder ] \
+    || fail "the nested replacement contender replaced the holder session id"
+  pass "session-lock executable: a nested background contender is refused even with the intent"
 }
 
 test_session_replacement_refuses_a_live_owner_outside_the_ancestry() {
@@ -641,6 +668,30 @@ test_session_replacement_waits_for_its_own_startup_sweep() {
     fail "the replacement treated its own session's startup sweep as a prior session"
   fi
   pass "session-lock executable: a replacement waits for its own startup sweep"
+}
+
+test_lock_help_is_read_only() {
+  local dir out rc=0
+  dir="$TMP_ROOT/lock-help"
+  # No home is prepared on purpose: help must answer before any state
+  # creation or acquisition, so nothing may appear on disk.
+  out=$(FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" "$ROOT/bin/fm-lock.sh" --help 2>&1) || rc=$?
+  expect_code 0 "$rc" "fm-lock.sh --help must exit 0"
+  case "$out" in
+    usage:*) : ;;
+    *) fail "fm-lock.sh --help did not print usage, got: $out" ;;
+  esac
+  case "$out" in
+    *'lock acquired'*) fail "fm-lock.sh --help performed an acquisition" ;;
+  esac
+  [ ! -e "$dir" ] \
+    || fail "fm-lock.sh --help created state on disk"
+  rc=0
+  out=$(FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" "$ROOT/bin/fm-lock.sh" -h 2>&1) || rc=$?
+  expect_code 0 "$rc" "fm-lock.sh -h must exit 0"
+  [ ! -e "$dir" ] \
+    || fail "fm-lock.sh -h created state on disk"
+  pass "session-lock executable: --help answers read-only before any state creation"
 }
 
 test_foreign_session_takes_over_dead_holder() {
@@ -1081,10 +1132,12 @@ test_same_claude_session_reacquires_during_startup_lease
 test_background_claude_session_is_refused_under_live_holder
 test_session_replacement_reclaims_its_own_stale_sidecar
 test_session_replacement_is_idempotent_for_a_matching_sidecar
+test_session_replacement_refuses_a_nested_background_contender
 test_session_replacement_refuses_a_live_owner_outside_the_ancestry
 test_session_replacement_refuses_a_dead_owner
 test_session_replacement_refuses_a_missing_sidecar
 test_session_replacement_waits_for_its_own_startup_sweep
+test_lock_help_is_read_only
 test_foreign_session_takes_over_dead_holder
 test_dead_claude_pid_does_not_change_ancestry_pid
 test_non_claude_ancestry_ignores_inherited_claude_environment

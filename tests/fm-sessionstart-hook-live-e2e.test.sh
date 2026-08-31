@@ -92,6 +92,19 @@ send_line() {  # <session> <text>
   tmux -L "$SOCKET" send-keys -t "$1" Enter
 }
 
+# Claude Code 2.1.251 moved the trust dialog's default selection to "No, exit",
+# so a bare Enter now declines trust and ends the session; whenever the caret
+# sits on a refusing option, step down to the trusting one first. Pi still
+# defaults to its trusting selection and takes the bare Enter.
+# harness-adapters owns trust handling outside tests.
+answer_trust_prompt() {  # <session>
+  if capture "$1" | grep -qE '❯[[:space:]]*No'; then
+    tmux -L "$SOCKET" send-keys -t "$1" Down
+    sleep 1
+  fi
+  tmux -L "$SOCKET" send-keys -t "$1" Enter
+}
+
 ASK='Reply with exactly the FMHOOKTOKEN value from your session-start context and nothing else.'
 LIVE_NONCE=$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')
 
@@ -260,14 +273,13 @@ probe_context_reset() {  # <harness> <version> <lab> <clear-command> <launch-arg
     || fail "$harness $version: could not start an interactive lab session"
 
   # Every run-tier TUI asks whether it trusts a folder it has not seen, and the
-  # session-open hook only fires once that is answered. Each harness's default
-  # selection IS the trusting one, so a bare Enter clears it; the loop keeps
-  # waiting for the recorded open either way, so a harness that stops prompting
-  # costs nothing. harness-adapters owns trust handling outside tests.
+  # session-open hook only fires once that is answered. The loop keeps waiting
+  # for the recorded open either way, so a harness that stops prompting costs
+  # nothing.
   n=0
   while [ "$n" -lt 60 ] && ! grep -q . "$record" 2>/dev/null; do
     if capture "$session" | grep -qiE 'trust (this|the|parent)?[[:space:]]*(folder|project)'; then
-      tmux -L "$SOCKET" send-keys -t "$session" Enter
+      answer_trust_prompt "$session"
       sleep 5
     fi
     sleep 2
@@ -416,10 +428,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 record=${FM_LIVE_RECORD:?}
 payload=$(cat 2>/dev/null || true)
-if [ "${1:-}" = --session-end ]; then
-  printf '%s' "$payload" | "$SCRIPT_DIR/fm-sessionstart-run-real.sh" "$@" || true
-  exit 0
-fi
 field() {
   printf '%s' "$payload" | awk -v key="$1" '
     BEGIN { RS = "\"" }
@@ -524,7 +532,7 @@ probe_claude_session_replacement() {  # <version>
   n=0
   while [ "$n" -lt 60 ] && ! wait_for_open 1 1; do
     if capture "$pane" | grep -qiE 'trust (this|the|parent)?[[:space:]]*(folder|project)'; then
-      tmux -L "$SOCKET" send-keys -t "$pane" Enter
+      answer_trust_prompt "$pane"
       sleep 5
     fi
     n=$((n + 1))

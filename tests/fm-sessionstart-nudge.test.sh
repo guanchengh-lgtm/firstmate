@@ -467,8 +467,10 @@ JS
 # Claude's /clear and its interactive /resume replace the session inside the
 # SAME process: state/.lock still names this process, while state/.lock.session
 # names the session id that just went away. Only a validated native SessionStart
-# payload may repair that sidecar, so these cases run a real Claude-named
-# process and drive the real wrapper, lock, and digest.
+# payload whose hook still runs under the recorded owner as its own direct
+# Claude client (the vendor-set CLAUDE_PID) may repair that sidecar, so these
+# cases run a real Claude-named process and drive the real wrapper, lock, and
+# digest.
 
 CLAUDE_BIN="$(fm_fakebin "$TMP_ROOT/claude-harness")/claude"
 ln -s /bin/bash "$CLAUDE_BIN"
@@ -484,31 +486,34 @@ run_claude_session() {  # <root> <script> [env-assignment...]
 }
 
 # Take the helm as one session, then reopen the SAME process as another, exactly
-# as a native replacement does. The recorded pair is captured between the two
-# opens so the reopen's effect on it is visible.
+# as a native replacement does: the vendor keeps CLAUDE_PID on the surviving
+# client process while only the session id changes. The recorded pair is
+# captured between the two opens so the reopen's effect on it is visible.
 # shellcheck disable=SC2016 # single quotes are deliberate: these expand inside the fixture child
 REPLACEMENT_SCRIPT='
   export CLAUDE_CODE_SESSION_ID=$FM_OWNER_SESSION
+  export CLAUDE_PID=$$
   "$FM_RUN" --source startup </dev/null > "$FM_HOME/startup.out" 2>&1
   cp "$FM_HOME/state/.lock" "$FM_HOME/lock-before"
   cp "$FM_HOME/state/.lock.session" "$FM_HOME/sidecar-before"
-  printf "%s" "$FM_END_PAYLOAD" | "$FM_RUN" --session-end > /dev/null 2>&1
   export CLAUDE_CODE_SESSION_ID=$FM_CURRENT_SESSION
   printf "%s" "$FM_PAYLOAD" | "$FM_RUN" > "$FM_HOME/reopen.out" 2>&1
 '
 
 # The same stale state without the cost of a first digest: a live lock pid in
-# this very process, recorded against the earlier session id.
+# this very process, recorded against the earlier session id. CLAUDE_PID names
+# this process too, exactly as a real hook under the surviving client sees it,
+# so each negative case below is refused by its OWN defect rather than by an
+# unrelated process mismatch.
 # shellcheck disable=SC2016 # single quotes are deliberate: these expand inside the fixture child
 STALE_SCRIPT='
   export CLAUDE_CODE_SESSION_ID=$FM_CURRENT_SESSION
+  export CLAUDE_PID=${FM_FIXTURE_CLAUDE_PID:-$$}
+  if [ "${FM_UNSET_CLAUDE_PID:-0}" = 1 ]; then unset CLAUDE_PID; fi
   printf "%s\n" "$$" > "$FM_HOME/state/.lock"
   printf "%s\n" "$FM_OWNER_SESSION" > "$FM_HOME/state/.lock.session"
   printf "%s\n" "$$" > "$FM_HOME/state/.session-start-complete"
   printf "%s\n" "$$" > "$FM_HOME/probe-pid"
-  if [ "${FM_RECORD_END:-0}" = 1 ]; then
-    printf "%s" "$FM_END_PAYLOAD" | "$FM_RUN" --session-end > /dev/null 2>&1
-  fi
   case "${FM_CALL:-payload}" in
     source) printf "%s" "$FM_DELIVERY" | "$FM_RUN" --source clear > "$FM_HOME/reopen.out" 2>&1 ;;
     source-empty) printf "%s" "$FM_DELIVERY" | "$FM_RUN" --source= > "$FM_HOME/reopen.out" 2>&1 ;;
@@ -527,17 +532,11 @@ payload_for() {  # <event> <source> [session-id]
   fi
 }
 
-end_payload_for() {  # <reason> <session-id>
-  printf '{"hook_event_name":"SessionEnd","reason":"%s","session_id":"%s","cwd":"/nowhere"}' \
-    "$1" "$2"
-}
-
 test_run_clear_payload_reclaims_its_own_session_lock() {
   local root="$TMP_ROOT/run-clear-replacement" out
   make_run_primary "$root"
   run_claude_session "$root" "$REPLACEMENT_SCRIPT" \
     FM_OWNER_SESSION="$OWNER_SESSION" FM_CURRENT_SESSION="$CURRENT_SESSION" \
-    FM_END_PAYLOAD="$(end_payload_for clear "$OWNER_SESSION")" \
     FM_PAYLOAD="$(payload_for SessionStart clear "$CURRENT_SESSION")"
 
   [ "$(cat "$root/sidecar-before")" = "$OWNER_SESSION" ] \
@@ -558,7 +557,6 @@ test_run_resume_payload_repairs_the_sidecar_before_the_nudge() {
   make_run_primary "$root"
   run_claude_session "$root" "$REPLACEMENT_SCRIPT" \
     FM_OWNER_SESSION="$OWNER_SESSION" FM_CURRENT_SESSION="$CURRENT_SESSION" \
-    FM_END_PAYLOAD="$(end_payload_for resume "$OWNER_SESSION")" \
     FM_PAYLOAD="$(payload_for SessionStart resume "$CURRENT_SESSION")"
 
   [ "$(cat "$root/state/.lock")" = "$(cat "$root/lock-before")" ] \
@@ -572,69 +570,86 @@ test_run_resume_payload_repairs_the_sidecar_before_the_nudge() {
 }
 
 test_run_refuses_replacement_without_native_evidence() {
-  local case_name delivery root probe_pid call record_end end_payload
+  local case_name delivery root probe_pid call unset_claude_pid fixture_claude_pid
   # Everything a background job, another harness adapter, or a malformed hook
   # could deliver. None of them proves an in-place replacement, so the recorded
   # pair must survive each one untouched (PR #74).
   for case_name in explicit-source explicit-source-empty explicit-source-bare \
-    foreign-event missing-id invalid-id mismatched-id malformed fork compact \
-    resume-without-end background-resume; do
+    foreign-event missing-id invalid-id mismatched-id malformed trailing-object \
+    duplicate-keys fork compact no-claude-pid foreign-claude-pid; do
     call=payload
-    record_end=0
-    end_payload=$(end_payload_for resume "$CURRENT_SESSION")
+    unset_claude_pid=0
+    fixture_claude_pid=
+    delivery=$(payload_for SessionStart clear "$CURRENT_SESSION")
     case "$case_name" in
-      explicit-source) call=source; delivery=$(payload_for SessionStart clear "$CURRENT_SESSION") ;;
-      explicit-source-empty) call=source-empty; delivery=$(payload_for SessionStart clear "$CURRENT_SESSION") ;;
-      explicit-source-bare) call=source-bare; delivery=$(payload_for SessionStart clear "$CURRENT_SESSION") ;;
+      explicit-source) call=source ;;
+      explicit-source-empty) call='source-empty' ;;
+      explicit-source-bare) call='source-bare' ;;
       foreign-event) delivery=$(payload_for Stop clear "$CURRENT_SESSION") ;;
       missing-id) delivery=$(payload_for SessionStart clear) ;;
       invalid-id) delivery=$(payload_for SessionStart clear 'not a session id') ;;
       mismatched-id) delivery=$(payload_for SessionStart clear cccccccc-3333-4333-8333-333333333333) ;;
       malformed) delivery='{"hook_event_name":"SessionStart","source":"clear","session_id":"bbbbbbbb-2222-4222-8222-222222222222"' ;;
+      trailing-object)
+        # A second top-level value after a valid object is not one complete
+        # document and must not validate, whatever parser the host has.
+        delivery="$(payload_for SessionStart clear "$CURRENT_SESSION"){}"
+        ;;
+      duplicate-keys)
+        delivery='{"hook_event_name":"SessionStart","source":"fork","source":"clear","session_id":"bbbbbbbb-2222-4222-8222-222222222222"}'
+        ;;
       fork) delivery=$(payload_for SessionStart fork "$CURRENT_SESSION") ;;
       compact) delivery=$(payload_for SessionStart compact "$CURRENT_SESSION") ;;
-      resume-without-end) delivery=$(payload_for SessionStart resume "$CURRENT_SESSION") ;;
-      background-resume)
-        record_end=1
-        delivery=$(payload_for SessionStart resume "$CURRENT_SESSION")
-        ;;
+      no-claude-pid) unset_claude_pid=1 ;;
+      foreign-claude-pid) fixture_claude_pid=1 ;;
     esac
     root="$TMP_ROOT/run-replacement-$case_name"
     make_run_primary "$root"
     run_claude_session "$root" "$STALE_SCRIPT" \
       FM_OWNER_SESSION="$OWNER_SESSION" FM_CURRENT_SESSION="$CURRENT_SESSION" \
-      FM_DELIVERY="$delivery" FM_CALL="$call" FM_RECORD_END="$record_end" \
-      FM_END_PAYLOAD="$end_payload"
+      FM_DELIVERY="$delivery" FM_CALL="$call" \
+      FM_UNSET_CLAUDE_PID="$unset_claude_pid" \
+      FM_FIXTURE_CLAUDE_PID="$fixture_claude_pid"
     probe_pid=$(cat "$root/probe-pid")
     [ "$(cat "$root/state/.lock.session")" = "$OWNER_SESSION" ] \
       || fail "$case_name granted a session replacement it cannot prove"
     [ "$(cat "$root/state/.lock")" = "$probe_pid" ] \
       || fail "$case_name moved the recorded lock pid"
   done
-  pass "run wrapper: only a matching native replacement transition may replace the sidecar"
+  pass "run wrapper: only a validated native replacement in its own client process may replace the sidecar"
 }
 
-test_run_nested_resume_cannot_reclaim_the_primary_lock() {
-  local root="$TMP_ROOT/run-nested-resume" owner_pid
-  make_run_primary "$root"
-  run_claude_session "$root" '
-    export CLAUDE_CODE_SESSION_ID=$FM_OWNER_SESSION
-    "$FM_RUN" --source startup </dev/null > "$FM_HOME/startup.out" 2>&1
-    cp "$FM_HOME/state/.lock" "$FM_HOME/lock-before"
-    FM_CURRENT_SESSION=$FM_CURRENT_SESSION FM_PAYLOAD=$FM_PAYLOAD FM_RUN=$FM_RUN \
-      FM_HOME=$FM_HOME "$FM_CLAUDE_BIN" -c '\''
-        export CLAUDE_CODE_SESSION_ID=$FM_CURRENT_SESSION
-        printf "%s" "$FM_PAYLOAD" | "$FM_RUN" > "$FM_HOME/nested.out" 2>&1
-      '\''
-  ' FM_OWNER_SESSION="$OWNER_SESSION" FM_CURRENT_SESSION="$CURRENT_SESSION" \
-    FM_PAYLOAD="$(payload_for SessionStart resume "$CURRENT_SESSION")" \
-    FM_CLAUDE_BIN="$CLAUDE_BIN"
-  owner_pid=$(cat "$root/lock-before")
-  [ "$(cat "$root/state/.lock")" = "$owner_pid" ] \
-    || fail "a nested resume moved the primary lock pid"
-  [ "$(cat "$root/state/.lock.session")" = "$OWNER_SESSION" ] \
-    || fail "a nested resume replaced the primary session sidecar"
-  pass "run wrapper: a nested resume cannot reclaim the primary session lock"
+test_run_nested_session_cannot_reclaim_the_primary_lock() {
+  local source root owner_pid
+  # A nested background Claude job sees the SAME native source, matching ids,
+  # and the primary's live lock pid in its own contiguous ancestry, but the
+  # vendor resets CLAUDE_PID to the nested process itself, and that is what
+  # keeps the primary's lock pair out of its reach (PR #74).
+  for source in resume clear; do
+    root="$TMP_ROOT/run-nested-$source"
+    make_run_primary "$root"
+    # shellcheck disable=SC2016 # The fixture script expands inside run_claude_session.
+    run_claude_session "$root" '
+      export CLAUDE_CODE_SESSION_ID=$FM_OWNER_SESSION
+      export CLAUDE_PID=$$
+      "$FM_RUN" --source startup </dev/null > "$FM_HOME/startup.out" 2>&1
+      cp "$FM_HOME/state/.lock" "$FM_HOME/lock-before"
+      FM_CURRENT_SESSION=$FM_CURRENT_SESSION FM_PAYLOAD=$FM_PAYLOAD FM_RUN=$FM_RUN \
+        FM_HOME=$FM_HOME "$FM_CLAUDE_BIN" -c '\''
+          export CLAUDE_CODE_SESSION_ID=$FM_CURRENT_SESSION
+          export CLAUDE_PID=$$
+          printf "%s" "$FM_PAYLOAD" | "$FM_RUN" > "$FM_HOME/nested.out" 2>&1
+        '\''
+    ' FM_OWNER_SESSION="$OWNER_SESSION" FM_CURRENT_SESSION="$CURRENT_SESSION" \
+      FM_PAYLOAD="$(payload_for SessionStart "$source" "$CURRENT_SESSION")" \
+      FM_CLAUDE_BIN="$CLAUDE_BIN"
+    owner_pid=$(cat "$root/lock-before")
+    [ "$(cat "$root/state/.lock")" = "$owner_pid" ] \
+      || fail "a nested $source moved the primary lock pid"
+    [ "$(cat "$root/state/.lock.session")" = "$OWNER_SESSION" ] \
+      || fail "a nested $source replaced the primary session sidecar"
+  done
+  pass "run wrapper: a nested clear or resume cannot reclaim the primary session lock"
 }
 
 test_run_resume_delegates_to_the_nudge() {
@@ -726,7 +741,7 @@ test_run_resume_delegates_to_the_nudge
 test_run_clear_payload_reclaims_its_own_session_lock
 test_run_resume_payload_repairs_the_sidecar_before_the_nudge
 test_run_refuses_replacement_without_native_evidence
-test_run_nested_resume_cannot_reclaim_the_primary_lock
+test_run_nested_session_cannot_reclaim_the_primary_lock
 test_run_reads_source_from_the_hook_payload
 test_run_unknown_source_takes_the_helm
 test_run_gate_and_scope_are_silent

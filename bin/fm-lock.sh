@@ -3,20 +3,40 @@
 # Writes the durable ancestry PID selected by bin/fm-session-lock-lib.sh.
 # Usage: fm-lock.sh           acquire; exit 1 unless ownership is verified
 #        fm-lock.sh status    print holder and liveness; always exits 0
+#        fm-lock.sh --help    print usage and exit 0; reads and writes nothing
 #        fm-lock.sh --session-replacement
 #                             INTERNAL, granted only by bin/fm-sessionstart-run.sh
 #                             for a validated native Claude SessionStart payload
 #                             whose source is an in-place replacement. It permits
 #                             exactly one extra shape: a live recorded owner that
-#                             is a member of THIS session's verified harness
-#                             ancestry while the recorded sidecar names a
-#                             different valid session, which is what a same-process
-#                             /clear leaves behind. Every other shape - an absent
-#                             lock, a dead owner, a live owner outside that
-#                             ancestry - exits 1 and changes nothing, so the mode
-#                             can never widen ownership the way a generic ancestry
-#                             reclaim would (PR #74).
+#                             is this hook's own direct Claude client process
+#                             (the vendor-set CLAUDE_PID) AND a member of THIS
+#                             session's verified harness ancestry, while the
+#                             recorded sidecar names a different valid session,
+#                             which is what a same-process /clear leaves behind.
+#                             Every other shape - an absent lock, a dead owner,
+#                             a live owner outside that ancestry, a live owner
+#                             that is not this hook's own client process (a
+#                             nested background Claude job) - exits 1 and changes
+#                             nothing, so the mode can never widen ownership the
+#                             way a generic ancestry reclaim would (PR #74).
 set -u
+
+if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
+  cat <<'EOF'
+usage: fm-lock.sh [status | --help | --session-replacement]
+
+  (no argument)          acquire the per-home session lock; exit 1 unless
+                         ownership is verified
+  status                 print holder and liveness; always exits 0
+  --help, -h             print this usage and exit 0; reads and writes nothing
+  --session-replacement  INTERNAL: granted only by bin/fm-sessionstart-run.sh
+                         for a validated native Claude in-place session
+                         replacement; see the script header for the exact
+                         shape it permits
+EOF
+  exit 0
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
@@ -139,9 +159,10 @@ EOF
 }
 
 # In replacement mode nothing but the matching-sidecar reacquire and the
-# same-ancestry replacement may proceed. An absent lock, a dead owner, and a
-# live owner outside this ancestry keep belonging to the ordinary path, so the
-# intent can never be widened into a general reclaim.
+# own-client-process replacement may proceed. An absent lock, a dead owner, a
+# live owner outside this ancestry, and a live owner that is not this hook's
+# own Claude client keep belonging to the ordinary path, so the intent can
+# never be widened into a general reclaim.
 refuse_unless_replacement_applies() {
   [ "$session_replacement" -eq 1 ] || return 0
   [ "$matching_session" -eq 1 ] && return 0
@@ -164,9 +185,13 @@ lock_refuses_current_session() {  # <recorded-pid>
     fi
     if fm_harness_pid_alive "$old"; then
       # A native in-place session replacement keeps this OS process and only
-      # issues a new session id, so the live owner it names is this very
-      # session. Every other live sidecar mismatch stays a competing session.
-      if [ "$session_replacement" -eq 1 ] && pid_in_session_ancestry "$old"; then
+      # issues a new session id, so the live owner it names is this hook's own
+      # direct Claude client process: the vendor resets CLAUDE_PID for every
+      # Claude process, so a nested background job always presents its own pid
+      # rather than the recorded owner's, and every other live sidecar mismatch
+      # stays a competing session.
+      if [ "$session_replacement" -eq 1 ] && [ "$old" = "${CLAUDE_PID:-}" ] \
+        && pid_in_session_ancestry "$old"; then
         replacement_permitted=1
         return 1
       fi

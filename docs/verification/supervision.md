@@ -72,7 +72,8 @@ The interactive TUI is a known uncovered gap: Firstmate has no tracked session-o
 Claude's `/clear` replaces the session INSIDE the running process, and that shape is what the session-lock replacement intent depends on.
 It was reproduced on 2026-08-31 with Claude Code 2.1.251 in a live primary home: after `/clear`, `state/.lock` still named the live harness pid 51150 while `state/.lock.session` still named the previous session `c9d349e6-...` and the new session reported `052724b5-...`.
 Every session start after that refused as read-only, and `bin/fm-claude-stop-autoarm.sh` correctly stayed inert because the recorded owner was alive, so the home could not recover on its own.
-`bin/fm-sessionstart-run.sh` now grants `bin/fm-lock.sh` a narrow replacement acquisition only after the native `SessionEnd` and `SessionStart` payloads prove one matching transition; [`../sessionstart-nudge.md`](../sessionstart-nudge.md#in-place-session-replacement) owns the discriminator and its exclusions.
+`bin/fm-sessionstart-run.sh` now grants `bin/fm-lock.sh` a narrow replacement acquisition only for a strictly parsed native `SessionStart` payload, and the lock accepts it only when the recorded live owner IS this hook's own direct Claude client process - the vendor-set `CLAUDE_PID` - inside the verified ancestry; [`../sessionstart-nudge.md`](../sessionstart-nudge.md#in-place-session-replacement) owns the discriminator and its exclusions.
+`CLAUDE_PID` was probed on 2026-08-31 with Claude Code 2.1.251: every hook receives it, it names the hook's direct Claude client process, and Claude overrides an inherited `CLAUDE_PID` and `CLAUDE_CODE_SESSION_ID` with its own values for its own hooks, so a nested job cannot present the recorded owner's identity.
 
 The vendor facts that discriminator rests on are refreshed by the opt-in run-tier guard:
 
