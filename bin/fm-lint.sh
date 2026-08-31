@@ -209,7 +209,7 @@ fm_lint_agentsmd_validate_current() {
       fm_lint_agentsmd_error 'iconv is required to validate AGENTS.md UTF-8.'
       return 1
     }
-  "$PERL_BIN" -e 'while (read(STDIN, $chunk, 8192)) { exit 1 if index($chunk, "\0") >= 0 }' \
+  "$PERL_BIN" -e "while (read(STDIN, \$chunk, 8192)) { exit 1 if index(\$chunk, \"\\0\") >= 0 }" \
     < "$path" >/dev/null 2>&1 \
     || {
       fm_lint_agentsmd_error 'AGENTS.md is not valid UTF-8 or contains NUL bytes.'
@@ -745,7 +745,7 @@ fm_lint_run_agentsmd_budget() {
   fi
   (set -o pipefail
     git cat-file blob "$base_blob" 2>/dev/null \
-      | "$PERL_BIN" -e 'while (read(STDIN, $chunk, 8192)) { exit 1 if index($chunk, "\0") >= 0 }'
+      | "$PERL_BIN" -e "while (read(STDIN, \$chunk, 8192)) { exit 1 if index(\$chunk, \"\\0\") >= 0 }"
   ) \
     || {
       fm_lint_agentsmd_error "target base $base has an unreadable or invalid UTF-8 AGENTS.md blob, or it contains NUL bytes."
@@ -857,7 +857,7 @@ fi
 # fm_lint_changed_base_ref prefers origin/main, falls back to main, and returns
 # 1 when neither target exists.
 fm_lint_changed_base_ref() {
-  local remote_oid= local_oid=
+  local remote_oid='' local_oid=''
   remote_oid=$(git rev-parse --verify -q 'origin/main^{commit}' 2>/dev/null) || remote_oid=
   local_oid=$(git rev-parse --verify -q 'main^{commit}' 2>/dev/null) || local_oid=
   if [ -n "$remote_oid" ]; then
