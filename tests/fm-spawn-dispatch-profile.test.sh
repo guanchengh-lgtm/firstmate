@@ -901,7 +901,7 @@ test_pi_threads_model_and_max_effort() {
   expect_code 0 "$status" "pi spawn with max effort should succeed"
   assert_meta_profile "$HOME_DIR/state/$id.meta" pi openai-codex/gpt-5.6-sol max
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "FM_PI_HARNESS=pi '$FAKEBIN_DIR/pi' --tui-mode regular --model 'openai-codex/gpt-5.6-sol' --thinking 'max' -e" \
+  assert_contains "$launch" "FM_PI_HARNESS=pi FM_PI_CALM_WORKER=1 '$FAKEBIN_DIR/pi' --tui-mode regular --model 'openai-codex/gpt-5.6-sol' --thinking 'max' -e" \
     "pi launch did not force the regular TUI while threading the requested model and max thinking level"
   assert_not_contains "$launch" "FM_FIRSTMATE_PI_LAUNCH_BRIEF=" \
     "pi launch still exports the removed Calm input-reroute binding"
@@ -923,7 +923,7 @@ test_pi_signed_threads_shared_pi_profile_and_preserves_identity() {
   assert_contains "$out" "spawned $id harness=pi-signed" "pi-signed spawn did not preserve its visible identity"
   assert_meta_profile "$HOME_DIR/state/$id.meta" pi-signed openai-codex/gpt-5.6-sol max
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "FM_PI_HARNESS=pi-signed '$FAKEBIN_DIR/pi-signed' --tui-mode regular --model 'openai-codex/gpt-5.6-sol' --thinking 'max' -e" \
+  assert_contains "$launch" "FM_PI_HARNESS=pi-signed FM_PI_CALM_WORKER=1 '$FAKEBIN_DIR/pi-signed' --tui-mode regular --model 'openai-codex/gpt-5.6-sol' --thinking 'max' -e" \
     "pi-signed launch did not force the regular TUI with Pi's model, thinking, and extension semantics"
   assert_contains "$launch" "fm-operational-input.sh' encode launch-brief" \
     "pi-signed launch lost the canonical typed launch-brief envelope"
@@ -941,6 +941,35 @@ test_pi_signed_threads_shared_pi_profile_and_preserves_identity() {
   assert_contains "$ext" '"--source", "pi-ext"' "pi extension does not attribute its semantic source"
   assert_contains "$ext" 'pi.on("turn_end"' "pi extension lost the turn-end notification touch"
   pass "pi-signed shares Pi launch semantics while preserving its configured and recorded identity"
+}
+
+test_pi_worker_marks_calm_inert_without_disabling_discovery() {
+  local harness id launch out rec status
+  for harness in pi pi-signed; do
+    id="profile-${harness}-calm-worker-z8c"
+    rec=$(make_spawn_case "profile-${harness}-calm-worker" "$harness" "$id")
+    read_case_record "$rec"
+
+    out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+    status=$?
+    expect_code 0 "$status" "$harness worker spawn should succeed"
+    launch=$(cat "$LAUNCH_LOG")
+    assert_contains "$launch" "FM_PI_CALM_WORKER=1 '$FAKEBIN_DIR/$harness'" \
+      "$harness worker launch did not make Calm process-scoped and inert"
+    assert_contains "$launch" "-e '$HOME_DIR/state/$id.pi-ext.ts'" \
+      "$harness worker launch lost its explicit task extension"
+    assert_not_contains "$launch" "--no-extensions" \
+      "$harness worker launch disabled extension discovery"
+    assert_not_contains "$launch" "--no-approve" \
+      "$harness worker launch disabled project resources"
+    assert_not_contains "$launch" "PI_CODING_AGENT_DIR=" \
+      "$harness worker launch replaced Pi's user directory"
+    if [ -f "$LAUNCH_LOG.exports" ]; then
+      assert_not_contains "$(cat "$LAUNCH_LOG.exports")" "FM_PI_CALM_WORKER=" \
+        "$harness worker marker escaped into the parent shell"
+    fi
+  done
+  pass "Pi workers scope Calm off while keeping discovery and the generated task extension"
 }
 
 test_pi_tui_mode_probe_is_safe_for_old_and_new_pi() {
@@ -1015,6 +1044,8 @@ test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity() {
   launch=$(cat "$LAUNCH_LOG")
   assert_contains "$launch" "FM_PI_HARNESS=pi-signed '$FAKEBIN_DIR/pi-signed' --tui-mode regular -e '$sm/.pi/extensions/fm-primary-turnend-guard.ts' -e '$sm/.pi/extensions/fm-primary-pi-watch.ts'" \
     "pi-signed secondmate did not force the regular TUI with Pi's primary extension launch shape"
+  assert_not_contains "$launch" "FM_PI_CALM_WORKER=" \
+    "pi-signed secondmate launch incorrectly disabled primary-session Calm"
   pass "pi-signed is a distinct persistent secondmate runtime with shared Pi supervision semantics"
 }
 
@@ -2242,6 +2273,7 @@ test_opencode_threads_model_and_ignores_effort_axis
 test_pi_threads_model_and_max_effort
 test_pi_tui_mode_probe_is_safe_for_old_and_new_pi
 test_pi_signed_threads_shared_pi_profile_and_preserves_identity
+test_pi_worker_marks_calm_inert_without_disabling_discovery
 test_pi_signed_missing_binary_refuses_before_endpoint_or_metadata
 test_pi_signed_persistent_secondmate_uses_pi_extensions_and_identity
 test_batch_forwards_shared_profile_flags

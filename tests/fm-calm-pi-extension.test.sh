@@ -441,6 +441,250 @@ JS
   pass "Calm registers none of its 7 built-in tool wrappers at load while config/calm is off, and all 7 synchronously at load while config/calm is on"
 }
 
+test_calm_copy_authority_and_worker_scope() {
+  local copy fixture out output_file status
+  if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
+    echo "skip: node or npm not found for Pi calm copy-authority test"
+    return 0
+  fi
+  if [ ! -f "$PI_PACKAGE_DIR/package.json" ]; then
+    echo "skip: installed @earendil-works/pi-coding-agent package not found"
+    return 0
+  fi
+
+  fixture="$TMP_ROOT/copy-authority"
+  mkdir -p \
+    "$fixture/global/lib" \
+    "$fixture/firstmate/.pi/extensions/lib" \
+    "$fixture/non-firstmate" \
+    "$fixture/non-file-project/.pi/extensions/fm-calm.ts" \
+    "$fixture/home/config" \
+    "$fixture/node_modules/@earendil-works"
+  for copy in "$fixture/global" "$fixture/firstmate/.pi/extensions"; do
+    cp "$EXT" "$copy/fm-calm.ts"
+    cp "$ASSISTANT_LAYOUT" "$copy/lib/fm-calm-assistant-layout.ts"
+    cp "$OPERATIONAL_USER_LAYOUT" "$copy/lib/fm-calm-operational-user-layout.ts"
+    cp "$VISIBILITY" "$copy/lib/fm-calm-visibility.ts"
+    cp "$WORKING_SHIP" "$copy/lib/fm-calm-working-ship.ts"
+    cp "$PI_OPERATIONAL_INPUT" "$copy/lib/fm-operational-input.ts"
+  done
+  ln -s "$PI_PACKAGE_DIR" "$fixture/node_modules/@earendil-works/pi-coding-agent"
+  ln -s "$PI_PACKAGE_DIR/node_modules/@earendil-works/pi-tui" "$fixture/node_modules/@earendil-works/pi-tui"
+  ln -s "$PI_PACKAGE_DIR/node_modules/typebox" "$fixture/node_modules/typebox"
+  printf '%s\n' '{"type":"module"}' >"$fixture/package.json"
+  printf '%s\n' on >"$fixture/home/config/calm"
+
+  output_file="$fixture/node-output"
+  (cd "$fixture/non-firstmate" && \
+    GLOBAL_EXT="$fixture/global/fm-calm.ts" \
+    PROJECT_EXT="$fixture/firstmate/.pi/extensions/fm-calm.ts" \
+    FIRSTMATE_PROJECT="$fixture/firstmate" \
+    NON_FIRSTMATE_PROJECT="$fixture/non-firstmate" \
+    NON_FILE_PROJECT="$fixture/non-file-project" \
+    FM_HOME="$fixture/home" \
+    PI_PACKAGE_DIR="$PI_PACKAGE_DIR" \
+    node --input-type=module) >"$output_file" 2>&1 <<'JS'
+import { realpathSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const packageRoot = process.env.PI_PACKAGE_DIR;
+const PiCodingAgent = await import(pathToFileURL(`${packageRoot}/dist/index.js`).href);
+const originalAssistantLayout = PiCodingAgent.AssistantMessageComponent.prototype.updateContent;
+const originalOperationalUserLayout = PiCodingAgent.InteractiveMode.prototype.addMessageToChat;
+
+function strictRegistry() {
+  return {
+    tools: new Map(),
+    commands: new Map(),
+    handlers: [],
+    entryRenderers: [],
+    toolRefusals: 0,
+    commandRefusals: 0,
+  };
+}
+
+function apiFor(ownerPath, registry) {
+  const realOwnerPath = realpathSync(ownerPath);
+  return {
+    events: { emit() {}, on() {} },
+    on(event, handler) {
+      registry.handlers.push({ event, handler, ownerPath: realOwnerPath });
+    },
+    registerCommand(name, command) {
+      if (registry.commands.has(name)) {
+        registry.commandRefusals += 1;
+        return;
+      }
+      registry.commands.set(name, { command, ownerPath: realOwnerPath });
+    },
+    registerEntryRenderer(renderer) {
+      registry.entryRenderers.push({ renderer, ownerPath: realOwnerPath });
+    },
+    registerTool(tool) {
+      if (registry.tools.has(tool.name)) {
+        registry.toolRefusals += 1;
+        return;
+      }
+      registry.tools.set(tool.name, { tool, ownerPath: realOwnerPath });
+    },
+    getAllTools() {
+      return Array.from(registry.tools.entries()).map(([name, { ownerPath }]) => ({
+        name,
+        sourceInfo: { source: "extension", path: ownerPath },
+      }));
+    },
+  };
+}
+
+async function loadFactory(path, scenario) {
+  const extension = await import(
+    `${pathToFileURL(path).href}?scenario=${scenario}-${Date.now()}-${Math.random()}`
+  );
+  return extension.default;
+}
+
+function assertNoRegistration(registry, scenario) {
+  if (
+    registry.tools.size !== 0 ||
+    registry.commands.size !== 0 ||
+    registry.handlers.length !== 0 ||
+    registry.entryRenderers.length !== 0
+  ) {
+    throw new Error(`${scenario} registered Calm behavior: ${JSON.stringify({
+      tools: Array.from(registry.tools.keys()),
+      commands: Array.from(registry.commands.keys()),
+      handlers: registry.handlers.map(({ event }) => event),
+      entryRenderers: registry.entryRenderers.length,
+    })}`);
+  }
+}
+
+process.chdir(process.env.FIRSTMATE_PROJECT);
+process.env.FM_PI_CALM_WORKER = "1";
+const workerRegistry = strictRegistry();
+const workerGlobal = await loadFactory(process.env.GLOBAL_EXT, "worker-global");
+const workerProject = await loadFactory(process.env.PROJECT_EXT, "worker-project");
+workerGlobal(apiFor(process.env.GLOBAL_EXT, workerRegistry));
+workerProject(apiFor(process.env.PROJECT_EXT, workerRegistry));
+assertNoRegistration(workerRegistry, "ordinary worker");
+if (
+  PiCodingAgent.AssistantMessageComponent.prototype.updateContent !== originalAssistantLayout ||
+  PiCodingAgent.InteractiveMode.prototype.addMessageToChat !== originalOperationalUserLayout
+) {
+  throw new Error("ordinary worker installed a Calm presentation adapter");
+}
+delete process.env.FM_PI_CALM_WORKER;
+
+process.chdir(process.env.NON_FIRSTMATE_PROJECT);
+const duplicateRegistry = strictRegistry();
+const duplicateGlobal = await loadFactory(process.env.GLOBAL_EXT, "duplicate-global");
+const duplicateProject = await loadFactory(process.env.PROJECT_EXT, "duplicate-project");
+duplicateGlobal(apiFor(process.env.GLOBAL_EXT, duplicateRegistry));
+duplicateProject(apiFor(process.env.PROJECT_EXT, duplicateRegistry));
+if (duplicateRegistry.tools.size !== 7 || duplicateRegistry.toolRefusals !== 7) {
+  throw new Error(
+    `strict duplicate fixture did not refuse the second copy: tools=${duplicateRegistry.tools.size} refusals=${duplicateRegistry.toolRefusals}`,
+  );
+}
+
+process.chdir(process.env.FIRSTMATE_PROJECT);
+const firstmateRegistry = strictRegistry();
+const primaryGlobal = await loadFactory(process.env.GLOBAL_EXT, "primary-global");
+const primaryProject = await loadFactory(process.env.PROJECT_EXT, "primary-project");
+primaryGlobal(apiFor(process.env.GLOBAL_EXT, firstmateRegistry));
+primaryProject(apiFor(process.env.PROJECT_EXT, firstmateRegistry));
+const projectOwner = realpathSync(process.env.PROJECT_EXT);
+const firstmateToolOwners = new Set(
+  Array.from(firstmateRegistry.tools.values()).map(({ ownerPath }) => ownerPath),
+);
+const firstmateCommand = firstmateRegistry.commands.get("calm");
+const firstmateHandlerOwners = new Set(
+  firstmateRegistry.handlers.map(({ ownerPath }) => ownerPath),
+);
+const firstmateEntryRendererOwners = new Set(
+  firstmateRegistry.entryRenderers.map(({ ownerPath }) => ownerPath),
+);
+if (
+  firstmateRegistry.tools.size !== 7 ||
+  firstmateToolOwners.size !== 1 ||
+  !firstmateToolOwners.has(projectOwner) ||
+  firstmateRegistry.commands.size !== 1 ||
+  firstmateCommand?.ownerPath !== projectOwner ||
+  firstmateRegistry.handlers.length !== 4 ||
+  firstmateHandlerOwners.size !== 1 ||
+  !firstmateHandlerOwners.has(projectOwner) ||
+  firstmateRegistry.entryRenderers.length !== 1 ||
+  firstmateEntryRendererOwners.size !== 1 ||
+  !firstmateEntryRendererOwners.has(projectOwner) ||
+  firstmateRegistry.toolRefusals !== 0 ||
+  firstmateRegistry.commandRefusals !== 0
+) {
+  throw new Error(`Firstmate primary did not give Calm to only the project copy: ${JSON.stringify({
+    tools: firstmateRegistry.tools.size,
+    toolOwners: Array.from(firstmateToolOwners),
+    commands: firstmateRegistry.commands.size,
+    commandOwner: firstmateCommand?.ownerPath,
+    handlers: firstmateRegistry.handlers.length,
+    handlerOwners: Array.from(firstmateHandlerOwners),
+    entryRenderers: firstmateRegistry.entryRenderers.length,
+    entryRendererOwners: Array.from(firstmateEntryRendererOwners),
+    toolRefusals: firstmateRegistry.toolRefusals,
+    commandRefusals: firstmateRegistry.commandRefusals,
+  })}`);
+}
+
+const globalOwner = realpathSync(process.env.GLOBAL_EXT);
+function assertGlobalCalm(registry, scenario) {
+  const toolOwners = new Set(
+    Array.from(registry.tools.values()).map(({ ownerPath }) => ownerPath),
+  );
+  const handlerOwners = new Set(registry.handlers.map(({ ownerPath }) => ownerPath));
+  const entryRendererOwners = new Set(
+    registry.entryRenderers.map(({ ownerPath }) => ownerPath),
+  );
+  if (
+    registry.tools.size !== 7 ||
+    toolOwners.size !== 1 ||
+    !toolOwners.has(globalOwner) ||
+    registry.commands.get("calm")?.ownerPath !== globalOwner ||
+    registry.handlers.length !== 4 ||
+    handlerOwners.size !== 1 ||
+    !handlerOwners.has(globalOwner) ||
+    registry.entryRenderers.length !== 1 ||
+    entryRendererOwners.size !== 1 ||
+    !entryRendererOwners.has(globalOwner)
+  ) {
+    throw new Error(`${scenario} did not retain global Calm: ${JSON.stringify({
+      tools: registry.tools.size,
+      toolOwners: Array.from(toolOwners),
+      commandOwner: registry.commands.get("calm")?.ownerPath,
+      handlers: registry.handlers.length,
+      handlerOwners: Array.from(handlerOwners),
+      entryRenderers: registry.entryRenderers.length,
+      entryRendererOwners: Array.from(entryRendererOwners),
+    })}`);
+  }
+}
+
+process.chdir(process.env.NON_FIRSTMATE_PROJECT);
+const nonFirstmateRegistry = strictRegistry();
+const nonFirstmateGlobal = await loadFactory(process.env.GLOBAL_EXT, "non-firstmate-global");
+nonFirstmateGlobal(apiFor(process.env.GLOBAL_EXT, nonFirstmateRegistry));
+assertGlobalCalm(nonFirstmateRegistry, "non-Firstmate primary");
+
+process.chdir(process.env.NON_FILE_PROJECT);
+const nonFileRegistry = strictRegistry();
+const nonFileGlobal = await loadFactory(process.env.GLOBAL_EXT, "non-file-global");
+nonFileGlobal(apiFor(process.env.GLOBAL_EXT, nonFileRegistry));
+assertGlobalCalm(nonFileRegistry, "project with no regular Calm copy");
+JS
+  status=$?
+  out=$(cat "$output_file")
+  [ "$status" -eq 0 ] || fail "Pi calm copy authority and worker scope failed: $out"
+  [ -z "$out" ] || fail "Pi calm copy-authority test printed output: $out"
+  pass "Calm detects an ungated duplicate, stays inert for ordinary workers, prefers the current Firstmate project copy, and remains global in other projects"
+}
+
 test_calm_activation_collision_and_regression_bound() {
   local fixture out output_file status
   if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
@@ -3960,6 +4204,7 @@ test_pi_compat_no_upper_bound
 test_pi_compat_degraded_adapter
 test_pi_compat_missing_adapter_exports
 test_builtin_gate_load_time
+test_calm_copy_authority_and_worker_scope
 test_calm_activation_collision_and_regression_bound
 test_rendering_and_session_lifecycle
 test_calm_mid_turn_working_notes

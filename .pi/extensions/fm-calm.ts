@@ -25,6 +25,7 @@ import {
   realpathSync,
   renameSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -107,6 +108,13 @@ const realpathOrSelf = (path: string): string => {
   }
 };
 const extensionRealFile = realpathOrSelf(extensionFile);
+const isRegularFile = (path: string): boolean => {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+};
 
 // Each presentation adapter probes the exact Pi API it patches. If a future Pi removes
 // that API, only the affected adapter degrades; the rest of Calm keeps working.
@@ -120,6 +128,15 @@ function installCalmPresentationAdapter(name: string, install: () => void): void
 }
 
 export default function (pi: ExtensionAPI) {
+  // Ordinary workers need only their task extension. In a primary session, the
+  // current project's tracked Calm copy owns the feature over a different user copy.
+  if (process.env.FM_PI_CALM_WORKER === "1") return;
+
+  const projectCalmFile = resolve(process.cwd(), ".pi/extensions/fm-calm.ts");
+  if (isRegularFile(projectCalmFile) && realpathOrSelf(projectCalmFile) !== extensionRealFile) {
+    return;
+  }
+
   installCalmPresentationAdapter("collapsed-thinking", installCalmAssistantLayout);
   installCalmPresentationAdapter("operational-user-row", installCalmOperationalUserLayout);
 
@@ -423,7 +440,7 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.setHiddenThinkingLabel(calmPresentationIsActive() ? "" : undefined);
     ctx.ui.setStatus("firstmate-calm", undefined);
     removeTerminalInputHandler?.();
-    removeTerminalInputHandler = ctx.ui.onTerminalInput((data) => {
+    removeTerminalInputHandler = ctx.ui.onTerminalInput((data): undefined => {
       if (!getKeybindings().matches(data, "tui.input.submit")) return;
 
       const input = ctx.ui.getEditorText().trim();

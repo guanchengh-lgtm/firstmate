@@ -275,6 +275,40 @@ test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint() {
   pass "fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree"
 }
 
+test_pi_relaunch_restores_calm_worker_scope() {
+  local dir id launch out rc
+  id=rl-pi-calm
+  dir=$(new_case pi-calm-relaunch "$id")
+  add_ship_task "$dir" "$id" pi
+  mkdir -p "$dir/wt/.pi/extensions"
+  printf '%s\n' '// tracked project Calm fixture' > "$dir/wt/.pi/extensions/fm-calm.ts"
+  cat > "$dir/fakebin/pi" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --help ]; then
+  printf '%s\n' 'Pi test double' 'Options: --help --tui-mode <mode>'
+fi
+exit 0
+SH
+  chmod +x "$dir/fakebin/pi"
+  printf 'pi' > "$dir/fake/command"
+  printf 'pi' > "$dir/fake/becomes"
+
+  out=$(run_control "$dir" "$id" relaunch --note "resume ordinary Pi worker"); rc=$?
+  expect_code 0 "$rc" "a recorded Pi worker should relaunch"$'\n'"$out"
+  launch=$(cat "$dir/fake/literal")
+  assert_contains "$launch" "FM_PI_CALM_WORKER=1 '$dir/fakebin/pi'" \
+    "Pi relaunch did not restore the process-scoped Calm worker marker"
+  assert_contains "$launch" "-e '$dir/home/state/$id.pi-ext.ts'" \
+    "Pi relaunch did not restore the generated task extension"
+  assert_not_contains "$launch" "--no-extensions" \
+    "Pi relaunch disabled extension discovery"
+  assert_not_contains "$launch" "--no-approve" \
+    "Pi relaunch disabled project resources"
+  assert_present "$dir/wt/.pi/extensions/fm-calm.ts" \
+    "Pi relaunch moved or removed the project Calm copy"
+  pass "fm-control relaunch: an ordinary Pi worker regains its Calm scope without moving the project copy"
+}
+
 test_relaunch_preserves_durable_task_metadata() {
   local dir out rc
   dir=$(new_case durable-meta rl19)
@@ -1414,6 +1448,7 @@ test_spawn_relaunch_refuses_a_pane_outside_the_worktree() {
 }
 
 test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint
+test_pi_relaunch_restores_calm_worker_scope
 test_relaunch_preserves_durable_task_metadata
 test_relaunch_serializes_concurrent_durable_metadata_publication
 test_disabled_relaunch_clears_prior_trace_context
