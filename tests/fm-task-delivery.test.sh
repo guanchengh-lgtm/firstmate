@@ -44,8 +44,8 @@ make_home() {  # <name> [<registry-line>...]
   printf '%s\n' "$home|$projects/proj|$fakebin"
 }
 
-write_brief() {  # <home> <id> [<recorded-mode>] [<role>]
-  local home=$1 id=$2 mode=${3:-} role
+write_brief() {  # <home> <id> [<recorded-mode>] [<role>] [<surface>]
+  local home=$1 id=$2 mode=${3:-} role surface=${5:-}
   if [ "$#" -ge 4 ]; then
     role=$4
   elif [ -n "$mode" ]; then
@@ -69,6 +69,11 @@ write_brief() {  # <home> <id> [<recorded-mode>] [<role>]
     printf '%s\n' "$role" > "$home/data/$id/role"
   else
     rm -f "$home/data/$id/role"
+  fi
+  if [ -n "$surface" ]; then
+    printf '%s\n' "$surface" > "$home/data/$id/surface"
+  else
+    rm -f "$home/data/$id/surface"
   fi
 }
 
@@ -181,7 +186,7 @@ EOF
   assert_absent "$home/state/delivery-mismatch-b1.meta" "mismatched spawn wrote task metadata"
 
   # The agreeing case clears the check and only fails later, at the refusing tmux.
-  write_brief "$home" delivery-agree-b2 direct-PR
+  write_brief "$home" delivery-agree-b2 direct-PR builder internal-only
   out=$(run_spawn "$home" "$fakebin" delivery-agree-b2 "$proj" claude --mode direct-PR --yolo off --role builder --surface internal-only)
   assert_not_contains "$out" "delivery mismatch" "an agreeing mode was reported as a mismatch"
 
@@ -313,7 +318,7 @@ EOF
 # (AGENTS.md section 7), so a downgrade there is announced too. A conditional
 # policy is excluded because both of its legs are legitimate classifications.
 test_spawn_notices_a_rigor_downgrade_against_the_registry() {
-  local rec home proj fakebin out label mode registry expect registered n=0 extra
+  local rec home proj fakebin out label mode registry expect registered n=0 extra surface
   while IFS='|' read -r label registry mode expect registered; do
     [ -n "$label" ] || continue
     n=$((n + 1))
@@ -321,9 +326,13 @@ test_spawn_notices_a_rigor_downgrade_against_the_registry() {
     IFS='|' read -r home proj fakebin <<EOF
 $rec
 EOF
-    write_brief "$home" "delivery-dev-$n" "$mode"
     extra=()
-    [ "$mode" != direct-PR ] || extra=(--surface internal-only)
+    surface=
+    if [ "$mode" = direct-PR ]; then
+      extra=(--surface internal-only)
+      surface=internal-only
+    fi
+    write_brief "$home" "delivery-dev-$n" "$mode" builder "$surface"
     out=$(run_spawn "$home" "$fakebin" "delivery-dev-$n" "$proj" claude \
       --mode "$mode" --yolo off --role builder ${extra[@]+"${extra[@]}"})
     case "$expect" in
@@ -547,15 +556,44 @@ EOF
   assert_contains "$out" "requires --surface internal-only" "omitted surface spawn did not fail closed"
   assert_absent "$home/state/surf-omitted-s4.meta" "direct-PR spawn without --surface wrote task metadata"
 
-  write_brief "$home" surf-internal-s5 direct-PR
+  write_brief "$home" surf-internal-s5 direct-PR builder internal-only
   out=$(run_spawn "$home" "$fakebin" surf-internal-s5 "$proj" claude --mode direct-PR --yolo off --role builder --surface internal-only)
   assert_not_contains "$out" "refused for" "internal-only + direct-PR was refused"
   assert_not_contains "$out" "requires --surface internal-only" "internal-only + direct-PR was treated as omitted"
 
-  write_brief "$home" surf-nm-product-s6 no-mistakes
+  write_brief "$home" surf-nm-product-s6 no-mistakes builder product
   out=$(run_spawn "$home" "$fakebin" surf-nm-product-s6 "$proj" claude --mode no-mistakes --yolo off --role builder --surface product)
   assert_not_contains "$out" "refused for" "product + no-mistakes spawn was refused"
   assert_not_contains "$out" "requires --surface" "product + no-mistakes required a surface it already had"
+
+  write_brief "$home" surf-marker-missing-s7 direct-PR
+  out=$(run_spawn "$home" "$fakebin" surf-marker-missing-s7 "$proj" claude --mode direct-PR --yolo off --role builder --surface internal-only)
+  status=$?
+  [ "$status" -ne 0 ] || fail "direct-PR spawn without a surface marker should exit non-zero"
+  assert_contains "$out" "requires exactly one regular surface marker" \
+    "direct-PR spawn did not refuse its missing surface marker"
+
+  write_brief "$home" surf-marker-mismatch-s8 direct-PR builder product
+  out=$(run_spawn "$home" "$fakebin" surf-marker-mismatch-s8 "$proj" claude --mode direct-PR --yolo off --role builder --surface internal-only)
+  status=$?
+  [ "$status" -ne 0 ] || fail "direct-PR spawn with a mismatched surface marker should exit non-zero"
+  assert_contains "$out" "surface marker says surface=product" \
+    "direct-PR spawn did not refuse its mismatched surface marker"
+
+  write_brief "$home" surf-marker-duplicate-s9 direct-PR builder internal-only
+  printf 'internal-only\n' >> "$home/data/surf-marker-duplicate-s9/surface"
+  out=$(run_spawn "$home" "$fakebin" surf-marker-duplicate-s9 "$proj" claude --mode direct-PR --yolo off --role builder --surface internal-only)
+  status=$?
+  [ "$status" -ne 0 ] || fail "direct-PR spawn with duplicate surface classifications should exit non-zero"
+  assert_contains "$out" "contains 2 classifications" \
+    "direct-PR spawn did not refuse its duplicate surface classifications"
+
+  write_brief "$home" surf-marker-unrecorded-s10 no-mistakes builder product
+  out=$(run_spawn "$home" "$fakebin" surf-marker-unrecorded-s10 "$proj" claude --mode no-mistakes --yolo off --role builder)
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn omitting a recorded surface should exit non-zero"
+  assert_contains "$out" "exists but the spawn request records no surface" \
+    "spawn did not refuse an omitted recorded surface"
 
   write_surface_scout_meta() {
     local id=$1

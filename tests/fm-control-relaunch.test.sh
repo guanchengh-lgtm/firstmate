@@ -1304,11 +1304,15 @@ test_spawn_relaunch_validates_the_recorded_surface() {
   sed 's/^mode=no-mistakes$/mode=direct-PR/' "$meta" > "$meta.tmp"
   mv "$meta.tmp" "$meta"
   printf 'surface=internal-only\n' >> "$meta"
+  printf 'internal-only\n' > "$dir/home/data/rl36/surface"
   printf 'zsh' > "$dir/fake/command"
   out=$(run_spawn "$dir" rl36 --relaunch); rc=$?
   expect_code 0 "$rc" "internal-only direct-PR relaunch should succeed"$'\n'"$out"
   [ "$(meta_field "$dir" rl36 surface)" = internal-only ] \
     || fail "relaunch did not preserve the validated internal-only surface"
+  [ "$(awk 'END { print NR + 0 }' "$dir/home/data/rl36/surface")" = 1 ] \
+    && grep -qx internal-only "$dir/home/data/rl36/surface" \
+    || fail "relaunch did not preserve exactly one matching surface marker"
 
   dir=$(new_case surface-missing rl37)
   add_ship_task "$dir" rl37 claude
@@ -1328,6 +1332,7 @@ test_spawn_relaunch_validates_the_recorded_surface() {
   sed 's/^mode=no-mistakes$/mode=direct-PR/' "$meta" > "$meta.tmp"
   mv "$meta.tmp" "$meta"
   printf 'surface=product\n' >> "$meta"
+  printf 'product\n' > "$dir/home/data/rl38/surface"
   printf 'zsh' > "$dir/fake/command"
   out=$(run_spawn "$dir" rl38 --relaunch); rc=$?
   expect_code 1 "$rc" "product direct-PR relaunch should refuse"
@@ -1344,6 +1349,44 @@ test_spawn_relaunch_validates_the_recorded_surface() {
   assert_contains "$out" "must be one of internal-only, product, mixed, uncertain" \
     "relaunch did not validate the recorded surface closed set"
   [ -z "$(cat "$dir/fake/literal")" ] || fail "invalid-surface relaunch delivered launch bytes"
+
+  dir=$(new_case surface-marker-missing rl40)
+  add_ship_task "$dir" rl40 claude
+  meta="$dir/home/state/rl40.meta"
+  sed 's/^mode=no-mistakes$/mode=direct-PR/' "$meta" > "$meta.tmp"
+  mv "$meta.tmp" "$meta"
+  printf 'surface=internal-only\n' >> "$meta"
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl40 --relaunch); rc=$?
+  expect_code 1 "$rc" "direct-PR relaunch without a surface marker should refuse"
+  assert_contains "$out" "requires exactly one regular surface marker" \
+    "relaunch did not refuse its missing surface marker"
+
+  dir=$(new_case surface-marker-mismatch rl41)
+  add_ship_task "$dir" rl41 claude
+  meta="$dir/home/state/rl41.meta"
+  sed 's/^mode=no-mistakes$/mode=direct-PR/' "$meta" > "$meta.tmp"
+  mv "$meta.tmp" "$meta"
+  printf 'surface=internal-only\n' >> "$meta"
+  printf 'product\n' > "$dir/home/data/rl41/surface"
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl41 --relaunch); rc=$?
+  expect_code 1 "$rc" "direct-PR relaunch with a mismatched surface marker should refuse"
+  assert_contains "$out" "surface marker says surface=product" \
+    "relaunch did not refuse its mismatched surface marker"
+
+  dir=$(new_case surface-marker-duplicate rl42)
+  add_ship_task "$dir" rl42 claude
+  meta="$dir/home/state/rl42.meta"
+  sed 's/^mode=no-mistakes$/mode=direct-PR/' "$meta" > "$meta.tmp"
+  mv "$meta.tmp" "$meta"
+  printf 'surface=internal-only\n' >> "$meta"
+  printf 'internal-only\ninternal-only\n' > "$dir/home/data/rl42/surface"
+  printf 'zsh' > "$dir/fake/command"
+  out=$(run_spawn "$dir" rl42 --relaunch); rc=$?
+  expect_code 1 "$rc" "direct-PR relaunch with duplicate surface classifications should refuse"
+  assert_contains "$out" "contains 2 classifications" \
+    "relaunch did not refuse its duplicate surface classifications"
   pass "fm-spawn --relaunch: recorded surfaces are preserved and direct-PR fails closed"
 }
 

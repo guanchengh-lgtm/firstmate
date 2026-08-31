@@ -303,6 +303,36 @@ SUB_HOME_MARKER=".fm-secondmate-home"
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
 # a direct report (see bin/fm-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
+
+assert_task_surface_marker() {  # <expected-surface> <surface-set> <record-source>
+  local expected=$1 surface_set=$2 record_source=$3 marker marker_count marker_surface
+  marker="$DATA/$ID/surface"
+  if [ "$surface_set" -eq 0 ]; then
+    if [ -e "$marker" ] || [ -L "$marker" ]; then
+      echo "error: task $ID surface marker disagrees with $record_source: $marker exists but $record_source records no surface" >&2
+      return 1
+    fi
+    return 0
+  fi
+  if [ ! -f "$marker" ] || [ -L "$marker" ]; then
+    echo "error: task $ID requires exactly one regular surface marker at $marker matching $record_source surface=$expected" >&2
+    return 1
+  fi
+  marker_count=$(awk 'END { print NR + 0 }' "$marker" 2>/dev/null) || {
+    echo "error: task $ID surface marker cannot be read: $marker" >&2
+    return 1
+  }
+  if [ "$marker_count" -ne 1 ]; then
+    echo "error: task $ID surface marker contains $marker_count classifications; exactly one must match $record_source surface=$expected" >&2
+    return 1
+  fi
+  marker_surface=$(sed -n '1p' "$marker")
+  fm_delivery_assert_surface_value "$marker_surface" || return 1
+  if [ "$marker_surface" != "$expected" ]; then
+    echo "error: task $ID surface marker says surface=$marker_surface but $record_source says surface=$expected" >&2
+    return 1
+  fi
+}
 # Skip the watcher guard when re-exec'd for one pair of a batch (FM_SPAWN_NO_GUARD is
 # set by the batch loop below), so the guard runs once for the batch, not once per pair.
 [ -n "${FM_SPAWN_NO_GUARD:-}" ] || "$FM_ROOT/bin/fm-guard.sh" || true
@@ -1201,6 +1231,7 @@ if [ "$RELAUNCH" -eq 1 ]; then
       exit 1
       ;;
   esac
+  assert_task_surface_marker "$SURFACE" "$SURFACE_SET" "task metadata" || exit 1
   if [ "$MODE" = direct-PR ] && [ "$SURFACE_SET" -eq 0 ]; then
     echo "error: task $ID records mode=direct-PR without a surface; legacy direct-PR tasks require fresh classification before relaunch" >&2
     exit 1
@@ -1902,6 +1933,9 @@ if [ "$KIND" = ship ]; then
   elif [ "$BRIEF_MODE" != "$MODE" ]; then
     echo "error: delivery mismatch for $ID: the task mode marker says mode=$BRIEF_MODE but this spawn passed --mode $MODE; correct the flag or re-scaffold the brief so the worker's instructions and the task record agree" >&2
     exit 1
+  fi
+  if [ "$RELAUNCH" -eq 0 ]; then
+    assert_task_surface_marker "$SURFACE" "$SURFACE_SET" "the spawn request" || exit 1
   fi
   BRIEF_ROLE=
   if [ -f "$ROLE_MARKER" ]; then
@@ -3300,6 +3334,12 @@ fi
 OV_HARNESS=
 if [ -n "${OV:-}" ] && [ -f "$STATE/$OV.meta" ] && [ ! -L "$STATE/$OV.meta" ]; then
   OV_HARNESS=$(sed -n 's/^harness=//p' "$STATE/$OV.meta" 2>/dev/null | tail -1)
+fi
+if [ "$KIND" = ship ] && [ "$SURFACE_SET" -eq 1 ]; then
+  printf '%s\n' "$SURFACE" > "$DATA/$ID/surface" || {
+    echo "error: could not persist task $ID surface marker at $DATA/$ID/surface" >&2
+    exit 1
+  }
 fi
 if ! {
   echo "window=$META_WINDOW"
