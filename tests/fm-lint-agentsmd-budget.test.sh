@@ -478,7 +478,7 @@ test_binary_attributes_do_not_hide_added_lines() {
 }
 
 test_why_targets_locks_and_patch_like_lines() {
-  local repo marker
+  local repo marker outside
   repo=$(repo_new why-targets 200)
   git -C "$repo" checkout -qb feature
   for marker in \
@@ -499,6 +499,23 @@ test_why_targets_locks_and_patch_like_lines() {
     git -C "$repo" checkout -q -- AGENTS.md
     printf '%s\n' "--- content. <!-- why: $marker -->" > "$repo/AGENTS.md"
     expect_fail "invalid why target $marker" 'why' "$repo"
+  done
+  outside="$TMP_ROOT/outside-why-targets"
+  mkdir -p "$outside/doc" "$outside/skill" "$outside/script"
+  printf '# Outside document\n' > "$outside/doc/target.md"
+  printf '%s\n' '---' 'name: escaped' 'description: outside fixture' '---' '# Escaped' > "$outside/skill/SKILL.md"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$outside/script/owner.sh"
+  chmod +x "$outside/script/owner.sh"
+  ln -s "$outside/doc" "$repo/docs/external"
+  ln -s "$outside/skill" "$repo/.agents/skills/escaped"
+  ln -s "$outside/script" "$repo/bin/external"
+  for marker in \
+    'doc:docs/external/target.md#document' \
+    'skill:escaped#escaped' \
+    'script:bin/external/owner.sh--help'; do
+    git -C "$repo" checkout -q -- AGENTS.md
+    printf '%s\n' "$marker owns escaped content. <!-- why: $marker -->" > "$repo/AGENTS.md"
+    expect_fail "symlinked why target $marker" 'why' "$repo"
   done
   git -C "$repo" checkout -q -- AGENTS.md
   printf '%s\n' \

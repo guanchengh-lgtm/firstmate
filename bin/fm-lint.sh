@@ -246,6 +246,21 @@ fm_lint_agentsmd_repo_path_valid() {  # <path>
   esac
 }
 
+fm_lint_agentsmd_repo_file_valid() {  # <path>
+  local path=$1 rest component current=$ROOT
+  fm_lint_agentsmd_repo_path_valid "$path" || return 1
+  rest=$path
+  while [ -n "$rest" ]; do
+    case "$rest" in
+      */*) component=${rest%%/*}; rest=${rest#*/} ;;
+      *) component=$rest; rest= ;;
+    esac
+    current=$current/$component
+    [ ! -L "$current" ] || return 1
+  done
+  [ -f "$current" ]
+}
+
 fm_lint_agentsmd_why_target_valid() {  # <kind> <target>
   local kind=$1 target=$2 name slug path
   case "$kind" in
@@ -257,8 +272,8 @@ fm_lint_agentsmd_why_target_valid() {  # <kind> <target>
       [ "$slug" = "${slug#*#}" ] || return 1
       fm_lint_agentsmd_slug_valid "$name" || return 1
       fm_lint_agentsmd_slug_valid "$slug" || return 1
-      [ -f "$ROOT/.agents/skills/$name/SKILL.md" ] \
-        || [ -f "$ROOT/skills/$name/SKILL.md" ]
+      fm_lint_agentsmd_repo_file_valid ".agents/skills/$name/SKILL.md" \
+        || fm_lint_agentsmd_repo_file_valid "skills/$name/SKILL.md"
       ;;
     doc)
       case "$target" in
@@ -266,9 +281,8 @@ fm_lint_agentsmd_why_target_valid() {  # <kind> <target>
         *) return 1 ;;
       esac
       [ "$slug" = "${slug#*#}" ] || return 1
-      fm_lint_agentsmd_repo_path_valid "$path" || return 1
       fm_lint_agentsmd_slug_valid "$slug" || return 1
-      [ -f "$ROOT/$path" ] && [ ! -L "$ROOT/$path" ]
+      fm_lint_agentsmd_repo_file_valid "$path"
       ;;
     script)
       case "$target" in
@@ -276,8 +290,7 @@ fm_lint_agentsmd_why_target_valid() {  # <kind> <target>
         *) return 1 ;;
       esac
       [ -n "$path" ] || return 1
-      fm_lint_agentsmd_repo_path_valid "$path" || return 1
-      [ -f "$ROOT/$path" ] && [ ! -L "$ROOT/$path" ] && [ -x "$ROOT/$path" ]
+      fm_lint_agentsmd_repo_file_valid "$path" && [ -x "$ROOT/$path" ]
       ;;
     lock)
       [[ "$target" =~ ^[a-z0-9]+(-[a-z0-9]+)*-[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$ ]]
