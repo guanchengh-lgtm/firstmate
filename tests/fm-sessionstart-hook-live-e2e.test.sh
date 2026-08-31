@@ -557,12 +557,28 @@ probe_claude_session_replacement() {  # <version>
 
   # /fork copies the conversation into a BACKGROUND session while this one keeps
   # running, so it must never be able to rewrite the primary's lock pair.
+  # 2.1.251 refuses to fork an empty conversation ("Nothing to fork yet"), so
+  # seed one completed turn first; the expected token differs from the typed
+  # line so the wait matches the model's reply, never the input echo.
+  send_line "$pane" "Reply with only the word fork spelled backwards, lowercase."
+  wait_for_text "$pane" krof 60 \
+    || { capture "$pane" >&2; fail "claude $version: the fork-seed turn never completed, so /fork cannot be exercised"; }
   lock_pair_before="$(cat "$lab/state/.lock" 2>/dev/null)|$(cat "$lab/state/.lock.session" 2>/dev/null)"
   send_line "$pane" /fork
-  wait_for_open 5 20 \
-    || { capture "$pane" >&2; fail "claude $version: /fork fired no session-open hook, so its exclusion was NOT proven"; }
-  [ "$(replacement_field 5 2)" = fork ] \
-    || fail "claude $version: /fork reported source '$(replacement_field 5 2)', which the wrapper would not exclude from replacement"
+  # 2.1.251 parks the fork as a background session that fires NO session-open
+  # hook until its first prompt, so there are two provable shapes: a parked
+  # fork with no hook record, or a hook record that must report source `fork`
+  # (which the wrapper excludes from replacement). Any other shape - no parked
+  # fork and no record, or a record with a different source - fails loudly.
+  # The fork-source payload exclusion itself stays proven portably in
+  # tests/fm-sessionstart-nudge.test.sh.
+  if wait_for_open 5 10; then
+    [ "$(replacement_field 5 2)" = fork ] \
+      || fail "claude $version: /fork reported source '$(replacement_field 5 2)', which the wrapper would not exclude from replacement"
+  else
+    wait_for_text "$pane" "waiting for a prompt" 10 \
+      || { capture "$pane" >&2; fail "claude $version: /fork neither parked a background session nor fired a session-open hook, so its exclusion was NOT proven"; }
+  fi
   [ "$lock_pair_before" = "$(cat "$lab/state/.lock" 2>/dev/null)|$(cat "$lab/state/.lock.session" 2>/dev/null)" ] \
     || fail "claude $version: /fork rewrote the primary session's lock pair"
   pass "claude $version: /fork cannot rewrite the live primary session's lock pair"
@@ -572,8 +588,10 @@ probe_claude_session_replacement() {  # <version>
   # only the session id differs. It must stand down, not claim the home.
   rm -f "$lab/state/arm-ran" "$lab/state/stop-probe.log"
   lock_pair_before="$(cat "$lab/state/.lock" 2>/dev/null)|$(cat "$lab/state/.lock.session" 2>/dev/null)"
-  send_line "$pane" "Run this with your Bash tool exactly once, then reply only PROBEDONE: FM_LIVE_STOP_PROBE=1 claude -p --permission-mode bypassPermissions 'Say only OK.'"
-  wait_for_text "$pane" PROBEDONE 120 \
+  # The completion token is spelled backwards in the instruction so the wait
+  # matches the model's reply, never this typed line's own echo in the pane.
+  send_line "$pane" "Run this with your Bash tool exactly once, then reply with only the word probe spelled backwards, lowercase: FM_LIVE_STOP_PROBE=1 claude -p --permission-mode bypassPermissions 'Say only OK.'"
+  wait_for_text "$pane" eborp 120 \
     || { capture "$pane" >&2; fail "claude $version: the background Stop probe never completed"; }
   [ -s "$lab/state/stop-probe.log" ] \
     || { capture "$pane" >&2; fail "claude $version: no background Stop hook ran, so its inertness was NOT proven"; }
