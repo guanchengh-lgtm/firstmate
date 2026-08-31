@@ -2223,7 +2223,12 @@ verifier_handoff_preflight() {
   fi
   prior_surface_count=$(grep -c '^surface=' "$meta" 2>/dev/null || true)
   case "$prior_surface_count" in
-    0) ;;
+    0)
+      if [ "$SURFACE_SET" -eq 1 ]; then
+        echo "error: verifier handoff refused: requested surface '$SURFACE' but builder metadata records no surface" >&2
+        return 1
+      fi
+      ;;
     1)
       prior_surface=$(fm_meta_get "$meta" surface)
       fm_delivery_assert_surface_value "$prior_surface" || return 1
