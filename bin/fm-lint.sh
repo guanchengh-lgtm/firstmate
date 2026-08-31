@@ -21,8 +21,8 @@
 # Growth needs exactly one paired trailer set in the accepted branch range:
 #   AGENTS-Budget-Override: v1 base=<blob> target=<blob> before=<count> after=<count>
 #   Captain-Instruction: <the captain's exact words for this growth>
-# The instruction starts with a direct change verb and names a concrete path,
-# quoted identifier, hyphenated identifier, or dotted identifier.
+# The instruction starts with a direct change verb and names the specific
+# change with a quoted, hyphenated, dotted, or routed identifier.
 # Both counts are calibrated bytes for the bound AGENTS.md blobs.
 # An override never bypasses file safety, the hard ceiling, or why traces, and
 # its Captain-Instruction must not appear in the accepted target history.
@@ -566,15 +566,30 @@ fm_lint_agentsmd_base_history_complete() {  # <base-ref>
   return "$history_rc"
 }
 
+fm_lint_agentsmd_instruction_names_change() {  # <normalized-instruction>
+  "$PERL_BIN" -e '
+    my $instruction = shift;
+    exit 1 unless $instruction =~ /\A(?:add|append|insert|include|restore|replace|expand|increase|write|document|record|retain|move|route|require)[ \t]+/;
+    while ($instruction =~ /(`[^`]+`|"[^"]+"|[a-z0-9_]+(?:[.\/#:-][a-z0-9_.#\/:-]+)+)/g) {
+      my $candidate = $1;
+      $candidate =~ s/\A([`"])(.*)\1\z/$2/;
+      $candidate =~ s/[.!?,;:]+\z//;
+      next if $candidate =~ /\A(?:it|this|that)\z/;
+      next if $candidate =~ /\A[0-9]+(?:\.[0-9]+)+\z/;
+      next if $candidate =~ /\A(?:(?:[a-z0-9_]+-)+(?:approval|approved)(?:-[a-z0-9_]+)*|(?:approval|approved)(?:-[a-z0-9_]+)+)\z/;
+      exit 0;
+    }
+    exit 1;
+  ' "$1"
+}
+
 fm_lint_agentsmd_validate_override() {  # <base> <base-blob> <target-blob> <before> <after>
   local base=$1 expected_base_blob=$2 expected_target_blob=$3 before=$4 after=$5
   local commit message trailers line value instruction prior_value
   local override_count=0 captain_count=0 override_commit='' captain_commit=''
   local override_value='' captain_value=''
-  local override_re instruction_re concrete_re
+  local override_re
   override_re='^v1 base=([0-9a-f]{40}|[0-9a-f]{64}) target=([0-9a-f]{40}|[0-9a-f]{64}) before=([0-9]+) after=([0-9]+)$'
-  instruction_re='^(add|append|insert|include|restore|replace|expand|increase|write|document|record|retain|move|route|require)[[:space:]]+'
-  concrete_re='(`[^`]+`|"[^"]+"|[a-z0-9_]+([./#:-][a-z0-9_.#/:-]+)+)'
 
   while IFS= read -r commit; do
     [ -n "$commit" ] || continue
@@ -649,7 +664,7 @@ fm_lint_agentsmd_validate_override() {  # <base> <base-blob> <target-blob> <befo
   instruction=$(printf '%s\n' "$captain_value" \
     | LC_ALL=C tr '[:upper:]' '[:lower:]' \
     | LC_ALL=C awk '{$1=$1; print}')
-  if ! [[ "$instruction" =~ $instruction_re && "$instruction" =~ $concrete_re ]]; then
+  if ! fm_lint_agentsmd_instruction_names_change "$instruction"; then
     fm_lint_agentsmd_error 'the Captain-Instruction trailer is generic; quote the captain exact words.'
     return 1
   fi

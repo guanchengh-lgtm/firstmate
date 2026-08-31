@@ -380,7 +380,8 @@ test_generic_captain_phrases() {
   local words repo after
   for words in 'captain approved' 'approved by captain' 'permission granted' \
     '  approved  ' 'Approved.' 'CAPTAIN-APPROVED!' 'Approval granted.' \
-    'Approval received.' 'Add 1.' 'Add this exact growth.' \
+    'Approval received.' 'Add 1.' 'Add it.' 'Add "it".' 'Add "this".' \
+    'Add `that`.' 'Add 1.0.' 'Add captain-approved.' 'Add this exact growth.' \
     'The captain has authorized this growth request.'; do
     repo=$(repo_new "generic-${words// /-}" 200)
     git -C "$repo" checkout -qb feature
