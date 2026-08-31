@@ -37,12 +37,13 @@ The durable harness pid recorded in `state/.lock` therefore stays live and stays
 `bin/fm-sessionstart-run.sh` is the only grantor of the narrow replacement-acquisition intent that repairs that sidecar, and it grants it only when every one of these facts holds:
 
 - the source came from a NATIVE JSON hook payload on stdin, never from an explicit `--source` argument;
-- the payload is exactly one complete top-level JSON object with no duplicated field, parsed by one strict parser;
+- the payload is exactly one complete top-level JSON object with no duplicated field, and every consumed field is a lock-safe string parsed by one strict `python3` policy;
 - `hook_event_name` is exactly `SessionStart`;
 - `source` is exactly `clear` or `resume`;
 - the payload's `session_id` is valid and identical to this process's resolved Claude session identity.
 
 `compact`, `fork`, `startup`, an unrecognized source, a malformed payload, and an explicit `--source` all fall through with no intent.
+A host without `python3` also refuses the replacement intent, while the loose source reader continues to route the payload.
 The acquisition runs before the completion check above so a repaired `clear` selects the intended re-emit.
 `bin/fm-lock.sh`'s header owns what the intent may then do; in short it accepts exactly one extra shape: a live recorded owner that is this hook's own direct Claude client process - the vendor-set `CLAUDE_PID` - and a member of this session's own verified ancestry.
 Claude resets `CLAUDE_PID` for every Claude process it starts, so a nested background job's hooks always present that job's own pid rather than the recorded owner's, and the intent changes nothing for them.
@@ -115,8 +116,9 @@ That alternative expands trust and writes outside this repository, so Firstmate 
 `tests/fm-sessionstart-nudge.test.sh` proves the nudge wrapper's silence for both gate signals, an unmarked linked worktree, a missing state directory, and an already-owned lock, plus its exact U+2063 `FIRSTMATE_OP:`-prefixed, `session-start`-typed one-line output and a marked secondmate home including a treehouse-leased linked worktree.
 It separately proves the run wrapper's silence for the gate environment and an unmarked linked worktree.
 It proves the run wrapper's source routing end to end against a real `fm-session-start.sh`, including completion-gated `--reemit` selection, resume delegation, Pi CLI continuation classification, an unrecognized source falling through to the full digest, and bounded loud delivery of an oversized Pi digest.
-It proves in-place session replacement in a real Claude-named process: a native `clear` or `resume` `SessionStart` payload delivered under the owner's own `CLAUDE_PID` reclaims the sidecar, while all explicit `--source` forms, a nested clear or resume under a foreign or absent `CLAUDE_PID`, a foreign event, a missing, invalid, or mismatched payload id, a malformed or duplicated-field document, a trailing second object, `fork`, and `compact` leave the recorded pair untouched.
-`tests/fm-session-lock-ancestry.test.sh` owns the matching lock-policy cases, including the unchanged PR #74 background refusal, the same-tree Stop probe's inertness, and the replacement intent's own refusals for a foreign live owner, a dead owner, and an old lock with no sidecar.
+It proves in-place session replacement in a real Claude-named process: a native `clear` or `resume` `SessionStart` payload delivered under the owner's own `CLAUDE_PID` reclaims the sidecar, while all explicit `--source` forms, a nested clear or resume under a foreign or absent `CLAUDE_PID`, a foreign event, a missing, invalid, or mismatched payload id, a malformed or duplicated-field document, a trailing second object, `fork`, `compact`, `startup`, an unrecognized source, and a host without `python3` leave the recorded pair untouched.
+It also proves that loose source routing continues without `python3`.
+`tests/fm-session-lock-ancestry.test.sh` owns the matching lock-policy cases, including the unchanged PR #74 background refusal, the same-tree Stop probe's inertness, and the replacement intent's own refusals for a matching sidecar, a foreign live owner, a dead owner, and an old lock with no sidecar.
 `tests/fm-session-start.test.sh` proves the runtime bound through the forced pure-Bash fallback: a TERM-resistant digest that exceeds its budget is force-killed with its grandchild, still emits its completed stages, names the incomplete stage and every stage it never reached, leaves no completion proof, and exits 0.
 `tests/fm-pi-primary-live-e2e.test.sh` and `tests/fm-opencode-primary-live-e2e.test.sh` exercise native startup paths with first-message and later-message Ahoy regressions.
 `tests/fm-cursor-primary.test.sh` proves the Cursor adapter over real processes: `sessionStart` emits the whole digest as `additional_context` with a caller-supplied `--source`, stays silent in a child worktree, lets the run wrapper stand down on the Cursor-delivered duplicate, and keeps `preCompact` unregistered so the deferred surface cannot be reintroduced unnoticed.
