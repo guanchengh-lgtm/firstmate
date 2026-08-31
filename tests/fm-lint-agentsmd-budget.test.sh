@@ -37,7 +37,7 @@ cat > "$FAKEBIN/git" <<'SH'
 #!/usr/bin/env bash
 if [ "${GIT_FAIL_PATCH:-0}" -eq 1 ]; then
   case "$*" in
-    "diff --no-ext-diff --no-color --text --unified=0 "*) exit 86 ;;
+    "diff --no-index --no-ext-diff --no-color --text --unified=0 "*) exit 86 ;;
   esac
 fi
 if [ "${GIT_FAIL_MESSAGE:-0}" -eq 1 ]; then
@@ -315,7 +315,7 @@ test_override_failure_matrix_and_exact_pair() {
   git -C "$repo" checkout -qb feature
   add_marked_line "$repo" 'docs/example.md owns approved growth. <!-- why: doc:docs/example.md#document -->'
   after=$(wc -c < "$repo/AGENTS.md" | tr -d ' ')
-  make_override_commit "$repo" 200 "$after" 'Add this exact approved growth.'
+  make_override_commit "$repo" 200 "$after" 'Add docs/example.md ownership rule to AGENTS.md.'
   expect_pass 'exact trailer pair' "$repo"
   pass 'all trailer failures reject and one exact content-bound pair passes'
 }
@@ -369,6 +369,7 @@ test_generic_captain_phrases() {
   local words repo after
   for words in 'captain approved' 'approved by captain' 'permission granted' \
     '  approved  ' 'Approved.' 'CAPTAIN-APPROVED!' 'Approval granted.' \
+    'Approval received.' 'Add this exact growth.' \
     'The captain has authorized this growth request.'; do
     repo=$(repo_new "generic-${words// /-}" 200)
     git -C "$repo" checkout -qb feature
@@ -396,20 +397,20 @@ test_reused_override_authority() {
   repo=$(repo_new reused-pair 200)
   add_marked_line "$repo" 'docs/example.md owns the first growth. <!-- why: doc:docs/example.md#document -->'
   first_after=$(wc -c < "$repo/AGENTS.md" | tr -d ' ')
-  make_override_commit "$repo" 200 "$first_after" 'Add this exact approved growth.'
+  make_override_commit "$repo" 200 "$first_after" 'Add docs/example.md first ownership rule.'
   git -C "$repo" checkout -qb feature
   add_marked_line "$repo" 'docs/example.md owns the second growth. <!-- why: doc:docs/example.md#document -->'
   second_after=$(wc -c < "$repo/AGENTS.md" | tr -d ' ')
-  make_override_commit "$repo" "$first_after" "$second_after" 'Add this exact approved growth.'
+  make_override_commit "$repo" "$first_after" "$second_after" 'Add docs/example.md first ownership rule.'
   expect_fail 're-bound prior trailer pair' 'reuses authority from the accepted target history' "$repo"
 
   repo=$(repo_new reused-instruction 200)
   printf '%s\n' 'A named documentation change.' >> "$repo/docs/example.md"
-  commit_all "$repo" $'named documentation change\n\nCaptain-Instruction: Add the named documentation change.'
+  commit_all "$repo" $'named documentation change\n\nCaptain-Instruction: Add docs/example.md named change.'
   git -C "$repo" checkout -qb feature
   add_marked_line "$repo" 'docs/example.md owns unrelated growth. <!-- why: doc:docs/example.md#document -->'
   second_after=$(wc -c < "$repo/AGENTS.md" | tr -d ' ')
-  make_override_commit "$repo" 200 "$second_after" 'Add the named documentation change.'
+  make_override_commit "$repo" 200 "$second_after" 'Add docs/example.md named change.'
   expect_fail 're-quoted instruction for a different change' 'reuses authority from the accepted target history' "$repo"
   pass 'prior trailer pairs and instruction values cannot authorize new growth'
 }
@@ -441,6 +442,9 @@ test_why_structural_and_content_lines() {
   git -C "$repo" checkout -q -- AGENTS.md
   printf '%s\n' 'docs/example.md owns this rule. <!-- outer <!-- why: doc:docs/example.md#document -->' > "$repo/AGENTS.md"
   expect_fail 'why marker nested in a comment' 'nested inside another HTML comment' "$repo"
+  git -C "$repo" checkout -q -- AGENTS.md
+  printf '# Heading\rUntraced prose\n' > "$repo/AGENTS.md"
+  expect_fail 'bare carriage return line ending' 'without a why trace' "$repo"
   pass 'only blank, heading, and fence delimiters receive structural exemptions'
 }
 
@@ -591,7 +595,7 @@ test_existing_backpass_and_coverage_routing() {
 }
 
 test_shallow_ci_fails_closed() {
-  local repo base
+  local repo base after
   repo=$(repo_new shallow-source 200)
   base=$(git -C "$repo" rev-parse HEAD)
   add_marked_line "$repo" 'docs/example.md owns CI content. <!-- why: doc:docs/example.md#document -->'
@@ -599,7 +603,18 @@ test_shallow_ci_fails_closed() {
   git clone -q --depth 1 "file://$repo" "$TMP_ROOT/shallow"
   FM_LINT_BASE_SHA=$base CI=true GITHUB_ACTIONS=true \
     expect_fail 'shallow CI base' 'fetch' "$TMP_ROOT/shallow"
-  pass 'CI with absent base history fails instead of skipping comparison'
+
+  repo=$(repo_new shallow-ancestry-source 200)
+  git -C "$repo" commit --allow-empty -qm $'prior authority\n\nCaptain-Instruction: Add docs/example.md ownership rule to AGENTS.md.'
+  git -C "$repo" commit --allow-empty -qm accepted-base
+  base=$(git -C "$repo" rev-parse HEAD)
+  add_marked_line "$repo" 'docs/example.md owns shallow growth. <!-- why: doc:docs/example.md#document -->'
+  after=$(wc -c < "$repo/AGENTS.md" | tr -d ' ')
+  make_override_commit "$repo" 200 "$after" 'Add docs/example.md ownership rule to AGENTS.md.'
+  git clone -q --depth 2 "file://$repo" "$TMP_ROOT/shallow-ancestry"
+  FM_LINT_BASE_SHA=$base CI=true GITHUB_ACTIONS=true \
+    expect_fail 'present base with shallow ancestry' 'full target history' "$TMP_ROOT/shallow-ancestry"
+  pass 'CI rejects absent bases and present bases with shallow ancestry'
 }
 
 test_calibrated_byte_ceiling

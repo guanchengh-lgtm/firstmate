@@ -201,11 +201,15 @@ case "$*" in
     printf '%s\n' "${FM_TEST_GIT_BRANCH:-feature}"
     exit 0
     ;;
-  "rev-parse --verify -q origin/main")
-    [ "${FM_TEST_GIT_HAS_ORIGIN_MAIN:-1}" = 1 ] && exit 0 || exit 1
+  "rev-parse --verify -q origin/main^{commit}")
+    [ "${FM_TEST_GIT_HAS_ORIGIN_MAIN:-1}" = 1 ] || exit 1
+    printf '2222222222222222222222222222222222222222\n'
+    exit 0
     ;;
-  "rev-parse --verify -q main")
-    [ "${FM_TEST_GIT_HAS_MAIN:-1}" = 1 ] && exit 0 || exit 1
+  "rev-parse --verify -q main^{commit}")
+    [ "${FM_TEST_GIT_HAS_MAIN:-1}" = 1 ] || exit 1
+    printf '2222222222222222222222222222222222222222\n'
+    exit 0
     ;;
   "rev-parse --verify -q HEAD:AGENTS.md"|"hash-object -- AGENTS.md")
     printf '1111111111111111111111111111111111111111\n'

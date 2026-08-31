@@ -21,6 +21,8 @@
 # Growth needs exactly one paired trailer set in the accepted branch range:
 #   AGENTS-Budget-Override: v1 base=<blob> target=<blob> before=<count> after=<count>
 #   Captain-Instruction: <the captain's exact words for this growth>
+# The instruction starts with a direct change verb and names a concrete path,
+# quoted identifier, hyphenated identifier, dotted identifier, or number.
 # Both counts are calibrated bytes for the bound AGENTS.md blobs.
 # An override never bypasses file safety, the hard ceiling, or why traces, and
 # its Captain-Instruction must not appear in the accepted target history.
@@ -284,7 +286,7 @@ fm_lint_agentsmd_why_target_valid() {  # <kind> <target>
   esac
 }
 
-fm_lint_agentsmd_fence_context() {  # <line-number>
+fm_lint_agentsmd_fence_context() {  # <line-number> <normalized-path>
   awk -v target="$1" '
     function candidate(line, first, text, char, count) {
       match(line, /^ */)
@@ -336,10 +338,10 @@ fm_lint_agentsmd_fence_context() {  # <line-number>
       else print "outside"
       exit
     }
-  ' "$ROOT/AGENTS.md"
+  ' "$2"
 }
 
-fm_lint_agentsmd_visible_line() {  # <line-number>
+fm_lint_agentsmd_visible_line() {  # <line-number> <normalized-path>
   awk -v target="$1" '
     NR <= target {
       visible=""
@@ -361,10 +363,10 @@ fm_lint_agentsmd_visible_line() {  # <line-number>
         exit
       }
     }
-  ' "$ROOT/AGENTS.md"
+  ' "$2"
 }
 
-fm_lint_agentsmd_why_marker_is_top_level() {  # <line-number>
+fm_lint_agentsmd_why_marker_is_top_level() {  # <line-number> <normalized-path>
   awk -v target="$1" '
     NR <= target {
       for (i=1; i <= length($0); i++) {
@@ -386,16 +388,17 @@ fm_lint_agentsmd_why_marker_is_top_level() {  # <line-number>
     END {
       if (!found) exit 1
     }
-  ' "$ROOT/AGENTS.md"
+  ' "$2"
 }
 
-fm_lint_agentsmd_validate_added_line() {  # <line-number> <content>
-  local line_number=$1 content=$2 prefix remainder owner kind target context
+fm_lint_agentsmd_validate_added_line() {  # <line-number> <content> <normalized-path>
+  local line_number=$1 content=$2 normalized_path=$3
+  local prefix remainder owner kind target context
   local visible_line visible_target why_prefix='<!-- why: '
   local heading_re
   heading_re='^ {0,3}#{1,6}([[:space:]]|$)'
   [[ "$content" =~ ^[[:space:]]*$ ]] && return 0
-  context=$(fm_lint_agentsmd_fence_context "$line_number") \
+  context=$(fm_lint_agentsmd_fence_context "$line_number" "$normalized_path") \
     || {
       fm_lint_agentsmd_error "could not determine Markdown fence context for line $line_number."
       return 1
@@ -412,7 +415,7 @@ fm_lint_agentsmd_validate_added_line() {  # <line-number> <content>
       return 1
       ;;
   esac
-  fm_lint_agentsmd_why_marker_is_top_level "$line_number" \
+  fm_lint_agentsmd_why_marker_is_top_level "$line_number" "$normalized_path" \
     || {
       fm_lint_agentsmd_error "line $line_number has a why trace nested inside another HTML comment."
       return 1
@@ -453,7 +456,7 @@ fm_lint_agentsmd_validate_added_line() {  # <line-number> <content>
     script) visible_target=${target%--help} ;;
     lock) visible_target=$target ;;
   esac
-  visible_line=$(fm_lint_agentsmd_visible_line "$line_number") \
+  visible_line=$(fm_lint_agentsmd_visible_line "$line_number" "$normalized_path") \
     || {
       fm_lint_agentsmd_error "could not determine visible Markdown content for line $line_number."
       return 1
@@ -467,15 +470,32 @@ fm_lint_agentsmd_validate_added_line() {  # <line-number> <content>
   esac
 }
 
-fm_lint_agentsmd_validate_added_lines() {  # <base-ref>
-  local base=$1 line_number content temp_dir trace_rc=0
+fm_lint_agentsmd_validate_added_lines() {  # <base-blob>
+  local base_blob=$1 line_number content temp_dir diff_rc=0 trace_rc=0
   temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/fm-lint-agentsmd.XXXXXX") \
     || {
       fm_lint_agentsmd_error 'could not create the AGENTS.md diff workspace.'
       return 1
     }
-  if ! git diff --no-ext-diff --no-color --text --unified=0 "$base" -- AGENTS.md \
-    > "$temp_dir/patch" 2>/dev/null; then
+  (set -o pipefail
+    git cat-file blob "$base_blob" 2>/dev/null \
+      | "$PERL_BIN" -0777 -pe 's/\r\n?/\n/g' > "$temp_dir/base"
+  ) \
+    || {
+      rm -rf "$temp_dir"
+      fm_lint_agentsmd_error 'could not normalize target base AGENTS.md line endings.'
+      return 1
+    }
+  "$PERL_BIN" -0777 -pe 's/\r\n?/\n/g' < "$ROOT/AGENTS.md" > "$temp_dir/current" \
+    || {
+      rm -rf "$temp_dir"
+      fm_lint_agentsmd_error 'could not normalize final AGENTS.md line endings.'
+      return 1
+    }
+  git diff --no-index --no-ext-diff --no-color --text --unified=0 \
+    "$temp_dir/base" "$temp_dir/current" > "$temp_dir/patch" 2>/dev/null \
+    || diff_rc=$?
+  if [ "$diff_rc" -ne 0 ] && [ "$diff_rc" -ne 1 ]; then
     rm -rf "$temp_dir"
     fm_lint_agentsmd_error 'could not read the zero-context AGENTS.md diff.'
     return 1
@@ -506,7 +526,8 @@ fm_lint_agentsmd_validate_added_lines() {  # <base-ref>
   while IFS= read -r line_number; do
     IFS= read -r content || content=
     [ -n "$line_number" ] || continue
-    if ! fm_lint_agentsmd_validate_added_line "$line_number" "$content"; then
+    if ! fm_lint_agentsmd_validate_added_line \
+      "$line_number" "$content" "$temp_dir/current"; then
       trace_rc=1
       break
     fi
@@ -515,15 +536,44 @@ fm_lint_agentsmd_validate_added_lines() {  # <base-ref>
   return "$trace_rc"
 }
 
+fm_lint_agentsmd_base_history_complete() {  # <base-ref>
+  local base=$1 temp_dir commit key parent history_rc=0
+  temp_dir=$(mktemp -d "${TMPDIR:-/tmp}/fm-lint-agentsmd-history.XXXXXX") || return 1
+  git rev-list "$base" > "$temp_dir/commits" 2>/dev/null \
+    || {
+      rm -rf "$temp_dir"
+      return 1
+    }
+  while IFS= read -r commit; do
+    [ -n "$commit" ] || continue
+    git cat-file commit "$commit" > "$temp_dir/commit" 2>/dev/null \
+      || {
+        history_rc=1
+        break
+      }
+    while IFS=' ' read -r key parent _; do
+      [ "$key" = parent ] || continue
+      LC_ALL=C grep -Fqx "$parent" "$temp_dir/commits" \
+        || {
+          history_rc=1
+          break
+        }
+    done < "$temp_dir/commit"
+    [ "$history_rc" -eq 0 ] || break
+  done < "$temp_dir/commits"
+  rm -rf "$temp_dir"
+  return "$history_rc"
+}
+
 fm_lint_agentsmd_validate_override() {  # <base> <base-blob> <target-blob> <before> <after>
   local base=$1 expected_base_blob=$2 expected_target_blob=$3 before=$4 after=$5
-  local commit message trailers line value normalized prior_value word
-  local generic_reason=1
-  local -a normalized_words
+  local commit message trailers line value instruction prior_value
   local override_count=0 captain_count=0 override_commit='' captain_commit=''
   local override_value='' captain_value=''
-  local override_re
+  local override_re instruction_re concrete_re
   override_re='^v1 base=([0-9a-f]{40}|[0-9a-f]{64}) target=([0-9a-f]{40}|[0-9a-f]{64}) before=([0-9]+) after=([0-9]+)$'
+  instruction_re='^(add|append|insert|include|restore|replace|expand|increase|write|document|record|retain|move|route|require)[[:space:]]+'
+  concrete_re='(`[^`]+`|"[^"]+"|[a-z0-9_]+([./#:-][a-z0-9_.#/:-]+)+|[0-9]+)'
 
   while IFS= read -r commit; do
     [ -n "$commit" ] || continue
@@ -595,24 +645,13 @@ fm_lint_agentsmd_validate_override() {  # <base> <base-blob> <target-blob> <befo
     fm_lint_agentsmd_error 'the Captain-Instruction trailer must quote the captain exact words.'
     return 1
   }
-  normalized=$(printf '%s\n' "$captain_value" \
+  instruction=$(printf '%s\n' "$captain_value" \
     | LC_ALL=C tr '[:upper:]' '[:lower:]' \
-    | LC_ALL=C sed 's/[^[:alnum:]]/ /g' \
     | LC_ALL=C awk '{$1=$1; print}')
-  read -r -a normalized_words <<< "$normalized"
-  for word in "${normalized_words[@]}"; do
-    case "$word" in
-      a|an|the|this|that|by|for|of|to|is|was|has|been|captain|captains|\
-      growth|change|changes|request|requested|approval|approve|approved|\
-      authorization|authorize|authorized|permission|permit|permitted|\
-      grant|granted|yes|ok|okay) ;;
-      *) generic_reason=0; break ;;
-    esac
-  done
-  [ "$generic_reason" -eq 0 ] || {
+  if ! [[ "$instruction" =~ $instruction_re && "$instruction" =~ $concrete_re ]]; then
     fm_lint_agentsmd_error 'the Captain-Instruction trailer is generic; quote the captain exact words.'
     return 1
-  }
+  fi
 
   while IFS= read -r commit; do
     [ -n "$commit" ] || continue
@@ -766,13 +805,18 @@ fm_lint_run_agentsmd_budget() {
       "$bytes" "$AGENTS_CALIBRATED_BYTE_CEILING"
     return 0
   fi
+  fm_lint_agentsmd_base_history_complete "$base" \
+    || {
+      fm_lint_agentsmd_error "target base $base has shallow or incomplete ancestry; fetch the full target history."
+      return 1
+    }
   diff_rc=0
   git diff --quiet "$base" -- AGENTS.md >/dev/null 2>&1 || diff_rc=$?
   [ "$diff_rc" -eq 1 ] || {
     fm_lint_agentsmd_error 'could not compare final AGENTS.md content with the target base.'
     return 1
   }
-  fm_lint_agentsmd_validate_added_lines "$base" || return 1
+  fm_lint_agentsmd_validate_added_lines "$base_blob" || return 1
 
   if [ "$bytes" -gt "$base_bytes" ]; then
     target_blob=$current_blob
