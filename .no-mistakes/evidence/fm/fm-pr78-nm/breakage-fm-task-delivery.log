@@ -1,0 +1,7 @@
+ok - fm-spawn: a ship spawn requires a valid explicit mode, yolo, and role before anything is created
+ok - fm-spawn: scout and secondmate spawns refuse ship delivery flags
+ok - fm-spawn: the brief's recorded mode and the spawn's explicit mode must agree
+ok - fm-spawn: --role selects the role file and refuses a missing or mismatched role marker
+ok - fm-spawn: a rigor downgrade against the registered posture is announced, never blocked
+ok - fm-spawn: a scout spawn resolves no delivery posture from the registry
+not ok - promotion did not write the matching surface marker

@@ -1,0 +1,5 @@
+ok - fm-brief.sh: bash -n succeeds
+/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-brief.mJmD7X/heredoc-in-substitution.sh:2
+ok - fm-brief.sh: no heredoc is nested inside a command substitution (Bash 3.2 parse-safe)
+ok - fm-brief.sh: --help renders the complete header
+not ok - fm-brief.sh brief-directpr-a2 --mode direct-PR should exit 0: expected exit 0, got 1

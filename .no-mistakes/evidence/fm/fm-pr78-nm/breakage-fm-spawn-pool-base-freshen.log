@@ -1,0 +1,3 @@
+ok - a stale pooled worktree refreshes to current origin/main before a crew branch is created
+ok - a stale pooled worktree resolves and refreshes a non-main default branch
+not ok - direct-PR spawn did not persist the validated surface

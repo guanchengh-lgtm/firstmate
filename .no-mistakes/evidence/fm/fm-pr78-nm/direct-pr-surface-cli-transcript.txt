@@ -1,0 +1,45 @@
+$ bin/fm-brief.sh demo-product repo --mode direct-PR --surface product
+error: --mode direct-PR is refused for product work; only internal-only tooling, automation, operator process, or release submission may use direct-PR
+exit=1
+
+$ bin/fm-brief.sh demo-mixed repo --mode direct-PR --surface=mixed
+error: --mode direct-PR is refused for mixed work; only internal-only tooling, automation, operator process, or release submission may use direct-PR
+exit=1
+
+$ bin/fm-brief.sh demo-missing repo --mode direct-PR
+error: --mode direct-PR requires --surface internal-only; product, mixed, or uncertain work must ship no-mistakes
+exit=1
+
+$ bin/fm-brief.sh demo-internal repo --mode direct-PR --surface internal-only
+scaffolded: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.u3y0XK7Ucv/home/data/demo-internal/brief.md (ship, mode=direct-PR; replace {TASK})
+exit=0
+$ sed -n "1p" data/demo-internal/surface
+internal-only
+$ sed -n "/^Delivery contract:/p;/^Role:/p" data/demo-internal/brief.md
+Delivery contract: mode=direct-PR
+Role: builder
+
+$ bin/fm-promote.sh promote-product --mode direct-PR --yolo off --surface product
+error: --mode direct-PR is refused for product work; only internal-only tooling, automation, operator process, or release submission may use direct-PR
+exit=1
+$ sed -n "s/^kind=/kind=/p" state/promote-product.meta
+kind=scout
+
+$ bin/fm-promote.sh promote-internal --mode direct-PR --yolo off --surface=internal-only
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  2 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+promoted promote-internal to ship mode=direct-PR yolo=off role=builder (teardown protection restored)
+next: FM_HOME=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.u3y0XK7Ucv/promote-home bin/fm-send.sh fm-promote-internal '<ship instructions for mode=direct-PR: review scratch state with git status and git log; reset to a clean default-branch base; carry over only intended fix changes; create branch fm/promote-internal; implement; report done>'
+exit=0
+$ sed -n "/^kind=/p;/^mode=/p;/^surface=/p;/^role=/p" state/promote-internal.meta
+kind=ship
+mode=direct-PR
+surface=internal-only
+role=builder
+$ sed -n "1p" data/promote-internal/surface
+internal-only
