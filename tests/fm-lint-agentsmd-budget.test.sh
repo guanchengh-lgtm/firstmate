@@ -210,6 +210,17 @@ test_pr_local_and_main_bases() {
   pass 'PR, local feature, and main-push modes select the expected base blob'
 }
 
+test_generic_ci_feature_uses_target_base() {
+  local repo
+  repo=$(repo_new generic-ci-feature 200)
+  git -C "$repo" checkout -qb feature
+  add_marked_line "$repo" 'docs/example.md owns growth. <!-- why: doc:docs/example.md#document -->'
+  commit_all "$repo" growth
+  git -C "$repo" commit --allow-empty -qm follow-up
+  CI=true expect_fail 'generic CI feature baseline' 'AGENTS-Budget-Override' "$repo"
+  pass 'generic CI feature builds compare against the accepted target base'
+}
+
 test_deleted_wrong_type_and_utf8_bases() {
   local kind repo bad_base
   for kind in deleted symlink utf8 nul; do
@@ -369,7 +380,7 @@ test_generic_captain_phrases() {
   local words repo after
   for words in 'captain approved' 'approved by captain' 'permission granted' \
     '  approved  ' 'Approved.' 'CAPTAIN-APPROVED!' 'Approval granted.' \
-    'Approval received.' 'Add this exact growth.' \
+    'Approval received.' 'Add 1.' 'Add this exact growth.' \
     'The captain has authorized this growth request.'; do
     repo=$(repo_new "generic-${words// /-}" 200)
     git -C "$repo" checkout -qb feature
@@ -422,7 +433,8 @@ test_why_structural_and_content_lines() {
   printf '%s\n' '' '## Heading' '```' '```' '  ~~~ markdown' '   ~~~   ' > "$repo/AGENTS.md"
   expect_pass 'structural exemptions' "$repo"
   for line in 'Added prose.' '- Added list item.' '> Added quote.' 'code inside a fence' \
-    '    ```' '``' '~~' "\`~\`" '  ``~' $'\t# untraced content'; do
+    '    ```' '``' '~~' "\`~\`" '  ``~' $'\t# untraced content' \
+    $'\v' $'\f' $'#\vUntraced prose' $'#\fUntraced prose'; do
     git -C "$repo" checkout -q -- AGENTS.md
     printf '%s\n' "$line" > "$repo/AGENTS.md"
     expect_fail "untraced content: $line" 'why' "$repo"
@@ -621,6 +633,7 @@ test_calibrated_byte_ceiling
 test_file_safety_and_utf8
 test_unchanged_and_missing_base_modes
 test_pr_local_and_main_bases
+test_generic_ci_feature_uses_target_base
 test_deleted_wrong_type_and_utf8_bases
 test_stale_local_target
 test_ambiguous_local_targets

@@ -22,7 +22,7 @@
 #   AGENTS-Budget-Override: v1 base=<blob> target=<blob> before=<count> after=<count>
 #   Captain-Instruction: <the captain's exact words for this growth>
 # The instruction starts with a direct change verb and names a concrete path,
-# quoted identifier, hyphenated identifier, dotted identifier, or number.
+# quoted identifier, hyphenated identifier, or dotted identifier.
 # Both counts are calibrated bytes for the bound AGENTS.md blobs.
 # An override never bypasses file safety, the hard ceiling, or why traces, and
 # its Captain-Instruction must not appear in the accepted target history.
@@ -395,9 +395,10 @@ fm_lint_agentsmd_validate_added_line() {  # <line-number> <content> <normalized-
   local line_number=$1 content=$2 normalized_path=$3
   local prefix remainder owner kind target context
   local visible_line visible_target why_prefix='<!-- why: '
-  local heading_re
-  heading_re='^ {0,3}#{1,6}([[:space:]]|$)'
-  [[ "$content" =~ ^[[:space:]]*$ ]] && return 0
+  local blank_re heading_re
+  blank_re=$'^[ \t]*$'
+  heading_re=$'^ {0,3}#{1,6}([ \t]|$)'
+  [[ "$content" =~ $blank_re ]] && return 0
   context=$(fm_lint_agentsmd_fence_context "$line_number" "$normalized_path") \
     || {
       fm_lint_agentsmd_error "could not determine Markdown fence context for line $line_number."
@@ -573,7 +574,7 @@ fm_lint_agentsmd_validate_override() {  # <base> <base-blob> <target-blob> <befo
   local override_re instruction_re concrete_re
   override_re='^v1 base=([0-9a-f]{40}|[0-9a-f]{64}) target=([0-9a-f]{40}|[0-9a-f]{64}) before=([0-9]+) after=([0-9]+)$'
   instruction_re='^(add|append|insert|include|restore|replace|expand|increase|write|document|record|retain|move|route|require)[[:space:]]+'
-  concrete_re='(`[^`]+`|"[^"]+"|[a-z0-9_]+([./#:-][a-z0-9_.#/:-]+)+|[0-9]+)'
+  concrete_re='(`[^`]+`|"[^"]+"|[a-z0-9_]+([./#:-][a-z0-9_.#/:-]+)+)'
 
   while IFS= read -r commit; do
     [ -n "$commit" ] || continue
@@ -727,7 +728,7 @@ fm_lint_run_agentsmd_budget() {
   elif [ "${GITHUB_EVENT_NAME:-}" = pull_request ]; then
     fm_lint_agentsmd_error 'FM_LINT_BASE_SHA is required for pull request lint; fetch the exact target base commit.'
     return 1
-  elif [ "${GITHUB_ACTIONS:-}" = true ] || [ "${CI:-}" = true ] || [ "$branch" = main ]; then
+  elif [ "$branch" = main ]; then
     if git rev-parse --verify -q 'HEAD^1^{commit}' >/dev/null 2>&1; then
       base=HEAD^1
     elif [ "$current_blob" = "$head_blob" ]; then
