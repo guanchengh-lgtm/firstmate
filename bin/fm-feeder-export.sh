@@ -556,19 +556,30 @@ JOURNAL_FD_OPEN=0
 # list paired with each file's digest, hashed once. Destination names are
 # validated ASCII identifiers, so the sorted list needs no separator escaping.
 dir_digest() { # <dir>; ABSENT when the directory does not exist
-  local dir=$1 names digests result status=0
+  local dir=$1 names nul digests pair result status=0
   if [ ! -d "$dir" ]; then
     printf 'ABSENT\n'
     return 0
   fi
   names=$(mktemp "${TMPDIR:-/tmp}/fm-feeder-names.XXXXXX") || return 1
-  digests=$(mktemp "${TMPDIR:-/tmp}/fm-feeder-digests.XXXXXX") || return 1
+  nul=$(mktemp "${TMPDIR:-/tmp}/fm-feeder-nul.XXXXXX") || {
+    rm -f "$names"
+    return 1
+  }
+  digests=$(mktemp "${TMPDIR:-/tmp}/fm-feeder-digests.XXXXXX") || {
+    rm -f "$names" "$nul"
+    return 1
+  }
+  pair=$(mktemp "${TMPDIR:-/tmp}/fm-feeder-pair.XXXXXX") || {
+    rm -f "$names" "$nul" "$digests"
+    return 1
+  }
   if (cd "$dir" && LC_ALL=C find . -type f -print) > "$names" && LC_ALL=C sort -o "$names" "$names"; then
     if [ -s "$names" ]; then
       (
         cd "$dir" || exit 1
-        LC_ALL=C awk '{ printf "%s%c", $0, 0 }' "$names" > "$names.nul" || exit 1
-        sha256_list < "$names.nul"
+        LC_ALL=C awk '{ printf "%s%c", $0, 0 }' "$names" > "$nul" || exit 1
+        sha256_list < "$nul"
       ) > "$digests" || status=1
     fi
   else
@@ -576,8 +587,8 @@ dir_digest() { # <dir>; ABSENT when the directory does not exist
   fi
   if [ "$status" -eq 0 ]; then
     if [ -s "$names" ]; then
-      if LC_ALL=C paste "$names" "$digests" > "$names.pair"; then
-        result=$(sha256_stdin < "$names.pair") || status=1
+      if LC_ALL=C paste "$names" "$digests" > "$pair"; then
+        result=$(sha256_stdin < "$pair") || status=1
       else
         status=1
       fi
@@ -585,13 +596,13 @@ dir_digest() { # <dir>; ABSENT when the directory does not exist
       result=EMPTY
     fi
   fi
-  rm -f "$names" "$names.nul" "$names.pair" "$digests"
+  rm -f "$names" "$nul" "$pair" "$digests"
   [ "$status" -eq 0 ] || return 1
   printf '%s\n' "$result"
 }
 
 git_dir_digest() { # <commit> <repository-relative-dir>
-  local commit=$1 prefix=$2 paths names digests blob path rel digest result status=0
+  local commit=$1 prefix=$2 paths names digests pair blob path rel digest result status=0
   paths=$(mktemp "${TMPDIR:-/tmp}/fm-feeder-git-paths.XXXXXX") || return 1
   names=$(mktemp "${TMPDIR:-/tmp}/fm-feeder-git-names.XXXXXX") || {
     rm -f "$paths"
@@ -601,8 +612,12 @@ git_dir_digest() { # <commit> <repository-relative-dir>
     rm -f "$paths" "$names"
     return 1
   }
-  blob=$(mktemp "${TMPDIR:-/tmp}/fm-feeder-git-blob.XXXXXX") || {
+  pair=$(mktemp "${TMPDIR:-/tmp}/fm-feeder-git-pair.XXXXXX") || {
     rm -f "$paths" "$names" "$digests"
+    return 1
+  }
+  blob=$(mktemp "${TMPDIR:-/tmp}/fm-feeder-git-blob.XXXXXX") || {
+    rm -f "$paths" "$names" "$digests" "$pair"
     return 1
   }
   if git -C "$VAULT" ls-tree -r --name-only "$commit" -- "$prefix" > "$paths" 2>/dev/null \
@@ -631,8 +646,8 @@ git_dir_digest() { # <commit> <repository-relative-dir>
   fi
   if [ "$status" -eq 0 ]; then
     if [ -s "$names" ]; then
-      if LC_ALL=C paste "$names" "$digests" > "$names.pair"; then
-        result=$(sha256_stdin < "$names.pair") || status=1
+      if LC_ALL=C paste "$names" "$digests" > "$pair"; then
+        result=$(sha256_stdin < "$pair") || status=1
       else
         status=1
       fi
@@ -640,7 +655,7 @@ git_dir_digest() { # <commit> <repository-relative-dir>
       result=ABSENT
     fi
   fi
-  rm -f "$paths" "$names" "$names.pair" "$digests" "$blob"
+  rm -f "$paths" "$names" "$pair" "$digests" "$blob"
   [ "$status" -eq 0 ] || return 1
   printf '%s\n' "$result"
 }
