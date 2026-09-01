@@ -1016,6 +1016,13 @@ spawn_abort_cleanup() {
     HERDR_PRESENTATION_ORDER_LOCK_HELD=0
     fm_lock_release "$HERDR_PRESENTATION_ORDER_LOCK" || true
   fi
+  if [ "$TREEHOUSE_ABORT_CLEANUP" = 1 ] \
+     && [ "$SPAWN_META_PUBLISH_STARTED" = 1 ] \
+     && [ -n "$SPAWN_META_TMP" ] \
+     && [ ! -e "$SPAWN_META_TMP" ] \
+     && [ ! -L "$SPAWN_META_TMP" ]; then
+    TREEHOUSE_ABORT_CLEANUP=0
+  fi
   if [ "$TREEHOUSE_ABORT_CLEANUP" = 1 ]; then
     TREEHOUSE_ABORT_CLEANUP=0
     if ! ( cd "$PROJ_ABS" && treehouse return --force \
@@ -3414,6 +3421,9 @@ elif [ -d "$SPAWN_META_PATH" ]; then
   # any backend resources already created.
   echo "$SPAWN_META_PATH: Is a directory" >&2
   exit 1
+elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
+  SPAWN_META_TMP="$STATE/.$ID.meta.spawn.${BASHPID:-$$}"
+  SPAWN_META_PATH=$SPAWN_META_TMP
 fi
 preserve_relaunch_meta() {
   awk -F= '
@@ -3523,9 +3533,12 @@ if ! {
 fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$VERIFIER_HANDOFF" -eq 0 ] \
    && [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
+  SPAWN_META_PUBLISH_STARTED=1
+  mv -f "$SPAWN_META_TMP" "$STATE/$ID.meta" || exit 1
   TREEHOUSE_ABORT_CLEANUP=0
-fi
-if [ "$RELAUNCH" -eq 1 ] || [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+  SPAWN_META_PUBLISH_STARTED=0
+  SPAWN_META_TMP=
+elif [ "$RELAUNCH" -eq 1 ] || [ "$VERIFIER_HANDOFF" -eq 1 ]; then
   SPAWN_META_PUBLISH_STARTED=1
   mv -f "$SPAWN_META_TMP" "$STATE/$ID.meta"
   if [ "$VERIFIER_HANDOFF" -eq 1 ]; then

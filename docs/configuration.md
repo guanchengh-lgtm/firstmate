@@ -110,6 +110,10 @@ For spawn-capable adapters, the runtime session-provider backend controls where 
 `tmux` is the verified reference backend (see [`docs/tmux-backend.md`](tmux-backend.md)); `herdr`, `zellij`, `orca`, and `cmux` are experimental spawn backends (see [`docs/herdr-backend.md`](herdr-backend.md), [`docs/zellij-backend.md`](zellij-backend.md), [`docs/orca-backend.md`](orca-backend.md), and [`docs/cmux-backend.md`](cmux-backend.md)).
 Treehouse remains the worktree provider for tmux, herdr, zellij, and cmux, since herdr, zellij, and cmux are session providers only; Orca provides both the task worktree and terminal endpoint.
 Each new Treehouse-backed task holds one task-bound lease until teardown conditionally returns that exact lease.
+`treehouse_lease_id` records the immutable allocation identity from Treehouse.
+`treehouse_lease_holder` records the task ID that owns the lease.
+`treehouse_lease_state=held` means teardown must conditionally return that exact identity.
+`treehouse_lease_state=released` means Treehouse already accepted the conditional return and teardown must not return it again.
 Relaunches and verifier handoffs preserve the same lease identity.
 Teardown records a successful release before endpoint cleanup, and a retry skips a lease that is already released.
 Legacy task metadata without a complete lease identity refuses automatic return.

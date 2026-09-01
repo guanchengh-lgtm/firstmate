@@ -110,7 +110,7 @@ endpoint_state=
 stale_state=
 [ -z "${FM_FAKE_HERDR_STALE_STATE:-}" ] || stale_state=$(cat "$FM_FAKE_HERDR_STALE_STATE" 2>/dev/null || true)
 case "$*" in
-  *"status --json"*) printf '%s\n' '{"server":{"running":true}}'; exit 0 ;;
+  *"status --json"*) printf '%s\n' '{"client":{"protocol":14,"version":"0.7.5"},"server":{"running":true}}'; exit 0 ;;
   *"session list --json"*)
     printf '%s\n' '{"sessions":[{"name":"fmtest","running":true,"socket_path":"/tmp/fm-test-herdr.sock"}]}'
     exit 0
@@ -123,6 +123,10 @@ case "$*" in
     fi
     exit 0
     ;;
+  *"workspace create"*)
+    printf '%s\n' '{"result":{"workspace":{"workspace_id":"w2"},"tab":{}}}'
+    exit 0
+    ;;
   *"pane list --workspace w9"*)
     if [ -n "$stale_state" ] && [ "$stale_state" != missing ]; then
       printf '%s\n' '{"result":{"panes":[{"pane_id":"w9:p9","tab_id":"w9:t9"}]}}'
@@ -132,6 +136,10 @@ case "$*" in
     exit 0
     ;;
   *"tab list"*) printf '%s\n' '{"result":{"tabs":[]}}'; exit 0 ;;
+  *"tab create"*)
+    printf '%s\n' '{"result":{"tab":{"tab_id":"w2:t2"},"root_pane":{"pane_id":"w2:p2"}}}'
+    exit 0
+    ;;
   *"agent get"*) printf '%s\n' '{"error":{"code":"agent_not_found"}}'; exit 1 ;;
   *"pane close w9:p9"*)
     [ -z "${FM_FAKE_HERDR_STALE_STATE:-}" ] || printf '%s\n' missing > "$FM_FAKE_HERDR_STALE_STATE"
@@ -156,13 +164,87 @@ case "$*" in
       printf '%s\n' '{"error":{"code":"pane_not_found"}}'
       exit 1
     fi
-    printf '%s\n' '{"result":{"pane":{"pane_id":"w2:p2","tab_id":"w2:t2","workspace_id":"w2"}}}'
+    printf '{"result":{"pane":{"pane_id":"w2:p2","tab_id":"w2:t2","workspace_id":"w2","foreground_cwd":"%s"}}}\n' "${FM_FAKE_PANE_PATH:-}"
+    exit 0
+    ;;
+  *"pane run"*|*"pane send-text"*|*"pane send-keys"*)
+    printf '%s\n' '{"result":{}}'
     exit 0
     ;;
 esac
 exit 1
 SH
   chmod +x "$fakebin/herdr"
+  cat > "$fakebin/zellij" <<'SH'
+#!/usr/bin/env bash
+set -u
+state=${FM_FAKE_ZELLIJ_STATE:?}
+case "$*" in
+  "--version") printf '%s\n' 'zellij 0.44.0' ;;
+  "list-sessions --short --no-formatting") printf '%s\n' 'firstmate' ;;
+  *"action list-tabs --json"*)
+    if [ -f "$state" ]; then
+      printf '[{"tab_id":3,"name":"%s","active":true}]\n' "$(cat "$state")"
+    else
+      printf '%s\n' '[]'
+    fi
+    ;;
+  *"action new-tab"*)
+    prev=
+    title=
+    for arg in "$@"; do
+      [ "$prev" != --name ] || title=$arg
+      prev=$arg
+    done
+    printf '%s\n' "$title" > "$state"
+    printf '%s\n' '3'
+    ;;
+  *"action list-panes --json"*)
+    printf '[{"tab_id":3,"is_plugin":false,"id":7,"pane_cwd":"%s"}]\n' "${FM_FAKE_PANE_PATH:?}"
+    ;;
+  *"action dump-screen"*)
+    printf '%s\n%s\n%s\n' '__FM_ZELLIJ_CWD_BEGIN__' "${FM_FAKE_PANE_PATH:?}" '__FM_ZELLIJ_CWD_END__'
+    ;;
+  *"action paste"*|*"action send-keys"*|*"action go-to-tab-by-id"*) ;;
+  *) exit 1 ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/zellij"
+  cat > "$fakebin/cmux" <<'SH'
+#!/usr/bin/env bash
+set -u
+state=${FM_FAKE_CMUX_STATE:?}
+case "$*" in
+  "version") printf '%s\n' 'cmux 0.64.0' ;;
+  "ping") printf '%s\n' 'PONG' ;;
+  "workspace list --json --id-format uuids")
+    if [ -f "$state" ]; then
+      printf '{"workspaces":[{"id":"ws-1","title":"%s"}]}\n' "$(cat "$state")"
+    else
+      printf '%s\n' '{"workspaces":[]}'
+    fi
+    ;;
+  new-workspace*)
+    prev=
+    title=
+    for arg in "$@"; do
+      [ "$prev" != --name ] || title=$arg
+      prev=$arg
+    done
+    printf '%s\n' "$title" > "$state"
+    printf '%s\n' 'OK'
+    ;;
+  list-panes*) printf '%s\n' '{"panes":[{"selected_surface_id":"sf-1","surface_ids":["sf-1"]}]}' ;;
+  read-screen*)
+    printf '{"text":"__FM_CMUX_CWD_BEGIN__\\n%s\\n__FM_CMUX_CWD_END__"}\n' "${FM_FAKE_PANE_PATH:?}"
+    ;;
+  send*|send-key*) printf '%s\n' 'OK' ;;
+  *) exit 1 ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/cmux"
   cat > "$fakebin/orca" <<'SH'
 #!/usr/bin/env bash
 set -u
@@ -243,6 +325,14 @@ for arg in "$@"; do
   esac
 done
 case "$source_path" in
+  *.meta.spawn.*)
+    if [ -n "${FM_FAKE_META_PUBLISH_SIGNAL:-}" ] \
+       && [ "$target_path" = "$FM_FAKE_META_PUBLISH_SIGNAL" ]; then
+      "$FM_REAL_MV" "$@" || exit $?
+      kill -TERM "$PPID"
+      exit 0
+    fi
+    ;;
   *.meta.handoff.*)
     if [ -n "${FM_FAKE_META_PUBLISH_MV_FAIL:-}" ] \
        && [ "$target_path" = "$FM_FAKE_META_PUBLISH_MV_FAIL" ]; then
@@ -335,6 +425,8 @@ run_spawn() {
     FM_FAKE_HERDR_TOKEN="${FM_FAKE_HERDR_TOKEN:-}" \
     HERDR_SESSION="${FM_TEST_HERDR_SESSION:-}" \
     FM_FAKE_ORCA_LOG="${FM_FAKE_ORCA_LOG:-}" \
+    FM_FAKE_ZELLIJ_STATE="$home/state/.fake-zellij-state" \
+    FM_FAKE_CMUX_STATE="$home/state/.fake-cmux-state" \
     CLAUDE_CONFIG_DIR="${FM_TEST_CLAUDE_CONFIG_DIR:-}" \
     FM_FAKE_LAUNCH_LOG="$launchlog" FM_FAKE_PI_VERSION="${FM_TEST_PI_VERSION:-0.84.0}" \
     FM_FAKE_CURSOR_MODELS="${FM_TEST_CURSOR_MODELS:-}" \
@@ -446,6 +538,60 @@ test_no_profile_keeps_claude_profile_defaults() {
   expected="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false claude --dangerously-skip-permissions \"\$('${ROOT}/bin/fm-operational-input.sh' encode launch-brief < '$HOME_DIR/data/$id/brief.md')\""
   [ "$launch" = "$expected" ] || fail "no-profile claude launch did not use the canonical launch kind"$'\n'"expected: $expected"$'\n'"actual:   $launch"
   pass "no --model/--effort records defaults and types the claude launch instructions"
+}
+
+assert_fresh_backend_treehouse_lease() {  # <backend> <suffix>
+  local backend=$1 suffix=$2 rec id out status treehouse_log meta
+  id="profile-fresh-${backend}-lease-${suffix}"
+  rec=$(make_spawn_case "profile-fresh-${backend}-lease" claude "$id")
+  read_case_record "$rec"
+  treehouse_log="$CASE_DIR/treehouse.log"
+  : > "$treehouse_log"
+
+  out=$(FM_FAKE_TREEHOUSE_LOG="$treehouse_log" FM_TEST_HERDR_SESSION=fmtest \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+      "$id" "$PROJ_DIR" --backend "$backend")
+  status=$?
+
+  expect_code 0 "$status" "fresh $backend spawn should succeed: $out"
+  meta="$HOME_DIR/state/$id.meta"
+  assert_grep "treehouse_lease_id=lease-$id" "$meta" \
+    "fresh $backend spawn did not record its Treehouse lease ID"
+  assert_grep "treehouse_lease_holder=$id" "$meta" \
+    "fresh $backend spawn did not record its Treehouse lease holder"
+  assert_grep 'treehouse_lease_state=held' "$meta" \
+    "fresh $backend spawn did not record its held Treehouse lease"
+  assert_grep "get --lease --json --lease-holder $id" "$treehouse_log" \
+    "fresh $backend spawn did not acquire a task-bound Treehouse lease"
+  assert_no_grep 'return --force' "$treehouse_log" \
+    "fresh $backend spawn returned its live Treehouse lease"
+}
+
+test_fresh_herdr_spawn_records_treehouse_lease() {
+  assert_fresh_backend_treehouse_lease herdr z15a
+  assert_grep 'backend=herdr' "$HOME_DIR/state/profile-fresh-herdr-lease-z15a.meta" \
+    "fresh Herdr spawn did not record its backend"
+  assert_grep 'herdr_pane_id=w2:p2' "$HOME_DIR/state/profile-fresh-herdr-lease-z15a.meta" \
+    "fresh Herdr spawn did not complete endpoint creation"
+  pass "fresh Herdr spawn records its exact Treehouse lease"
+}
+
+test_fresh_zellij_spawn_records_treehouse_lease() {
+  assert_fresh_backend_treehouse_lease zellij z15b
+  assert_grep 'backend=zellij' "$HOME_DIR/state/profile-fresh-zellij-lease-z15b.meta" \
+    "fresh Zellij spawn did not record its backend"
+  assert_grep 'zellij_pane_id=7' "$HOME_DIR/state/profile-fresh-zellij-lease-z15b.meta" \
+    "fresh Zellij spawn did not complete endpoint creation"
+  pass "fresh Zellij spawn records its exact Treehouse lease"
+}
+
+test_fresh_cmux_spawn_records_treehouse_lease() {
+  assert_fresh_backend_treehouse_lease cmux z15c
+  assert_grep 'backend=cmux' "$HOME_DIR/state/profile-fresh-cmux-lease-z15c.meta" \
+    "fresh cmux spawn did not record its backend"
+  assert_grep 'cmux_surface_id=sf-1' "$HOME_DIR/state/profile-fresh-cmux-lease-z15c.meta" \
+    "fresh cmux spawn did not complete endpoint creation"
+  pass "fresh cmux spawn records its exact Treehouse lease"
 }
 
 test_non_cursor_launch_clears_inherited_cursor_markers() {
@@ -1498,6 +1644,35 @@ test_fresh_spawn_abort_conditionally_releases_exact_lease() {
   pass "fresh spawn abort conditionally releases only its exact Treehouse lease"
 }
 
+test_signal_after_metadata_publication_preserves_lease_ownership() {
+  local rec id out status treehouse_log meta real_mv
+  id=profile-spawn-publish-signal-z14e
+  rec=$(make_spawn_case profile-spawn-publish-signal claude "$id")
+  read_case_record "$rec"
+  treehouse_log="$CASE_DIR/treehouse.log"
+  meta="$HOME_DIR/state/$id.meta"
+  real_mv=$(command -v mv)
+  : > "$treehouse_log"
+  make_spawn_mv_failure_stub "$FAKEBIN_DIR"
+
+  out=$(FM_REAL_MV="$real_mv" FM_FAKE_META_PUBLISH_SIGNAL="$meta" \
+    FM_FAKE_TREEHOUSE_LOG="$treehouse_log" \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+      "$id" "$PROJ_DIR")
+  status=$?
+
+  [ "$status" -ne 0 ] || fail "publish-signal: TERM after metadata publication reported success"
+  assert_grep "treehouse_lease_id=lease-$id" "$meta" \
+    "publish-signal: published metadata lost the exact lease ID"
+  assert_grep "treehouse_lease_holder=$id" "$meta" \
+    "publish-signal: published metadata lost the exact lease holder"
+  assert_grep 'treehouse_lease_state=held' "$meta" \
+    "publish-signal: published metadata lost the held lease state"
+  assert_no_grep 'return --force' "$treehouse_log" \
+    "publish-signal: abort cleanup returned a lease already owned by published metadata"
+  pass "signal after metadata publication leaves lease ownership with teardown"
+}
+
 test_spawn_abort_cleanup_failure_preserves_recovery_identity() {
   local rec id out status treehouse_log meta
   id=profile-spawn-abort-recovery-z14b
@@ -2385,6 +2560,9 @@ test_role_verifier_enforces_explicit_ov() {
 }
 
 test_no_profile_keeps_claude_profile_defaults
+test_fresh_herdr_spawn_records_treehouse_lease
+test_fresh_zellij_spawn_records_treehouse_lease
+test_fresh_cmux_spawn_records_treehouse_lease
 test_non_cursor_launch_clears_inherited_cursor_markers
 test_relative_home_overrides_launch_with_absolute_cross_process_paths
 test_home_defaults_preserve_absolute_or_resolve_relative_paths
@@ -2421,6 +2599,7 @@ test_non_claude_harness_ignores_config_dir
 test_active_dispatch_profile_does_not_block_secondmate_launch
 test_role_verifier_encodes_verifier_brief
 test_fresh_spawn_abort_conditionally_releases_exact_lease
+test_signal_after_metadata_publication_preserves_lease_ownership
 test_spawn_abort_cleanup_failure_preserves_recovery_identity
 test_malformed_lease_json_fails_without_guessed_return
 test_verifier_handoff_refuses_released_lease
