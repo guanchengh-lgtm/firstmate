@@ -1,0 +1,35 @@
+# Manufactured breakage log - branch fm/fm-teardown-lease-race
+# Each entry: break one line under test, run the test, observe red, restore, confirm clean.
+
+== h3-parser-guard ==
+not ok - spawn should succeed once the pane settles: expected exit 0, got 1
+exit=1 (expect non-zero)
+
+== h3-parser-probe ==
+not ok - spawn did not name the unusable lease parser (missing: 'lease parser is unusable')
+exit=1 (expect non-zero)
+
+== h1-hook-sanitize ==
+not ok - reused pool worktree kept the dead task's .fm-grok-turnend wiring
+exit=1 (expect non-zero)
+
+== a1-lease-id-backslash ==
+not ok - lease-id-backslash: teardown refused a valid lease ID 'wt\3': expected exit 0, got 1
+exit=1 (expect non-zero)
+
+== a1-lease-id-environ ==
+not ok - fork-allow: teardown should succeed when HEAD is on a fork remote: expected exit 0, got 1
+exit=1 (expect non-zero)
+
+== h4-run-id-precheck ==
+not ok - parked-run-unrecordable: teardown returned the lease before the run id was validated
+exit=1 (expect non-zero)
+
+
+== endpoint-exact-window-kill (tests/fm-teardown-endpoint-safety.test.sh) ==
+not ok - valid cleanup did not remove the exact target window
+exit=1 (expect non-zero)
+
+== final state after all restores ==
+git status --porcelain: [ M tests/fm-teardown-endpoint-safety.test.sh]
+(the one modification is the intentional stale-fixture repair described in the test report)

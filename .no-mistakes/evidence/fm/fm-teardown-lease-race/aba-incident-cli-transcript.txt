@@ -1,0 +1,33 @@
+
+$ treehouse get --lease --json --lease-holder task-A     # firstmate spawn, task A
+🌳 Setting up worktree...
+🌳 Leased worktree at /tmp/fm-aba.5Lr1gm/pool/.treehouse/project-50be04/1/project. Run 'treehouse return /tmp/fm-aba.5Lr1gm/pool/.treehouse/project-50be04/1/project' to release it.
+{"path":"/tmp/fm-aba.5Lr1gm/pool/.treehouse/project-50be04/1/project","lease_id":"75988f7bbb01fe01759114ce1ccbdd2d","lease_holder":"task-A","leased_at":"2026-09-01T15:15:48.232532+08:00"}
+# task A metadata recorded by firstmate:
+  treehouse_lease_id=75988f7bbb01fe01759114ce1ccbdd2d
+  treehouse_lease_holder=task-A
+  treehouse_lease_state=held
+
+$ treehouse return --force --if-lease-id 75988f7bbb01fe01759114ce1ccbdd2d --if-lease-holder task-A <path>   # firstmate teardown of A
+🌳 Worktree returned to pool.
+# firstmate now rewrites A's metadata: treehouse_lease_state=released
+
+$ treehouse get --lease --json --lease-holder task-B     # task B reuses the SAME pool path
+🌳 Setting up worktree...
+🌳 Leased worktree at /tmp/fm-aba.5Lr1gm/pool/.treehouse/project-50be04/1/project. Run 'treehouse return /tmp/fm-aba.5Lr1gm/pool/.treehouse/project-50be04/1/project' to release it.
+{"path":"/tmp/fm-aba.5Lr1gm/pool/.treehouse/project-50be04/1/project","lease_id":"ac55384344599b91f75abfd9a5e99239","lease_holder":"task-B","leased_at":"2026-09-01T15:15:48.759239+08:00"}
+# same path as task A, different lease id (75988f7bbb01fe01759114ce1ccbdd2d -> ac55384344599b91f75abfd9a5e99239)
+# task B is live: agent pid 55739 cwd=/tmp/fm-aba.5Lr1gm/pool/.treehouse/project-50be04/1/project, file task-b-work.txt written
+
+$ # THE INCIDENT: an operator reruns teardown for the already-torn-down task A
+
+$ treehouse return --force --if-lease-id 75988f7bbb01fe01759114ce1ccbdd2d --if-lease-holder task-A <path>
+failed to return worktree: lease precondition failed: lease identity does not match worktree /tmp/fm-aba.5Lr1gm/pool/.treehouse/project-50be04/1/project
+exit=1  <-- REFUSED: task A's stale lease id cannot release task B's worktree
+
+# task B survived the stale return attempt:
+  content : task B live work
+  process : pid 55739 still alive
+
+$ treehouse status --json    # lease still belongs to task B
+[{"name":"1","path":"/tmp/fm-aba.5Lr1gm/pool/.treehouse/project-50be04/1/project","status":"leased","flavor":"git","lease_id":"ac55384344599b91f75abfd9a5e99239","lease_holder":"task-B","leased_at":"2026-09-01T15:15:48.759239+08:00","processes":[{"pid":55739,"name":"sleep"}]}]

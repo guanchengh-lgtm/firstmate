@@ -1,0 +1,29 @@
+$ treehouse --version
+v2.3.0
+
+--- task A acquires a leased worktree
+$ treehouse get --root <pool> --lease --json --lease-holder task-A
+🌳 Setting up worktree...
+🌳 Leased worktree at /tmp/th-real.1Vwx7s/pool/.treehouse/proj-2538b3/1/proj. Run 'treehouse return /tmp/th-real.1Vwx7s/pool/.treehouse/proj-2538b3/1/proj' to release it.
+{"path":"/tmp/th-real.1Vwx7s/pool/.treehouse/proj-2538b3/1/proj","lease_id":"b9f0caa0dd957ac96d4bd7ad58cc5421","lease_holder":"task-A","leased_at":"2026-09-01T15:38:36.23449+08:00"}
+
+--- task A is released with its exact lease identity
+$ treehouse return --root <pool> --force --if-lease-id b9f0caa0dd957ac96d4bd7ad58cc5421 --if-lease-holder task-A <path>
+🌳 Worktree returned to pool.
+
+--- task B re-leases the SAME path (the ABA window)
+🌳 Setting up worktree...
+🌳 Leased worktree at /tmp/th-real.1Vwx7s/pool/.treehouse/proj-2538b3/1/proj. Run 'treehouse return /tmp/th-real.1Vwx7s/pool/.treehouse/proj-2538b3/1/proj' to release it.
+{"path":"/tmp/th-real.1Vwx7s/pool/.treehouse/proj-2538b3/1/proj","lease_id":"badf2f288def4549734008b1b180f45c","lease_holder":"task-B","leased_at":"2026-09-01T15:38:36.786682+08:00"}
+same path as task A: YES
+task B sentinel file written, task B process pid 55922 running in the worktree
+
+--- a LATE teardown of task A now issues its recorded (stale) lease identity
+$ treehouse return --root <pool> --force --if-lease-id b9f0caa0dd957ac96d4bd7ad58cc5421 --if-lease-holder task-A <path>
+failed to return worktree: lease precondition failed: lease identity does not match worktree /tmp/th-real.1Vwx7s/pool/.treehouse/proj-2538b3/1/proj
+exit status: 1
+
+task B file survived:    YES
+task B process survived: YES
+task B still holds the lease (a fresh get must NOT return the same path):
+  task C got: /tmp/th-real.1Vwx7s/pool/.treehouse/proj-2538b3/2/proj  (differs from task B path: YES)

@@ -1,0 +1,25 @@
+Capability probe against the really installed Treehouse (bin/fm-bootstrap.sh treehouse_supports_task_leases)
+
+$ treehouse --version
+v2.3.0
+
+$ treehouse get --help | grep -E -- "--lease|--json"
+Pass --lease for a non-interactive, durable acquire: treehouse reserves the
+absolute path to stdout; add --json for the lease identity and metadata. All
+      --json                  Print lease allocation as JSON (requires --lease)
+      --lease                 Durably lease a worktree without opening a subshell; print only its path to stdout
+      --lease-holder string   Optional label recorded as the lease holder (defaults to $TREEHOUSE_LEASE_HOLDER)
+
+$ treehouse return --help | grep -E -- "--if-lease-id|--if-lease-holder"
+      --if-lease-holder string   Return only if the current lease has this holder
+      --if-lease-id string       Return only if the current lease has this identity
+
+$ probe result
+OK: installed treehouse satisfies the conditional-release capability contract
+
+--- pinned version and checksums in bin/fm-install-treehouse.sh
+15:FM_TREEHOUSE_CI_VERSION=2.3.0
+33:    SHA256=94fd2b2c20c35aac1ddc2941317890ad82c9916f5ccecbac4a50cda783eed10f
+37:    SHA256=408589ba72b58d5e942071ed863a83fd96566cfd1e514945daa59defde528bbb
+41:    SHA256=1cb09bcfa830b4eec5e54beeaa71589adb9c5d828573dda0f5150e2d80cf13d5
+45:    SHA256=349afcc13c2beb20d846eb560a11b30e1a5cab8e2dfb22988a36aa7f213b5881

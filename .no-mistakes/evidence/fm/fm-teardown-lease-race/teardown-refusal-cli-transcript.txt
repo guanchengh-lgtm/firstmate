@@ -1,0 +1,18 @@
+
+===== test_missing_worktree_with_held_lease_refuses =====
+REFUSED: task task-x1 holds treehouse lease lease-task-x1 but its worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-teardown-tests.FfEXxi/missing-worktree-held/wt is gone; a conditional return needs that exact path. Reconcile the lease with treehouse, then record treehouse_lease_state=released for this task to finish cleanup.
+
+===== test_missing_worktree_with_released_lease_completes_cleanup =====
+teardown: task task-x1 treehouse lease is already released; skipping every worktree return path
+
+===== test_child_held_lease_with_missing_worktree_refuses =====
+REFUSED: child task child-b holds treehouse lease lease-child-b but its worktree '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-teardown-tests.FfEXxi/child-missing-worktree-held/child-b-wt' is gone; a conditional return needs that exact path. Reconcile the lease with treehouse, then record treehouse_lease_state=released for that child to finish cleanup.
+
+===== test_non_alphanumeric_lease_id_returns_conditionally =====
+
+===== test_unrecordable_parked_run_id_refuses_before_return =====
+REFUSED: task task-x1 has a parked no-mistakes run whose id '01RUN BAD' is not a recordable run id; abort it manually (no-mistakes axi abort --run '01RUN BAD') before retrying teardown.
+
+===== test_conditional_return_precedes_run_abort_and_tasktmp_reap =====
+teardown: no-mistakes run for task-x1 is parked at a gate; aborting before the endpoint is removed
+teardown: reaping leaked task-temp process(es) for task-x1: 22678

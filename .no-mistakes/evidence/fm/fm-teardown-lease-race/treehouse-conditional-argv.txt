@@ -1,0 +1,13 @@
+
+===== test_non_alphanumeric_lease_id_returns_conditionally: treehouse argv firstmate issued =====
+-- lease-id-plus/treehouse.log
+   treehouse return --force --if-lease-id wt+3 --if-lease-holder task-x1 /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-teardown-tests.qnkP62/lease-id-plus/wt
+-- lease-id-rfc3339/treehouse.log
+   treehouse return --force --if-lease-id 2026-09-01T12:00:00+00:00 --if-lease-holder task-x1 /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-teardown-tests.qnkP62/lease-id-rfc3339/wt
+-- lease-id-backslash/treehouse.log
+   treehouse return --force --if-lease-id wt\3 --if-lease-holder task-x1 /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-teardown-tests.qnkP62/lease-id-backslash/wt
+
+===== test_transient_index_lock_clears_after_first_attempt_and_retry_succeeds: treehouse argv firstmate issued =====
+
+===== test_missing_worktree_with_released_lease_completes_cleanup: treehouse argv firstmate issued =====
+-- missing-worktree-released/treehouse.log

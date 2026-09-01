@@ -1,0 +1,57 @@
+
+================================================================
+SCENARIO 1 - the incident interleaving
+Task A recorded lease-A on pool worktree P. A was partially torn down.
+Task B has since re-leased the SAME path P as lease-B and is running there.
+Operator now reruns teardown for task A.
+================================================================
+--- before: task B pid 11648 is alive, task B file present, worktree = /tmp/aba-demo.36os2U/incident/wt
+$ fm-teardown.sh task-x1 --force
+treehouse: lease precondition failed: recorded lease is not the current holder of this worktree
+error: conditional treehouse return failed for worktree /tmp/aba-demo.36os2U/incident/wt; teardown aborted without releasing task records
+--- exit status: 1
+--- treehouse commands actually issued:
+treehouse return --force --if-lease-id lease-A --if-lease-holder task-x1 /tmp/aba-demo.36os2U/incident/wt
+--- task B file still present: YES
+--- task B process still alive: YES
+--- task B endpoint untouched (no tmux calls): YES
+--- task A metadata preserved: YES
+
+================================================================
+SCENARIO 2 - legacy path-only metadata (pre-upgrade live task)
+Task metadata carries no lease id, as every task spawned before this change.
+================================================================
+$ fm-teardown.sh task-x1 --force
+REFUSED: task task-x1 teardown needs exactly one non-empty treehouse_lease_id; preserving task state.
+--- exit status: 1
+--- treehouse commands issued: 0 (an unconditional path-only return would be 1)
+--- task metadata preserved: YES
+
+================================================================
+SCENARIO 3 - happy path, then crash-window rerun
+Teardown owns the current lease. It returns conditionally, marks the record
+released, and a rerun must never issue a second return.
+================================================================
+$ fm-teardown.sh task-x1 --force
+released worktree (hard reset + process reap)
+teardown task-x1 complete (window firstmate:fm-task-x1, worktree /tmp/aba-demo.36os2U/happy/wt)
+Backlog: task-x1 just finished. Run tasks-axi done task-x1 --note "local main", then run tasks-axi ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.
+--- exit status: 0
+--- treehouse commands issued:
+treehouse return --force --if-lease-id lease-A --if-lease-holder task-x1 /tmp/aba-demo.36os2U/happy/wt
+--- task record removed: YES
+
+================================================================
+SCENARIO 3b - released rerun after a crash between return and cleanup
+Same task, state=released, and task B has since taken the path.
+================================================================
+$ fm-teardown.sh task-x1 --force
+teardown: task task-x1 treehouse lease is already released; skipping every worktree return path
+teardown task-x1 complete (window firstmate:fm-task-x1, worktree /tmp/aba-demo.36os2U/released-rerun/wt)
+Backlog: task-x1 just finished. Run tasks-axi done task-x1 --note "local main", then run tasks-axi ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.
+--- exit status: 0
+--- treehouse commands issued: 0 (must be 0 - the lease is already gone)
+--- task B file still present: YES
+--- task B process still alive: YES
+--- task A record cleaned up: YES
+

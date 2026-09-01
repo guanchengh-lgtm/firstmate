@@ -1,0 +1,78 @@
+### fresh herdr spawn: persisted task metadata (profile-fresh-herdr-lease-z15a.meta)
+window=fmtest:w2:p2
+endpoint_task_id=profile-fresh-herdr-lease-z15a
+worktree=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-dispatch-profile.oep0CS/profile-fresh-herdr-lease/wt
+project=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-spawn-dispatch-profile.oep0CS/profile-fresh-herdr-lease/project
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+role=builder
+tasktmp=/tmp/fm-profile-fresh-herdr-lease-z15a
+model=default
+effort=default
+treehouse_lease_id=lease-profile-fresh-herdr-lease-z15a
+treehouse_lease_holder=profile-fresh-herdr-lease-z15a
+treehouse_lease_state=held
+busy_gen=g1788247983.15176.8495
+spawn_gen=s1788247983.10861.13993
+backend=herdr
+herdr_session=fmtest
+herdr_workspace_id=w2
+herdr_tab_id=w2:t2
+herdr_pane_id=w2:p2
+
+### treehouse commands issued by that spawn
+get --lease --json --lease-holder profile-fresh-herdr-lease-z15a
+
+### fresh zellij spawn: persisted task metadata (profile-fresh-zellij-lease-z15b.meta)
+window=firstmate:7
+endpoint_task_id=profile-fresh-zellij-lease-z15b
+worktree=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-dispatch-profile.oep0CS/profile-fresh-zellij-lease/wt
+project=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-spawn-dispatch-profile.oep0CS/profile-fresh-zellij-lease/project
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+role=builder
+tasktmp=/tmp/fm-profile-fresh-zellij-lease-z15b
+model=default
+effort=default
+treehouse_lease_id=lease-profile-fresh-zellij-lease-z15b
+treehouse_lease_holder=profile-fresh-zellij-lease-z15b
+treehouse_lease_state=held
+busy_gen=g1788247987.23535.23155
+spawn_gen=s1788247988.17739.27348
+backend=zellij
+zellij_session=firstmate
+zellij_tab_id=3
+zellij_pane_id=7
+
+### treehouse commands issued by that spawn
+get --lease --json --lease-holder profile-fresh-zellij-lease-z15b
+
+### fresh cmux spawn: persisted task metadata (profile-fresh-cmux-lease-z15c.meta)
+window=ws-1:sf-1
+endpoint_task_id=profile-fresh-cmux-lease-z15c
+worktree=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-dispatch-profile.oep0CS/profile-fresh-cmux-lease/wt
+project=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-spawn-dispatch-profile.oep0CS/profile-fresh-cmux-lease/project
+harness=claude
+kind=ship
+mode=no-mistakes
+yolo=off
+role=builder
+tasktmp=/tmp/fm-profile-fresh-cmux-lease-z15c
+model=default
+effort=default
+treehouse_lease_id=lease-profile-fresh-cmux-lease-z15c
+treehouse_lease_holder=profile-fresh-cmux-lease-z15c
+treehouse_lease_state=held
+busy_gen=g1788247992.32770.26641
+spawn_gen=s1788247992.26688.6319
+backend=cmux
+cmux_workspace_id=ws-1
+cmux_surface_id=sf-1
+
+### treehouse commands issued by that spawn
+get --lease --json --lease-holder profile-fresh-cmux-lease-z15c
+

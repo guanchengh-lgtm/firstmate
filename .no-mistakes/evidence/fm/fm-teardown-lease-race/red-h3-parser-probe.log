@@ -1,0 +1,12 @@
+FM_TEST_BEGIN 2026-09-01T07:04:52Z tests/fm-spawn-worktree-settle.test.sh family=backend-dispatch expected_gate_skip=none
+ok - a single transient stale pane_current_path read is not accepted as the worktree
+ok - an already-settled pane confirms via the existing inter-poll sleep, not an extra full cycle
+ok - a fresh lease clears the previous task's hook wiring from a reused pool worktree
+not ok - spawn did not name the unusable lease parser (missing: 'lease parser is unusable')
+--- output ---
+
+FM_TEST_END 2026-09-01T07:05:06Z tests/fm-spawn-worktree-settle.test.sh exit=1 duration_ms=13446 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=13514
+FM_TEST_SUMMARY_FAMILY family=backend-dispatch count=1 duration_ms=13446 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-spawn-worktree-settle.test.sh duration_ms=13446
+exit=1 (expect non-zero)

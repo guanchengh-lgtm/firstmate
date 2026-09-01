@@ -1,0 +1,24 @@
+MANUFACTURED BREAKAGE (red observation)
+subject bin/fm-teardown.sh:1552 - the single conditional-return command builder
+break: replace `return_command+=(--if-lease-id "$lease_id" --if-lease-holder "$lease_holder")` with a no-op,
+       i.e. fall back to an unconditional path-only `treehouse return --force <path>`.
+
+SCENARIO 1 - the incident interleaving
+Task A recorded lease-A on pool worktree P. A was partially torn down.
+Task B has since re-leased the SAME path P as lease-B and is running there.
+Operator now reruns teardown for task A.
+================================================================
+--- before: task B pid 38685 is alive, task B file present, worktree = /tmp/aba-brk.TRkuo6/incident/wt
+$ fm-teardown.sh task-x1 --force
+released worktree (hard reset + process reap)
+teardown task-x1 complete (window firstmate:fm-task-x1, worktree /tmp/aba-brk.TRkuo6/incident/wt)
+Backlog: task-x1 just finished. Run tasks-axi done task-x1 --note "local main", then run tasks-axi ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.
+/Users/AI/.no-mistakes/evidence/01M1DS87SR0X2PJ8Z48WYGE79C/aba-race-demo.sh: line 80: 38685 Terminated: 15          ( cd "$C/wt" && exec sleep 120 )
+--- exit status: 0
+--- treehouse commands actually issued:
+treehouse return --force /tmp/aba-brk.TRkuo6/incident/wt
+--- task B file still present: NO
+--- task B process still alive: NO
+--- task B endpoint untouched (no tmux calls): NO
+--- task A metadata preserved: NO
+
