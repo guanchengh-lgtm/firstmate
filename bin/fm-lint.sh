@@ -733,7 +733,11 @@ fm_lint_run_agentsmd_budget() {
       fm_lint_agentsmd_error 'the target AGENTS.md base is missing; synchronize the target branch.'
       return 1
     fi
-    base=$base_ref
+    # Bind local comparisons to the feature fork point, not a target that advanced later.
+    base=$(git merge-base "$base_ref" HEAD 2>/dev/null) || {
+      fm_lint_agentsmd_error "target base $base_ref is stale or unrelated; fetch the exact target commit or synchronize the branch."
+      return 1
+    }
   fi
 
   git cat-file -e "$base^{commit}" >/dev/null 2>&1 \
