@@ -268,14 +268,82 @@ test_stale_local_target() {
   local repo
   repo=$(repo_new stale-local 200)
   git -C "$repo" checkout -qb feature
-  git -C "$repo" branch -f main HEAD~0
   git -C "$repo" checkout -q main
   add_marked_line "$repo" 'docs/example.md owns target advance. <!-- why: doc:docs/example.md#document -->'
   commit_all "$repo" target-advance
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
   git -C "$repo" checkout -q feature
-  add_marked_line "$repo" 'docs/example.md owns feature rule. <!-- why: doc:docs/example.md#document -->'
-  expect_fail 'stale local target' 'sync' "$repo"
-  pass 'a stale local target fails with synchronization guidance'
+  printf '%s\n' 'docs/example.md owns a smaller feature rule. <!-- why: doc:docs/example.md#document -->' > "$repo/AGENTS.md"
+  expect_pass 'feature shrink after local and remote target advance' "$repo"
+  pass 'a feature shrink uses its fork point after local and remote target advances'
+}
+
+test_fork_point_override_binding() {
+  local repo after fork_blob live_blob target override
+  repo=$(repo_new fork-point-override 200)
+  fork_blob=$(git -C "$repo" rev-parse 'HEAD:AGENTS.md')
+  git -C "$repo" checkout -qb feature
+  add_marked_line "$repo" 'docs/example.md owns approved feature growth. <!-- why: doc:docs/example.md#document -->'
+  after=$(wc -c < "$repo/AGENTS.md" | tr -d ' ')
+  commit_all "$repo" feature-growth
+  target=$(git -C "$repo" rev-parse 'HEAD:AGENTS.md')
+  git -C "$repo" checkout -q main
+  add_marked_line "$repo" 'docs/example.md owns target growth. <!-- why: doc:docs/example.md#document -->'
+  commit_all "$repo" target-advance
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
+  git -C "$repo" checkout -q feature
+  printf '%s\n' fork-point > "$repo/docs/override.md"
+  make_override_commit "$repo" 200 "$after" 'Add this exact approved feature growth.' \
+    "AGENTS-Budget-Override: v1 base=$fork_blob target=$target before=200 after=$after"
+  expect_pass 'fork-point-bound override after target advance' "$repo"
+
+  repo=$(repo_new live-main-override 200)
+  git -C "$repo" checkout -qb feature
+  add_marked_line "$repo" 'docs/example.md owns approved feature growth. <!-- why: doc:docs/example.md#document -->'
+  after=$(wc -c < "$repo/AGENTS.md" | tr -d ' ')
+  commit_all "$repo" feature-growth
+  target=$(git -C "$repo" rev-parse 'HEAD:AGENTS.md')
+  git -C "$repo" checkout -q main
+  add_marked_line "$repo" 'docs/example.md owns target growth. <!-- why: doc:docs/example.md#document -->'
+  commit_all "$repo" target-advance
+  live_blob=$(git -C "$repo" rev-parse 'HEAD:AGENTS.md')
+  git -C "$repo" update-ref refs/remotes/origin/main HEAD
+  git -C "$repo" checkout -q feature
+  printf '%s\n' live-main > "$repo/docs/override.md"
+  override="AGENTS-Budget-Override: v1 base=$live_blob target=$target before=200 after=$after"
+  make_override_commit "$repo" 200 "$after" 'Add this exact approved feature growth.' "$override"
+  expect_fail 'live-main-bound override after target advance' 'base blob is stale' "$repo"
+  pass 'overrides bind to the fork-point blob, not the live target blob'
+}
+
+test_unrelated_local_target_fails_closed() {
+  local repo unrelated
+  repo=$(repo_new unrelated-local-target 200)
+  git -C "$repo" checkout -qb feature
+  unrelated="$TMP_ROOT/unrelated-target"
+  git init -q -b main "$unrelated"
+  git -C "$unrelated" config user.email test@example.com
+  git -C "$unrelated" config user.name test
+  printf '%s\n' unrelated > "$unrelated/README.md"
+  git -C "$unrelated" add README.md
+  git -C "$unrelated" commit -qm unrelated
+  git -C "$repo" fetch -q "$unrelated" main:refs/remotes/origin/main
+  expect_fail 'unrelated local target' 'stale or unrelated' "$repo"
+  pass 'an unrelated local target fails closed when it has no merge base'
+}
+
+test_merged_newer_main_uses_merge_base() {
+  local repo
+  repo=$(repo_new merged-newer-main 200)
+  git -C "$repo" checkout -qb feature
+  git -C "$repo" checkout -q main
+  add_marked_line "$repo" 'docs/example.md owns newer main content. <!-- why: doc:docs/example.md#document -->'
+  commit_all "$repo" main-advance
+  git -C "$repo" checkout -q feature
+  git -C "$repo" merge --no-ff -qm merge-main main
+  printf '%s\n' 'docs/example.md owns a merged feature replacement. <!-- why: doc:docs/example.md#document -->' > "$repo/AGENTS.md"
+  expect_pass 'feature merged with newer main' "$repo"
+  pass 'a feature branch merged with newer main uses the merged target as its base'
 }
 
 test_remote_target_precedence() {
@@ -688,6 +756,9 @@ test_ci_base_must_be_ancestor
 test_generic_ci_feature_uses_target_base
 test_deleted_wrong_type_and_utf8_bases
 test_stale_local_target
+test_fork_point_override_binding
+test_unrelated_local_target_fails_closed
+test_merged_newer_main_uses_merge_base
 test_remote_target_precedence
 test_shrink_equal_and_growth
 test_override_failure_matrix_and_exact_pair
