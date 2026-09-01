@@ -33,6 +33,10 @@
 #         remote=<owner>/<name>
 #     The pinned identity stops a copied marker from authorizing a different
 #     remote: the configured origin must resolve to that exact GitHub repository.
+#     <owner>/<name> is the one repository this script is built for,
+#     guanchengh-lgtm/fm-vault; any other marked identity is refused.
+#   - The checked-out branch is main and tracks origin/main. No other branch is
+#     published, and this script never creates or switches a branch.
 #   - The repository is private. Private visibility is re-verified with
 #     `gh-axi repo view <owner>/<name>` before EVERY push, and an unavailable
 #     check refuses the push instead of assuming private.

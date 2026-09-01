@@ -239,6 +239,45 @@ SH
   chmod +x "$dir/fakebin/find"
 }
 
+make_live_digest_list_failure() {  # <dir>
+  local dir=$1 tool real
+  # dir_digest hashes a whole directory in one batched hash-tool run from inside
+  # that directory, so gating on PWD fails exactly that batched list call and
+  # leaves every other hash in the export untouched.
+  for tool in shasum sha256sum; do
+    real=$(command -v "$tool" 2>/dev/null) || continue
+    cat > "$dir/fakebin/$tool" <<SH
+#!/usr/bin/env bash
+case "\$PWD" in
+  '$dir/vault/wiki/decisions')
+    printf 'fake $tool: forced partial list failure\n' >&2
+    exit 2
+    ;;
+esac
+exec $real "\$@"
+SH
+    chmod +x "$dir/fakebin/$tool"
+  done
+}
+
+make_corrupt_index_date_awk() {  # <dir>
+  local dir=$1 real
+  real=$(command -v awk)
+  cat > "$dir/fakebin/awk" <<SH
+#!/usr/bin/env bash
+for arg in "\$@"; do
+  case "\$arg" in
+    *'{print \$2}'*)
+      $real "\$@" | $real '{ gsub(/-/, ""); print }'
+      exit 0
+      ;;
+  esac
+done
+exec $real "\$@"
+SH
+  chmod +x "$dir/fakebin/awk"
+}
+
 make_hits_file_blocking_cp() {  # <dir>
   local dir=$1 real
   real=$(command -v cp)
@@ -1058,6 +1097,23 @@ body
   assert_absent "$dir/vault/.git/fm-feeder/journal" \
     'prior digest enumeration failure: journal was created from a truncated listing'
 
+  dir=$(new_case prior-digest-list-failure)
+  seed_records "$dir"
+  assert_export_ok "$dir" 'prior digest list failure: baseline'
+  before=$(vault_state "$dir")
+  add_decision "$dir" batched.md '# Batched decision
+
+body
+'
+  make_live_digest_list_failure "$dir"
+  run_export "$dir"
+  [ "$RC" -ne 0 ] || fail 'prior digest list failure: exporter unexpectedly succeeded'
+  assert_contains "$OUT" 'cannot digest live wiki/decisions' 'prior digest list failure'
+  [ "$(vault_state "$dir")" = "$before" ] \
+    || fail 'prior digest list failure: live vault changed before journal creation'
+  assert_absent "$dir/vault/.git/fm-feeder/journal" \
+    'prior digest list failure: journal was created from a failed batched hash'
+
   pass "fm-feeder-export: prior tree digests must succeed before journal creation"
 }
 
@@ -1654,6 +1710,26 @@ bravo
 }
 
 # --- secrets and exclusions -------------------------------------------------
+
+test_generated_index_frontmatter_gate() {
+  local dir before
+
+  dir=$(new_case index-frontmatter-gate)
+  add_decision "$dir" alpha.md '# Alpha
+
+alpha
+'
+  before=$(vault_state "$dir")
+  make_corrupt_index_date_awk "$dir"
+  run_export "$dir"
+  [ "$RC" -ne 0 ] || fail 'index frontmatter gate: a malformed index date was accepted'
+  assert_contains "$OUT" 'the staged mirror is malformed' 'index frontmatter gate'
+  assert_contains "$OUT" 'invalid created date' 'index frontmatter gate'
+  [ "$(vault_state "$dir")" = "$before" ] \
+    || fail 'index frontmatter gate: live mirror changed before refusal'
+
+  pass "fm-feeder-export: a malformed generated index refuses before publication"
+}
 
 test_secret_classes_refuse_before_mutation() {
   local dir pair class secret
@@ -3224,6 +3300,7 @@ test_dates
 test_byte_identical_rerun
 test_index_determinism
 test_staged_payload_and_index_validation
+test_generated_index_frontmatter_gate
 test_secret_classes_refuse_before_mutation
 test_secret_lookalikes_publish
 test_secret_in_a_generated_page_refuses
