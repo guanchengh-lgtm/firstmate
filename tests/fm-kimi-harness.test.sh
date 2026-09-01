@@ -19,6 +19,7 @@ KIMI_RUNTIME_TASK_TMP=
 PYTHON_BIN=$(command -v python3) || fail "test needs python3"
 PYTHON_BIN_DIR=$(dirname "$PYTHON_BIN")
 JQ_BIN=$(command -v jq) || fail "test needs jq"
+NODE_BIN=$(command -v node) || fail "test needs node"
 BASE_PATH=${FM_TEST_BASE_PATH:-$PYTHON_BIN_DIR:/usr/bin:/bin:/usr/sbin:/sbin}
 
 cleanup_kimi_harness() {
@@ -158,6 +159,9 @@ SH
   fm_fake_exit0 "$fakebin" gh-axi gh
   fm_fake_exit0 "$fakebin" kimi
   ln -s "$JQ_BIN" "$fakebin/jq"
+  # fm-spawn parses the Treehouse lease JSON with node, which the sanitized
+  # BASE_PATH deliberately excludes.
+  ln -s "$NODE_BIN" "$fakebin/node"
   printf '%s\n' "$fakebin"
 }
 

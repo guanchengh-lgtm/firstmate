@@ -207,8 +207,33 @@ set -u
   done
   printf '\n'
 } >> "$TREEHOUSE_CALL_LOG"
-if [ -d "$POST_CREATE_ABORT_CONTROL" ] && [ "${1:-}" = get ]; then
-  exit 0
+# While the post-create abort fixture is armed, hand back a syntactically valid
+# lease whose path is deliberately not an isolated worktree, so spawn reaches
+# its post-create worktree validation and aborts. The armed lease is not a real
+# pool allocation, so its conditional return is answered here too.
+if [ -d "$POST_CREATE_ABORT_CONTROL" ]; then
+  case "${1:-}" in
+    get)
+      holder=
+      while [ "$#" -gt 0 ]; do
+        case "$1" in
+          --lease-holder) holder=${2:-}; shift 2 ;;
+          *) shift ;;
+        esac
+      done
+      mkdir -p "$POST_CREATE_ABORT_CONTROL/not-a-worktree"
+      printf '{"path":"%s","lease_id":"abort-lease-%s","lease_holder":"%s"}\n' \
+        "$POST_CREATE_ABORT_CONTROL/not-a-worktree" "$holder" "$holder"
+      exit 0
+      ;;
+    return)
+      for arg in "$@"; do
+        case "$arg" in
+          abort-lease-*) exit 0 ;;
+        esac
+      done
+      ;;
+  esac
 fi
 exec "$REAL_TREEHOUSE" "$@"
 SH
@@ -439,7 +464,16 @@ normalize_meta() {  # <meta>
     -e 's|^herdr_tab_id=.*$|herdr_tab_id=<herdr-container-id>|' \
     -e 's|^herdr_pane_id=.*$|herdr_pane_id=<herdr-container-id>|' \
     -e 's|^spawn_gen=.*$|spawn_gen=<spawn-incarnation>|' \
+    -e 's|^treehouse_lease_id=.*$|treehouse_lease_id=<treehouse-lease-allocation>|' \
     "$1"
+}
+
+assert_meta_records_a_held_lease() {  # <meta> <label>
+  local meta=$1 label=$2 lease
+  lease=$(grep '^treehouse_lease_id=' "$meta" | cut -d= -f2-)
+  [ -n "$lease" ] || fail "$label metadata recorded no Treehouse lease id"
+  grep -q '^treehouse_lease_state=held$' "$meta" \
+    || fail "$label metadata did not record a held Treehouse lease"
 }
 
 log_line_count() { wc -l < "$HERDR_CALL_LOG" | tr -d '[:space:]'; }
@@ -542,7 +576,8 @@ FIRSTMATE_WSID=$(grep '^herdr_workspace_id=' "$ANCHOR_META" | cut -d= -f2-)
 
 # The same task id and project run once opted out and once projected, so
 # Treehouse commands and metadata can be compared after normalizing endpoint
-# IDs and the deliberately fresh per-spawn incarnation.
+# IDs, the deliberately fresh per-spawn incarnation, and the per-acquisition
+# Treehouse lease id.
 : > "$TREEHOUSE_CALL_LOG"
 OFF_HERDR_START=$(log_line_count)
 OFF_MOVE_START=$(wc -l < "$MOVE_CALL_LOG" | tr -d '[:space:]')
@@ -771,6 +806,10 @@ pass "real Herdr lab: bounded lock contention warns and falls back flat without 
 PROJECTION_ORDER_START=$(log_line_count)
 
 [ "$OFF_WT" = "$ON_WT" ] || fail "Treehouse did not reuse the same fixture worktree, so byte comparison is inconclusive"
+# Each acquisition is its own allocation, so the lease id is deliberately fresh
+# per spawn like the incarnation; both spawns must still hold a real lease.
+assert_meta_records_a_held_lease "$OFF_META" "opted-out spawn"
+assert_meta_records_a_held_lease "$ON_META" "projected spawn"
 normalize_meta "$OFF_META" > "$TMP_ROOT/off.meta.normalized"
 normalize_meta "$ON_META" > "$TMP_ROOT/on.meta.normalized"
 cmp -s "$TMP_ROOT/off.meta.normalized" "$TMP_ROOT/on.meta.normalized" \
@@ -873,11 +912,24 @@ grep -F "did not yield an isolated worktree" "$TMP_ROOT/abort-b.err" >/dev/null 
   || fail "post-create abort fixture B did not reach the armed validation failure"
 ABORT_A_PANE=$(cat "$POST_CREATE_ABORT_CONTROL/abort-a/task-pane")
 ABORT_B_PANE=$(cat "$POST_CREATE_ABORT_CONTROL/abort-b/task-pane")
-ABORT_SEQUENCE=$(sed -n "$((ABORT_FOCUS_START + 1)),\$p" "$FOCUS_AUDIT_LOG" | awk -F '\t' -v a="$ABORT_A_PANE" -v b="$ABORT_B_PANE" '
-  $1 == "workspace-create" && $4 ~ /^└ abort-a · p:/ { print "create-a" }
-  $1 == "workspace-create" && $4 ~ /^└ abort-b · p:/ { print "create-b" }
-  $1 == "pane-close" && $4 == a { print "close-a" }
-  $1 == "pane-close" && $4 == b { print "close-b" }
+# The abort now finds an idle task pane, so exact-pane removal can take either
+# supported form: the explicit close, or the focus-preserving pane-death path
+# that first proves the pane is a lone idle shell. Both are read from the one
+# call log, so their order against the other fixture's create still shows
+# whether cleanup stayed inside the presentation lock.
+ABORT_SEQUENCE=$(sed -n "$((ABORT_START + 1)),\$p" "$HERDR_CALL_LOG" | awk -F '\t' -v a="$ABORT_A_PANE" -v b="$ABORT_B_PANE" '
+  function emit(event) { if (event != last) { print event; last = event } }
+  $1 == "workspace" && $2 == "create" {
+    for (i = 1; i < NF; i += 1) {
+      if ($i != "--label") continue
+      if ($(i + 1) ~ /^└ abort-a · p:/) emit("create-a")
+      if ($(i + 1) ~ /^└ abort-b · p:/) emit("create-b")
+    }
+  }
+  $1 == "pane" && $2 == "close" && $3 == a { emit("close-a") }
+  $1 == "pane" && $2 == "close" && $3 == b { emit("close-b") }
+  $1 == "pane" && $2 == "process-info" && $4 == a { emit("close-a") }
+  $1 == "pane" && $2 == "process-info" && $4 == b { emit("close-b") }
 ')
 case "$ABORT_SEQUENCE" in
   $'create-a\nclose-a\ncreate-b\nclose-b'|$'create-b\nclose-b\ncreate-a\nclose-a') ;;
@@ -899,11 +951,19 @@ for ABORT_PANE in "$ABORT_A_PANE" "$ABORT_B_PANE"; do
 done
 [ ! -e "$HOME_DIR/state/abort-a.meta" ] && [ ! -e "$HOME_DIR/state/abort-b.meta" ] \
   || fail "post-create abort fixtures published task metadata before launch"
+for ABORT_ID in abort-a abort-b; do
+  grep -F "return"$'\t'"--force"$'\t'"--if-lease-id"$'\t'"abort-lease-$ABORT_ID"$'\t'"--if-lease-holder"$'\t'"$ABORT_ID"$'\t' \
+    "$TREEHOUSE_CALL_LOG" >/dev/null 2>&1 \
+    || fail "post-create abort for $ABORT_ID did not conditionally return its exact lease"
+done
 rm -rf "$POST_CREATE_ABORT_CONTROL"
 rm -f "$HOME_DIR/state/abort-a.herdr-presentation" "$HOME_DIR/state/abort-b.herdr-presentation"
 pass "real Herdr lab: concurrent post-create abort cleanup stays serialized with exact focus restoration"
 
 SHAPE_CLEANUP_AUDIT_START=$(focus_audit_line_count)
+PRE_TEARDOWN_LIST=$(lab workspace list | jq -c "[.result.workspaces[] | {workspace_id, label}]" 2>&1)
+SHAPE_JOURNAL_DUMP=$(cat "$JOURNAL" 2>&1)
+SHAPE_META_DUMP=$(grep -E "^herdr_|^window=" "$HOME_DIR/state/shape.meta" 2>&1)
 teardown_task shape "$HOME_DIR" > "$TMP_ROOT/on-teardown.out" 2> "$TMP_ROOT/on-teardown.err" \
   || fail "projected teardown failed: $(cat "$TMP_ROOT/on-teardown.err")"
 assert_focus_is "$CAPTAIN_FOCUS" "projected teardown"
@@ -914,7 +974,7 @@ if lab workspace get "$PROJECTED_WSID" >/dev/null 2>&1; then
 fi
 lab pane get "$SECOND_TWO_PANE" >/dev/null 2>&1 \
   || fail "projected teardown affected the focused secondmate workspace"
-[ ! -e "$JOURNAL" ] || fail "confirmed projected teardown did not retire its presentation journal"
+[ ! -e "$JOURNAL" ] || fail "confirmed projected teardown did not retire its presentation journal ERR[$(cat "$TMP_ROOT/on-teardown.err")] LIST[$PRE_TEARDOWN_LIST] JOURNAL[$SHAPE_JOURNAL_DUMP] META[$SHAPE_META_DUMP]"
 pass "real Herdr lab: exact task-pane close removes the projected workspace with no unrestored wrong-focus interval"
 
 teardown_task order-a "$HOME_DIR" > "$TMP_ROOT/order-a-teardown.out" 2> "$TMP_ROOT/order-a-teardown.err" &

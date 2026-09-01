@@ -3005,6 +3005,30 @@ if [ "$BACKEND" = herdr ]; then
   TEARDOWN_HERDR_PANE=$FM_BACKEND_HERDR_PANE
 fi
 
+# Treehouse can terminate the last process in a Herdr pane while returning its
+# worktree. Capture the journal's read-only endpoint correlation under the
+# presentation lock before that return can remove the disposable workspace.
+HERDR_PRESENTATION_JOURNAL="$STATE/$ID.herdr-presentation"
+HERDR_PRESENTATION_RETIRE_CANDIDATE=0
+HERDR_PRESENTATION_SESSION=
+HERDR_PRESENTATION_PANE=
+if [ "$BACKEND" = herdr ] \
+   && { [ -e "$HERDR_PRESENTATION_JOURNAL" ] || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; }; then
+  fm_backend_source herdr || true
+  HERDR_PRESENTATION_SESSION=$(meta_value "$META" herdr_session)
+  HERDR_PRESENTATION_WORKSPACE=$(meta_value "$META" herdr_workspace_id)
+  HERDR_PRESENTATION_PANE=$(meta_value "$META" herdr_pane_id)
+  if [ -n "$HERDR_PRESENTATION_SESSION" ] \
+     && [ -n "$HERDR_PRESENTATION_WORKSPACE" ] \
+     && [ -n "$HERDR_PRESENTATION_PANE" ] \
+     && [ "$T" = "$HERDR_PRESENTATION_SESSION:$HERDR_PRESENTATION_PANE" ] \
+     && fm_backend_herdr_projection_endpoint_matches_journal \
+       "$HERDR_PRESENTATION_SESSION" "$HERDR_PRESENTATION_WORKSPACE" \
+       "$HERDR_PRESENTATION_JOURNAL" "$ID"; then
+    HERDR_PRESENTATION_RETIRE_CANDIDATE=1
+  fi
+fi
+
 # Best-effort: drop the local task branch so the shared repo does not accumulate refs.
 if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
   if [ "$ORCA_PATH_MATCH_VERIFIED" != 1 ]; then
@@ -3074,27 +3098,6 @@ elif [ "$KIND" != secondmate ]; then
   # worktree. The task temp root is Firstmate's own scratch area and is reaped
   # here.
   reap_task_worktree_processes task-temp "$TASK_TMP"
-fi
-
-HERDR_PRESENTATION_JOURNAL="$STATE/$ID.herdr-presentation"
-HERDR_PRESENTATION_RETIRE_CANDIDATE=0
-HERDR_PRESENTATION_SESSION=
-HERDR_PRESENTATION_PANE=
-if [ "$BACKEND" = herdr ] \
-   && { [ -e "$HERDR_PRESENTATION_JOURNAL" ] || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; }; then
-  fm_backend_source herdr || true
-  HERDR_PRESENTATION_SESSION=$(meta_value "$META" herdr_session)
-  HERDR_PRESENTATION_WORKSPACE=$(meta_value "$META" herdr_workspace_id)
-  HERDR_PRESENTATION_PANE=$(meta_value "$META" herdr_pane_id)
-  if [ -n "$HERDR_PRESENTATION_SESSION" ] \
-     && [ -n "$HERDR_PRESENTATION_WORKSPACE" ] \
-     && [ -n "$HERDR_PRESENTATION_PANE" ] \
-     && [ "$T" = "$HERDR_PRESENTATION_SESSION:$HERDR_PRESENTATION_PANE" ] \
-     && fm_backend_herdr_projection_endpoint_matches_journal \
-       "$HERDR_PRESENTATION_SESSION" "$HERDR_PRESENTATION_WORKSPACE" \
-       "$HERDR_PRESENTATION_JOURNAL" "$ID"; then
-    HERDR_PRESENTATION_RETIRE_CANDIDATE=1
-  fi
 fi
 
 if [ "$HERDR_PRESENTATION_RETIRE_CANDIDATE" = 1 ]; then
