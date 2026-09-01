@@ -1,0 +1,4 @@
+not ok - PATH skew was not reported as an update that is not in effect (missing: 'herdr update not in effect')
+--- output ---
+ [truncated]
+observed_exit=1

@@ -1,0 +1,2 @@
+not ok - quiet checkpoint exit: expected exit 124, got 125
+observed_exit=1

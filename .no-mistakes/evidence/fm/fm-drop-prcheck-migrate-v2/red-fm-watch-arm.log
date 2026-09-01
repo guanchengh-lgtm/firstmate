@@ -1,0 +1,4 @@
+ok - watch-arm: an undrained actionable wake closes the next arm for redelivery
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1F5A2A0PY9FAXXM2JNSEP5K/bin/fm-watch-arm.sh: line 513: /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1F5A2A0PY9FAXXM2JNSEP5K/bin/manufactured-invalid.sh: No such file or directory
+not ok - arm did not attach to the live watcher: watcher: FAILED - watcher cycle exited 127 without an actionable reason
+observed_exit=1

@@ -1,0 +1,2 @@
+not ok - poll no-token exit: expected exit 0, got 1
+observed_exit=1

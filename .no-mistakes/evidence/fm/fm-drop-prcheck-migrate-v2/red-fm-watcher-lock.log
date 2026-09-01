@@ -1,0 +1,2 @@
+not ok - expected exactly one live watcher, got 0
+observed_exit=1

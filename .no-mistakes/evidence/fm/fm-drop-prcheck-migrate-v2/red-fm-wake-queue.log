@@ -1,0 +1,3 @@
+ok - same-frame reclaim, child refusal, grace recovery, owner publication, and auto-arm identity stay safe
+not ok - parent drain failed after the stall notification
+observed_exit=1
