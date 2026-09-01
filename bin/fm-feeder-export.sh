@@ -199,11 +199,14 @@ sha256_stdin() {
 # Hash a whole file list in one tool invocation, preserving input order. Output
 # is one lowercase digest per line.
 sha256_list() { # reads NUL-separated paths on stdin
+  local -a rc
   if [ "$HASH_TOOL" = shasum ]; then
     xargs -0 shasum -a 256 -- | LC_ALL=C awk '{print $1}'
   else
     xargs -0 sha256sum -- | LC_ALL=C awk '{print $1}'
   fi
+  rc=("${PIPESTATUS[@]}")
+  [ "${rc[0]}" -eq 0 ] && [ "${rc[1]}" -eq 0 ]
 }
 
 require_hash_tool() {
@@ -560,9 +563,13 @@ dir_digest() { # <dir>; ABSENT when the directory does not exist
   fi
   names=$(mktemp "${TMPDIR:-/tmp}/fm-feeder-names.XXXXXX") || return 1
   digests=$(mktemp "${TMPDIR:-/tmp}/fm-feeder-digests.XXXXXX") || return 1
-  if (cd "$dir" && LC_ALL=C find . -type f -print) | LC_ALL=C sort > "$names"; then
+  if (cd "$dir" && LC_ALL=C find . -type f -print) > "$names" && LC_ALL=C sort -o "$names" "$names"; then
     if [ -s "$names" ]; then
-      (cd "$dir" && LC_ALL=C awk '{ printf "%s%c", $0, 0 }' "$names" | sha256_list) > "$digests" || status=1
+      (
+        cd "$dir" || exit 1
+        LC_ALL=C awk '{ printf "%s%c", $0, 0 }' "$names" > "$names.nul" || exit 1
+        sha256_list < "$names.nul"
+      ) > "$digests" || status=1
     fi
   else
     status=1
@@ -574,7 +581,7 @@ dir_digest() { # <dir>; ABSENT when the directory does not exist
       result=EMPTY
     fi
   fi
-  rm -f "$names" "$digests"
+  rm -f "$names" "$names.nul" "$digests"
   [ "$status" -eq 0 ] || return 1
   printf '%s\n' "$result"
 }
@@ -1937,7 +1944,7 @@ validate_index_links() { # <page-list> <index> <scratch-name>
 }
 
 validate_stage() {
-  local kind sot physical id identity expect_pages actual_pages page snapshot
+  local kind sot physical id identity expect_pages actual_pages page snapshot stray
 
   while IFS="$(printf '\t')" read -r kind sot physical id identity; do
     [ -n "$kind" ] || continue
@@ -1973,10 +1980,12 @@ validate_stage() {
   validate_index_links "$STAGE/report-pages" "$STAGE/reports/_index.md" report-index-links \
     || die 1 "the staged report index does not match the ordered page manifest"
 
-  [ -z "$(LC_ALL=C find "$STAGE/decisions" "$STAGE/reports" ! -type d ! -name '*.md' -print | head -1)" ] \
-    || die 1 "the staged mirror holds a non-Markdown file"
-  [ -z "$(LC_ALL=C find "$STAGE/decisions" "$STAGE/reports" -type l -print | head -1)" ] \
-    || die 1 "the staged mirror holds a symbolic link"
+  stray=$(LC_ALL=C find "$STAGE/decisions" "$STAGE/reports" ! -type d ! -name '*.md' -print) \
+    || die 1 "cannot enumerate the staged mirror"
+  [ -z "$stray" ] || die 1 "the staged mirror holds a non-Markdown file"
+  stray=$(LC_ALL=C find "$STAGE/decisions" "$STAGE/reports" -type l -print) \
+    || die 1 "cannot enumerate the staged mirror"
+  [ -z "$stray" ] || die 1 "the staged mirror holds a symbolic link"
 }
 
 # --- publication ------------------------------------------------------------
