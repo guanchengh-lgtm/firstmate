@@ -130,7 +130,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-pr-check.sh`         | Record validated PR metadata, then atomically arm a static merge poll; require validation truth |
 | `fm-pr-merge.sh`         | Record PR metadata, pin the forge head, refuse a red or pending rollup, then merge a task's canonical full GitHub URL |
 | `fm-promote.sh`          | Promote a scout task in place to a protected ship task with an explicit delivery mode, optional validated surface, and builder role |
-| `fm-teardown.sh`         | Fail-closed teardown: ship-builder measure, landed ship work, scout report presence and captain-hold completion, no-mistakes validation truth, secondmate retirement |
+| `fm-teardown.sh`         | Fail-closed teardown: landed ship work, scout report presence and captain-hold completion, no-mistakes validation truth, secondmate retirement |
 | `fm-harness.sh`          | Detect the running harness and resolve crew or secondmate harness, model, and effort |
 | `fm-lock.sh`             | Per-home firstmate session lock                                                      |
 | `fm-x-lib.sh`            | Shared Relay config, relay, and reply-threading helpers                              |
