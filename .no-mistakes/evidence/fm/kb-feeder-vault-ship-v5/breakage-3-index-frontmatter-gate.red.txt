@@ -1,0 +1,6 @@
+not ok - index frontmatter gate (missing: 'the staged mirror is malformed')
+--- output ---
+/usr/bin/awk: can't open file /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-feeder-export.EdKjlE/case-1-index-frontmatter-gate/vault/.git/fm-feeder/stage.20260901T035920Z-47497/decisions/_missing.md
+ source line number 21
+fm-feeder-export: cannot validate the staged pages under /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-feeder-export.EdKjlE/case-1-index-frontmatter-gate/vault/.git/fm-feeder/stage.20260901T035920Z-47497/decisions
+rc=1

@@ -1,0 +1,51 @@
+ok - fm-feeder-export: malformed vault configuration refuses before any mutation
+ok - fm-feeder-export: Git path and object overrides refuse before mutation
+ok - fm-feeder-export: an unauthorized vault identity refuses before any mutation
+ok - fm-feeder-export: the versioned pinned marker is required before any mutation
+ok - fm-feeder-export: a vault overlapping the home, code root, or sources refuses
+ok - fm-feeder-export: a symbolic owned, nested, stage, journal, or lock path refuses
+ok - fm-feeder-export: render-time journal and backup links do not change external targets
+ok - fm-feeder-export: prior tree digests must succeed before journal creation
+ok - fm-feeder-export: empty and mixed source sets both publish complete indexes
+ok - fm-feeder-export: source enumeration failures preserve the prior mirror
+ok - fm-feeder-export: only in-tree regular-file aliases are mirrored
+ok - fm-feeder-export: titles are extracted, quoted, and Unicode-preserving
+note: this filesystem folds case, so the collision pair cannot be created here
+ok - fm-feeder-export: unsafe and colliding destination identifiers refuse
+ok - fm-feeder-export: first-known and source-update dates never fall back to the export day
+ok - fm-feeder-export: unchanged corpora rerun byte-identically across export days
+ok - fm-feeder-export: each index lists every emitted page once in a deterministic order
+ok - fm-feeder-export: render writes, payload bytes, and ordered index links are validated off-path
+ok - fm-feeder-export: a malformed generated index refuses before publication
+ok - fm-feeder-export: every high-confidence credential class refuses before mutation
+ok - fm-feeder-export: ordinary text that resembles a credential still publishes
+ok - fm-feeder-export: a credential reaching a generated page refuses before publication
+ok - fm-feeder-export: credential scan command and storage errors fail closed
+ok - fm-feeder-export: NUL and invalid UTF-8 source bytes refuse before mutation
+ok - fm-feeder-export: exact exclusions omit whole records and every invalid entry refuses
+ok - fm-feeder-export: source bytes, identity, membership, and timestamps stay stable
+ok - fm-feeder-export: a held or stale lock refuses before mutation with an exact instruction
+ok - fm-feeder-export: a dirty vault worktree or index refuses before publication
+ok - fm-feeder-export: split-device publication refuses before live mutation
+ok - fm-feeder-export: only wiki/decisions and wiki/reports are staged and committed
+ok - fm-feeder-export: committed lineage, full tree, live bytes, and push artifacts are verified
+ok - fm-feeder-export: a failing render, rename, add, or commit rolls the mirror back
+ok - fm-feeder-export: INT, TERM, and HUP during render or publication roll back cleanly
+ok - fm-feeder-export: publication, commit, cleanup, and push signals preserve recoverable state
+ok - fm-feeder-export: hard stops at phases and operation-to-journal gaps recover
+ok - fm-feeder-export: journal recovery precedes ordinary preflight
+ok - fm-feeder-export: vault authority refuses before recovery mutates state
+ok - fm-feeder-export: recovery resumes after a hard stop during recovery
+ok - fm-feeder-export: pre-commit cleanup keeps recovery state crash-safe
+ok - fm-feeder-export: hard-stop recovery preserves empty owned directories
+ok - fm-feeder-export: a hard stop after commit recovers commit intent
+ok - fm-feeder-export: unsafe pre-commit recovery state refuses without mutation
+ok - fm-feeder-export: committed cleanup is verified before journal removal and push
+ok - fm-feeder-export: an unexplained journal or backup refuses instead of guessing
+ok - fm-feeder-export: backup enumeration failures fail closed
+ok - fm-feeder-export: the pinned private remote is verified before every push
+ok - fm-feeder-export: a push failure keeps the local commit and the next run pushes it
+ok - fm-feeder-export: a full generation reaches a local bare origin through the pinned identity
+ok - fm-feeder-export: both hash-tool branches work and their absence refuses
+ok - fm-feeder-export: a corpus of many records completes inside a hard time bound
+ok - fm-feeder-export: --help documents the configuration and the first-known date limitation

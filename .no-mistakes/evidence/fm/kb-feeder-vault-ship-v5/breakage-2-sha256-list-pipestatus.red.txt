@@ -1,0 +1,8 @@
+not ok - prior digest list failure (missing: 'cannot digest live wiki/decisions')
+--- output ---
+fake shasum: forced partial list failure
+fake shasum: forced partial list failure
+fm-feeder-export: installed wiki/decisions does not match the validated generation
+fm-feeder-export: rolling back the incomplete publication
+fake shasum: forced partial list failure
+rc=1

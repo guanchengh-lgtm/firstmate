@@ -1,0 +1,8 @@
+not ok - prior digest enumeration failure (missing: 'cannot digest live wiki/decisions')
+--- output ---
+fake find: forced live enumeration failure
+fake find: forced live enumeration failure
+fm-feeder-export: installed wiki/decisions does not match the validated generation
+fm-feeder-export: rolling back the incomplete publication
+fake find: forced live enumeration failure
+rc=1

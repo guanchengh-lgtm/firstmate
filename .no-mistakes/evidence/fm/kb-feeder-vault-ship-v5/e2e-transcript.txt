@@ -1,0 +1,102 @@
+=== STEP 1: first export (publish + push) ===
+$ bin/fm-feeder-export.sh
+fm-feeder-export: pushed main to origin (guanchengh-lgtm/fm-vault) at c0c9ecb617a8549fc24ed28b7b8767fa12c3c42b
+exit=0
+
+=== vault commit created by the exporter ===
+c0c9ecb feeder: refresh mirror 2026-09-01
+ wiki/decisions/_index.md                     | 14 ++++++++++++++
+ wiki/decisions/knowledge-stack-2026-08-31.md | 16 ++++++++++++++++
+ wiki/decisions/naming-2026-02-14.md          | 15 +++++++++++++++
+ wiki/reports/_index.md                       | 13 +++++++++++++
+ wiki/reports/kb-feeder-scout.md              | 15 +++++++++++++++
+ 5 files changed, 73 insertions(+)
+
+=== files in the vault working tree ===
+wiki/decisions/_index.md
+wiki/decisions/knowledge-stack-2026-08-31.md
+wiki/decisions/naming-2026-02-14.md
+wiki/reports/_index.md
+wiki/reports/kb-feeder-scout.md
+
+=== rendered mirror page wiki/decisions/knowledge-stack-2026-08-31.md ===
+---
+title: 'Knowledge stack lock — feeder is a private mirror'
+type: feeder-mirror
+status: evergreen
+created: 2026-08-31
+updated: 2026-09-01
+tags: [feeder, lock]
+sot_path: 'data/decisions/knowledge-stack-2026-08-31.md'
+sot_sha256: 0aaee6e24e8189d94a12f65480d33d367d9cef8904290fabfb7cd93544d9d6f2
+---
+> Mirror of a firstmate record. Not the system of record. Read `sot_path` before acting.
+
+# Knowledge stack lock — feeder is a private mirror
+
+The feeder is a one-way private GitHub mirror.
+No BM25, no index build, no write-back.
+
+=== rendered index wiki/decisions/_index.md ===
+---
+title: 'Feeder decision mirror index'
+type: feeder-index
+status: evergreen
+created: 2026-02-14
+updated: 2026-09-01
+tags: [feeder, index, decision]
+---
+> Generated navigation for the firstmate feeder mirror. Not the system of record.
+
+- [[knowledge-stack-2026-08-31]]
+- [[naming-2026-02-14]]
+
+Excluded records: 0
+
+=== pushed state on the bare origin (git show refs/heads/main) ===
+c0c9ecb feeder: refresh mirror 2026-09-01
+.feeder-vault
+wiki/decisions/_index.md
+wiki/decisions/knowledge-stack-2026-08-31.md
+wiki/decisions/naming-2026-02-14.md
+wiki/reports/_index.md
+wiki/reports/kb-feeder-scout.md
+local HEAD  = c0c9ecb617a8549fc24ed28b7b8767fa12c3c42b
+origin main = c0c9ecb617a8549fc24ed28b7b8767fa12c3c42b
+private-visibility checks issued to gh-axi:
+repo view guanchengh-lgtm/fm-vault
+repo view guanchengh-lgtm/fm-vault
+
+=== STEP 2: rerun with no source change (no commit, still pushes HEAD) ===
+$ bin/fm-feeder-export.sh
+fm-feeder-export: mirror bytes are unchanged; skipping the commit and pushing the current HEAD
+fm-feeder-export: pushed main to origin (guanchengh-lgtm/fm-vault) at c0c9ecb617a8549fc24ed28b7b8767fa12c3c42b
+exit=0
+HEAD unchanged: yes
+
+=== STEP 3: a source record carrying a credential refuses before any mutation ===
+$ bin/fm-feeder-export.sh
+fm-feeder-export: refusing to publish: data/decisions/leaky-2026-03-01.md matches the openai-key credential pattern
+exit=1
+credential text printed by the exporter: 0 occurrences
+HEAD unchanged: yes
+
+=== STEP 4: change one source record, export again ===
+$ bin/fm-feeder-export.sh
+fm-feeder-export: pushed main to origin (guanchengh-lgtm/fm-vault) at 4c984825bfd5b83a30a4a40e32829775dc761e3f
+exit=0
+4c98482 feeder: refresh mirror 2026-09-01
+wiki/decisions/naming-2026-02-14.md
+origin main now = 4c984825bfd5b83a30a4a40e32829775dc761e3f
+local HEAD      = 4c984825bfd5b83a30a4a40e32829775dc761e3f
+vault worktree clean: yes
+
+=== STEP 5: the source of record was never written back to ===
+$ find home/data -type f | sort  (after four export runs)
+data/decisions/knowledge-stack-2026-08-31.md
+data/decisions/naming-2026-02-14.md
+data/kb-feeder-scout/report.md
+sources still hold exactly the bytes the operator wrote:
+0aaee6e24e8189d94a12f65480d33d367d9cef8904290fabfb7cd93544d9d6f2 data/decisions/knowledge-stack-2026-08-31.md
+6afdb89eb7c9729056128d2c76c4fbc11cdd796f689cfc6b09b6c83e84957ded data/decisions/naming-2026-02-14.md
+5dfcc3e8fee4330673dff4fc7c1f883d07280716c5858e47934af982f0cb9780 data/kb-feeder-scout/report.md
