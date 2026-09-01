@@ -36,7 +36,7 @@
 # live endpoint). Explicit --ov requires a completed report. No brief-body parse.
 #
 # plan-eng-review requires a separate OV worker. The builder's own plan note
-# is not OV. Split transcript windows stay as gather holes.
+# is not OV.
 # Hook-mode held gather calls tasks-axi ready --include-held once. It reads
 # only the first id field and the final hold_until field from each held row;
 # quoted commas or escaped newlines in intermediate fields cannot alter them.
@@ -56,8 +56,7 @@
 # exits 0 only when that rule count and the total finding count both equal
 # the expected count. There is no "the fixture must fail" inversion.
 #
-# LIMITS: Split transcripts can hide a load. A real captain hold is
-# invisible.
+# LIMITS: A real captain hold is invisible.
 # Empty or {TASK} task fields skip ship rules (spawn-harness stubs).
 # Builder self-review is not OV. A non-Claude review worker (grok, codex,
 # pi, kimi, opencode, muse) fires no PostToolUse hook, so its skills record

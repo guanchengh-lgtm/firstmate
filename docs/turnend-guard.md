@@ -17,7 +17,7 @@ When work, a process-event source, or Relay polling needs supervision at that bo
 Separately, the same script refuses ending a turn as prose-only waiting when a ready queued ticket has no worker owner; `bin/fm-turnend-guard.sh`'s header owns that ready-action contract.
 The same family refuses a held locked next act with no worker.
 `bin/fm-owner-invoke-wait-check.sh` owns that rule and the spawn-time `--brief` OV gates.
-It does not hunt free English. Split transcript windows stay as gather holes.
+It does not hunt free English.
 The mid-turn pull warning uses the model-aware supervision verdict described below, while the turn-end guard keeps the PID-strict watcher predicate.
 The guard remains a backstop; [`watcher-continuity.md`](watcher-continuity.md) owns normal continuity.
 

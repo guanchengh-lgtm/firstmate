@@ -3,7 +3,7 @@
   "size_reason": "Wait detector on durable records. Widen the landed go-gate / ready-action owner. Full adversary rounds are a later ship if the light refuse is trusted.",
   "shape": "A node owns a next act. This seat proceeds without starting that act.",
   "form": "refuse-hook",
-  "structure": "bin/fm-owner-invoke-wait-check.sh reads one tasks-axi ready --include-held listing per held gather and parses only id plus the final hold_until field. It evaluates map_next and date-cleared holds. fm-spawn preserves the distinct-worker check before explicit --brief --ov evaluation, which requires a completed report and data/<ov>/skills containing plan-eng-review when durable ov_harness is claude/claude*. The explicit checks apply to builder and verifier ships. Split transcript windows stay as gather holes. It does not parse brief-body Role or Delivery contract lines.",
+  "structure": "bin/fm-owner-invoke-wait-check.sh reads one tasks-axi ready --include-held listing per held gather and parses only id plus the final hold_until field. It evaluates map_next and date-cleared holds. fm-spawn preserves the distinct-worker check before explicit --brief --ov evaluation, which requires a completed report and data/<ov>/skills containing plan-eng-review when durable ov_harness is claude/claude*. The explicit checks apply to builder and verifier ships. It does not parse brief-body Role or Delivery contract lines.",
   "rules": [
     "R-held-locked-next",
     "R-ov-missing",
@@ -32,7 +32,6 @@
   "adversary_rounds": 0,
   "adversary_verdict": "skipped-light-size",
   "limits": [
-    "Split transcripts can hide a load.",
     "A real captain hold is invisible.",
     "Empty or placeholder task fields skip ship rules.",
     "Builder self-review is not OV.",
