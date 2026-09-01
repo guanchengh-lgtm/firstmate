@@ -40,7 +40,7 @@
 # product. Teardown proceeds only once the report exists and the shared captain-hold
 # completion gate verifies its captain-held and product-idea inventory.
 # When this task is ov= for a ship, a present scout report is also copied to
-# data/<ship>/ov-report.md. The owner-invoke Stop ladder reads
+# data/<ship>/ov-report.md. Spawn-time owner-invoke --brief reads
 # data/<ov>/report.md, not that ship-side copy.
 # Before destructive cleanup, teardown validates task check artifacts and any
 # matching quarantine entries as ordinary single-link files on the state
