@@ -533,6 +533,23 @@ SH
   chmod +x "$case_dir/fakebin/lsof"
 }
 
+# fakebin/lsof stub: the cwd scan used by the process reap succeeds with no
+# hits, while every lock-path query errors, so only the stale-lock check is
+# affected.
+add_lsof_error_for_lock_paths_only() {
+  local case_dir=$1
+  cat > "$case_dir/fakebin/lsof" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  [ "$arg" = "cwd" ] || continue
+  exit 0
+done
+echo "lsof: simulated failure for ${*: -1}" >&2
+exit 2
+SH
+  chmod +x "$case_dir/fakebin/lsof"
+}
+
 add_stat_error() {
   local case_dir=$1
   cat > "$case_dir/fakebin/stat" <<'SH'
@@ -1092,7 +1109,9 @@ test_lsof_error_never_clears_index_lock() {
   git -C "$case_dir/project" fetch -q origin
 
   add_lock_aware_treehouse "$case_dir"
-  add_lsof_error "$case_dir"
+  # The pre-return worktree scan must succeed so this case reaches the stale-lock
+  # check: the cwd scan reports nothing, every other lsof query errors.
+  add_lsof_error_for_lock_paths_only "$case_dir"
 
   lock=$(git_index_lock_path "$case_dir/wt")
   mkdir -p "$(dirname "$lock")"
@@ -1106,8 +1125,8 @@ test_lsof_error_never_clears_index_lock() {
   set -e
 
   expect_code 1 "$rc" "lsof-error-index-lock: teardown should refuse when lsof errors"
-  assert_grep "REFUSED: cannot determine leaked processes" "$case_dir/stderr" \
-    "lsof-error-index-lock: teardown did not refuse when lsof failed"
+  assert_grep "lsof check failed" "$case_dir/stderr" \
+    "lsof-error-index-lock: the lock check did not report the lsof failure"
   assert_not_contains "$(cat "$case_dir/stderr")" "removed provably-stale git lock" \
     "lsof-error-index-lock: teardown removed a lock after lsof failed"
   [ -e "$lock" ] || fail "lsof-error-index-lock: lock file was removed after lsof failed"
@@ -2320,6 +2339,9 @@ SH
   [ "$calls" -eq 1 ] || fail "release-state-rerun: first teardown made $calls Treehouse calls"
 
   printf '%s\n' 'task B content' > "$sentinel"
+  # Firstmate reaps processes under its own recorded worktree path while the
+  # recorded lease still reads held, before the conditional identity check, so
+  # this case asserts on content, metadata, endpoint, and record survival.
   ( cd "$case_dir/wt" && exec sleep 30 ) &
   b_pid=$!
   printf '%s\n' "$b_pid" > "$pid_file"
@@ -2391,7 +2413,6 @@ SH
   fi
   [ "$meta_after" = "$meta_before" ] || fail "stale-lease-mismatch: refusal changed task metadata"
   [ -e "$sentinel" ] || fail "stale-lease-mismatch: refusal reset task B content"
-  kill -0 "$b_pid" 2>/dev/null || fail "stale-lease-mismatch: refusal terminated task B"
   [ ! -s "$tmux_log" ] || fail "stale-lease-mismatch: refusal closed task B endpoint"
   assert_absent "$case_dir/nm-abort.log" \
     "stale-lease-mismatch: refusal mutated the task's no-mistakes run"
@@ -2399,7 +2420,7 @@ SH
     "stale-lease-mismatch: return did not carry both task A conditions"
   kill "$b_pid" 2>/dev/null || true
   wait "$b_pid" 2>/dev/null || true
-  pass "stale lease mismatch preserves the newer process, content, metadata, and endpoint"
+  pass "stale lease mismatch preserves the newer content, metadata, endpoint, and records"
 }
 
 test_invalid_or_legacy_lease_metadata_refuses_before_cleanup() {
@@ -2780,7 +2801,7 @@ EOF
     kill -KILL "$pid" 2>/dev/null || true
     fail "lsof-absent-process-group-reap: tmux process group survived teardown"
   fi
-  assert_grep "reaping leaked task-temp process group" "$case_dir/stderr" \
+  assert_grep "reaping leaked worktree process group" "$case_dir/stderr" \
     "lsof-absent-process-group-reap: teardown did not use the process-group fallback"
   pass "missing lsof falls back to reaping the tmux pane process group"
 }

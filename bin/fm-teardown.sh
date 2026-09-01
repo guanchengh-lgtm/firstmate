@@ -141,10 +141,9 @@
 #     whose CURRENT WORKING DIRECTORY is under a named task root through
 #     `lsof -a -d cwd`. It sends TERM, then KILL after a short grace period to
 #     any survivor whose process identity still matches. Orca uses this for
-#     its worktree and tasktmp before removal. A Treehouse task enumerates its
-#     leaked worktree processes while its recorded lease is still held, before
-#     the conditional return, and terminates exactly those once that return has
-#     proved the lease was still its own; tasktmp is reaped after the return.
+#     its worktree and tasktmp before removal. A Treehouse task reaps its own
+#     leased worktree while its recorded lease is still held, immediately before
+#     the conditional return, and reaps tasktmp after that return.
 #     These roots are unique per task. An empty result is a silent no-op.
 #   Fix 3 - sweep abandoned remote job workers. A remote job worker started
 #     from a worktree's own bin/ outlives that worktree's removal without
@@ -1921,7 +1920,7 @@ reap_task_backend_process_group() {  # <label>
 # exits between passes is absent from the recheck. A missing lsof uses the
 # backend process-group fallback. An lsof scan error refuses cleanup.
 reap_task_worktree_processes() {  # <label> <dir>...
-  local label=$1 pids pid identity current_pids i pass=1 max_passes=3 allowed
+  local label=$1 pids pid identity current_pids i pass=1 max_passes=3
   local -a tracked_pids tracked_identities remaining_pids remaining_identities
   shift
   if ! command -v lsof >/dev/null 2>&1; then
@@ -1934,19 +1933,6 @@ reap_task_worktree_processes() {  # <label> <dir>...
       return 1
     fi
     pids=$TASK_PIDS
-    if [ "${REAP_PID_ALLOWLIST_ACTIVE:-0}" = 1 ]; then
-      allowed=""
-      while IFS= read -r pid; do
-        [ -n "$pid" ] || continue
-        if task_pid_list_contains "${REAP_PID_ALLOWLIST:-}" "$pid"; then
-          allowed="$allowed$pid
-"
-        fi
-      done <<EOF
-$pids
-EOF
-      pids=$(printf '%s' "$allowed")
-    fi
     [ -n "$pids" ] || return 0
     tracked_pids=()
     tracked_identities=()
@@ -3033,21 +3019,9 @@ elif [ "$KIND" != secondmate ]; then
     if [ "$FORCE" != "--force" ] && [ "$KIND" != scout ]; then
       post_lock_cleanup_check=validate_worktree_teardown_safety
     fi
-    # Firstmate-owned cleanup of the leased worktree. The leaked processes are
-    # enumerated here, while the recorded lease is still held and nothing has
-    # been mutated; an lsof failure refuses before any destructive step. They
-    # are terminated only once the conditional return has proved this exact
-    # lease was still ours, so a stale-identity refusal terminates nothing.
-    treehouse_worktree_reap_pids=
-    treehouse_worktree_reap_active=0
-    if command -v lsof >/dev/null 2>&1; then
-      if ! task_pids_under_roots "$WT"; then
-        echo "REFUSED: cannot determine leaked processes under ${TASK_PIDS_FAILED_DIR:-<missing>} for $ID (lsof failed); preserving the worktree/tasktmp for manual inspection or retry." >&2
-        exit 1
-      fi
-      treehouse_worktree_reap_pids=$TASK_PIDS
-      treehouse_worktree_reap_active=1
-    fi
+    # Firstmate-owned cleanup of its own leased worktree runs while the
+    # recorded lease is still held, before the conditional return.
+    reap_task_worktree_processes worktree "$WT"
     teardown_treehouse_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check" \
       "$TREEHOUSE_LEASE_ID" "$TREEHOUSE_LEASE_HOLDER" || {
       echo "error: conditional treehouse return failed for worktree $WT; teardown aborted without releasing task records" >&2
@@ -3060,10 +3034,6 @@ elif [ "$KIND" != secondmate ]; then
       exit 1
     fi
     TREEHOUSE_LEASE_STATE=released
-    if [ "$treehouse_worktree_reap_active" = 1 ] && [ -n "$treehouse_worktree_reap_pids" ]; then
-      REAP_PID_ALLOWLIST_ACTIVE=1 REAP_PID_ALLOWLIST=$treehouse_worktree_reap_pids \
-        reap_task_worktree_processes worktree "$WT"
-    fi
     conclude_prepared_task_no_mistakes_run "$PROJ" || exit 1
     # Treehouse already detached and cleaned the pooled worktree. Delete the
     # old local task branch only through the project. Git refuses if another
@@ -3079,9 +3049,8 @@ elif [ "$KIND" != secondmate ]; then
   # This best-effort global sweep is deferred until the task's conditional
   # lease check succeeds, or a prior attempt has recorded the released phase.
   "$SCRIPT_DIR/fm-remote-job-reap-orphans.sh" >&2 || true
-  # The leased worktree is reaped above, restricted to the processes seen while
-  # the lease was held. The task temp root outlives the return and is reaped
-  # here.
+  # The leased worktree is reaped above, while the lease is still held. The task
+  # temp root is separate from the lease and is reaped here.
   reap_task_worktree_processes task-temp "$TASK_TMP"
 fi
 
