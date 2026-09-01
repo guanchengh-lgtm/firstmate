@@ -142,9 +142,7 @@ family_for_basename() {
     fm-documentation-audiences.test.sh|fm-ensure-agents-md.test.sh|fm-grok-harness.test.sh|\
     fm-pi-midline-slash-patch.test.sh|\
     fm-stow-open-lock-check.test.sh|\
-    fm-spec-compile-check.test.sh|\
     fm-owner-invoke-wait-check.test.sh|\
-    fm-reduce-check.test.sh|\
     fm-kimi-harness.test.sh|fm-muse-harness.test.sh|fm-herdr-lab.test.sh|\
     fm-lint-agentsmd-budget.test.sh|fm-lint.test.sh|\
     fm-lint-workflows.test.sh|\
@@ -1042,9 +1040,6 @@ families_for_changed_path() {
     bin/fm-stow-open-lock-check.sh)
       printf '%s\n' pure-contract-unit
       printf '%s\n' snapshot-bearings
-      ;;
-    bin/fm-spec-compile-check.sh|bin/fm-reduce-check.sh|bin/fm-keep-rows.py)
-      printf '%s\n' pure-contract-unit
       ;;
     bin/fm-owner-invoke-wait-check.sh)
       printf '%s\n' pure-contract-unit

@@ -117,13 +117,10 @@ install_guard_scripts() {
   cp "$ROOT/bin/fm-wake-lib.sh" "$dir/bin/fm-wake-lib.sh"
   cp "$ROOT/bin/fm-hook-host-lib.sh" "$dir/bin/fm-hook-host-lib.sh"
   cp "$ROOT/bin/fm-timeout-lib.sh" "$dir/bin/fm-timeout-lib.sh"
-  cp "$ROOT/bin/fm-spec-compile-check.sh" "$dir/bin/fm-spec-compile-check.sh"
   cp "$ROOT/bin/fm-owner-invoke-wait-check.sh" "$dir/bin/fm-owner-invoke-wait-check.sh"
-  cp "$ROOT/bin/fm-keep-rows.py" "$dir/bin/fm-keep-rows.py"
-  cp "$ROOT/bin/fm-reduce-check.sh" "$dir/bin/fm-reduce-check.sh"
   mkdir -p "$dir/docs"
   cp -R "$ROOT/docs/supervision-protocols" "$dir/docs/supervision-protocols"
-  chmod +x "$dir/bin/fm-turnend-guard.sh" "$dir/bin/fm-turnend-guard-grok.sh" "$dir/bin/fm-operational-input.sh" "$dir/bin/fm-supervision-instructions.sh" "$dir/bin/fm-harness.sh" "$dir/bin/fm-spec-compile-check.sh" "$dir/bin/fm-owner-invoke-wait-check.sh" "$dir/bin/fm-reduce-check.sh"
+  chmod +x "$dir/bin/fm-turnend-guard.sh" "$dir/bin/fm-turnend-guard-grok.sh" "$dir/bin/fm-operational-input.sh" "$dir/bin/fm-supervision-instructions.sh" "$dir/bin/fm-harness.sh" "$dir/bin/fm-owner-invoke-wait-check.sh"
 }
 
 mark_codex_hook_root() {

@@ -16,10 +16,8 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-sot-pointer-check.sh` | Detect completed multi-task programs that lack a standing durable SoT pointer or leave a named hold unbound after later authority |
 | `fm-map-fog-check.sh`    | Detect live `## Not yet specified` fog on map files; `--strict` refuses, missing section is structural |
 | `fm-stow-open-lock-check.sh` | Refuse a reset-safe stow receipt that omits a still-open lock-file pick; `--list-open` feeds the fleet snapshot |
-| `fm-spec-compile-check.sh` | Assert every closed ticket id and every keep-row title appears in a spec as a tag or an explicit refusal, not grounding |
 | `fm-owner-invoke-wait-check.sh` | Refuse a locked next act, an owner-invoke node still open after the captain's next message with no matching artifact, or this session's ships whose OV review is gone without a report; spawn checks require a completed report and retain the Claude plan-eng-review load rule |
 | `fm-skill-load-record.sh` | Claude PostToolUse Skill recorder (crewmate settings.local.json absolute path + tracked settings.json): append normalized skill loads into data/<task>/skills when FM_TASK_ID/FM_HOME are set |
-| `fm-reduce-check.sh` | Assert every expected wide-work report exists, is non-empty, and is cited; code writes the keep-list |
 | `fm-startup-network.sh`  | Run session start's network checks off its blocking path in a bounded detached worker, and publish the result inline or as a wake |
 | `fm-fleet-sync.sh`       | Refresh project clones with safe fast-forwards, self-heals, `STUCK:` reports, branch pruning, and bounded recovery from an orphaned `.git/packed-refs.lock` |
 | `fm-fleet-snapshot.sh`   | Print the read-only structured fleet snapshot JSON (schema `fm-fleet-snapshot.v1`)   |
