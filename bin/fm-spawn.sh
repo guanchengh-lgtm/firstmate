@@ -880,7 +880,7 @@ parse_treehouse_task_lease() {  # <json>
     }
     if (!value || Array.isArray(value) || typeof value !== "object") process.exit(1);
     const fields = [value.path, value.lease_id, value.lease_holder];
-    if (fields.some((field) => typeof field !== "string" || field.length === 0 || /[\0\r\n\t]/.test(field))) {
+    if (fields.some((field) => typeof field !== "string" || field.length === 0 || /[\u0000-\u001f\u007f]/.test(field))) {
       process.exit(1);
     }
     process.stdout.write(fields.join("\t"));
@@ -902,7 +902,7 @@ load_held_treehouse_task_lease() {  # <metadata> <operation>
     return 1
   }
   case "$TREEHOUSE_LEASE_ID" in
-    *[!A-Za-z0-9._:-]*)
+    ''|*[[:cntrl:]]*)
       echo "error: $operation refused: task $ID has a malformed treehouse_lease_id" >&2
       return 1
       ;;
@@ -2995,12 +2995,6 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
     exit 1
   }
   IFS=$'\t' read -r WT TREEHOUSE_LEASE_ID TREEHOUSE_LEASE_HOLDER <<< "$lease_fields"
-  case "$TREEHOUSE_LEASE_ID" in
-    *[!A-Za-z0-9._:-]*)
-      echo "error: treehouse returned a malformed lease ID for task $ID; the reserved lease was left untouched" >&2
-      exit 1
-      ;;
-  esac
   TREEHOUSE_LEASE_STATE=held
   TREEHOUSE_ABORT_CLEANUP=1
   case "$WT" in

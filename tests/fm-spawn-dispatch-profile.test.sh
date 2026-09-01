@@ -326,8 +326,8 @@ case "${1:-}" in
       printf '%s\n' '{not-json'
     else
       returned_holder=${FM_FAKE_TREEHOUSE_HOLDER:-$holder}
-      printf '{"path":"%s","lease_id":"lease-%s","lease_holder":"%s"}\n' \
-        "${FM_FAKE_PANE_PATH:?}" "$holder" "$returned_holder"
+      printf '{"path":"%s","lease_id":"%s","lease_holder":"%s"}\n' \
+        "${FM_FAKE_PANE_PATH:?}" "${FM_FAKE_TREEHOUSE_LEASE_ID:-lease-$holder}" "$returned_holder"
     fi
     ;;
   return)
@@ -1784,6 +1784,55 @@ test_malformed_lease_json_fails_without_guessed_return() {
   pass "malformed lease JSON fails loudly without guessing a return identity"
 }
 
+assert_fresh_spawn_accepts_lease_id() {  # <suffix> <lease-id>
+  local suffix=$1 lease_id=$2 rec id out status treehouse_log meta
+  id="profile-lease-id-${suffix}"
+  rec=$(make_spawn_case "profile-lease-id-${suffix}" claude "$id")
+  read_case_record "$rec"
+  treehouse_log="$CASE_DIR/treehouse.log"
+  : > "$treehouse_log"
+
+  out=$(FM_FAKE_TREEHOUSE_LOG="$treehouse_log" FM_FAKE_TREEHOUSE_LEASE_ID="$lease_id" \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+
+  expect_code 0 "$status" "lease-id-$suffix: spawn rejected the valid lease ID '$lease_id': $out"
+  meta="$HOME_DIR/state/$id.meta"
+  assert_grep "treehouse_lease_id=$lease_id" "$meta" \
+    "lease-id-$suffix: spawn did not record the lease ID Treehouse issued"
+  assert_grep 'treehouse_lease_state=held' "$meta" \
+    "lease-id-$suffix: spawn did not record the held lease phase"
+  assert_no_grep 'return --force' "$treehouse_log" \
+    "lease-id-$suffix: spawn returned a lease it had just accepted"
+}
+
+test_fresh_spawn_accepts_any_control_character_free_lease_id() {
+  assert_fresh_spawn_accepts_lease_id z16a 'wt+3'
+  assert_fresh_spawn_accepts_lease_id z16b '2026-09-01T12:00:00+00:00'
+  pass "a lease ID free of control characters is accepted and recorded verbatim"
+}
+
+test_post_acquisition_failure_returns_unusual_lease_verbatim() {
+  local rec id out status treehouse_log
+  id=profile-lease-id-leak-z16c
+  rec=$(make_spawn_case profile-lease-id-leak claude "$id")
+  read_case_record "$rec"
+  treehouse_log="$CASE_DIR/treehouse.log"
+  : > "$treehouse_log"
+
+  out=$(FM_FAKE_TREEHOUSE_LOG="$treehouse_log" FM_FAKE_TREEHOUSE_LEASE_ID='wt+3' \
+    FM_FAKE_TREEHOUSE_HOLDER=other-holder \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+
+  [ "$status" -ne 0 ] || fail "lease-id-leak: an invalid lease holder still reported success"
+  assert_grep "return --force --if-lease-id wt+3 --if-lease-holder other-holder $WT_DIR" \
+    "$treehouse_log" "lease-id-leak: post-acquisition refusal leaked the acquired lease"
+  assert_absent "$HOME_DIR/state/$id.meta" \
+    "lease-id-leak: a released lease still published task metadata"
+  pass "a post-acquisition refusal returns the received lease identity verbatim"
+}
+
 test_verifier_handoff_refuses_released_lease() {
   local rec id out status meta_before endpoint_before
   id=profile-verifier-released-lease-z14d
@@ -2664,6 +2713,8 @@ test_fresh_spawn_abort_conditionally_releases_exact_lease
 test_signal_after_metadata_publication_preserves_lease_ownership
 test_spawn_abort_cleanup_failure_preserves_recovery_identity
 test_malformed_lease_json_fails_without_guessed_return
+test_fresh_spawn_accepts_any_control_character_free_lease_id
+test_post_acquisition_failure_returns_unusual_lease_verbatim
 test_verifier_handoff_refuses_released_lease
 test_verifier_handoff_preserves_yolo_authority
 test_verifier_handoff_refuses_surface_synthesis

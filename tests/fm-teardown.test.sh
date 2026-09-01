@@ -2611,6 +2611,79 @@ SH
   pass "a released lease with a missing worktree still finishes record cleanup"
 }
 
+test_child_held_lease_with_missing_worktree_refuses() {
+  local case_dir home rc treehouse_log tmux_log
+  case_dir=$(make_case child-missing-worktree-held)
+  write_meta "$case_dir" local-only secondmate
+  configure_secondmate_with_tmux_children "$case_dir"
+  home="$case_dir/secondmate-home"
+  treehouse_log="$case_dir/treehouse.log"
+  tmux_log="$case_dir/tmux.log"
+  : > "$treehouse_log"
+  : > "$tmux_log"
+  cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_FAKE_TREEHOUSE_LOG:?}"
+exit 0
+SH
+  cat > "$case_dir/fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_FAKE_TMUX_LOG:?}"
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/tmux"
+  git -C "$case_dir/project" worktree remove --force "$case_dir/child-b-wt"
+
+  rc=0
+  FM_FAKE_TREEHOUSE_LOG="$treehouse_log" FM_FAKE_TMUX_LOG="$tmux_log" \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 1 "$rc" "child-missing-worktree-held: forced teardown should refuse the child held lease"
+  assert_grep "child task child-b holds treehouse lease lease-child-b but its worktree '$case_dir/child-b-wt' is gone" \
+    "$case_dir/stderr" "child-missing-worktree-held: refusal did not name the child, its lease, and its path"
+  assert_no_grep 'if-lease-id lease-child-b' "$treehouse_log" \
+    "child-missing-worktree-held: refusal returned a nonexistent child path"
+  assert_present "$home/state/child-b.meta" \
+    "child-missing-worktree-held: refusal removed the child record"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "child-missing-worktree-held: refusal removed the secondmate record"
+  pass "a child held lease with a missing worktree refuses with its exact lease and path"
+}
+
+test_non_alphanumeric_lease_id_returns_conditionally() {
+  local mode case_dir lease_id rc treehouse_log
+  for mode in plus rfc3339; do
+    case "$mode" in
+      plus) lease_id='wt+3' ;;
+      rfc3339) lease_id='2026-09-01T12:00:00+00:00' ;;
+    esac
+    case_dir=$(make_case "lease-id-$mode")
+    write_meta "$case_dir" local-only ship
+    treehouse_log="$case_dir/treehouse.log"
+    : > "$treehouse_log"
+    cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_FAKE_TREEHOUSE_LOG:?}"
+exit 0
+SH
+    chmod +x "$case_dir/fakebin/treehouse"
+    sed -i.bak "s|^treehouse_lease_id=.*|treehouse_lease_id=$lease_id|" \
+      "$case_dir/state/task-x1.meta"
+    rm -f "$case_dir/state/task-x1.meta.bak"
+
+    rc=0
+    FM_FAKE_TREEHOUSE_LOG="$treehouse_log" \
+      run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+    expect_code 0 "$rc" "lease-id-$mode: teardown refused a valid lease ID '$lease_id'"
+    assert_grep "return --force --if-lease-id $lease_id --if-lease-holder task-x1 $case_dir/wt" \
+      "$treehouse_log" "lease-id-$mode: teardown did not return the exact recorded lease"
+    assert_absent "$case_dir/state/task-x1.meta" \
+      "lease-id-$mode: teardown retained task metadata after a successful return"
+  done
+  pass "a lease ID outside the alphanumeric set still drives an exact conditional return"
+}
+
 test_parked_own_run_is_aborted_before_teardown() {
   local case_dir rc head
   case_dir=$(make_case parked-run-abort)
@@ -3213,6 +3286,8 @@ test_fractional_legacy_retry_wait_refuses_without_arithmetic_error
 test_orca_leaked_worktree_process_is_reaped
 test_missing_worktree_with_held_lease_refuses
 test_missing_worktree_with_released_lease_completes_cleanup
+test_child_held_lease_with_missing_worktree_refuses
+test_non_alphanumeric_lease_id_returns_conditionally
 test_parked_own_run_is_aborted_before_teardown
 test_parked_own_run_refuses_when_abort_is_unconfirmed
 test_mismatched_run_after_abort_refuses_unconfirmed

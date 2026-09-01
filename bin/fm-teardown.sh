@@ -329,7 +329,7 @@ load_treehouse_task_lease() {  # <metadata> <task-id> <operation>
     return 1
   }
   case "$REQUIRED_TREEHOUSE_LEASE_ID" in
-    *[!A-Za-z0-9._:-]*)
+    ''|*[[:cntrl:]]*)
       echo "REFUSED: $operation has a malformed treehouse_lease_id; preserving task state." >&2
       return 1
       ;;
@@ -2742,6 +2742,10 @@ cleanup_firstmate_home_children() {
       fm_backend_remove_worktree "$child_backend" "$child_orca_worktree_id" || return 1
     else
       if [ "$child_treehouse_lease_state" = held ]; then
+        if [ -z "$child_wt" ] || [ ! -d "$child_wt" ]; then
+          echo "REFUSED: child task $child_id holds treehouse lease $child_treehouse_lease_id but its worktree '${child_wt:-<unrecorded>}' is gone; a conditional return needs that exact path. Reconcile the lease with treehouse, then record treehouse_lease_state=released for that child to finish cleanup." >&2
+          return 1
+        fi
         validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1
         if [ -z "$child_proj" ] || [ ! -d "$child_proj" ] \
            || ! command -v treehouse >/dev/null 2>&1; then
