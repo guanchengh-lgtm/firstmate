@@ -28,6 +28,7 @@ MOVE_CALL_LOG="$TMP_ROOT/workspace-move-calls.log"
 FOCUS_AUDIT_LOG="$TMP_ROOT/focus-audit.log"
 ACTIVE_SEEDED_CONTROL="$TMP_ROOT/active-seeded-control"
 POST_CREATE_ABORT_CONTROL="$TMP_ROOT/post-create-abort-control"
+TREEHOUSE_RETURN_FOCUS_CONTROL="$TMP_ROOT/treehouse-return-focus-control"
 mkdir -p "$FAKEBIN"
 : > "$HERDR_CALL_LOG"
 : > "$TREEHOUSE_CALL_LOG"
@@ -35,7 +36,7 @@ mkdir -p "$FAKEBIN"
 : > "$FOCUS_AUDIT_LOG"
 REAL_MOVER="$ROOT/bin/backends/herdr-workspace-move.py"
 export REAL_HERDR REAL_TREEHOUSE REAL_MOVER HERDR_CALL_LOG TREEHOUSE_CALL_LOG MOVE_CALL_LOG FOCUS_AUDIT_LOG HERDR_ORIGINAL_PATH HERDR_LAB_HELPER
-export ACTIVE_SEEDED_CONTROL POST_CREATE_ABORT_CONTROL TMP_ROOT
+export ACTIVE_SEEDED_CONTROL POST_CREATE_ABORT_CONTROL TREEHOUSE_RETURN_FOCUS_CONTROL TMP_ROOT
 
 # Log every production-adapter call, remove its already-validated trailing
 # session flag, and send the operation through the lab helper so that helper
@@ -234,6 +235,22 @@ if [ -d "$POST_CREATE_ABORT_CONTROL" ]; then
       done
       ;;
   esac
+fi
+# Herdr 0.7.4 can change focus when Treehouse ends the task process during a
+# return. Inject that return-side change on newer Herdr versions too.
+if [ "${1:-}" = return ] && [ -s "$TREEHOUSE_RETURN_FOCUS_CONTROL" ]; then
+  if out=$("$REAL_TREEHOUSE" "$@"); then
+    status=0
+  else
+    status=$?
+  fi
+  if [ "$status" -eq 0 ]; then
+    focus_tab=$(cat "$TREEHOUSE_RETURN_FOCUS_CONTROL")
+    env PATH="$HERDR_ORIGINAL_PATH" "$HERDR_LAB_HELPER" run \
+      "$HERDR_LAB_SESSION" tab focus "$focus_tab" >/dev/null
+  fi
+  [ -z "$out" ] || printf '%s\n' "$out"
+  exit "$status"
 fi
 exec "$REAL_TREEHOUSE" "$@"
 SH
@@ -654,10 +671,12 @@ SECOND_ONE_OUT=$(lab workspace create --cwd "$PROJECT_DIR" --label 2ndmate-alpha
 SECOND_TWO_OUT=$(lab workspace create --cwd "$PROJECT_DIR" --label 2ndmate-bravo --focus) \
   || fail "could not create the focused secondmate presentation fixture"
 SECOND_ONE_WSID=$(printf '%s' "$SECOND_ONE_OUT" | jq -r '.result.workspace.workspace_id // empty')
+SECOND_ONE_TAB=$(printf '%s' "$SECOND_ONE_OUT" | jq -r '.result.tab.tab_id // empty')
 SECOND_TWO_WSID=$(printf '%s' "$SECOND_TWO_OUT" | jq -r '.result.workspace.workspace_id // empty')
 SECOND_TWO_TAB=$(printf '%s' "$SECOND_TWO_OUT" | jq -r '.result.tab.tab_id // empty')
 SECOND_TWO_PANE=$(printf '%s' "$SECOND_TWO_OUT" | jq -r '.result.root_pane.pane_id // empty')
-[ -n "$SECOND_ONE_WSID" ] && [ -n "$SECOND_TWO_WSID" ] && [ -n "$SECOND_TWO_TAB" ] && [ -n "$SECOND_TWO_PANE" ] \
+[ -n "$SECOND_ONE_WSID" ] && [ -n "$SECOND_ONE_TAB" ] && [ -n "$SECOND_TWO_WSID" ] \
+  && [ -n "$SECOND_TWO_TAB" ] && [ -n "$SECOND_TWO_PANE" ] \
   || fail "secondmate presentation fixtures returned incomplete IDs"
 SECOND_ORDER_BEFORE=$(printf '%s\n%s\n' "$SECOND_ONE_WSID" "$SECOND_TWO_WSID")
 CAPTAIN_FOCUS="$SECOND_TWO_WSID/$SECOND_TWO_TAB"
@@ -964,8 +983,10 @@ SHAPE_CLEANUP_AUDIT_START=$(focus_audit_line_count)
 PRE_TEARDOWN_LIST=$(lab workspace list | jq -c "[.result.workspaces[] | {workspace_id, label}]" 2>&1)
 SHAPE_JOURNAL_DUMP=$(cat "$JOURNAL" 2>&1)
 SHAPE_META_DUMP=$(grep -E "^herdr_|^window=" "$HOME_DIR/state/shape.meta" 2>&1)
+printf '%s\n' "$SECOND_ONE_TAB" > "$TREEHOUSE_RETURN_FOCUS_CONTROL"
 teardown_task shape "$HOME_DIR" > "$TMP_ROOT/on-teardown.out" 2> "$TMP_ROOT/on-teardown.err" \
   || fail "projected teardown failed: $(cat "$TMP_ROOT/on-teardown.err")"
+rm -f "$TREEHOUSE_RETURN_FOCUS_CONTROL"
 assert_focus_is "$CAPTAIN_FOCUS" "projected teardown"
 assert_cleanup_focus_preserved "$SHAPE_CLEANUP_AUDIT_START" "$PROJECTED_PANE" "$CAPTAIN_FOCUS"
 pass "real Herdr lab: Treehouse commands and metadata shape are byte-identical except for endpoint IDs and spawn incarnation"
