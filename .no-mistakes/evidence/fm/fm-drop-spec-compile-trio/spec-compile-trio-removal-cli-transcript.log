@@ -1,0 +1,6 @@
+Removed CLI check from repository root: /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1EYV82B3ZA2ZEAH2A2NMK1R
+REMOVED bin/fm-spec-compile-check.sh     invocation_exit=127 message=bash: line 9: ./bin/fm-spec-compile-check.sh: No such file or directory
+REMOVED bin/fm-reduce-check.sh           invocation_exit=127 message=bash: line 9: ./bin/fm-reduce-check.sh: No such file or directory
+REMOVED bin/fm-keep-rows.py              invocation_exit=127 message=bash: line 9: ./bin/fm-keep-rows.py: No such file or directory
+RUNNER_CLEAN removed suites are absent from fm-test-run --list --all
+REFERENCE_CLEAN no three-tool references outside data history
