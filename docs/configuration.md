@@ -231,6 +231,24 @@ The flag is per home and is not inherited by secondmate homes, because stow cade
 Only the file's presence is read, so its contents are ignored; remove it to return to the default contract on the next pass.
 The skill text owns the marker spelling, the tick order, and the reinforcement rule.
 
+## Feeder vault mirror (config/feeder-vault, config/feeder-vault-excludes)
+
+`config/feeder-vault` is the optional local, gitignored file that points `bin/fm-feeder-export.sh` at this home's private feeder vault clone.
+It holds exactly one non-empty line: the absolute, normalized, canonical path of the vault working tree.
+Its presence is what enables the mirror; without it the exporter refuses and nothing is published.
+
+The mirror is strictly one-way: it renders `data/decisions/*.md` and `data/*/report.md` into the vault's `wiki/decisions` and `wiki/reports`, commits only those two paths, and pushes on every run.
+`data/` stays the system of record, and the exporter never reads a mirrored page back as generation input, never writes back into `data/`, and never builds a retrieval index.
+
+The vault is created once, out of band, and must satisfy the destructive-authority contract before the exporter will touch it: the configured path is the exact Git top level, `<vault>/.feeder-vault` is a regular non-symbolic two-line marker holding `firstmate-feeder-vault-v1` and `remote=<owner>/<name>`, the configured `origin` resolves to that same GitHub repository, and that repository is private.
+Private visibility is re-verified with `gh-axi repo view` before every push, and an unavailable check refuses the push rather than assuming private.
+
+`config/feeder-vault-excludes` is optional and holds one exact normalized source path per line, such as `data/decisions/x.md` or `data/<task-id>/report.md`.
+Globs are refused, every entry must name a currently selected source, and an excluded record is omitted whole rather than redacted, so `sot_sha256` always describes the bytes the page carries.
+
+Both files are per home and are not inherited by secondmate homes, because each home mirrors its own records.
+`bin/fm-feeder-export.sh`'s header and `--help` own the page schema, the exact vault layout requirements, the first-known date rule and its limitation, the transaction and recovery mechanics, the secret-scan classes, and the exit codes.
+
 ## Secondmate routes (data/secondmates.md)
 
 Persistent secondmate routes live locally in `data/secondmates.md`.
