@@ -218,6 +218,7 @@ family_for_basename() {
     fm-teardown-endpoint-safety.test.sh)
       printf '%s\n' backend-dispatch
       ;;
+    fm-feeder-export.test.sh|\
     fm-pr-check-breakage.test.sh|fm-pr-check-security.test.sh|fm-pr-merge.test.sh|fm-review-diff.test.sh|\
     fm-teardown.test.sh|fm-validation-truth.test.sh|fm-x-mode.test.sh)
       printf '%s\n' pr-forge
@@ -1001,6 +1002,7 @@ families_for_changed_path() {
       printf '%s\n' watcher-wake-lock
       ;;
     bin/fm-pr-*|bin/fm-merge-local.sh|bin/fm-teardown.sh|bin/fm-review-diff.sh|\
+    bin/fm-feeder-export.sh|\
     bin/fm-x-*|bin/fm-check*)
       printf '%s\n' pr-forge
       ;;
