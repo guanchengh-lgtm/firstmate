@@ -26,6 +26,17 @@
 # Usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--surface <internal-only|product|mixed|uncertain>]
 set -eu
 
+if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
+  cat <<'EOF'
+usage: fm-promote.sh <task-id> --mode <no-mistakes|direct-PR|local-only> --yolo <on|off> [--surface <internal-only|product|mixed|uncertain>]
+Promote the existing scout in place instead of creating a duplicate task.
+Inventory its scratch state, return to a clean default-branch base, and carry over only intended fix changes.
+Create the ship branch, follow the selected delivery path, and leave scratch commits and debug edits behind.
+Turn a reproduced bug into the regression test.
+EOF
+  exit 0
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"

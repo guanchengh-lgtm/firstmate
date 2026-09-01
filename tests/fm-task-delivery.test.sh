@@ -371,6 +371,33 @@ EOF
   pass "fm-spawn: a scout spawn resolves no delivery posture from the registry"
 }
 
+test_promote_help_owns_the_workflow_without_runtime_state() {
+  local isolated home out status
+  isolated="$TMP_ROOT/promote-help"
+  home="$TMP_ROOT/promote-help-home"
+  mkdir -p "$isolated/bin"
+  cp "$PROMOTE" "$isolated/bin/fm-promote.sh"
+
+  out=$(FM_ROOT_OVERRIDE="$isolated" FM_HOME="$home" \
+    "$isolated/bin/fm-promote.sh" --help 2>&1)
+  status=$?
+  expect_code 0 "$status" "promotion help should work without runtime dependencies"
+  assert_contains "$out" "existing scout in place" \
+    "promotion help did not preserve the no-duplicate-task workflow"
+  assert_contains "$out" "Inventory its scratch state" \
+    "promotion help did not require the scratch-state inventory"
+  assert_contains "$out" "clean default-branch base" \
+    "promotion help did not require a clean base"
+  assert_contains "$out" "carry over only intended fix changes" \
+    "promotion help did not bound carried changes"
+  assert_contains "$out" "leave scratch commits and debug edits behind" \
+    "promotion help did not exclude scratch work"
+  assert_contains "$out" "reproduced bug into the regression test" \
+    "promotion help did not preserve regression-test guidance"
+  [ ! -e "$home" ] || fail "promotion help created runtime state"
+  pass "fm-promote: help owns the promotion workflow without runtime state"
+}
+
 # Promotion is where a scout's ship contract is finally decided, so it requires the
 # same explicit values and writes them into the task's durable record, including
 # role=builder and the builder sibling markers a later ship respawn will read.
@@ -680,6 +707,7 @@ test_spawn_refuses_a_brief_mode_mismatch
 test_spawn_role_gate_selects_the_role_file
 test_spawn_notices_a_rigor_downgrade_against_the_registry
 test_scout_records_no_delivery_posture
+test_promote_help_owns_the_workflow_without_runtime_state
 test_promote_requires_and_records_the_delivery_contract
 test_promote_records_builder_from_the_role_marker_not_brief_prose
 test_project_mode_maps_the_conditional_policy

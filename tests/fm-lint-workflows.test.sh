@@ -463,31 +463,28 @@ test_installer_rejects_unsupported_platform() {
 # self-broken ci.yml. Copy the lint scripts into a fake repo so the default
 # workflow root is the fixture, not this worktree.
 test_fm_lint_default_path_catches_broken_ci_yml() {
-  local tmp fakebin log diff_file out rc
+  local tmp fakebin log out rc
   tmp=$(fm_test_tmproot fm-lint-wf-default)
-  mkdir -p "$tmp/bin" "$tmp/.github/workflows"
+  mkdir -p "$tmp/bin" "$tmp/docs" "$tmp/.agents/skills/demo" "$tmp/.github/workflows"
   cp "$LINT" "$tmp/bin/fm-lint.sh"
   cp "$LINT_WF" "$tmp/bin/fm-lint-workflows.sh"
   chmod +x "$tmp/bin/fm-lint.sh" "$tmp/bin/fm-lint-workflows.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$tmp/bin/example.sh"
+  chmod +x "$tmp/bin/example.sh"
+  printf '# Fixture\n' > "$tmp/AGENTS.md"
+  printf '# Document\n' > "$tmp/docs/example.md"
+  printf '%s\n' '---' 'name: demo' 'description: fixture' '---' '# Demo' \
+    > "$tmp/.agents/skills/demo/SKILL.md"
+  write_valid_workflow "$tmp/.github/workflows/ci.yml"
+  git -C "$tmp" init -q -b main
+  fm_git_identity "$tmp"
+  git -C "$tmp" add .
+  git -C "$tmp" commit -qm base
+  git -C "$tmp" checkout -qb feature
   write_col0_heredoc_workflow "$tmp/.github/workflows/ci.yml"
 
   fakebin=$(fm_fakebin "$tmp")
   log="$tmp/shellcheck.log"
-  cat > "$fakebin/git" <<'SH'
-#!/usr/bin/env bash
-case "$*" in
-  "rev-parse --is-inside-work-tree") printf 'true\n'; exit 0 ;;
-  "rev-parse --abbrev-ref HEAD") printf 'feature\n'; exit 0 ;;
-  "rev-parse --verify -q origin/main") exit 0 ;;
-  "merge-base "*) printf 'fakebase123\n'; exit 0 ;;
-  "diff --name-only --diff-filter=ACMR -z fakebase123 --")
-    [ -n "${FM_TEST_GIT_DIFF_FILE:-}" ] && cat "${FM_TEST_GIT_DIFF_FILE}"
-    exit 0
-    ;;
-  *) exit 0 ;;
-esac
-SH
-  chmod +x "$fakebin/git"
   : > "$log"
   cat > "$fakebin/shellcheck" <<SH
 #!/usr/bin/env bash
@@ -500,12 +497,10 @@ printf '%s\n' "\$@" >> "$log"
 exit 0
 SH
   chmod +x "$fakebin/shellcheck"
-  diff_file="$tmp/diff.nul"
-  : > "$diff_file"
 
   rc=0
-  out=$(PATH="$fakebin:$PATH" GITHUB_ACTIONS='' CI='' FM_LINT_JOBS=1 \
-    FM_TEST_GIT_DIFF_FILE="$diff_file" "$tmp/bin/fm-lint.sh" 2>&1) || rc=$?
+  out=$(cd "$tmp" && PATH="$fakebin:$PATH" GITHUB_ACTIONS='' CI='' \
+    FM_LINT_JOBS=1 "$tmp/bin/fm-lint.sh" 2>&1) || rc=$?
   [ "$rc" -ne 0 ] || fail "fm-lint.sh default path missed a broken ci.yml"$'\n'"$out"
   assert_contains "$out" "could not parse as YAML" \
     "fm-lint.sh default path did not surface the workflow YAML error"

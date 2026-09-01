@@ -3,6 +3,16 @@
 # Usage: fm-check-register.sh <id>
 set -u
 
+if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
+  cat <<'EOF'
+usage: fm-check-register.sh <id>
+A custom check is an ordinary single-link mode-0700 file at state/<id>.check.sh.
+It prints one line only when firstmate should wake, prints nothing otherwise, and finishes before FM_CHECK_TIMEOUT (bin/fm-watch.sh).
+Registration binds the file's current bytes so the watcher refuses to execute a check that changed after this consent.
+EOF
+  exit 0
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"

@@ -24,6 +24,16 @@
 # Usage: fm-pr-check.sh <task-id> <pr-url> [merge-method]
 set -eu
 
+if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
+  cat <<'EOF'
+usage: fm-pr-check.sh <task-id> <pr-url> [merge-method]
+Run this when a ship PR is ready.
+The ready signal depends on delivery mode: no-mistakes reports "done: PR <url> checks green" after CI is green, while direct-PR reports "done: PR <url>" after opening the PR.
+It records one validated canonical pr=<url> and the forge's exact pr_head=<sha> when available in the task's meta, then arms the watcher's merge poll.
+EOF
+  exit 0
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"

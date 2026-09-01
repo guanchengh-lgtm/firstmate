@@ -63,6 +63,33 @@ If an addition needs more than a few lines of conditional detail (detail that ma
 A skill's cost is paid only by the sessions that actually load it.
 When in doubt, write the fact into the skill or doc first by patching that owner's existing language, and add only the one-line trigger to `AGENTS.md`.
 
+## Why-trace convention
+
+This section is the single owner of the why-trace contract for `AGENTS.md` additions.
+Each added non-structural `AGENTS.md` line in the zero-context diff from the accepted target base must end with one trailing HTML owner comment.
+A modified or moved line counts as an added line.
+An untouched line does not count as an added line.
+Blank lines, ATX Markdown headings, and valid fence delimiter lines are exempt.
+Prose, list items, blockquotes, and fenced content are not exempt.
+A valid fence delimiter has up to three leading spaces and at least three identical backticks or tildes.
+A backtick fence info string contains no backtick.
+
+The allowed owner-comment grammar is exactly one of these forms:
+
+- `<!-- why: skill:<skill-name>#<section-slug> -->`
+- `<!-- why: doc:<repo-relative-path>#<section-slug> -->`
+- `<!-- why: script:<repo-relative-path>--help -->`
+- `<!-- why: lock:<stable-decision-id> -->`
+
+A skill name and a section slug use lower-case ASCII letters and digits separated by single hyphens.
+A repository path is relative to the repository root and contains no dot or dot-dot component.
+A stable lock identifier uses lower-case ASCII letters and digits separated by single hyphens, and it ends with a date in `YYYY-MM-DD` form.
+A local skill, document, or script target must exist.
+A local target path stays inside the repository root and contains no symbolic-link component.
+A lock target is private and does not need to exist in the repository.
+The metadata supplements a visible owner pointer in the line and never replaces that pointer.
+The visible owner pointer must match its target as a complete token, not as part of another word or path.
+
 ## Trigger hygiene
 
 A new skill is dead weight if nothing loads it.
@@ -118,7 +145,7 @@ Run `bin/fm-doc-audience-check.sh`; it enforces classification, README setup rou
 - Plain dash `-`, never an em dash.
 - Never add an agent name as a commit co-author.
 - `bin/*.sh` and `bin/backends/*.sh` must pass `shellcheck`.
-- Run `bin/fm-lint.sh` before treating a script change as done; it is the single owner of the lint definition (file set, config, pinned shellcheck version, and pinned actionlint workflow lint) that CI and the no-mistakes pre-push gate both invoke, and it refuses to run under any other version of either linter.
+- Run `bin/fm-lint.sh` before treating a script change as done; it owns the shell lint, workflow lint, and `AGENTS.md` companion gate that CI and the no-mistakes pre-push gate both invoke, and it refuses to run under an unpinned linter version.
 - When a task names a specific tool, implement the work with that tool, or explicitly flag the substitution and its new dependency footprint for review before shipping.
 - Colocate tests with the existing pattern in `tests/`, name them `<subject>.test.sh`, and extend an existing script rather than inventing a new runner.
 - Tests must exercise behavior through an executable or public interface and must never assert implementation-source bytes, including through parsers, regexes, snapshots, or indirect wrappers.
