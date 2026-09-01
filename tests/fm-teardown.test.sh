@@ -2514,6 +2514,103 @@ land_shippable_commit() {
   git -C "$case_dir/project" fetch -q origin
 }
 
+test_orca_leaked_worktree_process_is_reaped() {
+  local case_dir rc pid
+  case_dir=$(make_case orca-leaked-process-reap)
+  write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' 'backend=orca' 'orca_worktree_id=wt-1' 'terminal=term-7' \
+    >> "$case_dir/state/task-x1.meta"
+  sed -i.bak 's/^window=.*$/window=fm-task-x1/' "$case_dir/state/task-x1.meta"
+  rm -f "$case_dir/state/task-x1.meta.bak"
+  cat > "$case_dir/fakebin/orca" <<EOF
+#!/usr/bin/env bash
+set -u
+case "\$*" in
+  *"worktree show"*)
+    printf '%s\n' '{"ok":true,"result":{"worktree":{"id":"wt-1","path":"$case_dir/wt"}}}'
+    exit 0
+    ;;
+esac
+printf '%s\n' '{"ok":true}'
+exit 0
+EOF
+  chmod +x "$case_dir/fakebin/orca"
+  land_shippable_commit "$case_dir"
+
+  ( cd "$case_dir/wt" && exec sleep 300 ) &
+  pid=$!
+  disown
+  sleep 0.3
+  kill -0 "$pid" 2>/dev/null || fail "orca-leaked-process-reap: setup sleeper did not start"
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "orca-leaked-process-reap: teardown should succeed"
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null || true
+    fail "orca-leaked-process-reap: leaked worktree process survived teardown"
+  fi
+  assert_grep "reaping leaked worktree process" "$case_dir/stderr" \
+    "orca-leaked-process-reap: teardown did not reap the leaked worktree process"
+  pass "an Orca task's leaked worktree process is reaped before its worktree is removed"
+}
+
+test_missing_worktree_with_held_lease_refuses() {
+  local case_dir rc treehouse_log
+  case_dir=$(make_case missing-worktree-held)
+  write_meta "$case_dir" local-only ship
+  treehouse_log="$case_dir/treehouse.log"
+  : > "$treehouse_log"
+  cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_FAKE_TREEHOUSE_LOG:?}"
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+  git -C "$case_dir/project" worktree remove --force "$case_dir/wt"
+
+  rc=0
+  FM_FAKE_TREEHOUSE_LOG="$treehouse_log" \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 1 "$rc" "missing-worktree-held: teardown should refuse a held lease with no worktree"
+  assert_grep "holds treehouse lease lease-task-x1 but its worktree $case_dir/wt is gone" \
+    "$case_dir/stderr" "missing-worktree-held: refusal did not name the task lease and path"
+  [ ! -s "$treehouse_log" ] || fail "missing-worktree-held: teardown returned a nonexistent path"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "missing-worktree-held: refusal removed task metadata"
+  pass "a held lease with a missing worktree refuses with its exact lease and path"
+}
+
+test_missing_worktree_with_released_lease_completes_cleanup() {
+  local case_dir rc treehouse_log
+  case_dir=$(make_case missing-worktree-released)
+  write_meta "$case_dir" local-only ship
+  treehouse_log="$case_dir/treehouse.log"
+  : > "$treehouse_log"
+  cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_FAKE_TREEHOUSE_LOG:?}"
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+  sed -i.bak 's/^treehouse_lease_state=held$/treehouse_lease_state=released/' \
+    "$case_dir/state/task-x1.meta"
+  rm -f "$case_dir/state/task-x1.meta.bak"
+  git -C "$case_dir/project" worktree remove --force "$case_dir/wt"
+
+  rc=0
+  FM_FAKE_TREEHOUSE_LOG="$treehouse_log" \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "missing-worktree-released: teardown should finish record cleanup"
+  [ ! -s "$treehouse_log" ] || fail "missing-worktree-released: rerun issued a Treehouse return"
+  assert_absent "$case_dir/state/task-x1.meta" \
+    "missing-worktree-released: cleanup retained task metadata"
+  pass "a released lease with a missing worktree still finishes record cleanup"
+}
+
 test_parked_own_run_is_aborted_before_teardown() {
   local case_dir rc head
   case_dir=$(make_case parked-run-abort)
@@ -3113,6 +3210,9 @@ test_transient_index_lock_clears_after_first_attempt_and_retry_succeeds
 test_persistent_index_lock_exhausts_retries_and_refuses_loudly
 test_empty_retry_wait_uses_default_without_aborting
 test_fractional_legacy_retry_wait_refuses_without_arithmetic_error
+test_orca_leaked_worktree_process_is_reaped
+test_missing_worktree_with_held_lease_refuses
+test_missing_worktree_with_released_lease_completes_cleanup
 test_parked_own_run_is_aborted_before_teardown
 test_parked_own_run_refuses_when_abort_is_unconfirmed
 test_mismatched_run_after_abort_refuses_unconfirmed

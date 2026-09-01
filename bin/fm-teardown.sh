@@ -3011,6 +3011,10 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
   fm_backend_remove_worktree "$BACKEND" "$ORCA_WORKTREE_ID"
 elif [ "$KIND" != secondmate ]; then
   if [ "$TREEHOUSE_LEASE_STATE" = held ]; then
+    if [ ! -d "$WT" ]; then
+      echo "REFUSED: task $ID holds treehouse lease $TREEHOUSE_LEASE_ID but its worktree $WT is gone; a conditional return needs that exact path. Reconcile the lease with treehouse, then record treehouse_lease_state=released for this task to finish cleanup." >&2
+      exit 1
+    fi
     branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
     # Treehouse checks the immutable lease identity under its state lock before
     # it terminates a process, resets Git, or releases the worktree. The same
