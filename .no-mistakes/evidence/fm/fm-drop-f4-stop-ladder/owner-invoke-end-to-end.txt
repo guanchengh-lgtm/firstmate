@@ -1,0 +1,15 @@
+$ fm-owner-invoke-wait-check.sh --brief <brief>  # no OV report
+R-ov-missing-report: demo review worker gone with no report
+[exit=1]
+$ fm-owner-invoke-wait-check.sh --brief <brief>  # report exists, skill missing
+R-skill-unloaded-plan-eng-review: demo instructions never loaded plan-eng-review
+[exit=1]
+$ fm-owner-invoke-wait-check.sh --brief <brief>  # report and skill exist
+(no refusal output)
+[exit=0]
+$ printf <Stop payload> | fm-owner-invoke-wait-check.sh  # old transcript node and missing Stop-time OV report
+(no refusal output)
+[exit=0]
+$ fm-owner-invoke-wait-check.sh --input <held-map-next.json>
+R-held-locked-next-unowned: slice-next is a locked next act still held without a worker
+[exit=1]

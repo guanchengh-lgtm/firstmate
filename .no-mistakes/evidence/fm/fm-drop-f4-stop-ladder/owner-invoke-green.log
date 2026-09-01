@@ -1,0 +1,14 @@
+ok - owner-invoke-wait: missing and empty input, expect-count 0, empty rules exit 2
+ok - owner-invoke-wait: 2026-08-22 compile-check with no OV fires exact count 1
+ok - owner-invoke-wait: held map_next, date-cleared, future, and real captain holds
+ok - owner-invoke-wait: placeholder and no-task briefs are clean
+ok - owner-invoke-wait: builder self-review is not OV
+ok - owner-invoke-wait: distinct spawned OV worker is required
+ok - owner-invoke-wait: OV report ladder and report-gated skills own the wait
+ok - owner-invoke-wait: unrelated rule fire is not exact-count success
+ok - owner-invoke-wait: turn-end does not re-refuse in-flight ships without ov=
+ok - owner-invoke-wait: skill-load recorder appends normalized token
+ok - owner-invoke-wait: crewmate settings wire Skill load recorder
+ok - owner-invoke-wait: brief mode reads OV worker report and skills
+ok - owner-invoke-wait: 200 skill rows preserve spawn-gate verdict with bounded scaling
+# all fm-owner-invoke-wait-check tests passed

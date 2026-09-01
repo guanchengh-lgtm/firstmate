@@ -1,0 +1,2 @@
+{"timestamp":"2026-08-23T10:00:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"<command-name>/wayfinder</command-name>"}]}}
+{"timestamp":"2026-08-23T10:05:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"keep going"}]}}
