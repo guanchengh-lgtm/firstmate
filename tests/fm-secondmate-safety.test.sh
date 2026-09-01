@@ -1921,6 +1921,9 @@ harness=echo
 kind=ship
 mode=no-mistakes
 yolo=off
+treehouse_lease_id=lease-child
+treehouse_lease_holder=child
+treehouse_lease_state=held
 EOF
   fm_write_none_measure "$home" domain
   fm_write_none_measure "$subhome" child
@@ -1974,6 +1977,9 @@ harness=echo
 kind=ship
 mode=no-mistakes
 yolo=off
+treehouse_lease_id=lease-child
+treehouse_lease_holder=child
+treehouse_lease_state=held
 EOF
   printf 'child check\n' > "$subhome/state/child.check.sh"
   printf 'external quarantine artifact\n' > "$external/child.check.protected"
@@ -2032,6 +2038,9 @@ harness=echo
 kind=ship
 mode=no-mistakes
 yolo=off
+treehouse_lease_id=lease-child
+treehouse_lease_holder=child
+treehouse_lease_state=held
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/force-lock-child-fake")
   log="$TMP_ROOT/force-lock-child-fake/tmux.log"
@@ -2339,6 +2348,9 @@ harness=echo
 kind=ship
 mode=no-mistakes
 yolo=off
+treehouse_lease_id=lease-child
+treehouse_lease_holder=child
+treehouse_lease_state=held
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/prevalidate-teardown-fake")
   log="$TMP_ROOT/prevalidate-teardown-fake/tmux.log"
@@ -2394,6 +2406,9 @@ harness=echo
 kind=ship
 mode=no-mistakes
 yolo=off
+treehouse_lease_id=lease-child
+treehouse_lease_holder=child
+treehouse_lease_state=held
 EOF
   printf '%s|%s\n' "$home" "$subhome"
 }
@@ -2678,6 +2693,9 @@ harness=echo
 kind=ship
 mode=no-mistakes
 yolo=off
+treehouse_lease_id=lease-child
+treehouse_lease_holder=child
+treehouse_lease_state=held
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/child-active-descendant-fake")
   log="$TMP_ROOT/child-active-descendant-fake/tmux.log"
@@ -2729,6 +2747,9 @@ harness=echo
 kind=ship
 mode=no-mistakes
 yolo=off
+treehouse_lease_id=lease-child
+treehouse_lease_holder=child
+treehouse_lease_state=held
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/child-repo-descendant-fake")
   log="$TMP_ROOT/child-repo-descendant-fake/tmux.log"
@@ -2774,6 +2795,9 @@ harness=echo
 kind=ship
 mode=no-mistakes
 yolo=off
+treehouse_lease_id=lease-child
+treehouse_lease_holder=child
+treehouse_lease_state=held
 EOF
   fakebin=$(make_fake_tmux "$TMP_ROOT/unregistered-child-fake")
   log="$TMP_ROOT/unregistered-child-fake/tmux.log"

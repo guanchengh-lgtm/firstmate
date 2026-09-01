@@ -109,10 +109,12 @@
 # checks before any destructive return. Teardown output notes every wait, retry, and
 # removal so the operator can see what happened.
 #
-# Pre-teardown cleanup sequence (runs once every landed/discard-work safety
-# refusal above has already passed, and BEFORE any worktree return, branch
-# delete, or backend kill below - a still-active run or a leaked process may
-# own live work in that worktree):
+# Pre-teardown cleanup sequence runs after every landed-work or discard-work
+# safety refusal has passed.
+# Treehouse tasks identify a parked no-mistakes run without changing it.
+# Treehouse owns process cleanup within its atomic conditional return.
+# After that return succeeds, Firstmate aborts the exact identified run and
+# reaps the separate task temp root.
 #   Fix 1 - conclude the task's own no-mistakes run. A ship task's worktree can
 #     be torn down while its no-mistakes pipeline run is still PARKED at a gate
 #     (awaiting_approval/fix_review/any awaiting_agent field), with no worker
@@ -122,10 +124,10 @@
 #     with an autonomous step still under way (running/fixing/ci) is left
 #     alone: no-mistakes drives those against its own gate-repo clone, not the
 #     crew's worktree, so they are not orphaned by removing the worktree.
-#     conclude_task_no_mistakes_run attributes the active-or-most-recent run to
+#     The prepare/conclude functions attribute the active-or-most-recent run to
 #     THIS task only when its branch AND code identity (bin/fm-nm-run-lib.sh's
 #     fm_nm_head_matches_worktree; live pushed ref, not the lagging checkout)
-#     both match, then runs `no-mistakes axi abort --run <id>` for
+#     both match. They then run `no-mistakes axi abort --run <id>` for
 #     that verified run instance. A run already terminal
 #     (an outcome is set) or not parked at a gate is left untouched. Idempotent:
 #     an already-aborted run reads back terminal and is skipped on retry.
@@ -136,13 +138,12 @@
 #     two `go test` binaries, deadlines blown past by ~100x, pinning CPU for
 #     hours with no live task meta to attribute them to once teardown had
 #     already removed it). reap_task_worktree_processes finds every process
-#     whose CURRENT WORKING DIRECTORY is this task's own worktree or tasktmp
-#     root via `lsof -a -d cwd` (cheap: bounded by process count, not by
-#     walking the worktree's file tree) and sends TERM, then KILL after a short
-#     grace period to any survivor whose process identity still matches. Both
-#     roots are unique per task and never
-#     shared, so this can never reach another task's or the primary's
-#     processes. Idempotent: nothing left to find is a silent no-op.
+#     whose CURRENT WORKING DIRECTORY is under a named task root through
+#     `lsof -a -d cwd`. It sends TERM, then KILL after a short grace period to
+#     any survivor whose process identity still matches. Orca uses this for
+#     its worktree and tasktmp before removal. Treehouse performs equivalent
+#     worktree cleanup under its lease lock, then Firstmate reaps tasktmp.
+#     These roots are unique per task. An empty result is a silent no-op.
 #   Fix 3 - sweep abandoned remote job workers. A remote job worker started
 #     from a worktree's own bin/ outlives that worktree's removal without
 #     being reachable by Fix 2, because its working directory is wherever it
@@ -311,6 +312,106 @@ META_LOCK=$(fm_meta_lock_path "$META") || exit 1
 fm_lock_acquire_wait "$META_LOCK"
 META_LOCK_HELD=1
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
+
+load_treehouse_task_lease() {  # <metadata> <task-id> <operation>
+  local meta=$1 task_id=$2 operation=$3
+  REQUIRED_TREEHOUSE_LEASE_ID=$(fm_backend_meta_exact_value "$meta" treehouse_lease_id) || {
+    echo "REFUSED: $operation needs exactly one non-empty treehouse_lease_id; preserving task state." >&2
+    return 1
+  }
+  REQUIRED_TREEHOUSE_LEASE_HOLDER=$(fm_backend_meta_exact_value "$meta" treehouse_lease_holder) || {
+    echo "REFUSED: $operation needs exactly one non-empty treehouse_lease_holder; preserving task state." >&2
+    return 1
+  }
+  REQUIRED_TREEHOUSE_LEASE_STATE=$(fm_backend_meta_exact_value "$meta" treehouse_lease_state) || {
+    echo "REFUSED: $operation needs exactly one non-empty treehouse_lease_state; preserving task state." >&2
+    return 1
+  }
+  case "$REQUIRED_TREEHOUSE_LEASE_ID" in
+    *[!A-Za-z0-9._:-]*)
+      echo "REFUSED: $operation has a malformed treehouse_lease_id; preserving task state." >&2
+      return 1
+      ;;
+  esac
+  if [ "$REQUIRED_TREEHOUSE_LEASE_HOLDER" != "$task_id" ]; then
+    echo "REFUSED: $operation lease holder is '$REQUIRED_TREEHOUSE_LEASE_HOLDER', not '$task_id'; preserving task state." >&2
+    return 1
+  fi
+  case "$REQUIRED_TREEHOUSE_LEASE_STATE" in
+    held|released) ;;
+    *)
+      echo "REFUSED: $operation lease state is '$REQUIRED_TREEHOUSE_LEASE_STATE', not 'held' or 'released'; preserving task state." >&2
+      return 1
+      ;;
+  esac
+}
+
+load_treehouse_release_no_mistakes_run() {  # <metadata> <operation>
+  local meta=$1 operation=$2 count value
+  TREEHOUSE_RELEASE_NO_MISTAKES_RUN_ID=
+  count=$(grep -c '^treehouse_release_no_mistakes_run_id=' "$meta" 2>/dev/null || true)
+  case "$count" in
+    0) return 0 ;;
+    1) ;;
+    *)
+      echo "REFUSED: $operation has duplicate treehouse_release_no_mistakes_run_id fields; preserving task state." >&2
+      return 1
+      ;;
+  esac
+  value=$(sed -n 's/^treehouse_release_no_mistakes_run_id=//p' "$meta")
+  case "$value" in
+    ''|*[!A-Za-z0-9._:-]*)
+      echo "REFUSED: $operation has a malformed treehouse_release_no_mistakes_run_id; preserving task state." >&2
+      return 1
+      ;;
+  esac
+  TREEHOUSE_RELEASE_NO_MISTAKES_RUN_ID=$value
+}
+
+mark_treehouse_task_lease_released() {  # <metadata> <lease-id> <holder> [parked-run-id]
+  local meta=$1 lease_id=$2 holder=$3 run_id=${4:-} tmp meta_dir meta_name
+  case "$run_id" in
+    ''|*[!A-Za-z0-9._:-]*)
+      [ -z "$run_id" ] || return 1
+      ;;
+  esac
+  meta_dir=$(dirname "$meta")
+  meta_name=$(basename "$meta")
+  tmp="$meta_dir/.$meta_name.lease.${BASHPID:-$$}.$RANDOM"
+  ( umask 077; : > "$tmp" ) || return 1
+  if ! awk -F= -v lease_id="$lease_id" -v holder="$holder" -v run_id="$run_id" '
+    $1 == "treehouse_lease_id" {
+      id_count++
+      if ($0 != "treehouse_lease_id=" lease_id) invalid = 1
+    }
+    $1 == "treehouse_lease_holder" {
+      holder_count++
+      if ($0 != "treehouse_lease_holder=" holder) invalid = 1
+    }
+    $1 == "treehouse_lease_state" {
+      state_count++
+      if ($0 != "treehouse_lease_state=held") invalid = 1
+      print "treehouse_lease_state=released"
+      next
+    }
+    $1 == "treehouse_release_no_mistakes_run_id" {
+      run_count++
+      invalid = 1
+    }
+    { print }
+    END {
+      if (id_count != 1 || holder_count != 1 || state_count != 1 || run_count != 0 || invalid) exit 1
+      if (run_id != "") print "treehouse_release_no_mistakes_run_id=" run_id
+    }
+  ' "$meta" > "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  if ! mv -f -- "$tmp" "$meta"; then
+    rm -f "$tmp"
+    return 1
+  fi
+}
 
 validate_measure_at() {  # <data-dir> <task-id>
   local task_id=$2 measure="$1/$2/measure.md"
@@ -780,9 +881,6 @@ WT=$(fm_meta_get "$META" worktree)
 PROJ=$(fm_meta_get "$META" project)
 T_ORCA=
 [ "$BACKEND" != orca ] || T_ORCA=$T
-if [ "${FM_TEARDOWN_GUARD_DONE:-0}" != 1 ]; then
-  "$FM_ROOT/bin/fm-guard.sh" || true
-fi
 HOME_PATH=$(grep '^home=' "$META" | cut -d= -f2- || true)
 PR_URL=$(grep '^pr=' "$META" | tail -1 | cut -d= -f2- || true)
 # tasktmp is recorded by fm-spawn for tasks that set up a per-task temp root
@@ -797,6 +895,25 @@ ORCA_PATH_MATCH_VERIFIED=0
 
 KIND=$(grep '^kind=' "$META" | cut -d= -f2- || true)
 [ -n "$KIND" ] || KIND=ship
+TREEHOUSE_LEASE_ID=
+TREEHOUSE_LEASE_HOLDER=
+TREEHOUSE_LEASE_STATE=
+TREEHOUSE_RELEASE_NO_MISTAKES_RUN_ID=
+if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
+  load_treehouse_task_lease "$META" "$ID" "task $ID teardown" || exit 1
+  TREEHOUSE_LEASE_ID=$REQUIRED_TREEHOUSE_LEASE_ID
+  TREEHOUSE_LEASE_HOLDER=$REQUIRED_TREEHOUSE_LEASE_HOLDER
+  TREEHOUSE_LEASE_STATE=$REQUIRED_TREEHOUSE_LEASE_STATE
+  load_treehouse_release_no_mistakes_run "$META" "task $ID teardown" || exit 1
+  if [ "$TREEHOUSE_LEASE_STATE" = held ] \
+     && [ -n "$TREEHOUSE_RELEASE_NO_MISTAKES_RUN_ID" ]; then
+    echo "REFUSED: task $ID held lease has premature release cleanup state; preserving task state." >&2
+    exit 1
+  fi
+fi
+if [ "${FM_TEARDOWN_GUARD_DONE:-0}" != 1 ]; then
+  "$FM_ROOT/bin/fm-guard.sh" || true
+fi
 ROLE=$(fm_meta_get "$META" role)
 if [ "$KIND" = ship ]; then
   [ -n "$ROLE" ] || ROLE=builder
@@ -1411,14 +1528,28 @@ cleanup_stale_lock_for_safety_check() {
 }
 
 # Return a worktree/home via `treehouse return --force`, tolerating a transient or
-# stale git index.lock left by a killed crew process. See the script header.
+# stale git index.lock left by a killed crew process. Task worktrees pass both
+# immutable lease conditions. Secondmate homes remain path-only because their
+# lease migration is outside this task.
 teardown_treehouse_return() {
   local dir=$1 cd_dir=$2 label=$3 post_cleanup_check=${4:-}
+  local lease_id=${5:-} lease_holder=${6:-}
   local out lock attempt=0 max_retries lock_desc
+  local -a return_command
+
+  return_command=(treehouse return --force)
+  if [ -n "$lease_id" ] || [ -n "$lease_holder" ]; then
+    if [ -z "$lease_id" ] || [ -z "$lease_holder" ]; then
+      echo "teardown: $label return refused because its lease condition is incomplete" >&2
+      return 1
+    fi
+    return_command+=(--if-lease-id "$lease_id" --if-lease-holder "$lease_holder")
+  fi
+  return_command+=("$dir")
 
   # Capture stdout+stderr so non-lock failures stay visible and lock failures can
   # be matched by signature even when the lock file is already gone mid-check.
-  if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
+  if out=$( ( cd "$cd_dir" && "${return_command[@]}" ) 2>&1 ); then
     [ -n "$out" ] && printf '%s\n' "$out"
     return 0
   fi
@@ -1443,7 +1574,7 @@ teardown_treehouse_return() {
     echo "teardown: $label return failed with transient git lock ($lock_desc); waiting ${TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS}s and retrying ($attempt/${max_retries})" >&2
     sleep "$TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS"
 
-    if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
+    if out=$( ( cd "$cd_dir" && "${return_command[@]}" ) 2>&1 ); then
       [ -n "$out" ] && printf '%s\n' "$out"
       echo "teardown: $label return succeeded on retry; lock cleared on its own" >&2
       return 0
@@ -1470,7 +1601,7 @@ teardown_treehouse_return() {
           return 1
         fi
       fi
-      if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
+      if out=$( ( cd "$cd_dir" && "${return_command[@]}" ) 2>&1 ); then
         [ -n "$out" ] && printf '%s\n' "$out"
         echo "teardown: $label return succeeded after stale-lock cleanup" >&2
         return 0
@@ -1615,29 +1746,45 @@ task_status_is_run_not_found() {  # <status-error> <run-id>
   [ "$actual" = "$expected" ]
 }
 
-# Abort THIS task's own parked no-mistakes run before the worker that would
-# have answered its gate is removed, so no run is left orphaned holding a
-# fleet slot. Only KIND=ship drives a no-mistakes validation of its own
-# worktree (scouts and secondmates never do, mirroring bin/fm-crew-state.sh);
-# a run not attributed to this exact branch+head is left completely alone.
-conclude_task_no_mistakes_run() {  # <worktree>
-  local wt=$1 out run_id
+# Identify THIS task's own parked no-mistakes run without changing it.
+# Treehouse tasks do this before conditional return, then abort the exact run
+# only after Treehouse accepts the immutable lease identity.
+TASK_NO_MISTAKES_RUN_ID=
+prepare_task_no_mistakes_run_conclusion() {  # <worktree>
+  local wt=$1
+  TASK_NO_MISTAKES_RUN_ID=
   [ "$KIND" = ship ] || return 0
   [ -d "$wt" ] || return 0
   command -v no-mistakes >/dev/null 2>&1 || return 0
   task_run_is_own_parked_run "$wt" || return 0
-  run_id=$TASK_RUN_ID
-  echo "teardown: no-mistakes run for $ID is parked at a gate; aborting before the worker is removed" >&2
+  TASK_NO_MISTAKES_RUN_ID=$TASK_RUN_ID
+}
+
+# Abort the read-only-attributed run after cleanup authority is established.
+# The exact run id prevents another task at a reused worktree path from being
+# selected by branch or current-directory state.
+conclude_prepared_task_no_mistakes_run() {  # <command-directory>
+  local dir=$1 out run_id=$TASK_NO_MISTAKES_RUN_ID
+  [ -n "$run_id" ] || return 0
+  echo "teardown: no-mistakes run for $ID is parked at a gate; aborting before the endpoint is removed" >&2
   # Accepted best-effort residual: abort supports run-id targeting but no atomic
   # live-state condition; fully closing the resume race needs upstream compare-and-cancel.
-  fm_nm_run_checked "$wt" "$NM_TEARDOWN_TIMEOUT" axi abort --run "$run_id" >/dev/null 2>&1 || true
-  if out=$(fm_nm_run_bounded "$wt" "$NM_TEARDOWN_TIMEOUT" axi status --run "$run_id" 2>&1); then
+  fm_nm_run_checked "$dir" "$NM_TEARDOWN_TIMEOUT" axi abort --run "$run_id" >/dev/null 2>&1 || true
+  if out=$(fm_nm_run_bounded "$dir" "$NM_TEARDOWN_TIMEOUT" axi status --run "$run_id" 2>&1); then
     task_status_is_terminal_run "$out" "$run_id" && return 0
   elif task_status_is_run_not_found "$out" "$run_id"; then
     return 0
   fi
   echo "REFUSED: no-mistakes run for $ID is still parked after axi abort; confirm it stopped (no-mistakes axi status) or abort it manually (no-mistakes axi abort --run <id>) before retrying teardown." >&2
   return 1
+}
+
+# Orca has its own immutable worktree identity and keeps the existing direct
+# prepare-and-conclude sequence before its worktree removal.
+conclude_task_no_mistakes_run() {  # <worktree>
+  local wt=$1
+  prepare_task_no_mistakes_run_conclusion "$wt" || return 1
+  conclude_prepared_task_no_mistakes_run "$wt"
 }
 
 # Fix 2 (see script header): pids of every process whose CURRENT WORKING
@@ -1766,12 +1913,11 @@ reap_task_backend_process_group() {  # <label>
   fi
 }
 
-# Reap every process rooted (by cwd) under this task's own worktree or tasktmp
-# - both unique per task and never shared - before either is removed. TERM
-# first, then KILL after a short grace period for anything still alive; a
-# process that exits on its own between the two passes is simply absent from
-# the recheck. A missing lsof uses the backend process-group fallback; an lsof
-# scan error refuses before destructive teardown.
+# Reap every process rooted by its current directory under the named task
+# roots. These roots are unique per task and never shared. Send TERM first,
+# then KILL after a short grace period for anything still alive. A process that
+# exits between passes is absent from the recheck. A missing lsof uses the
+# backend process-group fallback. An lsof scan error refuses cleanup.
 reap_task_worktree_processes() {  # <label> <dir>...
   local label=$1 pids pid identity current_pids i pass=1 max_passes=3
   local -a tracked_pids tracked_identities remaining_pids remaining_identities
@@ -2022,12 +2168,6 @@ validate_child_worktree_for_removal() {
 safe_rm_rf() {
   local target=$1 label=$2
   validate_removal_target "$target" "$label" >/dev/null || return 1
-  rm -rf -- "$target"
-}
-
-safe_rm_rf_child_worktree() {
-  local target=$1 project=$2
-  validate_child_worktree_for_removal "$target" "$project" >/dev/null || return 1
   rm -rf -- "$target"
 }
 
@@ -2514,11 +2654,14 @@ preflight_firstmate_home_herdr_children() {  # <home>
     fm_backend_validate_task_endpoint "$child_meta" "$child_id" || return 1
     child_backend=$FM_BACKEND_VALIDATED_BACKEND
     child_target=$FM_BACKEND_VALIDATED_TARGET
+    child_kind=$(meta_value "$child_meta" kind)
+    [ -n "$child_kind" ] || child_kind=ship
+    if [ "$child_kind" != secondmate ] && [ "$child_backend" != orca ]; then
+      load_treehouse_task_lease "$child_meta" "$child_id" "child task $child_id teardown" || return 1
+    fi
     if [ "$child_backend" = herdr ]; then
       teardown_herdr_preflight_target "$child_target" "$child_id" || return 1
     fi
-    child_kind=$(meta_value "$child_meta" kind)
-    [ -n "$child_kind" ] || child_kind=ship
     if [ "$child_kind" = secondmate ]; then
       child_wt=$(meta_value "$child_meta" worktree)
       child_home=$(meta_value "$child_meta" home)
@@ -2529,7 +2672,8 @@ preflight_firstmate_home_herdr_children() {  # <home>
 }
 
 cleanup_firstmate_home_children() {
-  local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_return_rc child_busy_gen
+  local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_busy_gen
+  local child_treehouse_lease_id child_treehouse_lease_holder child_treehouse_lease_state
   sub_state="$home/state"
   [ -d "$sub_state" ] || return 0
   for child_meta in "$sub_state"/*.meta; do
@@ -2545,13 +2689,23 @@ cleanup_firstmate_home_children() {
     else
       child_t=$(fm_backend_target_of_meta "$child_meta")
     fi
+    child_treehouse_lease_id=
+    child_treehouse_lease_holder=
+    child_treehouse_lease_state=
+    if [ "$child_kind" != secondmate ] && [ "$child_backend" != orca ]; then
+      load_treehouse_task_lease "$child_meta" "$child_id" "child task $child_id teardown" || return 1
+      child_treehouse_lease_id=$REQUIRED_TREEHOUSE_LEASE_ID
+      child_treehouse_lease_holder=$REQUIRED_TREEHOUSE_LEASE_HOLDER
+      child_treehouse_lease_state=$REQUIRED_TREEHOUSE_LEASE_STATE
+    fi
     if [ "$child_backend" = orca ] && [ "$child_kind" != secondmate ]; then
       child_orca_worktree_id=$(require_orca_worktree_id "$child_meta") || return 1
       if [ -n "$child_wt" ] && [ -e "$child_wt" ]; then
         validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1
       fi
     fi
-    if [ -n "$child_t" ]; then
+    if [ -n "$child_t" ] \
+       && { [ "$child_kind" = secondmate ] || [ "$child_backend" = orca ]; }; then
       if [ "$child_backend" = herdr ]; then
         fm_backend_herdr_parse_target "$child_t" || return 1
         if ! teardown_herdr_session_lock_held "$FM_BACKEND_HERDR_SESSION"; then
@@ -2585,23 +2739,42 @@ cleanup_firstmate_home_children() {
           "$child_wt/.fm-grok-turnend" "$child_wt/.fm-kimi-turnend"
       fi
       fm_backend_remove_worktree "$child_backend" "$child_orca_worktree_id" || return 1
-    elif [ -n "$child_wt" ] && [ -d "$child_wt" ]; then
-      validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1
-      rm -f "$child_wt/.claude/settings.local.json" "$child_wt/.opencode/plugins/fm-turn-end.js" \
-        "$child_wt/.opencode/plugins/fm-busy-state.js" \
-        "$child_wt/.fm-grok-turnend" "$child_wt/.fm-kimi-turnend"
-      if [ -n "$child_proj" ] && [ -d "$child_proj" ] && command -v treehouse >/dev/null 2>&1; then
-        if teardown_treehouse_return "$child_wt" "$child_proj" "child worktree"; then
-          :
-        else
-          child_return_rc=$?
-          if [ "$child_return_rc" -eq "$TEARDOWN_TREEHOUSE_LOCK_REFUSED" ]; then
-            return "$child_return_rc"
-          fi
-          safe_rm_rf_child_worktree "$child_wt" "$child_proj"
+    else
+      if [ "$child_treehouse_lease_state" = held ]; then
+        validate_child_worktree_for_removal "$child_wt" "$child_proj" >/dev/null || return 1
+        if [ -z "$child_proj" ] || [ ! -d "$child_proj" ] \
+           || ! command -v treehouse >/dev/null 2>&1; then
+          echo "error: child task $child_id cannot run its conditional Treehouse return; preserving its records" >&2
+          return 1
         fi
+        teardown_treehouse_return "$child_wt" "$child_proj" "child worktree" "" \
+          "$child_treehouse_lease_id" "$child_treehouse_lease_holder" || return $?
+        if ! mark_treehouse_task_lease_released \
+            "$child_meta" "$child_treehouse_lease_id" "$child_treehouse_lease_holder"; then
+          echo "error: child task $child_id returned its worktree but could not record treehouse_lease_state=released" >&2
+          return 1
+        fi
+        child_treehouse_lease_state=released
       else
-        safe_rm_rf_child_worktree "$child_wt" "$child_proj"
+        echo "teardown: child task $child_id treehouse lease is already released; skipping every worktree return path" >&2
+      fi
+      if [ -n "$child_t" ]; then
+        if [ "$child_backend" = herdr ]; then
+          fm_backend_herdr_parse_target "$child_t" || return 1
+          if ! teardown_herdr_session_lock_held "$FM_BACKEND_HERDR_SESSION"; then
+            echo "error: herdr session presentation lock is not held for child $child_id; retaining that child's durable identity records and stopping forced cleanup" >&2
+            return 1
+          fi
+          fm_backend_herdr_kill_serialized "$FM_BACKEND_HERDR_SESSION" "$FM_BACKEND_HERDR_PANE" 2>/dev/null || true
+          if ! fm_backend_herdr_endpoint_confirmed_gone "$child_t"; then
+            echo "error: herdr pane $child_t for child $child_id is not confirmed gone; retaining that child's durable identity records and stopping forced cleanup" >&2
+            return 1
+          fi
+        elif [ "$child_backend" = zellij ]; then
+          ( unset FM_ROOT_OVERRIDE; FM_HOME=$home FM_ROOT=$home fm_backend_kill "$child_backend" "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "fm-$child_id" ) 2>/dev/null || true
+        else
+          fm_backend_kill "$child_backend" "$child_t" "$(meta_value "$child_meta" zellij_tab_id)" "fm-$child_id" 2>/dev/null || true
+        fi
       fi
     fi
     remove_grok_turnend_auth "$sub_state" "$child_id" || return 1
@@ -2783,21 +2956,22 @@ if [ "$FORCE" != "--force" ]; then
   fm_require_validation_truth "$META" "$ID" || exit 1
 fi
 
-# Every landed/discard-work refusal above has now passed (or --force skipped
-# them). Fix 1 and Fix 2 (see script header) run here, unconditionally on
-# --force, and before ANY destructive step below - a still-parked run or a
-# leaked process can own live work in this exact worktree. Not for
-# kind=secondmate: a secondmate home's own runtime lifecycle is owned by the
-# dedicated process-event and firstmate-home removal machinery further below,
-# not by task-worktree cleanup.
-if [ "$KIND" != secondmate ]; then
+# Every landed-work or discard-work refusal above has passed.
+# Orca owns no conditional Treehouse release, so it keeps Fix 1 and Fix 2 here.
+# Treehouse tasks only identify an exact parked run here. They mutate nothing
+# until the conditional release succeeds below.
+if [ "$KIND" != secondmate ] && [ "$BACKEND" = orca ]; then
   conclude_task_no_mistakes_run "$WT"
   reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
+elif [ "$KIND" != secondmate ] && [ "$TREEHOUSE_LEASE_STATE" = held ]; then
+  prepare_task_no_mistakes_run_conclusion "$WT"
 fi
 
 # Fix 3 (see script header): sweep remote job workers abandoned by an already
 # pruned code root. Best effort - a sweep failure never blocks this teardown.
-"$SCRIPT_DIR/fm-remote-job-reap-orphans.sh" >&2 || true
+if [ "$KIND" = secondmate ] || [ "$BACKEND" = orca ]; then
+  "$SCRIPT_DIR/fm-remote-job-reap-orphans.sh" >&2 || true
+fi
 
 # A Herdr close may reposition shared workspace order, so the whole
 # destructive sequence below (worktree return, pane close, record removal)
@@ -2834,28 +3008,46 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
   fi
   [ -z "$T_ORCA" ] || fm_backend_kill "$BACKEND" "$T" "$(meta_value "$META" zellij_tab_id)" "fm-$ID" 2>/dev/null || true
   fm_backend_remove_worktree "$BACKEND" "$ORCA_WORKTREE_ID"
-elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
-  branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
-  if [ "$branch" != "HEAD" ]; then
-    if git -C "$WT" checkout --detach -q 2>/dev/null; then
-      git -C "$WT" branch -D "$branch" >/dev/null 2>&1 || true
+elif [ "$KIND" != secondmate ]; then
+  if [ "$TREEHOUSE_LEASE_STATE" = held ]; then
+    branch=$(git -C "$WT" rev-parse --abbrev-ref HEAD 2>/dev/null || echo HEAD)
+    # Treehouse checks the immutable lease identity under its state lock before
+    # it terminates a process, resets Git, or releases the worktree. The same
+    # command vector is reused for every lock retry by teardown_treehouse_return.
+    post_lock_cleanup_check=
+    if [ "$FORCE" != "--force" ] && [ "$KIND" != scout ]; then
+      post_lock_cleanup_check=validate_worktree_teardown_safety
     fi
+    teardown_treehouse_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check" \
+      "$TREEHOUSE_LEASE_ID" "$TREEHOUSE_LEASE_HOLDER" || {
+      echo "error: conditional treehouse return failed for worktree $WT; teardown aborted without releasing task records" >&2
+      exit 1
+    }
+    if ! mark_treehouse_task_lease_released \
+        "$META" "$TREEHOUSE_LEASE_ID" "$TREEHOUSE_LEASE_HOLDER" \
+        "$TASK_NO_MISTAKES_RUN_ID"; then
+      echo "error: treehouse returned worktree $WT, but task $ID metadata could not be marked released; stop and reconcile the exact lease before retrying" >&2
+      exit 1
+    fi
+    TREEHOUSE_LEASE_STATE=released
+    conclude_prepared_task_no_mistakes_run "$PROJ" || exit 1
+    # Treehouse already detached and cleaned the pooled worktree. Delete the
+    # old local task branch only through the project. Git refuses if another
+    # worktree has already checked it out.
+    if [ "$branch" != HEAD ]; then
+      git -C "$PROJ" branch -D "$branch" >/dev/null 2>&1 || true
+    fi
+  else
+    echo "teardown: task $ID treehouse lease is already released; skipping every worktree return path" >&2
+    TASK_NO_MISTAKES_RUN_ID=$TREEHOUSE_RELEASE_NO_MISTAKES_RUN_ID
+    conclude_prepared_task_no_mistakes_run "$PROJ" || exit 1
   fi
-  # Remove our hook file so a reused pool worktree cannot fire signals for a dead task.
-  rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
-    "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend"
-  # Kills remaining processes in the worktree (including the agent), resets, returns
-  # to pool. treehouse resolves the pool from the working directory, so run it from
-  # the project. teardown_treehouse_return tolerates transient and stale git locks
-  # left by a killed crew process; see the script header for retry and stale-lock proof.
-  post_lock_cleanup_check=
-  if [ "$FORCE" != "--force" ] && [ "$KIND" != scout ] && [ "$KIND" != secondmate ]; then
-    post_lock_cleanup_check=validate_worktree_teardown_safety
-  fi
-  teardown_treehouse_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check" || {
-    echo "error: treehouse return failed for worktree $WT; teardown aborted" >&2
-    exit 1
-  }
+  # This best-effort global sweep is deferred until the task's conditional
+  # lease check succeeds, or a prior attempt has recorded the released phase.
+  "$SCRIPT_DIR/fm-remote-job-reap-orphans.sh" >&2 || true
+  # Treehouse owns process cleanup under the leased worktree. The task temp
+  # root is separate and remains protected by Firstmate's existing process reap.
+  reap_task_worktree_processes task-temp "$TASK_TMP"
 fi
 
 HERDR_PRESENTATION_JOURNAL="$STATE/$ID.herdr-presentation"

@@ -226,7 +226,9 @@ write_child_meta() {
   fm_write_meta "$REMOTE_HOME/state/work-child.meta" \
     "window=firstmate:fm-work-child" "endpoint_task_id=work-child" \
     "worktree=$CHILD_WT" "project=$CHILD_WT" "harness=codex" "kind=ship" \
-    "mode=local-only" "yolo=off"
+    "mode=local-only" "yolo=off" \
+    "treehouse_lease_id=lease-work-child" \
+    "treehouse_lease_holder=work-child" "treehouse_lease_state=held"
 }
 mkdir -p "$TMP_ROOT/childfake"
 for t in tmux treehouse no-mistakes gh gh-axi tasks-axi; do

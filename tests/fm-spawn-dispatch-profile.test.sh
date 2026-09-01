@@ -178,7 +178,30 @@ SH
   chmod +x "$fakebin/orca"
   cat > "$fakebin/treehouse" <<'SH'
 #!/usr/bin/env bash
+set -u
 [ -z "${FM_FAKE_TREEHOUSE_LOG:-}" ] || printf '%s\n' "$*" >> "$FM_FAKE_TREEHOUSE_LOG"
+case "${1:-}" in
+  get)
+    shift
+    holder=
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --lease-holder) holder=${2:-}; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    if [ -n "${FM_FAKE_TREEHOUSE_BAD_JSON:-}" ]; then
+      printf '%s\n' '{not-json'
+    else
+      returned_holder=${FM_FAKE_TREEHOUSE_HOLDER:-$holder}
+      printf '{"path":"%s","lease_id":"lease-%s","lease_holder":"%s"}\n' \
+        "${FM_FAKE_PANE_PATH:?}" "$holder" "$returned_holder"
+    fi
+    ;;
+  return)
+    [ -z "${FM_FAKE_TREEHOUSE_RETURN_FAIL:-}" ] || exit 17
+    ;;
+esac
 exit 0
 SH
   chmod +x "$fakebin/treehouse"
@@ -337,6 +360,9 @@ prepare_verifier_handoff() {  # <home> <project> <worktree> <id>
     echo "endpoint_task_id=$id"
     echo "worktree=$worktree"
     echo "project=$project"
+    echo "treehouse_lease_id=lease-$id"
+    echo "treehouse_lease_holder=$id"
+    echo "treehouse_lease_state=held"
     echo "harness=claude"
     echo "kind=ship"
     echo "mode=no-mistakes"
@@ -409,6 +435,12 @@ test_no_profile_keeps_claude_profile_defaults() {
   assert_contains "$out" "spawned $id harness=claude" "spawn did not report claude"
   assert_meta_profile "$HOME_DIR/state/$id.meta" claude default default
   assert_grep 'role=builder' "$HOME_DIR/state/$id.meta" "builder spawn did not record role=builder"
+  assert_grep "treehouse_lease_id=lease-$id" "$HOME_DIR/state/$id.meta" \
+    "builder spawn did not record the immutable Treehouse lease ID"
+  assert_grep "treehouse_lease_holder=$id" "$HOME_DIR/state/$id.meta" \
+    "builder spawn did not bind the Treehouse lease to the task"
+  assert_grep 'treehouse_lease_state=held' "$HOME_DIR/state/$id.meta" \
+    "builder spawn did not record the held lease phase"
 
   launch=$(cat "$LAUNCH_LOG")
   expected="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false claude --dangerously-skip-permissions \"\$('${ROOT}/bin/fm-operational-input.sh' encode launch-brief < '$HOME_DIR/data/$id/brief.md')\""
@@ -1422,6 +1454,12 @@ test_role_verifier_encodes_verifier_brief() {
     "verifier spawn lost the external request link"
   assert_contains "$out" "role=verifier" "spawned line did not report role=verifier"
   assert_grep "worktree=$WT_DIR" "$meta" "verifier spawn did not retain builder worktree"
+  assert_grep "treehouse_lease_id=lease-$id" "$meta" \
+    "verifier spawn did not preserve the builder lease ID"
+  assert_grep "treehouse_lease_holder=$id" "$meta" \
+    "verifier spawn did not preserve the builder lease holder"
+  assert_grep 'treehouse_lease_state=held' "$meta" \
+    "verifier spawn did not preserve the held lease phase"
   head_after=$(git -C "$WT_DIR" rev-parse HEAD)
   [ "$head_after" = "$head_before" ] || fail "verifier spawn changed builder HEAD"
   branch=$(git -C "$WT_DIR" symbolic-ref --quiet --short HEAD)
@@ -1435,6 +1473,100 @@ test_role_verifier_encodes_verifier_brief() {
   expected="env -u CURSOR_AGENT -u CURSOR_INVOKED_AS CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false claude --dangerously-skip-permissions \"\$('${ROOT}/bin/fm-operational-input.sh' encode launch-brief < '$HOME_DIR/data/$id/verifier-brief.md')\""
   [ "$launch" = "$expected" ] || fail "verifier spawn did not encode verifier-brief.md"$'\n'"expected: $expected"$'\n'"actual:   $launch"
   pass "fm-spawn: --role verifier encodes verifier-brief.md and records role=verifier"
+}
+
+test_fresh_spawn_abort_conditionally_releases_exact_lease() {
+  local rec id out status treehouse_log
+  id=profile-spawn-abort-lease-z14a
+  rec=$(make_spawn_case profile-spawn-abort-lease claude "$id")
+  read_case_record "$rec"
+  treehouse_log="$CASE_DIR/treehouse.log"
+  : > "$treehouse_log"
+  mkdir "$HOME_DIR/state/$id.meta"
+
+  out=$(FM_FAKE_TREEHOUSE_LOG="$treehouse_log" \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+
+  [ "$status" -ne 0 ] || fail "spawn-abort-lease: metadata publication failure still reported success"
+  assert_grep "get --lease --json --lease-holder $id" "$treehouse_log" \
+    "spawn-abort-lease: fresh spawn did not acquire a durable lease"
+  assert_grep "return --force --if-lease-id lease-$id --if-lease-holder $id $WT_DIR" "$treehouse_log" \
+    "spawn-abort-lease: abort cleanup did not conditionally return the exact lease"
+  assert_contains "$out" "Is a directory" \
+    "spawn-abort-lease: publication failure did not report its cause"
+  pass "fresh spawn abort conditionally releases only its exact Treehouse lease"
+}
+
+test_spawn_abort_cleanup_failure_preserves_recovery_identity() {
+  local rec id out status treehouse_log meta
+  id=profile-spawn-abort-recovery-z14b
+  rec=$(make_spawn_case profile-spawn-abort-recovery claude "$id")
+  read_case_record "$rec"
+  treehouse_log="$CASE_DIR/treehouse.log"
+  : > "$treehouse_log"
+
+  out=$(FM_FAKE_TREEHOUSE_LOG="$treehouse_log" \
+    FM_FAKE_TREEHOUSE_HOLDER=recovery-holder FM_FAKE_TREEHOUSE_RETURN_FAIL=1 \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+
+  [ "$status" -ne 0 ] || fail "spawn-abort-recovery: invalid lease holder still reported success"
+  meta="$HOME_DIR/state/$id.meta"
+  assert_grep "treehouse_lease_id=lease-$id" "$meta" \
+    "spawn-abort-recovery: recovery metadata lost the exact lease ID"
+  assert_grep 'treehouse_lease_holder=recovery-holder' "$meta" \
+    "spawn-abort-recovery: recovery metadata lost the returned holder"
+  assert_grep 'treehouse_lease_state=held' "$meta" \
+    "spawn-abort-recovery: recovery metadata did not preserve the held phase"
+  assert_grep "return --force --if-lease-id lease-$id --if-lease-holder recovery-holder $WT_DIR" "$treehouse_log" \
+    "spawn-abort-recovery: failed cleanup did not use the exact returned identity"
+  assert_contains "$out" "exact held lease metadata was preserved" \
+    "spawn-abort-recovery: cleanup failure did not report recovery metadata"
+  pass "failed spawn abort cleanup preserves the complete held lease identity"
+}
+
+test_malformed_lease_json_fails_without_guessed_return() {
+  local rec id out status treehouse_log
+  id=profile-spawn-bad-lease-json-z14c
+  rec=$(make_spawn_case profile-spawn-bad-lease-json claude "$id")
+  read_case_record "$rec"
+  treehouse_log="$CASE_DIR/treehouse.log"
+  : > "$treehouse_log"
+
+  out=$(FM_FAKE_TREEHOUSE_LOG="$treehouse_log" FM_FAKE_TREEHOUSE_BAD_JSON=1 \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR")
+  status=$?
+
+  [ "$status" -ne 0 ] || fail "spawn-bad-lease-json: malformed allocation reported success"
+  [ "$(wc -l < "$treehouse_log" | tr -d '[:space:]')" -eq 1 ] \
+    || fail "spawn-bad-lease-json: malformed allocation triggered a guessed Treehouse return"
+  assert_grep "get --lease --json --lease-holder $id" "$treehouse_log" \
+    "spawn-bad-lease-json: test did not exercise durable lease acquisition"
+  assert_contains "$out" "malformed lease JSON" \
+    "spawn-bad-lease-json: failure did not explain the reserved ambiguous lease"
+  assert_absent "$HOME_DIR/state/$id.meta" \
+    "spawn-bad-lease-json: malformed allocation published task metadata"
+  pass "malformed lease JSON fails loudly without guessing a return identity"
+}
+
+test_verifier_handoff_refuses_released_lease() {
+  local rec id out status meta_before endpoint_before
+  id=profile-verifier-released-lease-z14d
+  rec=$(make_spawn_case profile-verifier-released-lease claude "$id")
+  read_case_record "$rec"
+  prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  replace_meta_value "$HOME_DIR/state/$id.meta" treehouse_lease_state released
+  meta_before=$(cat "$HOME_DIR/state/$id.meta")
+  endpoint_before=$(cat "$HOME_DIR/state/.fake-endpoint-state")
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --mode no-mistakes --yolo off --role verifier)
+  status=$?
+
+  assert_verifier_handoff_refusal_preserved \
+    "$out" "$status" "lease state is 'released', not 'held'" "$meta_before" "$endpoint_before" "$id"
+  pass "verifier handoff refuses a released Treehouse lease before endpoint replacement"
 }
 
 test_verifier_handoff_preserves_yolo_authority() {
@@ -1876,7 +2008,9 @@ test_verifier_handoff_teardown_returns_single_worktree() {
     PATH="$FAKEBIN_DIR:$PATH" "$ROOT/bin/fm-teardown.sh" "$id" 2>&1)
   status=$?
   expect_code 0 "$status" "landed verifier handoff teardown should succeed (got: $out)"
-  return_count=$(grep -Fxc "return --force $WT_DIR" "$treehouse_log" || true)
+  return_count=$(grep -Fxc \
+    "return --force --if-lease-id lease-$id --if-lease-holder $id $WT_DIR" \
+    "$treehouse_log" || true)
   [ "$return_count" -eq 1 ] \
     || fail "verifier handoff teardown did not return exactly one recorded worktree"
   assert_absent "$HOME_DIR/state/$id.meta" \
@@ -2286,6 +2420,10 @@ test_claude_omits_config_dir_prefix_when_unset
 test_non_claude_harness_ignores_config_dir
 test_active_dispatch_profile_does_not_block_secondmate_launch
 test_role_verifier_encodes_verifier_brief
+test_fresh_spawn_abort_conditionally_releases_exact_lease
+test_spawn_abort_cleanup_failure_preserves_recovery_identity
+test_malformed_lease_json_fails_without_guessed_return
+test_verifier_handoff_refuses_released_lease
 test_verifier_handoff_preserves_yolo_authority
 test_verifier_handoff_refuses_surface_synthesis
 test_verifier_handoff_retires_builder_wiring

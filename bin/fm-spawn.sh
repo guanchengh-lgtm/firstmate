@@ -101,6 +101,12 @@
 #   A backend spawn refusal (missing dependency, version gate, unauthenticated
 #   socket, or unsupported secondmate mode) is terminal for that selected backend;
 #   callers must surface it instead of silently retrying another backend.
+#   A fresh non-Orca task directly acquires one durable Treehouse lease that is
+#   bound to the task id.
+#   Spawn validates the returned path, lease id, and holder before launch.
+#   It records that identity and its held state in task metadata.
+#   Relaunches and verifier handoffs reuse the same held identity.
+#   They never acquire a second lease.
 #   A herdr crewmate or scout is placed in the exact workspace of the firstmate
 #   or secondmate process launching it, resolved from that process's own herdr
 #   pane rather than from a workspace label (herdr enforces no label uniqueness,
@@ -806,6 +812,10 @@ spawn_remote_secondmate() {
 }
 
 BACKEND=
+TREEHOUSE_ABORT_CLEANUP=0
+TREEHOUSE_LEASE_ID=
+TREEHOUSE_LEASE_HOLDER=
+TREEHOUSE_LEASE_STATE=
 ORCA_ABORT_CLEANUP=0
 ORCA_WORKTREE_ID=
 ORCA_TERMINAL=
@@ -857,6 +867,90 @@ parse_orca_worktree_result() {
   else
     ORCA_TERMINAL=
   fi
+}
+
+parse_treehouse_task_lease() {  # <json>
+  printf '%s' "$1" | node -e '
+    const fs = require("fs");
+    let value;
+    try {
+      value = JSON.parse(fs.readFileSync(0, "utf8"));
+    } catch (_) {
+      process.exit(1);
+    }
+    if (!value || Array.isArray(value) || typeof value !== "object") process.exit(1);
+    const fields = [value.path, value.lease_id, value.lease_holder];
+    if (fields.some((field) => typeof field !== "string" || field.length === 0 || /[\0\r\n\t]/.test(field))) {
+      process.exit(1);
+    }
+    process.stdout.write(fields.join("\t"));
+  '
+}
+
+load_held_treehouse_task_lease() {  # <metadata> <operation>
+  local meta=$1 operation=$2
+  TREEHOUSE_LEASE_ID=$(fm_backend_meta_exact_value "$meta" treehouse_lease_id) || {
+    echo "error: $operation refused: task $ID needs exactly one non-empty treehouse_lease_id" >&2
+    return 1
+  }
+  TREEHOUSE_LEASE_HOLDER=$(fm_backend_meta_exact_value "$meta" treehouse_lease_holder) || {
+    echo "error: $operation refused: task $ID needs exactly one non-empty treehouse_lease_holder" >&2
+    return 1
+  }
+  TREEHOUSE_LEASE_STATE=$(fm_backend_meta_exact_value "$meta" treehouse_lease_state) || {
+    echo "error: $operation refused: task $ID needs exactly one non-empty treehouse_lease_state" >&2
+    return 1
+  }
+  case "$TREEHOUSE_LEASE_ID" in
+    *[!A-Za-z0-9._:-]*)
+      echo "error: $operation refused: task $ID has a malformed treehouse_lease_id" >&2
+      return 1
+      ;;
+  esac
+  if [ "$TREEHOUSE_LEASE_HOLDER" != "$ID" ]; then
+    echo "error: $operation refused: task $ID lease holder is '$TREEHOUSE_LEASE_HOLDER', not '$ID'" >&2
+    return 1
+  fi
+  if [ "$TREEHOUSE_LEASE_STATE" != held ]; then
+    echo "error: $operation refused: task $ID lease state is '$TREEHOUSE_LEASE_STATE', not 'held'" >&2
+    return 1
+  fi
+}
+
+write_treehouse_abort_recovery_meta() {
+  mkdir -p "$STATE" 2>/dev/null || return 1
+  {
+    echo "window=$T"
+    echo "endpoint_task_id=$ID"
+    echo "worktree=$WT"
+    echo "project=$PROJ_ABS"
+    echo "harness=$HARNESS"
+    echo "kind=$KIND"
+    [ -z "${MODE:-}" ] || echo "mode=$MODE"
+    [ "${SURFACE_SET:-0}" -eq 0 ] || echo "surface=$SURFACE"
+    [ -z "${YOLO:-}" ] || echo "yolo=$YOLO"
+    [ -z "${ROLE:-}" ] || echo "role=$ROLE"
+    echo "tasktmp=${TASK_TMP:-}"
+    echo "model=${MODEL:-default}"
+    echo "effort=${EFFORT:-default}"
+    echo "treehouse_lease_id=$TREEHOUSE_LEASE_ID"
+    echo "treehouse_lease_holder=$TREEHOUSE_LEASE_HOLDER"
+    echo "treehouse_lease_state=held"
+    [ "$BACKEND" = tmux ] || echo "backend=$BACKEND"
+    if [ "$BACKEND" = herdr ]; then
+      echo "herdr_session=$HERDR_SES"
+      echo "herdr_workspace_id=$HERDR_WORKSPACE_ID"
+      echo "herdr_tab_id=$HERDR_TAB_ID"
+      echo "herdr_pane_id=$HERDR_PANE_ID"
+    elif [ "$BACKEND" = zellij ]; then
+      echo "zellij_session=$ZELLIJ_SES"
+      echo "zellij_tab_id=$ZELLIJ_TAB_ID"
+      echo "zellij_pane_id=$ZELLIJ_PANE_ID"
+    elif [ "$BACKEND" = cmux ]; then
+      echo "cmux_workspace_id=$CMUX_WORKSPACE_ID"
+      echo "cmux_surface_id=$CMUX_SURFACE_ID"
+    fi
+  } > "$STATE/$ID.meta"
 }
 
 spawn_abort_cleanup() {
@@ -921,6 +1015,18 @@ spawn_abort_cleanup() {
   if [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" = 1 ]; then
     HERDR_PRESENTATION_ORDER_LOCK_HELD=0
     fm_lock_release "$HERDR_PRESENTATION_ORDER_LOCK" || true
+  fi
+  if [ "$TREEHOUSE_ABORT_CLEANUP" = 1 ]; then
+    TREEHOUSE_ABORT_CLEANUP=0
+    if ! ( cd "$PROJ_ABS" && treehouse return --force \
+        --if-lease-id "$TREEHOUSE_LEASE_ID" \
+        --if-lease-holder "$TREEHOUSE_LEASE_HOLDER" "$WT" ) 2>/dev/null; then
+      if ! write_treehouse_abort_recovery_meta; then
+        echo "warning: task $ID lease cleanup failed, and its recovery metadata could not be written" >&2
+      else
+        echo "warning: task $ID lease cleanup failed; exact held lease metadata was preserved for teardown" >&2
+      fi
+    fi
   fi
   if [ "$ORCA_ABORT_CLEANUP" = 1 ]; then
     ORCA_ABORT_CLEANUP=0
@@ -1257,6 +1363,9 @@ if [ "$RELAUNCH" -eq 1 ]; then
       echo "error: task $ID has no recorded project; refusing to relaunch" >&2
       exit 1
     }
+    if [ "$BACKEND" != orca ]; then
+      load_held_treehouse_task_lease "$RELAUNCH_META" "relaunch" || exit 1
+    fi
   fi
   if [ "$BACKEND" = herdr ]; then
     HERDR_SES=$(fm_meta_get "$RELAUNCH_META" herdr_session)
@@ -2265,6 +2374,7 @@ verifier_handoff_preflight() {
     echo "error: verifier handoff refused: Orca owns a separate worktree and cannot reuse builder worktree '$WT'" >&2
     return 1
   fi
+  load_held_treehouse_task_lease "$meta" "verifier handoff" || return 1
   fm_control_backend_state_verified "$VERIFIER_HANDOFF_PRIOR_BACKEND" || {
     echo "error: verifier handoff refused: builder endpoint backend '$VERIFIER_HANDOFF_PRIOR_BACKEND' cannot prove the prior agent stopped" >&2
     return 1
@@ -2869,62 +2979,58 @@ elif [ "$VERIFIER_HANDOFF" -eq 1 ]; then
   fi
   validate_spawn_worktree "verifier handoff" "$T"
 elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
-  spawn_send_text_line "$WT_TARGET" 'treehouse get'
-
-  # Wait for the treehouse subshell: the pane's cwd moves from the project to the worktree.
-  # Target the stable window id, not the name: if the name is ever lost (e.g. an
-  # automatic-rename slips through), display-message -t <bad-name> falls back to the
-  # active client's window, which would misread firstmate's OWN pane path as the
-  # worktree and tangle a hook into the primary checkout. The window id never lies.
-  # Compare against PROJ_ABS_REAL (physical), not PROJ_ABS: a symlinked project
-  # prefix would otherwise make the pane's OS-level cwd read differ from
-  # PROJ_ABS on the very first poll, before the pane has actually moved.
-  #
-  # A single read that already differs from PROJ_ABS_REAL is not proof the pane
-  # settled there: on some tmux/WSL setups a brand-new window's pane_current_path
-  # transiently reports an unrelated stale path (seen live as another real git
-  # checkout entirely) before the shell catches up with treehouse get's cd. That
-  # stale path still passes the PROJ_ABS_REAL comparison and validate_spawn_worktree
-  # below (it resolves to a real, distinct worktree top-level too), so accepting it
-  # on one read alone silently records the wrong worktree= in state/<id>.meta. Require
-  # two consecutive reads to agree on the same non-project path before accepting it;
-  # a mismatch just becomes the new candidate rather than resetting the wait, so a
-  # pane that is already settled by the first real read only costs the one existing
-  # inter-poll sleep as confirmation, not a whole extra cycle on top.
-  candidate=""
-  refusal=""
-  for _ in $(seq 1 60); do
-    if refusal=$(treehouse_pool_refusal_reason "$WT_TARGET"); then
-      echo "error: treehouse get failed: $refusal; inspect window $T" >&2
+  lease_json=$(cd "$PROJ_ABS" && treehouse get --lease --json --lease-holder "$ID") || {
+    echo "error: treehouse lease acquisition failed for task $ID; inspect window $T" >&2
+    exit 1
+  }
+  lease_fields=$(parse_treehouse_task_lease "$lease_json") || {
+    echo "error: treehouse returned malformed lease JSON for task $ID; the reserved lease was left untouched because its exact identity is unknown" >&2
+    exit 1
+  }
+  IFS=$'\t' read -r WT TREEHOUSE_LEASE_ID TREEHOUSE_LEASE_HOLDER <<< "$lease_fields"
+  case "$TREEHOUSE_LEASE_ID" in
+    *[!A-Za-z0-9._:-]*)
+      echo "error: treehouse returned a malformed lease ID for task $ID; the reserved lease was left untouched" >&2
       exit 1
-    fi
-    p=$(spawn_current_path "$WT_TARGET" || true)
-    if [ -n "$p" ]; then
-      p_real=$(real_path_or_raw "$p")
-      if [ "$p_real" != "$PROJ_ABS_REAL" ]; then
-        if [ -n "$candidate" ] && [ "$p_real" = "$candidate" ]; then
-          if refusal=$(treehouse_pool_refusal_reason "$WT_TARGET"); then
-            echo "error: treehouse get failed: $refusal; inspect window $T" >&2
-            exit 1
-          fi
-          WT="$p"
-          break
-        fi
-        candidate="$p_real"
-      else
-        candidate=""
-      fi
-    else
-      candidate=""
-    fi
-    sleep 1
-  done
-  if [ -z "$WT" ]; then
-    echo "error: treehouse get did not enter a worktree within 60s; inspect window $T" >&2
+      ;;
+  esac
+  TREEHOUSE_LEASE_STATE=held
+  TREEHOUSE_ABORT_CLEANUP=1
+  case "$WT" in
+    /*) ;;
+    *)
+      echo "error: treehouse returned a non-absolute lease path for task $ID; exact conditional cleanup will run" >&2
+      exit 1
+      ;;
+  esac
+  if [ "$TREEHOUSE_LEASE_HOLDER" != "$ID" ]; then
+    echo "error: treehouse returned lease holder '$TREEHOUSE_LEASE_HOLDER' for task $ID; exact conditional cleanup will run" >&2
     exit 1
   fi
 
-  validate_spawn_worktree "treehouse get" "$T"
+  # The immutable lease identifies the allocation. The path only locates it.
+  # held -> conditional return -> released is the durable teardown phase.
+  leased_wt_real=$(real_path_or_raw "$WT")
+  spawn_send_text_line "$WT_TARGET" "cd $(shell_quote "$WT")"
+  leased_seen=
+  settled_reads=0
+  for _ in $(seq 1 60); do
+    leased_seen=$(spawn_current_path "$WT_TARGET" || true)
+    if [ -n "$leased_seen" ] \
+       && [ "$(real_path_or_raw "$leased_seen")" = "$leased_wt_real" ]; then
+      settled_reads=$((settled_reads + 1))
+      [ "$settled_reads" -lt 2 ] || break
+    else
+      settled_reads=0
+    fi
+    sleep 1
+  done
+  if [ "$settled_reads" -lt 2 ]; then
+    echo "error: task $ID endpoint is in '${leased_seen:-unknown}', not its leased worktree '$WT'; refusing to launch" >&2
+    exit 1
+  fi
+
+  validate_spawn_worktree "treehouse lease" "$T"
 fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$VERIFIER_HANDOFF" -eq 0 ] && [ "$KIND" != secondmate ]; then
   freshen_spawn_worktree_base "$WT" || exit 1
@@ -3312,7 +3418,7 @@ fi
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode surface yolo role map_next map ov ov_harness session tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode surface yolo role map_next map ov ov_harness session tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects treehouse_lease_id treehouse_lease_holder treehouse_lease_state control_relaunch_tx", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -3324,7 +3430,7 @@ preserve_verifier_handoff_meta() {
     -v map_set="$MAP_SET" \
     -v ov_set="$OV_SET" '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode surface yolo role tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode surface yolo role tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects treehouse_lease_id treehouse_lease_holder treehouse_lease_state control_relaunch_tx", keys, " ")
       for (i in keys) owned[keys[i]] = 1
       if (map_next_set == 1) owned["map_next"] = 1
       if (map_set == 1) owned["map"] = 1
@@ -3369,6 +3475,11 @@ if ! {
   echo "tasktmp=$TASK_TMP"
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"
+  if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
+    echo "treehouse_lease_id=$TREEHOUSE_LEASE_ID"
+    echo "treehouse_lease_holder=$TREEHOUSE_LEASE_HOLDER"
+    echo "treehouse_lease_state=$TREEHOUSE_LEASE_STATE"
+  fi
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
   echo "spawn_gen=$SPAWN_GEN"
   # Default-off writes no traceparent= line.
@@ -3409,6 +3520,10 @@ if ! {
   fi
 } > "$SPAWN_META_PATH"; then
   exit 1
+fi
+if [ "$RELAUNCH" -eq 0 ] && [ "$VERIFIER_HANDOFF" -eq 0 ] \
+   && [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
+  TREEHOUSE_ABORT_CLEANUP=0
 fi
 if [ "$RELAUNCH" -eq 1 ] || [ "$VERIFIER_HANDOFF" -eq 1 ]; then
   SPAWN_META_PUBLISH_STARTED=1

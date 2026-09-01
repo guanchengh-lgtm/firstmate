@@ -60,6 +60,7 @@ set -u
 unset CLAUDECODE PI_CODING_AGENT FM_PI_HARNESS GROK_AGENT CURSOR_AGENT CURSOR_INVOKED_AS
 
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
+NODE_BIN_DIR=$(dirname "$(command -v node)")
 fm_git_identity fmtest fmtest@example.com
 TMP_ROOT=$(fm_test_tmproot fm-secondmate-harness)
 export FM_BACKEND=tmux
@@ -662,6 +663,26 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tmux"
+  cat > "$fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  get)
+    shift
+    holder=
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --lease-holder) holder=${2:-}; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    printf '{"path":"%s","lease_id":"lease-%s","lease_holder":"%s"}\n' \
+      "${FM_FAKE_PANE_PATH:?}" "$holder" "$holder"
+    ;;
+  return) ;;
+esac
+SH
+  chmod +x "$fakebin/treehouse"
   fm_fake_exit0 "$fakebin" pi
   printf '%s\n' "$fakebin"
 }
@@ -965,7 +986,7 @@ test_spawn_fallback_chain_and_crew_scout_unaffected() {
   printf '%s\n' builder > "$home/data/$id/role"
   printf '%s\n' no-mistakes > "$home/data/$id/mode"
   : > "$launchlog"
-  PATH="$fakebin:$BASE_PATH" TMUX="fake,1,0" CLAUDECODE=1 \
+  PATH="$fakebin:$NODE_BIN_DIR:$BASE_PATH" TMUX="fake,1,0" CLAUDECODE=1 \
     FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
@@ -1083,9 +1104,10 @@ SH
   chmod +x "$fakebin/gh"
   cat > "$fakebin/treehouse" <<'SH'
 #!/usr/bin/env bash
-if [ "${1:-}" = get ] && [ "${2:-}" = --help ]; then
-  printf '%s\n' 'Usage: treehouse get [--lease]'
-fi
+case "${1:-} ${2:-}" in
+  "get --help") printf '%s\n' 'Usage: treehouse get [--lease] [--json]' ;;
+  "return --help") printf '%s\n' 'Usage: treehouse return [--if-lease-id] [--if-lease-holder]' ;;
+esac
 exit 0
 SH
   chmod +x "$fakebin/treehouse"

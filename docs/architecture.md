@@ -174,6 +174,8 @@ Codex App support is recorded in `docs/codex-app-backend.md`; it is not selectab
 Crewmates never intentionally touch your project clone; [treehouse](https://github.com/kunchenguid/treehouse) pools clean worktrees for tmux, herdr, zellij, and cmux tasks, while Orca creates its own worktrees for `backend=orca`.
 For ship and scout work, `fm-spawn.sh` refuses to launch unless the resolved task path is a real git worktree root that is distinct from the project primary checkout.
 `fm-spawn.sh` also owns the base-freshness boundary for every newly allocated ship and scout worktree: no worker starts until its clean task worktree matches the fetched tip of origin's resolved default branch, and any unsafe or unverifiable base stops the spawn.
+A Treehouse task keeps one task-bound lease identity from fresh spawn through teardown.
+Teardown returns that exact lease and records its released state before it removes endpoint or task records.
 A Treehouse-backed no-mistakes verifier handoff instead validates and reuses the stopped builder's recorded clean worktree and committed head while replacing its runtime endpoint.
 Its header owns the exact refusal mechanics, while `tests/fm-spawn-pool-base-freshen.test.sh` and `tests/fm-spawn-dispatch-profile.test.sh` own the portable regression coverage.
 

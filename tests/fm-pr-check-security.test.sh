@@ -121,7 +121,10 @@ write_task_meta() {
     "worktree=$dir/wt" \
     "project=$dir/project" \
     "kind=ship" \
-    "mode=no-mistakes"
+    "mode=no-mistakes" \
+    "treehouse_lease_id=lease-$id" \
+    "treehouse_lease_holder=$id" \
+    'treehouse_lease_state=released'
 }
 
 write_poll_meta() {
@@ -621,7 +624,10 @@ SH
       "worktree=$dir/missing-worktree" \
       "project=$dir/project" \
       'kind=ship' \
-      'mode=local-only'
+      'mode=local-only' \
+      "treehouse_lease_id=lease-$id" \
+      "treehouse_lease_holder=$id" \
+      'treehouse_lease_state=released'
     mkdir -p "$dir/home/state/.pr-check-quarantine"
     chmod 0700 "$dir/home/state/.pr-check-quarantine"
     printf 'reserved migration evidence\n' \
@@ -1706,7 +1712,10 @@ test_complete_single_link_validation() {
     "worktree=$dir/missing-worktree" \
     "project=$dir/project" \
     'kind=ship' \
-    'mode=local-only'
+    'mode=local-only' \
+    'treehouse_lease_id=lease-task-a' \
+    'treehouse_lease_holder=task-a' \
+    'treehouse_lease_state=released'
   mkdir -p "$state/.pr-check-quarantine"
   chmod 0700 "$state/.pr-check-quarantine"
   printf 'private quarantine bytes\n' > "$state/.pr-check-quarantine/task-a.check.linked"
@@ -1867,7 +1876,10 @@ test_obligation_namespace_compatibility() {
     "worktree=$dir/missing-worktree" \
     "project=$dir/project" \
     'kind=ship' \
-    'mode=local-only'
+    'mode=local-only' \
+    'treehouse_lease_id=lease-_noncanonical' \
+    'treehouse_lease_holder=_noncanonical' \
+    'treehouse_lease_state=released'
   fm_write_none_measure "$dir/home" _noncanonical
   cat > "$dir/fakebin/tmux" <<'SH'
 #!/usr/bin/env bash
@@ -2638,7 +2650,10 @@ test_teardown_removes_poll_artifacts() {
     "worktree=$dir/missing-worktree" \
     "project=$dir/project" \
     'kind=ship' \
-    'mode=local-only'
+    'mode=local-only' \
+    'treehouse_lease_id=lease-task-a' \
+    'treehouse_lease_holder=task-a' \
+    'treehouse_lease_state=released'
   printf 'check\n' > "$dir/home/state/task-a.check.sh"
   printf 'data\n' > "$dir/home/state/task-a.pr-poll"
   printf 'registration\n' > "$dir/home/state/task-a.pr-poll-registration"
@@ -2673,6 +2688,9 @@ SH
     "project=$dir/project" \
     'kind=ship' \
     'mode=local-only' \
+    'treehouse_lease_id=lease-task-a' \
+    'treehouse_lease_holder=task-a' \
+    'treehouse_lease_state=released' \
     'pr=https://github.com/o/r/pull/18'
   seed_canonical_poll "$dir" task-a https://github.com/o/r/pull/18
   fm_pr_poll_snapshot_capture "$dir/home/state" task-a "$POLL" \
@@ -2700,7 +2718,10 @@ SH
     "worktree=$dir/missing-worktree" \
     "project=$dir/project" \
     'kind=ship' \
-    'mode=local-only'
+    'mode=local-only' \
+    'treehouse_lease_id=lease-invalid' \
+    'treehouse_lease_holder=invalid' \
+    'treehouse_lease_state=released'
   fm_write_none_measure "$dir/home" invalid
   mkdir -p "$dir/home/state/.pr-check-quarantine"
   chmod 0700 "$dir/home/state/.pr-check-quarantine"
@@ -2732,7 +2753,10 @@ SH
       "worktree=$dir/missing-worktree" \
       "project=$dir/project" \
       'kind=ship' \
-      'mode=local-only'
+      'mode=local-only' \
+      'treehouse_lease_id=lease-task-a' \
+      'treehouse_lease_holder=task-a' \
+      'treehouse_lease_state=released'
     if [ "$artifact" = check.sh ]; then
       counterpart=pr-poll
     else
@@ -2773,7 +2797,10 @@ SH
       "worktree=$dir/missing-worktree" \
       "project=$dir/project" \
       'kind=ship' \
-      'mode=local-only'
+      'mode=local-only' \
+      'treehouse_lease_id=lease-task-a' \
+      'treehouse_lease_holder=task-a' \
+      'treehouse_lease_state=released'
     printf 'check sentinel\n' > "$dir/home/state/task-a.check.sh"
     printf 'data sentinel\n' > "$dir/home/state/task-a.pr-poll"
     make_private_symlink "$dir" "$dir/home/state/.pr-check-quarantine" "$kind"

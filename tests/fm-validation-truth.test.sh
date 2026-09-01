@@ -54,7 +54,10 @@ make_task_home() {
     "worktree=$dir/wt" \
     "project=$dir/project" \
     "kind=ship" \
-    "mode=$mode"
+    "mode=$mode" \
+    'treehouse_lease_id=lease-task-a' \
+    'treehouse_lease_holder=task-a' \
+    'treehouse_lease_state=released'
   printf '%s\n' "$dir"
 }
 
@@ -144,7 +147,10 @@ prepare_teardown_home() {
     "worktree=$dir/missing-wt" \
     "project=$dir/project" \
     "kind=ship" \
-    "mode=no-mistakes"
+    "mode=no-mistakes" \
+    'treehouse_lease_id=lease-task-a' \
+    'treehouse_lease_holder=task-a' \
+    'treehouse_lease_state=released'
   write_stub_crew_state "$dir/fakebin/fm-crew-state.sh" "$line"
   cat > "$dir/fakebin/tmux" <<'SH'
 #!/usr/bin/env bash

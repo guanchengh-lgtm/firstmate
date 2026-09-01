@@ -98,7 +98,9 @@ test_control_lock_contention_refuses_before_mutation() {
   dir=$(make_case control-lock)
   fm_write_meta "$dir/home/state/$id.meta" \
     "window=isolated:fm-$id" "endpoint_task_id=$id" \
-    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "treehouse_lease_id=lease-$id" "treehouse_lease_holder=$id" \
+    "treehouse_lease_state=held"
   lock="$dir/home/state/.control-$id.lock"
   (
     # shellcheck source=/dev/null
@@ -142,7 +144,9 @@ test_metadata_lock_serializes_destructive_cleanup() {
   dir=$(make_case metadata-lock)
   fm_write_meta "$dir/home/state/$id.meta" \
     "window=isolated:fm-$id" "endpoint_task_id=$id" \
-    "worktree=$dir/worktree" "project=$dir/project" "kind=scout"
+    "worktree=$dir/worktree" "project=$dir/project" "kind=scout" \
+    "treehouse_lease_id=lease-$id" "treehouse_lease_holder=$id" \
+    "treehouse_lease_state=held"
   fm_write_none_measure "$dir/home" "$id"
   lock="$dir/home/state/.meta-$id.lock"
   ready="$dir/meta-lock-ready"
@@ -348,8 +352,10 @@ SH
 
   fm_write_meta "$dir/home/state/$target_id.meta" \
     "window=$session:$target" "endpoint_task_id=$target_id" \
-    "worktree=$dir/nonexistent-worktree" "project=$dir/nonexistent-project" \
-    "kind=scout" "mode=no-mistakes"
+    "worktree=$dir/nonexistent-worktree" "project=$dir/project" \
+    "kind=scout" "mode=no-mistakes" \
+    "treehouse_lease_id=lease-$target_id" \
+    "treehouse_lease_holder=$target_id" "treehouse_lease_state=held"
   fm_write_none_measure "$dir/home" "$target_id"
   env -u TMUX -u TMUX_PANE FM_TEST_TMUX_SOCKET="$socket_id" \
     FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" FM_RUNTIME_LOG="$dir/runtime.log" \

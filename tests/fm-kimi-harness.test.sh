@@ -131,7 +131,31 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tmux"
-  fm_fake_exit0 "$fakebin" treehouse gh-axi gh
+  cat > "$fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  get)
+    holder=
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --lease-holder) holder=${2:-}; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    printf '{"path":"%s","lease_id":"lease-%s","lease_holder":"%s"}\n' \
+      "${FM_FAKE_PANE_PATH:?}" "$holder" "$holder"
+    ;;
+  return)
+    target=
+    for target in "$@"; do :; done
+    rm -f "$target/.fm-kimi-turnend"
+    ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/treehouse"
+  fm_fake_exit0 "$fakebin" gh-axi gh
   fm_fake_exit0 "$fakebin" kimi
   ln -s "$JQ_BIN" "$fakebin/jq"
   printf '%s\n' "$fakebin"

@@ -131,6 +131,9 @@ kind=ship
 mode=no-mistakes
 yolo=off
 tasktmp=$tasktmp
+treehouse_lease_id=lease-$id
+treehouse_lease_holder=$id
+treehouse_lease_state=released
 META
   printf '%s' "$fake"
 }
@@ -221,6 +224,9 @@ harness=claude
 kind=ship
 mode=no-mistakes
 yolo=off
+treehouse_lease_id=lease-$id
+treehouse_lease_holder=$id
+treehouse_lease_state=released
 META
   FM_HOME="$fake" bash "$fake/bin/fm-teardown.sh" "$id" >/dev/null 2>&1 \
     || fail "teardown exited non-zero when tasktmp= was absent"

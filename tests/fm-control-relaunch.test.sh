@@ -148,6 +148,9 @@ add_ship_task() {
     echo "endpoint_task_id=$id"
     echo "worktree=$wt"
     echo "project=$proj"
+    echo "treehouse_lease_id=lease-$id"
+    echo "treehouse_lease_holder=$id"
+    echo "treehouse_lease_state=held"
     echo "harness=$harness"
     echo "kind=ship"
     echo "mode=no-mistakes"
@@ -265,6 +268,12 @@ test_same_harness_relaunch_keeps_identity_and_reuses_the_endpoint() {
     || fail "the worktree must be reused, not reallocated"
   [ "$(meta_field "$dir" rl1 kind)" = ship ] || fail "kind must survive the relaunch"
   [ "$(meta_field "$dir" rl1 project)" = "$dir/proj" ] || fail "project must survive the relaunch"
+  [ "$(meta_field "$dir" rl1 treehouse_lease_id)" = lease-rl1 ] \
+    || fail "the immutable Treehouse lease ID must survive the relaunch"
+  [ "$(meta_field "$dir" rl1 treehouse_lease_holder)" = rl1 ] \
+    || fail "the Treehouse lease holder must survive the relaunch"
+  [ "$(meta_field "$dir" rl1 treehouse_lease_state)" = held ] \
+    || fail "the relaunch must preserve the held lease phase"
   gen_after=$(meta_field "$dir" rl1 busy_gen)
   [ -n "$gen_after" ] && [ "$gen_after" != "$gen_before" ] \
     || fail "a relaunch must arm a fresh busy generation, got '$gen_after'"
@@ -1309,6 +1318,26 @@ test_spawn_relaunch_refuses_a_live_agent() {
   pass "fm-spawn --relaunch: refuses to launch a second agent into a live endpoint"
 }
 
+test_spawn_relaunch_refuses_a_released_lease() {
+  local dir out rc meta
+  dir=$(new_case released-lease rl43)
+  add_ship_task "$dir" rl43 claude
+  meta="$dir/home/state/rl43.meta"
+  sed 's/^treehouse_lease_state=held$/treehouse_lease_state=released/' "$meta" > "$meta.tmp"
+  mv "$meta.tmp" "$meta"
+  printf 'zsh' > "$dir/fake/command"
+
+  out=$(run_spawn "$dir" rl43 --relaunch --harness claude); rc=$?
+  expect_code 1 "$rc" "relaunching a released lease should refuse"
+  assert_contains "$out" "lease state is 'released', not 'held'" \
+    "released-lease refusal did not name the durable lease phase"
+  [ -z "$(cat "$dir/fake/literal")" ] \
+    || fail "released-lease relaunch delivered replacement launch bytes"
+  [ "$(meta_field "$dir" rl43 treehouse_lease_state)" = released ] \
+    || fail "released-lease relaunch changed task metadata"
+  pass "fm-spawn --relaunch: a released Treehouse lease refuses before replacement launch"
+}
+
 test_spawn_relaunch_refuses_contradicting_flags() {
   local dir out rc
   dir=$(new_case flags rl16)
@@ -1491,6 +1520,7 @@ test_concurrent_relaunch_is_refused
 test_direct_spawn_relaunch_participates_in_the_lifecycle_lock
 test_promotion_participates_in_the_lifecycle_lock_before_metadata_resolution
 test_spawn_relaunch_refuses_a_live_agent
+test_spawn_relaunch_refuses_a_released_lease
 test_spawn_relaunch_refuses_contradicting_flags
 test_spawn_relaunch_validates_the_recorded_surface
 test_spawn_relaunch_refuses_an_unrecorded_task

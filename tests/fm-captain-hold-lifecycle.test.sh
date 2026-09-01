@@ -88,6 +88,9 @@ write_origin_meta() {  # <home> <id> [kind]
     "window=firstmate:fm-$id" \
     "worktree=$home/projects/missing-$id" \
     "project=$home/projects/sample" \
+    "treehouse_lease_id=lease-$id" \
+    "treehouse_lease_holder=$id" \
+    "treehouse_lease_state=released" \
     "harness=codex" \
     "kind=$kind" \
     "mode=$kind"

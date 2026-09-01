@@ -228,6 +228,9 @@ write_meta() {
     "endpoint_task_id=task-x1" \
     "worktree=$case_dir/wt" \
     "project=$case_dir/project" \
+    "treehouse_lease_id=lease-task-x1" \
+    "treehouse_lease_holder=task-x1" \
+    "treehouse_lease_state=held" \
     "kind=$kind" \
     "mode=$mode"
   [ -z "$role" ] || printf '%s\n' "role=$role" >> "$case_dir/state/task-x1.meta"
@@ -366,6 +369,7 @@ add_lock_aware_treehouse() {
 #!/usr/bin/env bash
 if [ "${1:-}" = return ]; then
   shift
+  [ -z "${TREEHOUSE_CALL_LOG:-}" ] || printf 'return %s\n' "$*" >> "$TREEHOUSE_CALL_LOG"
   wt=""
   for a in "$@"; do
     case "$a" in
@@ -400,6 +404,7 @@ add_transient_lock_treehouse() {
 #!/usr/bin/env bash
 if [ "${1:-}" = return ]; then
   shift
+  [ -z "${TREEHOUSE_CALL_LOG:-}" ] || printf 'return %s\n' "$*" >> "$TREEHOUSE_CALL_LOG"
   wt=""
   for a in "$@"; do
     case "$a" in
@@ -466,6 +471,18 @@ fi
 exit 0
 SH
   chmod +x "$case_dir/fakebin/treehouse"
+}
+
+assert_task_treehouse_calls_are_conditional() {  # <log> <expected-count> <worktree> <label>
+  local log=$1 expected_count=$2 worktree=$3 label=$4 line count=0
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    count=$((count + 1))
+    [ "$line" = "return --force --if-lease-id lease-task-x1 --if-lease-holder task-x1 $worktree" ] \
+      || fail "$label: Treehouse attempt lost an immutable lease condition: $line"
+  done < "$log"
+  [ "$count" -eq "$expected_count" ] \
+    || fail "$label: expected $expected_count conditional Treehouse calls, got $count"
 }
 
 git_index_lock_path() {
@@ -1001,7 +1018,7 @@ test_gh_error_and_content_absent_refuses() {
 }
 
 test_stale_index_lock_cleared_and_teardown_succeeds() {
-  local case_dir rc lock
+  local case_dir rc lock call_log
   case_dir=$(make_case stale-index-lock)
   write_meta "$case_dir" no-mistakes ship
   wt_commit "$case_dir" "shippable work"
@@ -1015,8 +1032,11 @@ test_stale_index_lock_cleared_and_teardown_succeeds() {
   mkdir -p "$(dirname "$lock")"
   : > "$lock"
   touch -t 200001010000 "$lock"
+  call_log="$case_dir/treehouse-calls"
+  : > "$call_log"
 
   set +e
+  TREEHOUSE_CALL_LOG="$call_log" \
   FM_STALE_WORKTREE_LOCK_RETRY_WAIT_SECS=0 FM_STALE_WORKTREE_LOCK_AGE_SECS=1 \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
   rc=$?
@@ -1025,6 +1045,8 @@ test_stale_index_lock_cleared_and_teardown_succeeds() {
   expect_code 0 "$rc" "stale-index-lock: teardown should succeed after clearing the provably stale lock"
   assert_grep "removed provably-stale git lock" "$case_dir/stderr" \
     "stale-index-lock: teardown did not report clearing the stale lock"
+  assert_task_treehouse_calls_are_conditional \
+    "$call_log" 5 "$case_dir/wt" "stale-index-lock"
   assert_absent "$lock" "stale-index-lock: stale lock file should have been removed"
   pass "provably-stale worktree index.lock (old, no live holder) is cleared and teardown succeeds"
 }
@@ -1084,8 +1106,8 @@ test_lsof_error_never_clears_index_lock() {
   set -e
 
   expect_code 1 "$rc" "lsof-error-index-lock: teardown should refuse when lsof errors"
-  assert_grep "REFUSED: cannot determine leaked processes" "$case_dir/stderr" \
-    "lsof-error-index-lock: teardown did not report the lsof failure"
+  assert_grep "lsof check failed" "$case_dir/stderr" \
+    "lsof-error-index-lock: conditional return did not report the lsof failure"
   assert_not_contains "$(cat "$case_dir/stderr")" "removed provably-stale git lock" \
     "lsof-error-index-lock: teardown removed a lock after lsof failed"
   [ -e "$lock" ] || fail "lsof-error-index-lock: lock file was removed after lsof failed"
@@ -1193,7 +1215,7 @@ test_index_lock_mtime_read_failure_refuses() {
 }
 
 test_transient_index_lock_clears_after_first_attempt_and_retry_succeeds() {
-  local case_dir rc lock attempt_file
+  local case_dir rc lock attempt_file call_log
   case_dir=$(make_case transient-index-lock-retry)
   write_meta "$case_dir" no-mistakes ship
   wt_commit "$case_dir" "shippable work"
@@ -1211,9 +1233,12 @@ test_transient_index_lock_clears_after_first_attempt_and_retry_succeeds() {
 
   attempt_file="$case_dir/treehouse-attempts"
   : > "$attempt_file"
+  call_log="$case_dir/treehouse-calls"
+  : > "$call_log"
 
   set +e
   TREEHOUSE_ATTEMPT_FILE="$attempt_file" \
+  TREEHOUSE_CALL_LOG="$call_log" \
   FM_TREEHOUSE_RETURN_LOCK_RETRIES=2 \
   FM_TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS=0 \
   FM_STALE_WORKTREE_LOCK_AGE_SECS=3600 \
@@ -1228,6 +1253,8 @@ test_transient_index_lock_clears_after_first_attempt_and_retry_succeeds() {
     "transient-index-lock: teardown force-removed a lock that only needed patience"
   [ "$(cat "$attempt_file")" = 2 ] \
     || fail "transient-index-lock: expected exactly 2 treehouse return attempts, got $(cat "$attempt_file")"
+  assert_task_treehouse_calls_are_conditional \
+    "$call_log" 2 "$case_dir/wt" "transient-index-lock"
   assert_absent "$lock" "transient-index-lock: lock should remain cleared after success"
   pass "transient index.lock cleared after first failed return is retried successfully without force-remove"
 }
@@ -1826,6 +1853,9 @@ configure_secondmate_with_herdr_child() {  # <case-dir>
     "endpoint_task_id=child-herdr" \
     "worktree=$case_dir/wt" \
     "project=$case_dir/project" \
+    "treehouse_lease_id=lease-child-herdr" \
+    "treehouse_lease_holder=child-herdr" \
+    "treehouse_lease_state=held" \
     "kind=ship" \
     "mode=local-only" \
     "backend=herdr" \
@@ -1933,6 +1963,9 @@ configure_secondmate_with_tmux_children() {  # <case-dir>
       "endpoint_task_id=$child" \
       "worktree=$child_wt" \
       "project=$case_dir/project" \
+      "treehouse_lease_id=lease-$child" \
+      "treehouse_lease_holder=$child" \
+      "treehouse_lease_state=held" \
       "kind=ship" \
       "mode=local-only"
     fm_write_none_measure "$home" "$child"
@@ -2056,6 +2089,9 @@ configure_nested_secondmate_with_herdr_grandchild() {  # <case-dir>
     "endpoint_task_id=grandchild-herdr" \
     "worktree=$case_dir/wt" \
     "project=$case_dir/project" \
+    "treehouse_lease_id=lease-grandchild-herdr" \
+    "treehouse_lease_holder=grandchild-herdr" \
+    "treehouse_lease_state=held" \
     "kind=ship" \
     "mode=local-only" \
     "backend=herdr" \
@@ -2135,7 +2171,9 @@ set -u
 printf '%s\n' "$*" >> "${FM_FAKE_HERDR_LOG:?}"
 case "${1:-} ${2:-}" in
   "workspace list")
-    if [ -e "${FM_FAKE_HERDR_RESTORED:?}" ]; then
+    if [ "${FM_FAKE_HERDR_TARGET_FOCUSED:-0}" = 1 ]; then
+      printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w1","active_tab_id":"w1:t2","label":"firstmate/task-x1 · p:AbCdEfGhIjKlMnOpQrStUv","focused":true},{"workspace_id":"w2","active_tab_id":"w2:t2","label":"2ndmate-bravo","focused":false},{"workspace_id":"w3","active_tab_id":"w3:t1","label":"2ndmate-alpha","focused":false}]}}'
+    elif [ -e "${FM_FAKE_HERDR_RESTORED:?}" ]; then
       printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w2","active_tab_id":"w2:t2","label":"2ndmate-bravo","focused":true},{"workspace_id":"w3","active_tab_id":"w3:t1","label":"2ndmate-alpha","focused":false}]}}'
     elif [ -e "${FM_FAKE_HERDR_CLOSED:?}" ]; then
       printf '%s\n' '{"result":{"workspaces":[{"workspace_id":"w2","active_tab_id":"w2:t2","label":"2ndmate-bravo","focused":false},{"workspace_id":"w3","active_tab_id":"w3:t1","label":"2ndmate-alpha","focused":true}]}}'
@@ -2145,6 +2183,7 @@ case "${1:-} ${2:-}" in
     ;;
   "tab list")
     case "$*" in
+      *"--workspace w1"*) printf '%s\n' '{"result":{"tabs":[{"tab_id":"w1:t2","focused":true}]}}' ;;
       *"--workspace w2"*) printf '%s\n' '{"result":{"tabs":[{"tab_id":"w2:t2","focused":true}]}}' ;;
       *"--workspace w3"*) printf '%s\n' '{"result":{"tabs":[{"tab_id":"w3:t1","focused":true}]}}' ;;
       *) printf '%s\n' '{"result":{"tabs":[]}}' ;;
@@ -2236,6 +2275,177 @@ test_herdr_projection_teardown_retains_journal_when_close_unconfirmed() {
   assert_not_contains "$(cat "$log")" "workspace close" \
     "unconfirmed projected close must not escalate to workspace cleanup"
   pass "herdr projection teardown retains every record when post-close presence is unknown"
+}
+
+test_released_herdr_rerun_skips_treehouse_after_path_reuse() {
+  local case_dir log closed restored treehouse_log sentinel pid_file b_pid rc calls
+  case_dir=$(make_case herdr-release-state-rerun)
+  write_meta "$case_dir" local-only ship
+  configure_herdr_projection_teardown_case "$case_dir"
+  log="$case_dir/herdr.log"
+  closed="$case_dir/closed"
+  restored="$case_dir/restored"
+  treehouse_log="$case_dir/treehouse.log"
+  sentinel="$case_dir/wt/task-b-sentinel"
+  pid_file="$case_dir/task-b.pid"
+  : > "$log"
+  : > "$treehouse_log"
+  cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "$*" >> "${FM_FAKE_TREEHOUSE_LOG:?}"
+if [ -e "${FM_FAKE_TASK_B_SENTINEL:?}" ]; then
+  rm -f "$FM_FAKE_TASK_B_SENTINEL"
+  if [ -s "${FM_FAKE_TASK_B_PID_FILE:?}" ]; then
+    kill "$(cat "$FM_FAKE_TASK_B_PID_FILE")" 2>/dev/null || true
+  fi
+fi
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+
+  rc=0
+  FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" \
+    FM_FAKE_HERDR_RESTORED="$restored" FM_FAKE_HERDR_TARGET_FOCUSED=1 \
+    FM_FAKE_TREEHOUSE_LOG="$treehouse_log" FM_FAKE_TASK_B_SENTINEL="$sentinel" \
+    FM_FAKE_TASK_B_PID_FILE="$pid_file" \
+    run_teardown "$case_dir" --force > "$case_dir/first.stdout" 2> "$case_dir/first.stderr" || rc=$?
+  [ "$rc" -ne 0 ] || fail "release-state-rerun: the first Herdr close should refuse the active target"
+  assert_grep "target is the captain's active tab" "$case_dir/first.stderr" \
+    "release-state-rerun: first teardown did not exercise the focus refusal: $(cat "$case_dir/first.stderr")"
+  [ ! -e "$closed" ] || fail "release-state-rerun: focus refusal still closed task A's pane"
+  assert_grep 'treehouse_lease_state=released' "$case_dir/state/task-x1.meta" \
+    "release-state-rerun: successful return did not persist the released phase"
+  calls=$(wc -l < "$treehouse_log" | tr -d '[:space:]')
+  [ "$calls" -eq 1 ] || fail "release-state-rerun: first teardown made $calls Treehouse calls"
+
+  printf '%s\n' 'task B content' > "$sentinel"
+  ( cd "$case_dir/wt" && exec sleep 30 ) &
+  b_pid=$!
+  printf '%s\n' "$b_pid" > "$pid_file"
+  rc=0
+  FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" \
+    FM_FAKE_HERDR_RESTORED="$restored" FM_FAKE_TREEHOUSE_LOG="$treehouse_log" \
+    FM_FAKE_TASK_B_SENTINEL="$sentinel" FM_FAKE_TASK_B_PID_FILE="$pid_file" \
+    run_teardown "$case_dir" --force > "$case_dir/second.stdout" 2> "$case_dir/second.stderr" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    kill "$b_pid" 2>/dev/null || true
+    wait "$b_pid" 2>/dev/null || true
+    fail "release-state-rerun: released rerun did not finish endpoint and record cleanup"
+  fi
+  calls=$(wc -l < "$treehouse_log" | tr -d '[:space:]')
+  [ "$calls" -eq 1 ] || fail "release-state-rerun: rerun issued a Treehouse return after release"
+  [ -e "$sentinel" ] || fail "release-state-rerun: rerun changed task B content"
+  kill -0 "$b_pid" 2>/dev/null || fail "release-state-rerun: rerun terminated task B"
+  assert_absent "$case_dir/state/task-x1.meta" \
+    "release-state-rerun: successful rerun retained task A metadata"
+  kill "$b_pid" 2>/dev/null || true
+  wait "$b_pid" 2>/dev/null || true
+  pass "released Herdr rerun skips Treehouse and leaves a newer task at the reused path alive"
+}
+
+test_stale_lease_mismatch_is_non_mutating() {
+  local case_dir treehouse_log tmux_log sentinel pid_file b_pid rc meta_before meta_after head
+  case_dir=$(make_case stale-lease-mismatch)
+  write_meta "$case_dir" local-only ship
+  treehouse_log="$case_dir/treehouse.log"
+  tmux_log="$case_dir/tmux.log"
+  sentinel="$case_dir/wt/task-b-sentinel"
+  pid_file="$case_dir/task-b.pid"
+  : > "$treehouse_log"
+  : > "$tmux_log"
+  printf '%s\n' 'task B content' > "$sentinel"
+  head=$(git -C "$case_dir/wt" rev-parse HEAD)
+  cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "$*" >> "${FM_FAKE_TREEHOUSE_LOG:?}"
+case " $* " in
+  *" --if-lease-id ${FM_FAKE_CURRENT_LEASE_ID:?} "*) exit 0 ;;
+esac
+printf '%s\n' 'lease precondition failed: lease identity does not match worktree' >&2
+exit 23
+SH
+  cat > "$case_dir/fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_FAKE_TMUX_LOG:?}"
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/tmux"
+  ( cd "$case_dir/wt" && exec sleep 30 ) &
+  b_pid=$!
+  printf '%s\n' "$b_pid" > "$pid_file"
+  meta_before=$(cat "$case_dir/state/task-x1.meta")
+
+  rc=0
+  FM_FAKE_TREEHOUSE_LOG="$treehouse_log" FM_FAKE_CURRENT_LEASE_ID=lease-task-b \
+    FM_FAKE_TMUX_LOG="$tmux_log" \
+    FM_FAKE_AXI_STATUS="$(parked_axi_status_toon fm/task-x1 "$head")" \
+    FM_FAKE_NM_ABORT_LOG="$case_dir/nm-abort.log" \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  meta_after=$(cat "$case_dir/state/task-x1.meta")
+  if [ "$rc" -eq 0 ]; then
+    kill "$b_pid" 2>/dev/null || true
+    wait "$b_pid" 2>/dev/null || true
+    fail "stale-lease-mismatch: teardown accepted a stale lease ID"
+  fi
+  [ "$meta_after" = "$meta_before" ] || fail "stale-lease-mismatch: refusal changed task metadata"
+  [ -e "$sentinel" ] || fail "stale-lease-mismatch: refusal reset task B content"
+  kill -0 "$b_pid" 2>/dev/null || fail "stale-lease-mismatch: refusal terminated task B"
+  [ ! -s "$tmux_log" ] || fail "stale-lease-mismatch: refusal closed task B endpoint"
+  assert_absent "$case_dir/nm-abort.log" \
+    "stale-lease-mismatch: refusal mutated the task's no-mistakes run"
+  assert_grep '--if-lease-id lease-task-x1 --if-lease-holder task-x1' "$treehouse_log" \
+    "stale-lease-mismatch: return did not carry both task A conditions"
+  kill "$b_pid" 2>/dev/null || true
+  wait "$b_pid" 2>/dev/null || true
+  pass "stale lease mismatch preserves the newer process, content, metadata, and endpoint"
+}
+
+test_invalid_or_legacy_lease_metadata_refuses_before_cleanup() {
+  local mode case_dir treehouse_log tmux_log rc meta_before meta_after
+  for mode in missing duplicate malformed; do
+    case_dir=$(make_case "lease-meta-$mode")
+    write_meta "$case_dir" local-only ship
+    case "$mode" in
+      missing)
+        sed -i.bak '/^treehouse_lease_/d' "$case_dir/state/task-x1.meta"
+        rm -f "$case_dir/state/task-x1.meta.bak"
+        ;;
+      duplicate)
+        printf '%s\n' 'treehouse_lease_id=other-lease' >> "$case_dir/state/task-x1.meta"
+        ;;
+      malformed)
+        sed -i.bak 's/^treehouse_lease_state=.*/treehouse_lease_state=unknown/' "$case_dir/state/task-x1.meta"
+        rm -f "$case_dir/state/task-x1.meta.bak"
+        ;;
+    esac
+    treehouse_log="$case_dir/treehouse.log"
+    tmux_log="$case_dir/tmux.log"
+    : > "$treehouse_log"
+    : > "$tmux_log"
+    cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_FAKE_TREEHOUSE_LOG:?}"
+exit 0
+SH
+    cat > "$case_dir/fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_FAKE_TMUX_LOG:?}"
+exit 0
+SH
+    chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/tmux"
+    meta_before=$(cat "$case_dir/state/task-x1.meta")
+    rc=0
+    FM_FAKE_TREEHOUSE_LOG="$treehouse_log" FM_FAKE_TMUX_LOG="$tmux_log" \
+      run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+    [ "$rc" -ne 0 ] || fail "lease-meta-$mode: teardown accepted unsafe lease metadata"
+    meta_after=$(cat "$case_dir/state/task-x1.meta")
+    [ "$meta_after" = "$meta_before" ] || fail "lease-meta-$mode: refusal changed metadata"
+    [ ! -s "$treehouse_log" ] || fail "lease-meta-$mode: refusal called Treehouse"
+    [ ! -s "$tmux_log" ] || fail "lease-meta-$mode: refusal closed the endpoint"
+  done
+  pass "missing, duplicate, and malformed task lease metadata refuse before cleanup"
 }
 
 test_herdr_projection_teardown_surfaces_restore_failure_without_blocking_cleanup() {
@@ -2393,7 +2603,14 @@ test_parked_own_run_refuses_when_abort_is_unconfirmed() {
 
   cat > "$case_dir/fakebin/treehouse" <<EOF
 #!/usr/bin/env bash
-printf 'return\n' >> "$case_dir/treehouse.log"
+case " \$* " in
+  *" --if-lease-id lease-task-x1 --if-lease-holder task-x1 "*)
+    printf 'return\n' >> "$case_dir/treehouse.log"
+    kill '$pid' 2>/dev/null || true
+    exit 0
+    ;;
+esac
+exit 1
 EOF
   chmod +x "$case_dir/fakebin/treehouse"
 
@@ -2407,14 +2624,18 @@ EOF
   assert_grep "REFUSED: no-mistakes run for task-x1 is still parked after axi abort" "$case_dir/stderr" \
     "parked-run-abort-unconfirmed: teardown did not explain the parked-run refusal"
   assert_present "$case_dir/wt" \
-    "parked-run-abort-unconfirmed: teardown removed the worktree after refusing"
+    "parked-run-abort-unconfirmed: fixture removed the pooled worktree path"
   assert_present "$case_dir/state/task-x1.meta" \
     "parked-run-abort-unconfirmed: teardown removed task metadata after refusing"
-  assert_absent "$case_dir/treehouse.log" \
-    "parked-run-abort-unconfirmed: teardown returned the worktree after refusing"
-  kill -0 "$pid" 2>/dev/null || fail "parked-run-abort-unconfirmed: process reap ran before refusal"
-  kill -KILL "$pid" 2>/dev/null || true
-  pass "teardown refuses before reap or removal when a task-owned run remains parked"
+  assert_grep 'treehouse_lease_state=released' "$case_dir/state/task-x1.meta" \
+    "parked-run-abort-unconfirmed: accepted lease return was not recorded before the refusal"
+  assert_present "$case_dir/treehouse.log" \
+    "parked-run-abort-unconfirmed: teardown did not establish conditional cleanup authority"
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null || true
+    fail "parked-run-abort-unconfirmed: conditional Treehouse return did not reap the worktree process"
+  fi
+  pass "a parked-run refusal follows conditional release and preserves endpoint records"
 }
 
 test_another_branchs_parked_run_is_never_touched() {
@@ -2474,6 +2695,18 @@ test_leaked_worktree_process_is_reaped() {
   disown
   sleep 0.3
   kill -0 "$pid" 2>/dev/null || fail "leaked-process-reap: setup sleeper did not start"
+  cat > "$case_dir/fakebin/treehouse" <<EOF
+#!/usr/bin/env bash
+case " \$* " in
+  *" --if-lease-id lease-task-x1 --if-lease-holder task-x1 "*)
+    kill '$pid' 2>/dev/null || true
+    printf '%s\n' 'treehouse conditionally reaped worktree process' >&2
+    exit 0
+    ;;
+esac
+exit 1
+EOF
+  chmod +x "$case_dir/fakebin/treehouse"
 
   rc=0
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
@@ -2483,9 +2716,9 @@ test_leaked_worktree_process_is_reaped() {
     kill -KILL "$pid" 2>/dev/null || true
     fail "leaked-process-reap: leaked worktree process survived teardown"
   fi
-  assert_grep "reaping leaked worktree process" "$case_dir/stderr" \
-    "leaked-process-reap: teardown did not report reaping the leaked process"
-  pass "a leaked descendant process rooted under the task's worktree is reaped by teardown, not left surviving"
+  assert_grep "treehouse conditionally reaped worktree process" "$case_dir/stdout" \
+    "leaked-process-reap: conditional Treehouse return did not reap the leaked process"
+  pass "Treehouse reaps a leaked worktree process only after the lease condition matches"
 }
 
 test_leaked_tasktmp_process_is_reaped() {
@@ -2510,7 +2743,7 @@ test_leaked_tasktmp_process_is_reaped() {
     kill -KILL "$pid" 2>/dev/null || true
     fail "leaked-tasktmp-reap: leaked tasktmp process survived teardown"
   fi
-  assert_grep "reaping leaked worktree process" "$case_dir/stderr" \
+  assert_grep "reaping leaked task-temp process" "$case_dir/stderr" \
     "leaked-tasktmp-reap: teardown did not report reaping the leaked tasktmp process"
   pass "a leaked descendant process rooted under the task's per-task tasktmp is reaped by teardown too"
 }
@@ -2519,12 +2752,14 @@ test_lsof_absent_reaps_tmux_process_group() {
   local case_dir rc pid path_without_lsof
   case_dir=$(make_case lsof-absent-process-group-reap)
   write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' "tasktmp=$case_dir/tasktmp" >> "$case_dir/state/task-x1.meta"
+  mkdir -p "$case_dir/tasktmp"
   land_shippable_commit "$case_dir"
   path_without_lsof=$(make_path_without_lsof "$case_dir")
   PATH="$path_without_lsof" command -v lsof >/dev/null 2>&1 \
     && fail "lsof-absent-process-group-reap: fixture path unexpectedly exposes lsof"
 
-  perl -e 'setpgrp(0, 0); chdir shift or die; exec "sleep", "300"' "$case_dir/wt" &
+  perl -e 'setpgrp(0, 0); chdir shift or die; exec "sleep", "300"' "$case_dir/tasktmp" &
   pid=$!
   disown
   sleep 0.3
@@ -2547,7 +2782,7 @@ EOF
     kill -KILL "$pid" 2>/dev/null || true
     fail "lsof-absent-process-group-reap: tmux process group survived teardown"
   fi
-  assert_grep "reaping leaked worktree process group" "$case_dir/stderr" \
+  assert_grep "reaping leaked task-temp process group" "$case_dir/stderr" \
     "lsof-absent-process-group-reap: teardown did not use the process-group fallback"
   pass "missing lsof falls back to reaping the tmux pane process group"
 }
@@ -2556,6 +2791,8 @@ test_lsof_error_refuses_before_removal() {
   local case_dir rc
   case_dir=$(make_case lsof-error-refusal)
   write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' "tasktmp=$case_dir/tasktmp" >> "$case_dir/state/task-x1.meta"
+  mkdir -p "$case_dir/tasktmp"
   land_shippable_commit "$case_dir"
   cat > "$case_dir/fakebin/lsof" <<'SH'
 #!/usr/bin/env bash
@@ -2571,18 +2808,22 @@ EOF
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
   expect_code 1 "$rc" "lsof-error-refusal: teardown should refuse"
-  assert_grep "REFUSED: cannot determine leaked processes under $case_dir/wt for task-x1 (lsof failed)" "$case_dir/stderr" \
+  assert_grep "REFUSED: cannot determine leaked processes under $case_dir/tasktmp for task-x1 (lsof failed)" "$case_dir/stderr" \
     "lsof-error-refusal: teardown did not explain the lsof refusal"
   assert_present "$case_dir/wt" "lsof-error-refusal: teardown removed the worktree"
   assert_present "$case_dir/state/task-x1.meta" "lsof-error-refusal: teardown removed task metadata"
-  assert_absent "$case_dir/treehouse.log" "lsof-error-refusal: teardown returned the worktree"
-  pass "an erroring lsof scan refuses teardown and preserves the task"
+  assert_present "$case_dir/treehouse.log" "lsof-error-refusal: teardown never conditionally returned the worktree"
+  assert_grep 'treehouse_lease_state=released' "$case_dir/state/task-x1.meta" \
+    "lsof-error-refusal: post-return refusal lost the released phase"
+  pass "an erroring task-temp scan refuses record cleanup after recording the released worktree"
 }
 
 test_reused_pid_identity_is_not_force_killed() {
   local case_dir rc pid
   case_dir=$(make_case reused-pid-identity)
   write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' "tasktmp=$case_dir/tasktmp" >> "$case_dir/state/task-x1.meta"
+  mkdir -p "$case_dir/tasktmp"
   land_shippable_commit "$case_dir"
 
   perl -e '$SIG{TERM} = "IGNORE"; sleep 300' &
@@ -2595,7 +2836,7 @@ count=0
 [ ! -f '$case_dir/lsof-count' ] || count=\$(cat '$case_dir/lsof-count')
 count=\$((count + 1))
 printf '%s\n' "\$count" > '$case_dir/lsof-count'
-if [ "\$count" -le 3 ]; then printf 'p%s\nfcwd\nn%s\n' '$pid' '$case_dir/wt'; fi
+if [ "\$count" -le 3 ]; then printf 'p%s\nfcwd\nn%s\n' '$pid' '$case_dir/tasktmp'; fi
 EOF
   cat > "$case_dir/fakebin/ps" <<'SH'
 #!/usr/bin/env bash
@@ -2630,11 +2871,13 @@ test_exec_changed_process_is_still_reaped() {
   local case_dir rc pid marker done_flag survived=0
   case_dir=$(make_case exec-changed-process)
   write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' "tasktmp=$case_dir/tasktmp" >> "$case_dir/state/task-x1.meta"
+  mkdir -p "$case_dir/tasktmp"
   land_shippable_commit "$case_dir"
   marker="$case_dir/exec-now"
   done_flag="$case_dir/exec-done"
 
-  ( cd "$case_dir/wt" && exec perl -e '
+  ( cd "$case_dir/tasktmp" && exec perl -e '
       my ($marker, $done) = @ARGV;
       until (-e $marker) { select undef, undef, undef, 0.01; }
       open my $fh, ">", $done or die "open";
@@ -2692,10 +2935,12 @@ test_process_spawned_during_grace_is_reaped_on_later_pass() {
   local case_dir rc pid child_file child_pid="" parent_survived=0 child_survived=0
   case_dir=$(make_case grace-spawn-convergence)
   write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' "tasktmp=$case_dir/tasktmp" >> "$case_dir/state/task-x1.meta"
+  mkdir -p "$case_dir/tasktmp"
   land_shippable_commit "$case_dir"
   child_file="$case_dir/child.pid"
 
-  ( cd "$case_dir/wt" && exec perl -e '
+  ( cd "$case_dir/tasktmp" && exec perl -e '
       my $file = shift;
       $SIG{TERM} = sub {
         my $child = fork();
@@ -2735,8 +2980,10 @@ test_persistent_scan_refuses_after_bounded_retries() {
   local case_dir rc wt_path fake_pid=99999999
   case_dir=$(make_case persistent-reap-refusal)
   write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' "tasktmp=$case_dir/tasktmp" >> "$case_dir/state/task-x1.meta"
+  mkdir -p "$case_dir/tasktmp"
   land_shippable_commit "$case_dir"
-  wt_path=$(cd "$case_dir/wt" && pwd -P)
+  wt_path=$(cd "$case_dir/tasktmp" && pwd -P)
   cat > "$case_dir/fakebin/lsof" <<EOF
 #!/usr/bin/env bash
 printf 'p%s\nfcwd\nn%s\n' '$fake_pid' '$wt_path'
@@ -2768,8 +3015,10 @@ test_process_exit_during_identity_lookup_does_not_refuse() {
   local case_dir rc wt_path fake_pid=99999998
   case_dir=$(make_case identity-exit-convergence)
   write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' "tasktmp=$case_dir/tasktmp" >> "$case_dir/state/task-x1.meta"
+  mkdir -p "$case_dir/tasktmp"
   land_shippable_commit "$case_dir"
-  wt_path=$(cd "$case_dir/wt" && pwd -P)
+  wt_path=$(cd "$case_dir/tasktmp" && pwd -P)
   cat > "$case_dir/fakebin/lsof" <<EOF
 #!/usr/bin/env bash
 count=0
@@ -2805,28 +3054,28 @@ EOF
   pass "a process exiting during identity lookup does not block teardown"
 }
 
-test_run_abort_precedes_process_reap_precedes_worktree_removal() {
+test_conditional_return_precedes_run_abort_and_tasktmp_reap() {
   local case_dir rc head pid abort_log
   case_dir=$(make_case abort-then-reap-then-remove-order)
   write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' "tasktmp=$case_dir/tasktmp" >> "$case_dir/state/task-x1.meta"
+  mkdir -p "$case_dir/tasktmp"
   land_shippable_commit "$case_dir"
   head=$(git -C "$case_dir/wt" rev-parse HEAD)
   abort_log="$case_dir/nm-abort.log"
 
-  ( cd "$case_dir/wt" && exec sleep 300 ) &
+  ( cd "$case_dir/tasktmp" && exec sleep 300 ) &
   pid=$!
   disown
   sleep 0.3
   kill -0 "$pid" 2>/dev/null || fail "abort-then-reap-then-remove-order: setup sleeper did not start"
 
-  # A treehouse fake that snapshots, at the exact moment the destructive
-  # worktree return runs, whether the run was already aborted and whether the
-  # leaked process was already reaped - direct causal proof of ordering from
-  # real observed state, not a source-text or line-number correlation.
+  # The no-mistakes abort and task-temp reap run only after Treehouse accepts
+  # the immutable lease. A stale lease must cause no process mutation.
   cat > "$case_dir/fakebin/treehouse" <<EOF
 #!/usr/bin/env bash
-if [ -s "$abort_log" ]; then echo "abort-already-happened" >> "$case_dir/order.log"; fi
-if ! kill -0 $pid 2>/dev/null; then echo "reap-already-happened" >> "$case_dir/order.log"; fi
+if [ ! -s "$abort_log" ]; then echo "abort-not-yet-run" >> "$case_dir/order.log"; fi
+if kill -0 $pid 2>/dev/null; then echo "tasktmp-alive-at-return" >> "$case_dir/order.log"; fi
 exit 0
 EOF
   chmod +x "$case_dir/fakebin/treehouse"
@@ -2836,15 +3085,22 @@ EOF
   FM_FAKE_NM_ABORT_LOG="$abort_log" \
     run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
   expect_code 0 "$rc" "abort-then-reap-then-remove-order: teardown should still succeed"
-  kill -0 "$pid" 2>/dev/null && { kill -KILL "$pid" 2>/dev/null || true; }
+  if kill -0 "$pid" 2>/dev/null; then
+    kill -KILL "$pid" 2>/dev/null || true
+    fail "abort-then-reap-then-remove-order: task-temp process survived teardown"
+  fi
 
   assert_present "$case_dir/order.log" \
     "abort-then-reap-then-remove-order: the destructive worktree return was never invoked"
-  assert_grep "abort-already-happened" "$case_dir/order.log" \
-    "abort-then-reap-then-remove-order: the run was not yet aborted when the worktree return ran"
-  assert_grep "reap-already-happened" "$case_dir/order.log" \
-    "abort-then-reap-then-remove-order: the leaked process was not yet reaped when the worktree return ran"
-  pass "the run abort and the leaked-process reap both complete before the destructive worktree return"
+  assert_grep "abort-not-yet-run" "$case_dir/order.log" \
+    "abort-then-reap-then-remove-order: the run changed before the conditional lease check"
+  assert_present "$abort_log" \
+    "abort-then-reap-then-remove-order: the run was not aborted after lease release"
+  assert_grep "tasktmp-alive-at-return" "$case_dir/order.log" \
+    "abort-then-reap-then-remove-order: task-temp reap ran before the conditional lease check"
+  assert_grep "reaping leaked task-temp process" "$case_dir/stderr" \
+    "abort-then-reap-then-remove-order: task-temp reap did not run after release"
+  pass "the conditional lease check precedes the run abort and task-temp reap"
 }
 
 test_local_only_fork_remote_allows
@@ -2873,6 +3129,9 @@ test_forced_secondmate_herdr_child_retains_records_when_close_unconfirmed
 test_forced_teardown_retains_nested_secondmate_home_when_grandchild_close_unconfirmed
 test_herdr_projection_teardown_retires_journal_only_after_confirmed_close
 test_herdr_projection_teardown_retains_journal_when_close_unconfirmed
+test_released_herdr_rerun_skips_treehouse_after_path_reuse
+test_stale_lease_mismatch_is_non_mutating
+test_invalid_or_legacy_lease_metadata_refuses_before_cleanup
 test_herdr_projection_teardown_surfaces_restore_failure_without_blocking_cleanup
 test_squash_merged_branch_deleted_allows
 test_squash_merged_pr_allows_when_head_ancestor_of_pr_head
@@ -2911,4 +3170,4 @@ test_exec_changed_process_is_still_reaped
 test_process_spawned_during_grace_is_reaped_on_later_pass
 test_persistent_scan_refuses_after_bounded_retries
 test_process_exit_during_identity_lookup_does_not_refuse
-test_run_abort_precedes_process_reap_precedes_worktree_removal
+test_conditional_return_precedes_run_abort_and_tasktmp_reap

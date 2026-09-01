@@ -37,9 +37,10 @@ exit 0
 SH
   cat > "$fakebin/treehouse" <<'SH'
 #!/usr/bin/env bash
-if [ "${1:-}" = get ] && [ "${2:-}" = --help ]; then
-  printf '%s\n' 'Usage: treehouse get [--lease]'
-fi
+case "${1:-} ${2:-}" in
+  "get --help") printf '%s\n' 'Usage: treehouse get [--lease] [--json]' ;;
+  "return --help") printf '%s\n' 'Usage: treehouse return [--if-lease-id] [--if-lease-holder]' ;;
+esac
 SH
   cat > "$fakebin/no-mistakes" <<'SH'
 #!/usr/bin/env bash

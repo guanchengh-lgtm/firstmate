@@ -891,6 +891,9 @@ test_teardown_passes_recorded_tab_id_to_zellij_kill() {
     "zellij_pane_id=7" \
     "worktree=$dir/missing-worktree" \
     "project=$project" \
+    "treehouse_lease_id=lease-zghost" \
+    "treehouse_lease_holder=zghost" \
+    "treehouse_lease_state=released" \
     "kind=scout" \
     "decisions_reviewed=1" \
     "decision_keys="
@@ -937,6 +940,9 @@ test_forced_secondmate_teardown_kills_zellij_children_with_child_home_tag() {
     "zellij_pane_id=7" \
     "worktree=$dir/missing-child-worktree" \
     "project=$project" \
+    "treehouse_lease_id=lease-childz" \
+    "treehouse_lease_holder=childz" \
+    "treehouse_lease_state=released" \
     "kind=scout"
   fm_write_none_measure_at "$data" smz
   fm_write_none_measure "$home" childz

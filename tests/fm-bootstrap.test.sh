@@ -40,7 +40,8 @@ unset TMUX TMUX_PANE HERDR_ENV HERDR_PANE_ID HERDR_SESSION HERDR_SOCKET_PATH \
   CMUX_WORKSPACE_ID CMUX_SURFACE_ID CMUX_SOCKET_PATH CMUX_TAB_ID CMUX_PANEL_ID 2>/dev/null || true
 
 # A fake toolchain where every required tool is present and gh is authenticated.
-# treehouse's `get --help` advertises --lease only when FM_FAKE_TREEHOUSE_LEASE_HELP=1.
+# Treehouse advertises all task-lease capabilities only when
+# FM_FAKE_TREEHOUSE_LEASE_HELP=1.
 make_fake_toolchain() {
   local dir=$1 fakebin
   fakebin=$(fm_fakebin "$dir")
@@ -67,9 +68,19 @@ SH
 #!/usr/bin/env bash
 if [ "${1:-}" = get ] && [ "${2:-}" = --help ]; then
   if [ "${FM_FAKE_TREEHOUSE_LEASE_HELP:-}" = 1 ]; then
+    printf '%s\n' 'Usage: treehouse get [--lease] [--json] [--lease-holder <holder>]'
+  elif [ "${FM_FAKE_TREEHOUSE_PARTIAL_HELP:-}" = 1 ]; then
     printf '%s\n' 'Usage: treehouse get [--lease] [--lease-holder <holder>]'
   else
     printf '%s\n' 'Usage: treehouse get'
+  fi
+  exit 0
+fi
+if [ "${1:-}" = return ] && [ "${2:-}" = --help ]; then
+  if [ "${FM_FAKE_TREEHOUSE_LEASE_HELP:-}" = 1 ]; then
+    printf '%s\n' 'Usage: treehouse return [--if-lease-id <id>] [--if-lease-holder <holder>]'
+  else
+    printf '%s\n' 'Usage: treehouse return'
   fi
   exit 0
 fi
@@ -193,7 +204,7 @@ run_bootstrap_timeout_case() {
       # Advance fake time quickly, but yield on every tick so the background
       # fleet-sync process can deterministically write its partial output before
       # the simulated timeout kills it, even on a busy full-suite runner.
-      command sleep 0.01
+      command sleep 0.05
     }
     # shellcheck disable=SC2317,SC2329 # Exported and invoked by the bootstrap subprocess.
     git() {
@@ -685,9 +696,9 @@ ROWS
 
 test_treehouse_lease_check_follows_resolved_backend() {
   local case_dir fakebin out
-  # A treehouse that lacks durable --lease support is only a problem for a backend
-  # that actually uses treehouse. Orca owns its own worktrees, so an old treehouse
-  # must NOT trip MISSING: treehouse under backend=orca...
+  # A Treehouse that lacks the task lease contract is only a problem for a backend
+  # that actually uses Treehouse. Orca owns its own worktrees, so an old Treehouse
+  # must not trip MISSING: treehouse under backend=orca.
   case_dir="$TMP_ROOT/orca-old-treehouse"
   mkdir -p "$case_dir/home/config"
   printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
@@ -695,13 +706,12 @@ test_treehouse_lease_check_follows_resolved_backend() {
   fakebin=$(make_fake_toolchain "$case_dir")
   rm -f "$fakebin/tmux"
   fm_fake_exit0 "$fakebin" orca
-  # FM_FAKE_TREEHOUSE_LEASE_HELP unset: the fake treehouse advertises NO --lease.
+  # The fake Treehouse advertises no lease capability.
   out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
     "$ROOT/bin/fm-bootstrap.sh")
   [ -z "$out" ] || fail "backend=orca must not require treehouse (even lease-less) or tmux, got: $out"
 
-  # ...but the same lease-less treehouse IS a problem for a session-provider
-  # backend that relies on treehouse for worktrees.
+  # The same lease-less Treehouse is a problem for a session-provider backend.
   case_dir="$TMP_ROOT/herdr-old-treehouse"
   mkdir -p "$case_dir/home/config"
   printf '%s\n' manual > "$case_dir/home/config/backlog-backend"
@@ -711,7 +721,19 @@ test_treehouse_lease_check_follows_resolved_backend() {
     "$ROOT/bin/fm-bootstrap.sh")
   assert_contains "$out" "MISSING: treehouse" "backend=herdr must still require treehouse with durable lease support"
   assert_not_contains "$out" "MISSING: tmux" "backend=herdr must not demand tmux even when treehouse is too old"
-  pass "bootstrap: the treehouse lease check follows the resolved backend's worktree provider"
+
+  # Treehouse 2.0.1 advertised --lease, but not JSON lease identities or
+  # conditional returns. The capability probe must reject that partial contract.
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+    FM_FAKE_TREEHOUSE_PARTIAL_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+  assert_contains "$out" "MISSING: treehouse" \
+    "backend=herdr accepted Treehouse without lease identity and conditional return flags"
+
+  out=$(PATH="$fakebin:$BASE_PATH" FM_HOME="$case_dir/home" FM_ROOT_OVERRIDE="$case_dir/home" \
+    FM_FAKE_TREEHOUSE_LEASE_HELP=1 "$ROOT/bin/fm-bootstrap.sh")
+  assert_not_contains "$out" "MISSING: treehouse" \
+    "backend=herdr rejected the complete task lease contract"
+  pass "bootstrap: Treehouse capability probes follow the resolved worktree provider"
 }
 
 test_fleet_sync_timeout_scales_with_origin_backed_project_count() {

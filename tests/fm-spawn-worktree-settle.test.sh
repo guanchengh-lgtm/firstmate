@@ -1,14 +1,10 @@
 #!/usr/bin/env bash
-# Regression test for the fm-spawn.sh treehouse-get worktree-detection settle
-# loop (bin/fm-spawn.sh, the `for _ in $(seq 1 60)` loop after `treehouse get`).
+# Regression test for fm-spawn.sh's exact leased-worktree settle loop.
 #
 # On some tmux/WSL setups a brand-new window's pane_current_path transiently
 # reports a stale, unrelated-but-real path on the very first poll, before the
-# pane actually settles into the worktree treehouse get moved it to. That stale
-# path still passes the loop's "differs from the project" check and
-# validate_spawn_worktree's "is a real, distinct worktree" check (it IS a real
-# git checkout, just the wrong one), so a naive single-read loop silently
-# records the wrong worktree= in state/<id>.meta. This test simulates that
+# pane actually settles into the leased worktree. A naive single-read loop can
+# reject or accept the wrong location before the exact `cd` settles. This test simulates that
 # transient-then-settled pane_current_path sequence with a fake tmux and
 # asserts the recorded worktree resolves to the real, settled worktree, never
 # the stale first read.
@@ -54,7 +50,25 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tmux"
-  fm_fake_exit0 "$fakebin" treehouse
+  cat > "$fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  get)
+    holder=
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --lease-holder) holder=${2:-}; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    printf '{"path":"%s","lease_id":"lease-%s","lease_holder":"%s"}\n' \
+      "${FM_FAKE_PANE_PATH:?}" "$holder" "$holder"
+    ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/treehouse"
   printf '%s\n' "$fakebin"
 }
 

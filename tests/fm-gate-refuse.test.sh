@@ -152,7 +152,25 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tmux"
-  fm_fake_exit0 "$fakebin" treehouse
+  cat > "$fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "${1:-}" in
+  get)
+    holder=
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --lease-holder) holder=${2:-}; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    printf '{"path":"%s","lease_id":"lease-%s","lease_holder":"%s"}\n' \
+      "${FM_FAKE_PANE_PATH:?}" "$holder" "$holder"
+    ;;
+esac
+exit 0
+SH
+  chmod +x "$fakebin/treehouse"
   printf '%s\n' "$fakebin"
 }
 
@@ -329,6 +347,8 @@ SH
   fm_write_meta "$case_dir/state/task-x1.meta" \
     "window=firstmate:fm-task-x1" "endpoint_task_id=task-x1" \
     "worktree=$case_dir/wt" "project=$case_dir/project" \
+    "treehouse_lease_id=lease-task-x1" "treehouse_lease_holder=task-x1" \
+    "treehouse_lease_state=held" \
     "kind=ship" "mode=no-mistakes"
   fm_write_none_measure "$case_dir" task-x1
   touch "$case_dir/state/.last-watcher-beat"
