@@ -349,7 +349,7 @@ Its `Stop` command fires only when the current workspace holds a `.fm-grok-turne
 `fm-spawn` writes that per-task pointer (`<worktree>/.fm-grok-turnend`, gitignored via git info/exclude like the other harnesses' worktree hook files) and a matching registry entry naming this task's `state/<id>.turn-ended`.
 The hook reads `$GROK_WORKSPACE_ROOT`, which is always set for hooks and equals the worktree.
 This keeps the hook outside the worktree, needs no trust grant, and writes only firstmate-owned files.
-`fm-teardown` removes the worktree pointer before returning a pooled worktree.
+`fm-teardown` removes the task token and its registry entry; the pooled worktree's own pointer file is removed by `fm-spawn` when it sanitizes a freshly leased worktree, so a returned pool slot can never fire signals for a dead task.
 Secondmate spawns skip the pointer (idle panes are healthy, no stale-pane detection for them).
 
 **Primary-session guard fact (verified 2026-07-28, Grok 0.2.112 and 0.2.73).**
