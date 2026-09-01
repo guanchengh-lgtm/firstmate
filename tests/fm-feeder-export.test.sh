@@ -722,11 +722,11 @@ page_field() {  # <page> <field>
 parsed_page_title() {  # <page>
   command -v ruby >/dev/null 2>&1 \
     || fail "ruby is required to parse generated feeder YAML"
-  ruby -ryaml -e '
+  ruby -ryaml -rdate -e '
 text = File.read(ARGV.fetch(0), encoding: "UTF-8")
 match = text.match(/\A---\n(.*?)\n---\n/m)
 raise "missing frontmatter" if match.nil?
-document = YAML.load(match[1])
+document = YAML.safe_load(match[1], permitted_classes: [Date, Time])
 title = document.fetch("title")
 raise "title is not a string" unless title.is_a?(String)
 print title
