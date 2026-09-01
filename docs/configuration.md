@@ -350,13 +350,6 @@ It does not infer supersession from chat, report prose, or arbitrary project com
 The current full recurring-defect claims and adversary outcome are recorded in [`verification/durable-sot-recurring-defect-claims.json`](verification/durable-sot-recurring-defect-claims.json).
 See [`sot-programs.example.tsv`](sot-programs.example.tsv) for a non-live copyable shape.
 
-## Spec compile and reduce matchers
-
-[`bin/fm-spec-compile-check.sh`](../bin/fm-spec-compile-check.sh) checks that a spec accounts for closed tickets and cited keep rows.
-[`bin/fm-reduce-check.sh`](../bin/fm-reduce-check.sh) checks declared wide-work report counts and citations.
-Each matcher header owns its input, rules, structural failures, and limits.
-Callers must provide explicit matcher input because neither matcher reads `FM_HOME` as an implicit home.
-
 ## Build-map fog check
 
 Session-start bootstrap runs [`bin/fm-map-fog-check.sh`](../bin/fm-map-fog-check.sh) in detect-only mode over ordinary `map.md` files under `data/`.
