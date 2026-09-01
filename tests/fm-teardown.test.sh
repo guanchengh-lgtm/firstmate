@@ -78,7 +78,6 @@ make_case() {
   case_dir="$TMP_ROOT/$name"
   fakebin="$case_dir/fakebin"
   mkdir -p "$case_dir/state" "$case_dir/config" "$case_dir/data" "$fakebin"
-  fm_write_none_measure "$case_dir" task-x1
 
   # Mocks for the post-check teardown steps. Refuse logic exits before these
   # run; the ALLOW cases need them so the script can complete cleanly.
@@ -206,18 +205,6 @@ fi
 exit 0
 SH
   chmod +x "$case_dir/fakebin/tasks-axi"
-}
-
-# Write a valid paired five-line measure. Args: case_dir task-id miss
-write_paired_measure() {
-  local case_dir=$1 id=$2 miss=$3
-  mkdir -p "$case_dir/data/$id"
-  printf '%s\n' \
-    "miss: $miss" \
-    'number: 1 observed' \
-    'pair: 0 false refusals' \
-    'pick: ship an enforcing file' \
-    'none:' > "$case_dir/data/$id/measure.md"
 }
 
 # Write a meta file for the task. Args: case_dir mode kind [role]
@@ -1354,132 +1341,30 @@ test_local_only_force_overrides_unpushed() {
   pass "local-only worktree with unpushed work is torn down under --force (escape hatch)"
 }
 
-test_help_documents_measure_contract() {
+test_help_documents_force_validation_truth_skip() {
   local out
   out=$("$TEARDOWN" --help) || fail "--help failed"
-  assert_contains "$out" "\$FM_HOME/data/<task-id>/measure.md" \
-    "--help omitted the home-local measure path"
-  assert_contains "$out" 'exactly these five lines in this order' \
-    "--help omitted the five-line format"
-  assert_contains "$out" 'skip this measure gate' \
-    "--help did not say that --force skips the measure gate"
   assert_contains "$out" 'validation-truth' \
     "--help did not say that --force skips validation-truth"
   assert_contains "$out" 'discard is not a green claim' \
     "--help did not explain why --force skips validation-truth"
-  pass "teardown help owns the five-line measure contract"
+  pass "teardown help owns the --force validation-truth carve-out"
 }
 
-test_measure_gate_role_matrix() {
-  local case_dir home rc
-
-  case_dir=$(make_case measure-builder)
-  write_meta "$case_dir" local-only ship builder
-  rm -f "$case_dir/data/task-x1/measure.md"
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 1 "$rc" "measure-builder: explicit builder without a measure should refuse"
-  assert_grep "no non-empty measure" "$case_dir/stderr" \
-    "measure-builder: refusal did not name the missing measure"
-
-  case_dir=$(make_case measure-legacy-builder)
-  write_meta "$case_dir" local-only ship
-  rm -f "$case_dir/data/task-x1/measure.md"
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 1 "$rc" "measure-legacy-builder: ship without role should remain builder-gated"
-  assert_grep "no non-empty measure" "$case_dir/stderr" \
-    "measure-legacy-builder: refusal did not name the missing measure"
-
-  case_dir=$(make_case measure-verifier)
-  write_meta "$case_dir" local-only ship verifier
-  rm -f "$case_dir/data/task-x1/measure.md"
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 0 "$rc" "measure-verifier: verifier should not require a measure"
-  assert_absent "$case_dir/state/task-x1.meta" \
-    "measure-verifier: teardown did not complete"
-
-  case_dir=$(make_case measure-scout)
-  write_meta "$case_dir" no-mistakes scout
-  rm -f "$case_dir/data/task-x1/measure.md"
-  printf '%s\n' 'decisions_reviewed=1' >> "$case_dir/state/task-x1.meta"
-  mkdir -p "$case_dir/data/task-x1"
-  printf '%s\n' '# Findings' 'Scout report.' > "$case_dir/data/task-x1/report.md"
-  add_compatible_tasks_axi "$case_dir"
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 0 "$rc" "measure-scout: scout should not require a measure"
-  assert_absent "$case_dir/state/task-x1.meta" \
-    "measure-scout: teardown did not complete"
-
-  case_dir=$(make_case measure-secondmate)
-  write_meta "$case_dir" local-only secondmate
-  rm -f "$case_dir/data/task-x1/measure.md"
-  home="$case_dir/secondmate-home"
-  mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects"
-  printf '%s\n' task-x1 > "$home/.fm-secondmate-home"
-  printf '%s\n' "home=$home" >> "$case_dir/state/task-x1.meta"
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 0 "$rc" "measure-secondmate: secondmate should not require a measure"
-  assert_absent "$case_dir/state/task-x1.meta" \
-    "measure-secondmate: teardown did not complete"
-
-  case_dir=$(make_case measure-force)
-  write_meta "$case_dir" local-only ship builder
-  rm -f "$case_dir/data/task-x1/measure.md"
-  rc=0
-  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 0 "$rc" "measure-force: --force should skip the measure gate"
-  assert_absent "$case_dir/state/task-x1.meta" \
-    "measure-force: teardown did not complete"
-
-  pass "measure gate covers builder, verifier, legacy, scout, secondmate, and force cases"
-}
-
-test_empty_and_unpaired_measure_refuse() {
+test_invalid_ship_role_refuses() {
   local case_dir rc
-  case_dir=$(make_case empty-measure)
-  write_meta "$case_dir" local-only ship builder
-  : > "$case_dir/data/task-x1/measure.md"
-
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/empty.out" 2> "$case_dir/empty.err" || rc=$?
-  expect_code 1 "$rc" "empty-measure: teardown should refuse"
-  assert_present "$case_dir/state/task-x1.meta" \
-    "empty-measure: teardown mutated task state before refusing"
-
-  printf '%s\n' 'miss: escaped check' 'number: 1' 'pair:' 'pick: add gate' 'none:' \
-    > "$case_dir/data/task-x1/measure.md"
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/unpaired.out" 2> "$case_dir/unpaired.err" || rc=$?
-  expect_code 1 "$rc" "unpaired-measure: teardown should refuse"
-  assert_grep "invalid measure" "$case_dir/unpaired.err" \
-    "unpaired-measure: refusal did not identify invalid content"
-  assert_present "$case_dir/state/task-x1.meta" \
-    "unpaired-measure: teardown mutated task state before refusing"
-  pass "empty and unpaired measures refuse cleanup"
-}
-
-test_complete_measure_allows_cleanup() {
-  local case_dir rc
-  case_dir=$(make_case complete-measure)
-  write_meta "$case_dir" local-only ship builder
-  printf '%s\n' \
-    'miss: teardown previously accepted measureless work' \
-    'number: 1 refusal observed' \
-    'pair: 0 false refusals observed' \
-    'pick: require a home-local record because cleanup is the destructive boundary' \
-    'none:' > "$case_dir/data/task-x1/measure.md"
+  case_dir=$(make_case invalid-ship-role)
+  write_meta "$case_dir" local-only ship reviewer
 
   rc=0
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
-  expect_code 0 "$rc" "complete-measure: valid paired record should allow cleanup"
-  assert_absent "$case_dir/state/task-x1.meta" \
-    "complete-measure: teardown did not complete"
-  pass "complete paired measure allows cleanup"
+  expect_code 1 "$rc" "invalid-ship-role: an unknown ship role should refuse cleanup"
+  assert_grep "invalid role metadata" "$case_dir/stderr" \
+    "invalid-ship-role: refusal did not name the invalid role metadata"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "invalid-ship-role: teardown mutated task state before refusing"
+  pass "a ship with an unknown recorded role refuses cleanup"
 }
 
 test_scout_teardown_uses_report_and_captain_hold_gates() {
@@ -1833,7 +1718,6 @@ configure_secondmate_with_herdr_child() {  # <case-dir>
     "herdr_workspace_id=wC" \
     "herdr_tab_id=wC:t1" \
     "herdr_pane_id=wC:p1"
-  fm_write_none_measure "$home" child-herdr
   : > "$home/state/child-herdr.status"
   : > "$home/state/child-herdr.turn-ended"
   cat > "$case_dir/fakebin/herdr" <<SH
@@ -1865,29 +1749,6 @@ case "\${1:-} \${2:-}" in
 esac
 SH
   chmod +x "$case_dir/fakebin/herdr"
-}
-
-test_forced_secondmate_child_missing_measure_allows() {
-  local case_dir home log closed rc
-  case_dir=$(make_case missing-child-measure)
-  write_meta "$case_dir" local-only secondmate
-  configure_secondmate_with_herdr_child "$case_dir"
-  home="$case_dir/secondmate-home"
-  log="$case_dir/herdr.log"; closed="$case_dir/closed"; : > "$log"
-  rm -f "$home/data/child-herdr/measure.md"
-
-  rc=0
-  FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" \
-    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-
-  expect_code 0 "$rc" "missing-child-measure: forced parent cleanup should skip child measures"
-  assert_absent "$case_dir/state/task-x1.meta" \
-    "missing-child-measure: teardown left parent metadata"
-  assert_absent "$home/state/child-herdr.meta" \
-    "missing-child-measure: teardown left child metadata"
-  assert_present "$closed" \
-    "missing-child-measure: teardown did not close the child runtime"
-  pass "forced secondmate cleanup skips child measures"
 }
 
 test_forced_secondmate_herdr_child_preflight_refuses_before_changes() {
@@ -1935,7 +1796,6 @@ configure_secondmate_with_tmux_children() {  # <case-dir>
       "project=$case_dir/project" \
       "kind=ship" \
       "mode=local-only"
-    fm_write_none_measure "$home" "$child"
     : > "$home/state/$child.status"
   done
 }
@@ -2050,7 +1910,6 @@ configure_nested_secondmate_with_herdr_grandchild() {  # <case-dir>
     "kind=secondmate" \
     "mode=local-only" \
     "home=$nested_home"
-  fm_write_none_measure "$home" nested-sm
   fm_write_meta "$nested_home/state/grandchild-herdr.meta" \
     "window=grandchildsession:wG:p1" \
     "endpoint_task_id=grandchild-herdr" \
@@ -2063,7 +1922,6 @@ configure_nested_secondmate_with_herdr_grandchild() {  # <case-dir>
     "herdr_workspace_id=wG" \
     "herdr_tab_id=wG:t1" \
     "herdr_pane_id=wG:p1"
-  fm_write_none_measure "$nested_home" grandchild-herdr
   : > "$nested_home/state/grandchild-herdr.status"
   : > "$nested_home/state/grandchild-herdr.turn-ended"
   cat > "$case_dir/fakebin/herdr" <<SH
@@ -2848,10 +2706,8 @@ EOF
 }
 
 test_local_only_fork_remote_allows
-test_help_documents_measure_contract
-test_measure_gate_role_matrix
-test_empty_and_unpaired_measure_refuse
-test_complete_measure_allows_cleanup
+test_help_documents_force_validation_truth_skip
+test_invalid_ship_role_refuses
 test_scout_teardown_uses_report_and_captain_hold_gates
 test_teardown_prompts_tasks_axi_done_when_compatible
 test_teardown_manual_backend_prompts_hand_edit_even_when_tasks_axi_present
@@ -2866,7 +2722,6 @@ test_herdr_teardown_clears_escalation_marker
 test_herdr_flat_teardown_refuses_orphaning_records_then_retry_completes
 test_herdr_flat_teardown_refuses_records_on_unparseable_presence
 test_herdr_flat_teardown_preflight_refuses_before_changes
-test_forced_secondmate_child_missing_measure_allows
 test_forced_secondmate_herdr_child_preflight_refuses_before_changes
 test_forced_secondmate_teardown_holds_descendant_lifecycle_locks
 test_forced_secondmate_herdr_child_retains_records_when_close_unconfirmed

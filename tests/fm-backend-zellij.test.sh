@@ -881,7 +881,6 @@ test_teardown_passes_recorded_tab_id_to_zellij_kill() {
   dir="$TMP_ROOT/teardown-zellij-ghost"; state="$dir/state"; data="$dir/data"; config="$dir/config"; project="$dir/project"
   mkdir -p "$state" "$data/zghost" "$config" "$project" "$dir/responses"
   printf 'report\n' > "$data/zghost/report.md"
-  fm_write_none_measure_at "$data" zghost
   fm_write_meta "$state/zghost.meta" \
     "window=firstmate:7" \
     "endpoint_task_id=zghost" \
@@ -938,8 +937,6 @@ test_forced_secondmate_teardown_kills_zellij_children_with_child_home_tag() {
     "worktree=$dir/missing-child-worktree" \
     "project=$project" \
     "kind=scout"
-  fm_write_none_measure_at "$data" smz
-  fm_write_none_measure "$home" childz
   child_title=$(zellij_expected_scoped_title fm-childz "$home" "$home")
   zellij_pane_response "$dir" 1 7 4
   zellij_tab_response "$dir" 2 4 "$child_title"

@@ -30,12 +30,6 @@ pass() {
   printf 'ok - %s\n' "$1"
 }
 
-write_none_measure() {
-  local home=$1 id=$2
-  mkdir -p "$home/data/$id"
-  printf 'miss:\nnumber:\npair:\npick:\nnone: test fixture\n' > "$home/data/$id/measure.md"
-}
-
 TMP_ROOT=
 
 cleanup() {
@@ -55,7 +49,7 @@ make_fake_root() {
   local id=$1 tasktmp=$2
   local fake="$TMP_ROOT/$id"
   mkdir -p "$fake/bin/backends" "$fake/state"
-  write_none_measure "$fake" "$id"
+  mkdir -p "$fake/data/$id"
   # Symlink the REAL teardown so the test exercises actual code, not a copy.
   ln -s "$TEARDOWN" "$fake/bin/fm-teardown.sh"
   # fm-backend.sh + its tmux adapter: symlink the REAL files (teardown sources
@@ -160,7 +154,7 @@ test_teardown_skips_gracefully_without_tasktmp() {
   local id=td-absent-z3
   local fake="$TMP_ROOT/$id-root"
   mkdir -p "$fake/bin/backends" "$fake/state"
-  write_none_measure "$fake" "$id"
+  mkdir -p "$fake/data/$id"
   ln -s "$TEARDOWN" "$fake/bin/fm-teardown.sh"
   ln -s "$ROOT/bin/fm-backend.sh" "$fake/bin/fm-backend.sh"
   ln -s "$ROOT/bin/backends/tmux.sh" "$fake/bin/backends/tmux.sh"

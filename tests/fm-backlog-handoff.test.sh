@@ -669,7 +669,6 @@ test_local_teardown_preserves_wake_when_home_removal_fails() {
   local rec_before="$TMP_ROOT/teardown-home-fail-record.before"
   setup_homes "$home" "$sub"
   printf 'project=%s\n' "$ROOT" >> "$home/state/design.meta"
-  fm_write_none_measure "$home" design
   mkdir -p "$sub/data" "$rm_bin"
   printf '## Queued\n- [ ] still-routed - preserve its wake (repo: alpha)\n\n## Done\n' > "$sub/data/backlog.md"
   corr=$(FM_HOME="$home" bash -c '

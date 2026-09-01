@@ -330,7 +330,6 @@ SH
     "window=firstmate:fm-task-x1" "endpoint_task_id=task-x1" \
     "worktree=$case_dir/wt" "project=$case_dir/project" \
     "kind=ship" "mode=no-mistakes"
-  fm_write_none_measure "$case_dir" task-x1
   touch "$case_dir/state/.last-watcher-beat"
   printf '%s\n' "$case_dir"
 }

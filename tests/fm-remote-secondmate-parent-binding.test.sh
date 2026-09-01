@@ -222,7 +222,6 @@ esac
 CHILD_WT="$REMOTE_HOME/projects/alpha"
 mkdir -p "$REMOTE_HOME/state"
 write_child_meta() {
-  fm_write_none_measure "$REMOTE_HOME" work-child
   fm_write_meta "$REMOTE_HOME/state/work-child.meta" \
     "window=firstmate:fm-work-child" "endpoint_task_id=work-child" \
     "worktree=$CHILD_WT" "project=$CHILD_WT" "harness=codex" "kind=ship" \

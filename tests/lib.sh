@@ -275,20 +275,6 @@ fm_write_meta() {
   done
 }
 
-# fm_write_none_measure_at <data-dir> <task-id> [why]: seed a valid no-measure
-# record for a ship-builder teardown fixture data directory.
-fm_write_none_measure_at() {
-  local data=$1 id=$2 why=${3:-fixture has no task measure}
-  mkdir -p "$data/$id"
-  printf '%s\n' 'miss:' 'number:' 'pair:' 'pick:' "none: $why" \
-    > "$data/$id/measure.md"
-}
-
-# fm_write_none_measure <home> <task-id> [why]: home-relative convenience.
-fm_write_none_measure() {
-  fm_write_none_measure_at "$1/data" "$2" "${3:-fixture has no task measure}"
-}
-
 # fm_write_secondmate_meta <file> <home> [window] [projects] [harness]: write the
 # standard kind=secondmate meta block used across the secondmate suites. Window
 # defaults to firstmate:fm-<id>, projects defaults to alpha, and harness defaults

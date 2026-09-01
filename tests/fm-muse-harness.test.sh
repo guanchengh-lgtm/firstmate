@@ -129,7 +129,6 @@ make_spawn_case() {
   printf '%s\n' 'Role: builder' 'brief' > "$home/data/$id/brief.md"
   printf '%s\n' builder > "$home/data/$id/role"
   printf '%s\n' no-mistakes > "$home/data/$id/mode"
-  fm_write_none_measure "$home" "$id"
   fm_git_worktree "$proj" "$wt" "fm/$id"
   touch "$home/state/.last-watcher-beat"
   printf '%s\n' "$case_dir|$home|$proj|$wt|$fakebin|$id"

@@ -104,13 +104,11 @@ SH
   : > "$dir/gh-axi.log"
   : > "$dir/glab.log"
   : > "$dir/guard.log"
-  fm_write_none_measure "$dir/home" task-a
   printf '%s\n' "$dir"
 }
 
 write_task_meta() {
   local dir=$1 id=${2:-task-a}
-  fm_write_none_measure "$dir/home" "$id"
   fm_write_meta "$dir/home/state/$id.meta" \
     "window=firstmate:fm-$id" \
     "endpoint_task_id=$id" \
@@ -540,7 +538,6 @@ SH
 
   for id in _noncanonical aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa; do
     dir=$(make_case "legacy-teardown-${id:0:12}")
-    fm_write_none_measure "$dir/home" "$id"
     fm_write_meta "$dir/home/state/$id.meta" \
       "window=firstmate:fm-$id" \
       "endpoint_task_id=$id" \

@@ -821,7 +821,6 @@ test_scout_teardown_removes_orca_worktree_via_helper() {
   fm_git_worktree "$proj" "$wt" "fm/$id"
   mkdir -p "$data/$id" "$state" "$config"
   printf 'report\n' > "$data/$id/report.md"
-  fm_write_none_measure_at "$data" "$id"
   touch "$state/.last-watcher-beat"
   fm_write_meta "$state/$id.meta" \
     "window=fm-$id" "endpoint_task_id=$id" "terminal=term-teardown" "worktree=$wt" "project=$proj" \
@@ -859,7 +858,6 @@ test_scout_teardown_refuses_orca_id_path_mismatch() {
   git -C "$proj" worktree add --quiet -b "fm/$id-other" "$other_wt"
   mkdir -p "$data/$id" "$state" "$config"
   printf 'report\n' > "$data/$id/report.md"
-  fm_write_none_measure_at "$data" "$id"
   touch "$state/.last-watcher-beat"
   fm_write_meta "$state/$id.meta" \
     "window=fm-$id" "endpoint_task_id=$id" "terminal=term-scout-mismatch" "worktree=$wt" "project=$proj" \
@@ -896,7 +894,6 @@ test_teardown_removes_orca_worktree_when_path_missing() {
   config="$TMP_ROOT/missing-path-config"
   mkdir -p "$data/$id" "$state" "$config"
   printf 'report\n' > "$data/$id/report.md"
-  fm_write_none_measure_at "$data" "$id"
   touch "$state/.last-watcher-beat"
   fm_write_meta "$state/$id.meta" \
     "window=fm-$id" "endpoint_task_id=$id" "terminal=term-missing-path" "worktree=$wt" "project=$proj" \
@@ -930,7 +927,6 @@ test_teardown_preserves_metadata_when_orca_remove_error_json() {
   config="$TMP_ROOT/remove-error-config"
   mkdir -p "$data/$id" "$state" "$config"
   printf 'report\n' > "$data/$id/report.md"
-  fm_write_none_measure_at "$data" "$id"
   touch "$state/.last-watcher-beat"
   fm_write_meta "$state/$id.meta" \
     "window=fm-$id" "endpoint_task_id=$id" "terminal=term-remove-error" "worktree=$wt" "project=$proj" \
@@ -1023,7 +1019,6 @@ test_ship_teardown_removes_orca_worktree_when_id_path_matches() {
   config="$TMP_ROOT/ship-match-config"
   fm_git_worktree "$proj" "$wt" "fm/$id"
   mkdir -p "$data/$id" "$state" "$config"
-  fm_write_none_measure_at "$data" "$id"
   touch "$state/.last-watcher-beat"
   fm_write_meta "$state/$id.meta" \
     "window=fm-$id" "endpoint_task_id=$id" "terminal=term-ship-match" "worktree=$wt" "project=$proj" \
@@ -1204,13 +1199,11 @@ test_secondmate_force_teardown_removes_orca_child_via_orca() {
     "home=$subhome" "projects=alpha"
   printf '%s\n' "- domain - Orca child cleanup (home: $subhome; scope: orca cleanup; projects: alpha; added 2026-07-03)" \
     > "$home/data/secondmates.md"
-  fm_write_none_measure "$home" domain
   fm_write_meta "$subhome/state/$child_id.meta" \
     "window=fm-$child_id" "endpoint_task_id=$child_id" \
     "terminal=term-child-cleanup" "worktree=$childwt" "project=$childproj" \
     "harness=claude" "kind=ship" "mode=no-mistakes" "yolo=off" \
     "backend=orca" "orca_worktree_id=wt-child-cleanup"
-  fm_write_none_measure "$subhome" "$child_id"
   orca_case secondmate-child-cleanup
   printf '{"ok":true,"result":{"worktree":{"id":"wt-child-cleanup","path":"%s"}}}\n' "$childwt" > "$RESP/1.out"
   printf '{"ok":true,"result":{"worktree":{"id":"wt-child-cleanup","path":"%s"}}}\n' "$childwt" > "$RESP/2.out"
