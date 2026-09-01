@@ -29,8 +29,7 @@
 #                           with no data/<ov>/report.md (live worker without
 #                           report is in-progress and passes); --brief --ov
 #                           requires the report before spawn
-# Default hook/payload rules: R-held-locked-next only. Hook mode does not
-# gather session ships and does not arm owner-invoke nodes.
+# Default hook/payload rules: R-held-locked-next only.
 # Default --brief rules: R-ov-missing,R-skill-unloaded on durable OV records
 # (state/<ship>.meta ov=/ov_harness=, data/<ov>/report.md, data/<ov>/skills,
 # live endpoint). Explicit --ov requires a completed report. No brief-body parse.
