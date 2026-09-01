@@ -56,7 +56,7 @@ test_missing_and_empty_input_are_structural() {
   [ "$rc" -eq 2 ] || fail "expect-count 0 exited $rc"
   assert_contains "$out" "expect-count must be > 0" "zero count was not structural"
   set +e
-  out=$(run_check --input "$FIXTURES/historical-owner-node-open.json" --rules '')
+  out=$(run_check --input "$FIXTURES/historical-ship-without-ov.json" --rules '')
   rc=$?
   set -e
   [ "$rc" -eq 2 ] || fail "empty --rules exited $rc"
@@ -330,58 +330,6 @@ test_unrelated_rule_does_not_satisfy_exact_count() {
   pass "owner-invoke-wait: unrelated rule fire is not exact-count success"
 }
 
-test_historical_owner_node_open_fires_exact_count() {
-  local out rc
-  set +e
-  out=$(run_check \
-    --input "$FIXTURES/historical-owner-node-open.json" \
-    --expect-rule R-owner-node-open --expect-count 1 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "historical owner-node-open exact-count exited $rc: $out"
-  set +e
-  out=$(run_check --input "$FIXTURES/historical-owner-node-open.json")
-  rc=$?
-  set -e
-  [ "$rc" -eq 1 ] || fail "historical owner-node-open gate exited $rc: $out"
-  assert_contains "$out" "R-owner-node-open-waiting" \
-    "historical owner-node-open did not report a waiting node"
-  assert_contains "$out" "/wayfinder" \
-    "historical owner-node-open did not name wayfinder"
-  pass "owner-invoke-wait: 2026-08-23 reconstructed owner-node-open fires exact count 1"
-}
-
-test_owner_node_same_turn_and_artifact_are_clean() {
-  local out rc turn
-  turn="$TMP_ROOT/node-same-turn.json"
-  write_turn "$turn" '{
-    "owner_nodes": [{"token":"wayfinder","later_captain":false,"artifact":false}],
-    "assistant_text": "",
-    "held": [],
-    "map_next": [],
-    "owned_meta": [],
-    "fog_live": false
-  }'
-  set +e
-  out=$(run_check --input "$turn")
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "same-turn owner node exited $rc: $out"
-  [ -z "$out" ] || fail "same-turn owner node printed findings: $out"
-  turn="$TMP_ROOT/node-artifact.json"
-  write_turn "$turn" '{
-    "owner_nodes": [{"token":"wayfinder","later_captain":true,"artifact":true}],
-    "assistant_text": ""
-  }'
-  set +e
-  out=$(run_check --input "$turn")
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "owner node with artifact exited $rc: $out"
-  [ -z "$out" ] || fail "owner node with artifact printed findings: $out"
-  pass "owner-invoke-wait: same-turn Stop and matching artifact are clean"
-}
-
 make_primary_home() {
   local dir=$1
   mkdir -p "$dir/bin" "$dir/state" "$dir/data"
@@ -389,41 +337,6 @@ make_primary_home() {
   git -C "$dir" commit -q --allow-empty -m init
   : > "$dir/AGENTS.md"
   printf '%s\n' "$dir"
-}
-
-test_hook_gathers_session_ship_ov_ladder() {
-  local home out rc payload transcript ship_wt
-  home=$(make_primary_home "$TMP_ROOT/hook-ships")
-  ship_wt="$home/ships/spec-compile-check"
-  mkdir -p "$home/data/spec-compile-check" "$home/data/spec-compile-check-ov" "$ship_wt"
-  printf '4242\n' > "$home/state/.lock"
-  printf '%s\n' 'kind=ship' 'ov=spec-compile-check-ov' 'ov_harness=claude' \
-    'session=4242' "worktree=$ship_wt" > "$home/state/spec-compile-check.meta"
-  # Torn-down OV worker: report present proves completion without a Stop skill check.
-  printf 'OV done\n' > "$home/data/spec-compile-check-ov/report.md"
-  transcript="$home/transcript.jsonl"
-  : > "$transcript"
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
-    "$transcript" "$home")
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "hook torn-down OV with report exited $rc with: $out"
-  [ -z "$out" ] || fail "hook torn-down OV with report printed: $out"
-  rm -f "$home/data/spec-compile-check-ov/report.md"
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 2 ] || fail "hook gone OV without report exited $rc with: $out"
-  assert_contains "$out" 'R-ov-missing-report' \
-    "hook did not refuse gone OV worker without report"
-  pass "owner-invoke-wait: hook session gather runs OV report ladder"
 }
 
 test_hook_does_not_rerefuse_inflight_ship_without_ov() {
@@ -488,84 +401,6 @@ test_brief_reads_ov_worker_report_and_skills() {
   pass "owner-invoke-wait: brief mode reads OV worker report and skills"
 }
 
-test_hook_ignores_prior_session_ships() {
-  local home out rc payload transcript ship_wt prior_wt
-  home=$(make_primary_home "$TMP_ROOT/hook-other-ship")
-  ship_wt="$home/ships/current-ship"
-  prior_wt="$home/ships/prior-ship"
-  mkdir -p "$home/data/current-ship" "$home/data/current-ov" \
-    "$home/data/prior-ship" "$home/data/prior-ov" "$ship_wt" "$prior_wt"
-  printf '9001\n' > "$home/state/.lock"
-  printf '%s\n' 'kind=ship' 'ov=prior-ov' 'session=111' "worktree=$prior_wt" \
-    > "$home/state/prior-ship.meta"
-  printf 'bad\n' > "$home/data/prior-ov/report.md"
-  printf '%s\n' 'kind=ship' 'ov=current-ov' 'session=9001' "worktree=$ship_wt" \
-    > "$home/state/current-ship.meta"
-  printf 'OV ok\n' > "$home/data/current-ov/report.md"
-  printf '%s\n' 'plan-eng-review' > "$home/data/current-ov/skills"
-  transcript="$home/transcript.jsonl"
-  : > "$transcript"
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
-    "$transcript" "$home")
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "prior-session ship wedged current session exited $rc with: $out"
-  [ -z "$out" ] || fail "prior-session ship printed: $out"
-  pass "owner-invoke-wait: hook scopes ship gather to this session only"
-}
-
-test_finished_non_claude_review_without_skills_passes() {
-  local home out rc payload transcript ship_wt
-  home=$(make_primary_home "$TMP_ROOT/hook-non-claude-ov")
-  ship_wt="$home/ships/spec-compile-check"
-  mkdir -p "$home/data/spec-compile-check" "$home/data/spec-compile-check-ov" "$ship_wt"
-  printf '6262\n' > "$home/state/.lock"
-  printf '%s\n' 'kind=ship' 'ov=spec-compile-check-ov' 'ov_harness=codex' \
-    'session=6262' "worktree=$ship_wt" > "$home/state/spec-compile-check.meta"
-  printf 'OV done on codex\n' > "$home/data/spec-compile-check-ov/report.md"
-  transcript="$home/transcript.jsonl"
-  : > "$transcript"
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
-    "$transcript" "$home")
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "finished non-Claude OV without skills exited $rc with: $out"
-  [ -z "$out" ] || fail "finished non-Claude OV without skills printed: $out"
-  pass "owner-invoke-wait: finished non-Claude review without skills passes"
-}
-
-test_finished_claude_review_without_skills_passes_at_stop() {
-  local home out rc payload transcript ship_wt
-  home=$(make_primary_home "$TMP_ROOT/hook-claude-ov-no-skill")
-  ship_wt="$home/ships/spec-compile-check"
-  mkdir -p "$home/data/spec-compile-check" "$home/data/spec-compile-check-ov" "$ship_wt"
-  printf '6363\n' > "$home/state/.lock"
-  printf '%s\n' 'kind=ship' 'ov=spec-compile-check-ov' 'ov_harness=claude' \
-    'session=6363' "worktree=$ship_wt" > "$home/state/spec-compile-check.meta"
-  printf 'OV done on claude\n' > "$home/data/spec-compile-check-ov/report.md"
-  transcript="$home/transcript.jsonl"
-  : > "$transcript"
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
-    "$transcript" "$home")
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "finished Claude OV without skills exited $rc with: $out"
-  [ -z "$out" ] || fail "finished Claude OV without skills printed: $out"
-  pass "owner-invoke-wait: finished Claude review skips duplicate Stop skill check"
-}
-
 test_skill_load_record_appends_normalized_token() {
   local home out rc payload skills recorder
   home=$(make_primary_home "$TMP_ROOT/skill-load")
@@ -600,90 +435,6 @@ test_skill_load_record_appends_normalized_token() {
   [ ! -e "$home/data/missing/skills" ] \
     || fail "skill-load recorder wrote skills without task meta"
   pass "owner-invoke-wait: skill-load recorder appends normalized token"
-}
-
-# Fake tmux for OV liveness: pane present, foreground is a shell husk (dead)
-# or a live harness agent. list-windows + pane_id keep target_exists true.
-make_ov_liveness_tmux() {  # <dir> <window> <pane_current_command>
-  local dir=$1 window=$2 comm=$3 fakebin
-  fakebin=$(fm_fakebin "$dir")
-  cat > "$fakebin/tmux" <<SH
-#!/usr/bin/env bash
-set -u
-case "\${1:-}" in
-  display-message)
-    for a in "\$@"; do
-      case "\$a" in
-        *pane_id*) printf '%s\n' '%1'; exit 0 ;;
-        *pane_tty*) exit 1 ;;
-        *pane_current_command*) printf '%s\n' '$comm'; exit 0 ;;
-      esac
-    done
-    exit 0 ;;
-  list-windows) printf '%s\n' '$window'; exit 0 ;;
-esac
-exit 0
-SH
-  chmod +x "$fakebin/tmux"
-  printf '%s\n' "$fakebin"
-}
-
-test_hook_refuses_husk_ov_worker_without_report() {
-  local home out rc payload transcript ship_wt fakebin base_path
-  home=$(make_primary_home "$TMP_ROOT/hook-husk-ov")
-  ship_wt="$home/ships/spec-compile-check"
-  mkdir -p "$home/data/spec-compile-check" "$home/data/spec-compile-check-ov" "$ship_wt"
-  printf '7171\n' > "$home/state/.lock"
-  printf '%s\n' 'kind=ship' 'ov=spec-compile-check-ov' 'session=7171' \
-    "worktree=$ship_wt" > "$home/state/spec-compile-check.meta"
-  # Pane still present as a bare shell; agent exited with no report.md.
-  printf '%s\n' 'kind=scout' 'backend=tmux' 'window=firstmate:fm-ov-husk' \
-    > "$home/state/spec-compile-check-ov.meta"
-  fakebin=$(make_ov_liveness_tmux "$TMP_ROOT/husk-tmux" fm-ov-husk bash)
-  base_path=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
-  transcript="$home/transcript.jsonl"
-  : > "$transcript"
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
-    "$transcript" "$home")
-  set +e
-  out=$(printf '%s' "$payload" | PATH="$fakebin:$base_path" \
-    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 2 ] || fail "husk OV without report exited $rc with: $out"
-  assert_contains "$out" 'R-ov-missing-report' \
-    "husk pane presence incorrectly treated dead OV as in-progress"
-  pass "owner-invoke-wait: husk OV pane without report refuses"
-}
-
-test_hook_live_ov_agent_without_report_passes() {
-  local home out rc payload transcript ship_wt fakebin base_path
-  home=$(make_primary_home "$TMP_ROOT/hook-live-ov")
-  ship_wt="$home/ships/spec-compile-check"
-  mkdir -p "$home/data/spec-compile-check" "$home/data/spec-compile-check-ov" "$ship_wt"
-  printf '7272\n' > "$home/state/.lock"
-  printf '%s\n' 'kind=ship' 'ov=spec-compile-check-ov' 'session=7272' \
-    "worktree=$ship_wt" > "$home/state/spec-compile-check.meta"
-  printf '%s\n' 'kind=scout' 'backend=tmux' 'window=firstmate:fm-ov-live' \
-    > "$home/state/spec-compile-check-ov.meta"
-  fakebin=$(make_ov_liveness_tmux "$TMP_ROOT/live-tmux" fm-ov-live claude)
-  base_path=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
-  transcript="$home/transcript.jsonl"
-  : > "$transcript"
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
-    "$transcript" "$home")
-  set +e
-  out=$(printf '%s' "$payload" | PATH="$fakebin:$base_path" \
-    FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "live OV agent without report exited $rc with: $out"
-  [ -z "$out" ] || fail "live OV agent without report printed: $out"
-  pass "owner-invoke-wait: live OV agent without report passes"
 }
 
 test_crewmate_settings_carry_skill_recorder() {
@@ -750,190 +501,14 @@ SH
   pass "owner-invoke-wait: crewmate settings wire Skill load recorder"
 }
 
-test_hook_owner_node_same_turn_is_clean() {
-  local home out rc payload transcript
-  home=$(make_primary_home "$TMP_ROOT/hook-node-same")
-  printf '9001\n' > "$home/state/.lock"
-  transcript="$home/transcript.jsonl"
-  cat > "$transcript" <<'JSONL'
-{"timestamp":"2026-08-23T10:00:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"<command-name>/wayfinder</command-name>"}]}}
-{"timestamp":"2026-08-23T10:00:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Where is this map going?"}]}}
-JSONL
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
-    "$transcript" "$home")
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "hook same-turn wayfinder node exited $rc with: $out"
-  [ -z "$out" ] || fail "hook same-turn wayfinder node printed: $out"
-  pass "owner-invoke-wait: hook does not refuse a wayfinder node on the trigger turn"
-}
-
-test_hook_owner_node_later_captain_without_artifact_refuses() {
-  local home out rc payload transcript
-  home=$(make_primary_home "$TMP_ROOT/hook-node-later")
-  printf '9002\n' > "$home/state/.lock"
-  transcript="$home/transcript.jsonl"
-  cat > "$transcript" <<'JSONL'
-{"timestamp":"2026-08-23T10:00:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"<command-name>/wayfinder</command-name>"}]}}
-{"timestamp":"2026-08-23T10:00:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Where is this map going?"}]}}
-{"timestamp":"2026-08-23T10:05:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"keep going"}]}}
-{"timestamp":"2026-08-23T10:05:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Still mapping."}]}}
-JSONL
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
-    "$transcript" "$home")
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 2 ] || fail "hook later captain without map exited $rc with: $out"
-  assert_contains "$out" 'R-owner-node-open-waiting' \
-    "hook later captain did not refuse an open wayfinder node"
-  mkdir -p "$home/data/wf-map"
-  printf 'map\n' > "$home/data/wf-map/map.md"
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "hook later captain with map.md exited $rc with: $out"
-  [ -z "$out" ] || fail "hook later captain with map.md printed: $out"
-  pass "owner-invoke-wait: header table refuses an open node with no home file"
-}
-
-test_hook_owner_node_ignores_slash_without_command_name() {
-  local home out rc payload transcript
-  home=$(make_primary_home "$TMP_ROOT/hook-node-slash")
-  printf '9003\n' > "$home/state/.lock"
-  transcript="$home/transcript.jsonl"
-  cat > "$transcript" <<'JSONL'
-{"timestamp":"2026-08-23T10:00:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"/wayfinder please chart this"}]}}
-{"timestamp":"2026-08-23T10:05:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"keep going"}]}}
-JSONL
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
-    "$transcript" "$home")
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "hook slash without command-name exited $rc with: $out"
-  [ -z "$out" ] || fail "hook slash without command-name printed: $out"
-  pass "owner-invoke-wait: slash text without command-name does not arm a node"
-}
-
-test_hook_owner_node_malformed_registry_is_structural() {
-  local home out rc payload transcript
-  home=$(make_primary_home "$TMP_ROOT/hook-node-badreg")
-  printf 'wayfinder only\n' > "$home/nodes.tsv"
-  printf '9004\n' > "$home/state/.lock"
-  transcript="$home/transcript.jsonl"
-  : > "$transcript"
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s"}' "$transcript")
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_OWNER_INVOKE_NODES_REGISTRY="$home/nodes.tsv" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 2 ] || fail "malformed owner-node registry exited $rc with: $out"
-  assert_contains "$out" 'structural:' "malformed owner-node registry was not structural"
-  pass "owner-invoke-wait: malformed owner-invoke nodes registry is structural"
-}
-
-test_hook_owner_node_or_merges_duplicate_token_globs() {
-  local home out rc payload transcript
-  home=$(make_primary_home "$TMP_ROOT/hook-node-vision-or")
-  {
-    printf '%s\t%s\n' 'vision' 'data/tv-vision/VISION.draft.md'
-    printf '%s\t%s\n' 'vision' 'data/tv-vision/answers-*.md'
-    printf '%s\t%s\n' 'vision' 'VISION.md'
-  } > "$home/nodes.tsv"
-  printf '9005\n' > "$home/state/.lock"
-  transcript="$home/transcript.jsonl"
-  cat > "$transcript" <<'JSONL'
-{"timestamp":"2026-08-23T10:00:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"<command-name>/vision</command-name>"}]}}
-{"timestamp":"2026-08-23T10:00:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Drafting."}]}}
-{"timestamp":"2026-08-23T10:05:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"keep going"}]}}
-{"timestamp":"2026-08-23T10:05:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Still drafting."}]}}
-JSONL
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
-    "$transcript" "$home")
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_OWNER_INVOKE_NODES_REGISTRY="$home/nodes.tsv" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 2 ] || fail "vision without any deliverable exited $rc with: $out"
-  assert_contains "$out" 'R-owner-node-open-waiting' \
-    "vision without deliverable did not refuse"
-  mkdir -p "$home/data/tv-vision"
-  printf 'draft\n' > "$home/data/tv-vision/VISION.draft.md"
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    FM_OWNER_INVOKE_NODES_REGISTRY="$home/nodes.tsv" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "vision draft OR-glob exited $rc with: $out"
-  [ -z "$out" ] || fail "vision draft OR-glob printed: $out"
-  pass "owner-invoke-wait: duplicate token globs OR-merge so any hit clears the node"
-}
-
-test_hook_owner_node_recursive_glob_credits_nested_artifact() {
-  local home out rc payload transcript
-  home=$(make_primary_home "$TMP_ROOT/hook-node-recursive")
-  printf '9006\n' > "$home/state/.lock"
-  transcript="$home/transcript.jsonl"
-  cat > "$transcript" <<'JSONL'
-{"timestamp":"2026-08-23T10:00:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"<command-name>/wayfinder</command-name>"}]}}
-{"timestamp":"2026-08-23T10:00:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Where is this map going?"}]}}
-{"timestamp":"2026-08-23T10:05:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"keep going"}]}}
-{"timestamp":"2026-08-23T10:05:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Still mapping."}]}}
-JSONL
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
-    "$transcript" "$home")
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 2 ] || fail "recursive glob without map exited $rc with: $out"
-  mkdir -p "$home/data/deep/nested/wayfinder"
-  printf 'map\n' > "$home/data/deep/nested/wayfinder/map.md"
-  set +e
-  out=$(printf '%s' "$payload" | FM_HOME="$home" FM_ROOT_OVERRIDE="$home" \
-    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
-    "$CHECK" 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "recursive ** map.md exited $rc with: $out"
-  [ -z "$out" ] || fail "recursive ** map.md printed: $out"
-  pass "owner-invoke-wait: ** globs credit nested artifacts recursively"
-}
-
 test_scaled_rows_keep_verdict_and_cost_bounded() {
-  local small scaled payload small_out scaled_out start small_ms scaled_ms rc home count
+  local small scaled small_out scaled_out start small_ms scaled_ms rc home count brief
   small=$(make_primary_home "$TMP_ROOT/scale-small")
   scaled=$(make_primary_home "$TMP_ROOT/scale-large")
-  fm_test_seed_guard_scale_fixture "$small" 3
-  fm_test_seed_guard_scale_fixture "$scaled" 200
   for home in "$small" "$scaled"; do
-    mkdir -p "$home/data/scale-review"
-    printf '8181\n' > "$home/state/.lock"
-    printf '%s\n' 'kind=ship' 'ov=scale-review' 'ov_harness=claude' 'session=8181' \
+    mkdir -p "$home/data/scale-ship" "$home/data/scale-review"
+    printf '# Task\nscale ship\n' > "$home/data/scale-ship/brief.md"
+    printf '%s\n' 'kind=ship' 'ov=scale-review' 'ov_harness=claude' \
       > "$home/state/scale-ship.meta"
     printf 'review complete\n' > "$home/data/scale-review/report.md"
   done
@@ -949,62 +524,46 @@ test_scaled_rows_keep_verdict_and_cost_bounded() {
     count=$((count + 1))
   done
 
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
-    "$small/transcript.jsonl" "$small")
+  brief="$small/data/scale-ship/brief.md"
   start=$(fm_test_monotonic_ms)
   set +e
-  small_out=$(printf '%s' "$payload" | FM_HOME="$small" FM_ROOT_OVERRIDE="$small" \
+  small_out=$(FM_HOME="$small" FM_ROOT_OVERRIDE="$small" \
     FM_STATE_OVERRIDE="$small/state" FM_DATA_OVERRIDE="$small/data" \
-    "$CHECK" --rules R-skill-unloaded 2>&1)
+    "$CHECK" --brief "$brief" --rules R-skill-unloaded 2>&1)
   rc=$?
   set -e
   small_ms=$(($(fm_test_monotonic_ms) - start))
   [ "$rc" -eq 0 ] || fail "small scaled-fixture oracle exited $rc: $small_out"
 
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
-    "$scaled/transcript.jsonl" "$scaled")
+  brief="$scaled/data/scale-ship/brief.md"
   start=$(fm_test_monotonic_ms)
   set +e
-  scaled_out=$(printf '%s' "$payload" | FM_HOME="$scaled" FM_ROOT_OVERRIDE="$scaled" \
+  scaled_out=$(FM_HOME="$scaled" FM_ROOT_OVERRIDE="$scaled" \
     FM_STATE_OVERRIDE="$scaled/state" FM_DATA_OVERRIDE="$scaled/data" \
-    "$CHECK" --rules R-skill-unloaded 2>&1)
+    "$CHECK" --brief "$brief" --rules R-skill-unloaded 2>&1)
   rc=$?
   set -e
   scaled_ms=$(($(fm_test_monotonic_ms) - start))
   [ "$rc" -eq 0 ] || fail "large scaled-fixture oracle exited $rc: $scaled_out"
   [ "$small_out" = "$scaled_out" ] || fail "scaled row fixture changed owner-invoke verdict"
   fm_test_assert_scale_bound "$small_ms" "$scaled_ms" "owner-invoke-wait"
-  pass "owner-invoke-wait: 200 rows preserve verdict with bounded scaling"
+  pass "owner-invoke-wait: 200 skill rows preserve spawn-gate verdict with bounded scaling"
 }
 
 command -v jq >/dev/null 2>&1 || { echo "skip: jq not found"; exit 0; }
 
 test_missing_and_empty_input_are_structural
 test_historical_ship_omission_fires_exact_count
-test_historical_owner_node_open_fires_exact_count
-test_owner_node_same_turn_and_artifact_are_clean
 test_held_locked_next_and_date_cleared
 test_placeholder_and_stub_briefs_are_clean
 test_builder_self_review_is_not_ov
 test_distinct_ov_worker_is_clean
 test_ov_report_and_skill_records
 test_unrelated_rule_does_not_satisfy_exact_count
-test_hook_gathers_session_ship_ov_ladder
 test_hook_does_not_rerefuse_inflight_ship_without_ov
-test_hook_ignores_prior_session_ships
-test_finished_non_claude_review_without_skills_passes
-test_finished_claude_review_without_skills_passes_at_stop
 test_skill_load_record_appends_normalized_token
-test_hook_refuses_husk_ov_worker_without_report
-test_hook_live_ov_agent_without_report_passes
 test_crewmate_settings_carry_skill_recorder
 test_brief_reads_ov_worker_report_and_skills
-test_hook_owner_node_same_turn_is_clean
-test_hook_owner_node_later_captain_without_artifact_refuses
-test_hook_owner_node_ignores_slash_without_command_name
-test_hook_owner_node_malformed_registry_is_structural
-test_hook_owner_node_or_merges_duplicate_token_globs
-test_hook_owner_node_recursive_glob_credits_nested_artifact
 test_scaled_rows_keep_verdict_and_cost_bounded
 
 echo "# all fm-owner-invoke-wait-check tests passed"

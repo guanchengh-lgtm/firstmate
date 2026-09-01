@@ -18,8 +18,8 @@
 #   also have recorded plan-eng-review. A filled builder Task requires --ov;
 #   builder self-review is not OV. bin/fm-owner-invoke-wait-check.sh owns these
 #   rules. --ov is ship-only. Spawn
-#   writes session=<state/.lock contents> into meta so turn-end can gather
-#   ships this session started, and ov_harness=<harness= from state/<ov>.meta>
+#   writes session=<state/.lock contents> into meta and ov_harness=<harness=
+#   from state/<ov>.meta>
 #   so the skill-load rule can honor the non-Claude gap after OV teardown.
 #   Exports FM_TASK_ID and FM_HOME into the worker pane so
 #   bin/fm-skill-load-record.sh can append real Skill loads into

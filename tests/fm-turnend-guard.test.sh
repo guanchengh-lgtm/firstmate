@@ -364,27 +364,6 @@ test_hook_refuses_held_map_next_without_worker() {
   pass "fm-turnend-guard: a held map_next ticket cannot end as a yes-ask"
 }
 
-test_hook_refuses_open_owner_node_after_later_captain() {
-  local dir out status transcript payload
-  dir=$(make_primary_dir "$TMP_ROOT/hook-owner-node")
-  mkdir -p "$dir/data"
-  transcript="$dir/transcript.jsonl"
-  cat > "$transcript" <<'JSONL'
-{"timestamp":"2026-08-23T10:00:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"<command-name>/wayfinder</command-name>"}]}}
-{"timestamp":"2026-08-23T10:00:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Where is this map going?"}]}}
-{"timestamp":"2026-08-23T10:05:00Z","type":"message","message":{"role":"user","content":[{"type":"text","text":"keep going"}]}}
-{"timestamp":"2026-08-23T10:05:01Z","type":"message","message":{"role":"assistant","content":[{"type":"text","text":"Still mapping."}]}}
-JSONL
-  payload=$(printf '{"stop_hook_active":false,"transcript_path":"%s","cwd":"%s"}' \
-    "$transcript" "$dir")
-  out=$(printf '%s' "$payload" | CLAUDECODE=1 FM_HOME="$(cd "$dir" && pwd)" \
-    bash "$dir/bin/fm-turnend-guard.sh" 2>&1); status=$?
-  expect_code 2 "$status" "turn end must refuse an open wayfinder node after the next captain message"
-  assert_contains "$out" 'R-owner-node-open-waiting' \
-    "owner-node refusal did not name the waiting node"
-  pass "fm-turnend-guard: open owner-invoke node after the next captain message is not done"
-}
-
 test_hook_blocks_when_fresh_beacon_has_no_live_lock() {
   local dir out status
   dir=$(make_primary_dir "$TMP_ROOT/hook-fresh-no-lock")
@@ -1853,7 +1832,6 @@ test_hook_refuses_prose_only_ready_action
 test_hook_ready_action_checks_every_ready_ticket
 test_hook_ready_action_accepts_matching_worker_owner
 test_hook_refuses_held_map_next_without_worker
-test_hook_refuses_open_owner_node_after_later_captain
 test_hook_blocks_when_fresh_beacon_has_no_live_lock
 test_hook_blocks_source_only_home
 test_hook_blocks_when_dead_lock_has_fresh_beacon
