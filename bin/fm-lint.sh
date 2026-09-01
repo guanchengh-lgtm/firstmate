@@ -16,8 +16,8 @@
 # The AGENTS.md gate validates safe UTF-8 text, enforces its
 # calibrated-byte hard ceiling, and compares final content with the accepted
 # target base for net-zero growth and new-line why traces.
-# Pull request CI supplies FM_LINT_BASE_SHA, local branches use the current
-# origin/main or main ancestor, and the main branch uses HEAD^1.
+# Pull request CI supplies FM_LINT_BASE_SHA, local branches use the merge base
+# of HEAD and the current origin/main or main target, and main uses HEAD^1.
 # Growth needs exactly one paired trailer set in the accepted branch range:
 #   AGENTS-Budget-Override: v1 base=<blob> target=<blob> before=<count> after=<count>
 #   Captain-Instruction: <the captain's exact words for this growth>
