@@ -3190,7 +3190,11 @@ second body
 }
 
 run_minimal() {  # <dir> <path>
+  # env -i also drops the fixture identity, and Git's implicit fallback name is
+  # empty on hosts without a GECOS field (CI runners), so carry it explicitly.
   OUT=$(env -i PATH="$2" HOME="$1" GIT_SSH_COMMAND="$1/fakebin/fm-feeder-ssh" \
+    GIT_AUTHOR_NAME="$GIT_AUTHOR_NAME" GIT_AUTHOR_EMAIL="$GIT_AUTHOR_EMAIL" \
+    GIT_COMMITTER_NAME="$GIT_COMMITTER_NAME" GIT_COMMITTER_EMAIL="$GIT_COMMITTER_EMAIL" \
     FM_HOME="$1/home" FM_ROOT_OVERRIDE="$ROOT" \
     /bin/bash "$EXPORT" 2>&1)
   RC=$?
