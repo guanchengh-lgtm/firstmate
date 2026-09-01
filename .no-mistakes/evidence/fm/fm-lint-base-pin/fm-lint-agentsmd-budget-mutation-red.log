@@ -1,0 +1,8 @@
+ok - calibrated-byte ceiling accepts 29249 and 29250, then rejects 29251
+ok - missing, unsafe, unreadable, and invalid UTF-8 AGENTS.md files fail closed
+ok - main root content needs no base while feature branches require a target ref
+ok - PR, local feature, and main-push modes select the expected base blob
+ok - CI requires its supplied target base to be a HEAD ancestor
+ok - generic CI feature builds compare against the accepted target base
+ok - deleted, wrong-type, and invalid UTF-8 base AGENTS.md blobs fail precisely
+not ok - feature shrink after local and remote target advance: expected exit 0, got 1

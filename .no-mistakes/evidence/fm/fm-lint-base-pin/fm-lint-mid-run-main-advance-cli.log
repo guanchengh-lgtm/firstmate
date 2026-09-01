@@ -1,0 +1,9 @@
+fork-point: 16eb337047cbe16fdd3c5f31dbb3310e8cb97304
+advanced-origin-main: 5f15162ea12c34d05d73fbf030f9c63ca9803c93
+branch-head: 16eb337047cbe16fdd3c5f31dbb3310e8cb97304
+fm-lint.sh: ShellCheck 0.11.0 (pinned 0.11.0)
+fm-lint.sh: full ShellCheck extended analysis enabled
+fm-lint.sh: no changed lint targets
+fm-lint.sh: AGENTS.md 88 calibrated bytes (base 200; ceiling 29250)
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 1 workflow files valid
