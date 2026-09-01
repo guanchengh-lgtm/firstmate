@@ -16,8 +16,8 @@
 # The AGENTS.md gate validates safe UTF-8 text, enforces its
 # calibrated-byte hard ceiling, and compares final content with the accepted
 # target base for net-zero growth and new-line why traces.
-# Pull request CI supplies FM_LINT_BASE_SHA, local branches use the merge base
-# of HEAD and the current origin/main or main target, and main uses HEAD^1.
+# Pull request CI supplies FM_LINT_BASE_SHA, local branches use the current
+# origin/main or main ancestor, and the main branch uses HEAD^1.
 # Growth needs exactly one paired trailer set in the accepted branch range:
 #   AGENTS-Budget-Override: v1 base=<blob> target=<blob> before=<count> after=<count>
 #   Captain-Instruction: <the captain's exact words for this growth>
@@ -733,11 +733,7 @@ fm_lint_run_agentsmd_budget() {
       fm_lint_agentsmd_error 'the target AGENTS.md base is missing; synchronize the target branch.'
       return 1
     fi
-    # Bind local comparisons to the feature fork point, not a target that advanced later.
-    base=$(git merge-base "$base_ref" HEAD 2>/dev/null) || {
-      fm_lint_agentsmd_error "target base $base_ref is stale or unrelated; fetch the exact target commit or synchronize the branch."
-      return 1
-    }
+    base=$base_ref
   fi
 
   git cat-file -e "$base^{commit}" >/dev/null 2>&1 \
