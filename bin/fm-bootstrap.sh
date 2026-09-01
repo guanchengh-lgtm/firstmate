@@ -1200,9 +1200,9 @@ if [ "${1:-}" = "install" ]; then
   exit 0
 fi
 
-# This is the first mutating sweep at a locked session boundary. Detect-only
-# sessions never touch state, and the deferred network pass never repeats it:
-# the local pass that ran first already closed that window.
+# Apply home-local startup memory configuration only during the locked local
+# phase. Detect-only sessions never touch state, and the deferred network pass
+# never repeats local setup.
 if [ "${FM_BOOTSTRAP_DETECT_ONLY:-0}" != 1 ] && local_phase; then
   startup_memory_budget_setup
 fi
