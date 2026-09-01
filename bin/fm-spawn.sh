@@ -3009,6 +3009,14 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
     exit 1
   fi
 
+  # Sanitize the freshly leased copy: a prior task's hook pointers are
+  # untracked, so they survive a pooled return and would keep firing turn-end
+  # signals for a dead task. This runs on the spawn side, under this task's own
+  # valid lease, so it can never touch a worktree another task owns.
+  rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
+    "$WT/.opencode/plugins/fm-busy-state.js" \
+    "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend"
+
   # The immutable lease identifies the allocation. The path only locates it.
   # held -> conditional return -> released is the durable teardown phase.
   leased_wt_real=$(real_path_or_raw "$WT")

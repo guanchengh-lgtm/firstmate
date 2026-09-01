@@ -157,7 +157,49 @@ test_already_settled_pane_costs_one_confirm_sleep() {
   pass "an already-settled pane confirms via the existing inter-poll sleep, not an extra full cycle"
 }
 
+# A pooled worktree carries the previous task's untracked hook pointers back
+# into the pool. The fresh lease must start without that dead wiring, or the
+# new task's copy keeps signalling turn-end for a task that no longer exists.
+test_fresh_lease_removes_stale_hook_wiring() {
+  local rec id out status stale exclude
+  id=settle-stale-hooks-z3
+  rec=$(make_settle_case settle-stale-hooks "$id" 0)
+  read_settle_record "$rec"
+
+  mkdir -p "$WT_DIR/.claude" "$WT_DIR/.opencode/plugins"
+  # The prior task excluded its own hook pointers from git's view, exactly as
+  # spawn does, so they are invisible to every dirty-worktree check.
+  exclude=$(git -C "$WT_DIR" rev-parse --git-path info/exclude)
+  mkdir -p "$(dirname "$exclude")"
+  for stale in .claude/settings.local.json .opencode/plugins/fm-turn-end.js \
+    .opencode/plugins/fm-busy-state.js .fm-grok-turnend .fm-kimi-turnend; do
+    printf '%s\n' "$stale" >> "$exclude"
+  done
+  printf 'token=fm.deadtaskdead\n' > "$WT_DIR/.fm-grok-turnend"
+  printf 'token=fm.deadtaskdead\n' > "$WT_DIR/.fm-kimi-turnend"
+  printf '{"hooks":"dead task"}\n' > "$WT_DIR/.claude/settings.local.json"
+  printf '// dead task turn-end\n' > "$WT_DIR/.opencode/plugins/fm-turn-end.js"
+  printf '// dead task busy-state\n' > "$WT_DIR/.opencode/plugins/fm-busy-state.js"
+
+  out=$(run_settle_spawn "$id")
+  status=$?
+  expect_code 0 "$status" "spawn should succeed on a reused pool worktree"
+  assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" \
+    "meta did not record the leased worktree"
+  for stale in .fm-grok-turnend .fm-kimi-turnend .opencode/plugins/fm-turn-end.js \
+    .opencode/plugins/fm-busy-state.js; do
+    [ ! -e "$WT_DIR/$stale" ] \
+      || fail "reused pool worktree kept the dead task's $stale wiring"
+  done
+  if [ -e "$WT_DIR/.claude/settings.local.json" ]; then
+    assert_no_grep 'dead task' "$WT_DIR/.claude/settings.local.json" \
+      "reused pool worktree kept the dead task's claude hook settings"
+  fi
+  pass "a fresh lease clears the previous task's hook wiring from a reused pool worktree"
+}
+
 test_single_stale_first_read_is_not_accepted
 test_already_settled_pane_costs_one_confirm_sleep
+test_fresh_lease_removes_stale_hook_wiring
 
 echo "# all fm-spawn-worktree-settle tests passed"
