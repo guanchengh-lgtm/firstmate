@@ -1106,8 +1106,8 @@ test_lsof_error_never_clears_index_lock() {
   set -e
 
   expect_code 1 "$rc" "lsof-error-index-lock: teardown should refuse when lsof errors"
-  assert_grep "lsof check failed" "$case_dir/stderr" \
-    "lsof-error-index-lock: conditional return did not report the lsof failure"
+  assert_grep "REFUSED: cannot determine leaked processes" "$case_dir/stderr" \
+    "lsof-error-index-lock: teardown did not refuse when lsof failed"
   assert_not_contains "$(cat "$case_dir/stderr")" "removed provably-stale git lock" \
     "lsof-error-index-lock: teardown removed a lock after lsof failed"
   [ -e "$lock" ] || fail "lsof-error-index-lock: lock file was removed after lsof failed"
@@ -2695,12 +2695,10 @@ test_leaked_worktree_process_is_reaped() {
   disown
   sleep 0.3
   kill -0 "$pid" 2>/dev/null || fail "leaked-process-reap: setup sleeper did not start"
-  cat > "$case_dir/fakebin/treehouse" <<EOF
+  cat > "$case_dir/fakebin/treehouse" <<'EOF'
 #!/usr/bin/env bash
-case " \$* " in
+case " $* " in
   *" --if-lease-id lease-task-x1 --if-lease-holder task-x1 "*)
-    kill '$pid' 2>/dev/null || true
-    printf '%s\n' 'treehouse conditionally reaped worktree process' >&2
     exit 0
     ;;
 esac
@@ -2716,9 +2714,9 @@ EOF
     kill -KILL "$pid" 2>/dev/null || true
     fail "leaked-process-reap: leaked worktree process survived teardown"
   fi
-  assert_grep "treehouse conditionally reaped worktree process" "$case_dir/stdout" \
-    "leaked-process-reap: conditional Treehouse return did not reap the leaked process"
-  pass "Treehouse reaps a leaked worktree process only after the lease condition matches"
+  assert_grep "reaping leaked worktree process" "$case_dir/stderr" \
+    "leaked-process-reap: teardown did not reap the leaked worktree process itself"
+  pass "teardown reaps a leaked worktree process while the treehouse lease is still held"
 }
 
 test_leaked_tasktmp_process_is_reaped() {
@@ -2794,10 +2792,16 @@ test_lsof_error_refuses_before_removal() {
   printf '%s\n' "tasktmp=$case_dir/tasktmp" >> "$case_dir/state/task-x1.meta"
   mkdir -p "$case_dir/tasktmp"
   land_shippable_commit "$case_dir"
-  cat > "$case_dir/fakebin/lsof" <<'SH'
+  # The pre-return worktree scan must succeed so this case exercises the
+  # post-return task-temp scan: lsof reports nothing once, then errors.
+  cat > "$case_dir/fakebin/lsof" <<EOF
 #!/usr/bin/env bash
-exit 1
-SH
+count_file='$case_dir/lsof-calls'
+count=\$(cat "\$count_file" 2>/dev/null || printf '0')
+printf '%s\n' "\$((count + 1))" > "\$count_file"
+[ "\$count" -eq 0 ] || exit 1
+exit 0
+EOF
   cat > "$case_dir/fakebin/treehouse" <<EOF
 #!/usr/bin/env bash
 printf 'return\n' >> "$case_dir/treehouse.log"
