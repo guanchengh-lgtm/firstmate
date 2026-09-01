@@ -37,7 +37,7 @@ test_list_all_exact_suite_coverage() {
 }
 
 test_family_selection() {
-  local listed line
+  local listed line herdr
   listed=$("$RUNNER" --list --family pure-contract-unit)
   [ -n "$listed" ] || fail "--family pure-contract-unit selected nothing"
   printf '%s\n' "$listed" | grep -Fq 'tests/fm-test-run.test.sh' \
@@ -55,6 +55,12 @@ test_family_selection() {
   fam_count=$(printf '%s\n' "$listed" | wc -l | tr -d ' ')
   [ "$fam_count" -lt "$all_count" ] \
     || fail "pure-contract-unit must be a proper subset of --all"
+  herdr=$("$RUNNER" --list --family real-herdr-gated)
+  assert_contains "$herdr" "tests/fm-treehouse-lease.test.sh" \
+    "the installed Treehouse lane must include the real lease regression"
+  listed=$("$RUNNER" --list --family backend-dispatch)
+  assert_not_contains "$listed" "tests/fm-treehouse-lease.test.sh" \
+    "the portable backend family must not own the real Treehouse regression"
   pass "family selection returns a proper subset of the suite"
 }
 

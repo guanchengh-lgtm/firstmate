@@ -40,7 +40,14 @@ set -u
 endpoint_state=
 [ -z "${FM_FAKE_ENDPOINT_STATE:-}" ] || endpoint_state=$(cat "$FM_FAKE_ENDPOINT_STATE" 2>/dev/null || true)
 case "$*" in
-  *"#{pane_current_path}"*) printf '%s\n' "${FM_FAKE_PANE_PATH:-}"; exit 0 ;;
+  *"#{pane_current_path}"*)
+    if [ -n "${FM_FAKE_PANE_PATH_STATE:-}" ] && [ -f "$FM_FAKE_PANE_PATH_STATE" ]; then
+      cat "$FM_FAKE_PANE_PATH_STATE"
+    else
+      printf '%s\n' "${FM_FAKE_PANE_PATH:-}"
+    fi
+    exit 0
+    ;;
   *"#{pane_id}"*)
     [ "$endpoint_state" != missing ] || exit 1
     printf '%s\n' '%1'
@@ -75,6 +82,12 @@ case "${1:-}" in
     ;;
   has-session|new-session) exit 0 ;;
   send-keys)
+    for a in "$@"; do
+      if [ -n "${FM_FAKE_PANE_PATH_STATE:-}" ] \
+         && [ "$a" = "cd '${FM_FAKE_PANE_PATH:-}'" ]; then
+        printf '%s\n' "$FM_FAKE_PANE_PATH" > "$FM_FAKE_PANE_PATH_STATE"
+      fi
+    done
     if [ -n "${FM_FAKE_LAUNCH_LOG:-}" ]; then
       prev=
       saw_l=0
@@ -164,10 +177,20 @@ case "$*" in
       printf '%s\n' '{"error":{"code":"pane_not_found"}}'
       exit 1
     fi
-    printf '{"result":{"pane":{"pane_id":"w2:p2","tab_id":"w2:t2","workspace_id":"w2","foreground_cwd":"%s"}}}\n' "${FM_FAKE_PANE_PATH:-}"
+    pane_path=${FM_FAKE_PANE_PATH:-}
+    if [ -n "${FM_FAKE_PANE_PATH_STATE:-}" ] && [ -f "$FM_FAKE_PANE_PATH_STATE" ]; then
+      pane_path=$(cat "$FM_FAKE_PANE_PATH_STATE")
+    fi
+    printf '{"result":{"pane":{"pane_id":"w2:p2","tab_id":"w2:t2","workspace_id":"w2","foreground_cwd":"%s"}}}\n' "$pane_path"
     exit 0
     ;;
   *"pane run"*|*"pane send-text"*|*"pane send-keys"*)
+    for arg in "$@"; do
+      if [ -n "${FM_FAKE_PANE_PATH_STATE:-}" ] \
+         && [ "$arg" = "cd '${FM_FAKE_PANE_PATH:-}'" ]; then
+        printf '%s\n' "$FM_FAKE_PANE_PATH" > "$FM_FAKE_PANE_PATH_STATE"
+      fi
+    done
     printf '%s\n' '{"result":{}}'
     exit 0
     ;;
@@ -200,12 +223,27 @@ case "$*" in
     printf '%s\n' '3'
     ;;
   *"action list-panes --json"*)
-    printf '[{"tab_id":3,"is_plugin":false,"id":7,"pane_cwd":"%s"}]\n' "${FM_FAKE_PANE_PATH:?}"
+    pane_path=${FM_FAKE_PANE_PATH:?}
+    if [ -n "${FM_FAKE_PANE_PATH_STATE:-}" ] && [ -f "$FM_FAKE_PANE_PATH_STATE" ]; then
+      pane_path=$(cat "$FM_FAKE_PANE_PATH_STATE")
+    fi
+    printf '[{"tab_id":3,"is_plugin":false,"id":7,"pane_cwd":"%s"}]\n' "$pane_path"
     ;;
   *"action dump-screen"*)
-    printf '%s\n%s\n%s\n' '__FM_ZELLIJ_CWD_BEGIN__' "${FM_FAKE_PANE_PATH:?}" '__FM_ZELLIJ_CWD_END__'
+    pane_path=${FM_FAKE_PANE_PATH:?}
+    if [ -n "${FM_FAKE_PANE_PATH_STATE:-}" ] && [ -f "$FM_FAKE_PANE_PATH_STATE" ]; then
+      pane_path=$(cat "$FM_FAKE_PANE_PATH_STATE")
+    fi
+    printf '%s\n%s\n%s\n' '__FM_ZELLIJ_CWD_BEGIN__' "$pane_path" '__FM_ZELLIJ_CWD_END__'
     ;;
-  *"action paste"*|*"action send-keys"*|*"action go-to-tab-by-id"*) ;;
+  *"action paste"*|*"action send-keys"*|*"action go-to-tab-by-id"*)
+    for arg in "$@"; do
+      if [ -n "${FM_FAKE_PANE_PATH_STATE:-}" ] \
+         && [ "$arg" = "cd '${FM_FAKE_PANE_PATH:-}'" ]; then
+        printf '%s\n' "$FM_FAKE_PANE_PATH" > "$FM_FAKE_PANE_PATH_STATE"
+      fi
+    done
+    ;;
   *) exit 1 ;;
 esac
 exit 0
@@ -237,9 +275,21 @@ case "$*" in
     ;;
   list-panes*) printf '%s\n' '{"panes":[{"selected_surface_id":"sf-1","surface_ids":["sf-1"]}]}' ;;
   read-screen*)
-    printf '{"text":"__FM_CMUX_CWD_BEGIN__\\n%s\\n__FM_CMUX_CWD_END__"}\n' "${FM_FAKE_PANE_PATH:?}"
+    pane_path=${FM_FAKE_PANE_PATH:?}
+    if [ -n "${FM_FAKE_PANE_PATH_STATE:-}" ] && [ -f "$FM_FAKE_PANE_PATH_STATE" ]; then
+      pane_path=$(cat "$FM_FAKE_PANE_PATH_STATE")
+    fi
+    printf '{"text":"__FM_CMUX_CWD_BEGIN__\\n%s\\n__FM_CMUX_CWD_END__"}\n' "$pane_path"
     ;;
-  send*|send-key*) printf '%s\n' 'OK' ;;
+  send*|send-key*)
+    for arg in "$@"; do
+      if [ -n "${FM_FAKE_PANE_PATH_STATE:-}" ] \
+         && [ "$arg" = "cd '${FM_FAKE_PANE_PATH:-}'" ]; then
+        printf '%s\n' "$FM_FAKE_PANE_PATH" > "$FM_FAKE_PANE_PATH_STATE"
+      fi
+    done
+    printf '%s\n' 'OK'
+    ;;
   *) exit 1 ;;
 esac
 exit 0
@@ -400,8 +450,11 @@ make_seeded_secondmate_home() {
 
 run_spawn() {
   local home=$1 wt=$2 fakebin=$3 launchlog=$4 endpoint_state endpoint_label tmuxlog prior_command
+  local pane_path_state initial_path
   shift 4
   endpoint_state="$home/state/.fake-endpoint-state"
+  pane_path_state="$home/state/.fake-pane-path"
+  initial_path=${2:-$wt}
   endpoint_label=$(cat "$home/state/.fake-endpoint-label" 2>/dev/null || true)
   tmuxlog="$home/state/.fake-tmux.log"
   prior_command=${FM_TEST_PRIOR_COMMAND:-}
@@ -409,6 +462,7 @@ run_spawn() {
   : > "$launchlog"
   : > "$launchlog.exports"
   : > "$tmuxlog"
+  printf '%s\n' "$initial_path" > "$pane_path_state"
   # CLAUDE_CONFIG_DIR is forwarded onto claude launches by fm-spawn, so pin it
   # explicitly (empty by default) instead of leaking the invoking shell's value,
   # which would make launch assertions depend on the developer's environment.
@@ -416,7 +470,8 @@ run_spawn() {
   FM_ROOT_OVERRIDE='' FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
     FM_PROJECTS_OVERRIDE="$home/projects" FM_CONFIG_OVERRIDE="$home/config" \
-    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" TMUX="fake,1,0" \
+    FM_SPAWN_NO_GUARD=1 FM_FAKE_PANE_PATH="$wt" \
+    FM_FAKE_PANE_PATH_STATE="$pane_path_state" TMUX="fake,1,0" \
     FM_FAKE_ENDPOINT_STATE="$endpoint_state" FM_FAKE_ENDPOINT_LABEL="$endpoint_label" \
     FM_FAKE_PRIOR_COMMAND="$prior_command" FM_FAKE_TMUX_LOG="$tmuxlog" \
     FM_FAKE_TMUX_KILL_STATE="${FM_TEST_TMUX_KILL_STATE:-}" \
@@ -1576,7 +1631,7 @@ test_active_dispatch_profile_does_not_block_secondmate_launch() {
 }
 
 test_role_verifier_encodes_verifier_brief() {
-  local rec id out status launch expected meta head_before head_after branch tmuxlog
+  local rec id out status launch expected meta head_before head_after branch tmuxlog treehouse_log
   id=profile-role-verifier-z14
   rec=$(make_spawn_case profile-role-verifier claude "$id")
   read_case_record "$rec"
@@ -1585,9 +1640,12 @@ test_role_verifier_encodes_verifier_brief() {
     >> "$HOME_DIR/state/$id.meta"
   printf 'product\n' > "$HOME_DIR/data/$id/surface"
   head_before=$(git -C "$WT_DIR" rev-parse HEAD)
+  treehouse_log="$CASE_DIR/treehouse.log"
+  : > "$treehouse_log"
 
-  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
-    --mode no-mistakes --yolo off --role verifier)
+  out=$(FM_FAKE_TREEHOUSE_LOG="$treehouse_log" \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+      --mode no-mistakes --yolo off --role verifier)
   status=$?
   expect_code 0 "$status" "--role verifier spawn should succeed when verifier-brief.md exists"
   meta="$HOME_DIR/state/$id.meta"
@@ -1611,7 +1669,8 @@ test_role_verifier_encodes_verifier_brief() {
   branch=$(git -C "$WT_DIR" symbolic-ref --quiet --short HEAD)
   [ "$branch" = "fm/$id" ] || fail "verifier spawn changed builder task branch"
   tmuxlog="$HOME_DIR/state/.fake-tmux.log"
-  assert_no_grep 'treehouse get' "$tmuxlog" "verifier spawn acquired a second treehouse worktree"
+  assert_no_grep 'get --lease' "$treehouse_log" \
+    "verifier spawn acquired a second Treehouse lease"
   [ "$(grep -c '^new-window ' "$tmuxlog" || true)" -eq 1 ] \
     || fail "verifier spawn did not create exactly one fresh endpoint"
 
@@ -2160,14 +2219,17 @@ test_verifier_handoff_teardown_returns_single_worktree() {
   rec=$(make_spawn_case profile-verifier-teardown claude "$id")
   read_case_record "$rec"
   prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  treehouse_log="$CASE_DIR/treehouse.log"
+  : > "$treehouse_log"
 
-  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
-    --mode no-mistakes --yolo off --role verifier)
+  out=$(FM_FAKE_TREEHOUSE_LOG="$treehouse_log" \
+    run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+      --mode no-mistakes --yolo off --role verifier)
   status=$?
   expect_code 0 "$status" "verifier handoff should succeed before teardown integration"
   tmuxlog="$HOME_DIR/state/.fake-tmux.log"
-  assert_no_grep 'treehouse get' "$tmuxlog" \
-    "verifier handoff teardown fixture acquired a second worktree"
+  assert_no_grep 'get --lease' "$treehouse_log" \
+    "verifier handoff teardown fixture acquired a second Treehouse lease"
 
   git -C "$WT_DIR" push -q origin "fm/$id"
   git -C "$PROJ_DIR" fetch -q origin
