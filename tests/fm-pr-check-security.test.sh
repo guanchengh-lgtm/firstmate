@@ -997,6 +997,60 @@ test_bootstrap_leaves_unauthenticated_checks() {
   pass "bootstrap does not rewrite unauthenticated checks or emit retired migration diagnostics"
 }
 
+test_watcher_rejects_unauthenticated_checks() {
+  local dir state sentinel rc
+
+  dir=$(make_case watcher-rejects-unregistered-check)
+  state="$dir/home/state"
+  sentinel="$dir/unregistered-ran"
+  printf '#!/usr/bin/env bash\ntouch %q\n' "$sentinel" > "$state/unregistered.check.sh"
+  chmod 0700 "$state/unregistered.check.sh"
+  set +e
+  run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/watch.out" 2> "$dir/watch.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "watcher failed while rejecting an unregistered check: $(cat "$dir/watch.err")"
+  assert_grep "check: rejected unauthenticated state checks: $state/unregistered.check.sh" \
+    "$dir/watch.out" "watcher did not report the rejected unregistered check"
+  [ ! -e "$sentinel" ] || fail "watcher executed an unregistered check"
+  [ -e "$state/unregistered.check.sh" ] || fail "watcher removed the rejected unregistered check"
+
+  dir=$(make_case watcher-rejects-changed-custom-check)
+  state="$dir/home/state"
+  sentinel="$dir/changed-custom-ran"
+  printf '#!/usr/bin/env bash\nprintf "trusted\\n"\n' > "$state/custom.check.sh"
+  chmod 0700 "$state/custom.check.sh"
+  FM_HOME="$dir/home" "$REGISTER" custom >/dev/null \
+    || fail "could not register the custom check rejection fixture"
+  printf '#!/usr/bin/env bash\ntouch %q\n' "$sentinel" > "$state/custom.check.sh"
+  chmod 0700 "$state/custom.check.sh"
+  set +e
+  run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/watch.out" 2> "$dir/watch.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "watcher failed while rejecting a changed custom check: $(cat "$dir/watch.err")"
+  assert_grep "check: rejected unauthenticated state checks: $state/custom.check.sh" \
+    "$dir/watch.out" "watcher did not report the rejected changed custom check"
+  [ ! -e "$sentinel" ] || fail "watcher executed a changed custom check"
+  [ -e "$state/custom.check.sh" ] || fail "watcher removed the rejected changed custom check"
+
+  dir=$(make_case watcher-rejects-forged-x-shim)
+  state="$dir/home/state"
+  sentinel="$dir/forged-x-ran"
+  printf '#!/usr/bin/env bash\ntouch %q\n' "$sentinel" > "$state/x-watch.check.sh"
+  chmod 0700 "$state/x-watch.check.sh"
+  set +e
+  run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/watch.out" 2> "$dir/watch.err"
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "watcher failed while rejecting a forged X shim: $(cat "$dir/watch.err")"
+  assert_grep "check: rejected unauthenticated state checks: $state/x-watch.check.sh" \
+    "$dir/watch.out" "watcher did not report the rejected forged X shim"
+  [ ! -e "$sentinel" ] || fail "watcher executed a forged X shim"
+  [ -e "$state/x-watch.check.sh" ] || fail "watcher removed the rejected forged X shim"
+  pass "watcher rejects unregistered, changed custom, and forged X checks"
+}
+
 test_custom_snapshot_cleanup_on_signal() {
   local dir state child_pid_file pid child_pid i rc
   dir=$(make_case custom-snapshot-signal)
@@ -1825,6 +1879,7 @@ test_poll_publication_refuses_unsafe_destinations
 test_live_artifact_single_link_and_privacy_validation
 test_postrename_poll_validation_revokes_and_retries
 test_bootstrap_leaves_unauthenticated_checks
+test_watcher_rejects_unauthenticated_checks
 test_custom_snapshot_cleanup_on_signal
 test_returned_custom_check_descendants_are_drained
 test_teardown_removes_poll_artifacts
