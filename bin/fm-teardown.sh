@@ -141,9 +141,9 @@
 #     whose CURRENT WORKING DIRECTORY is under a named task root through
 #     `lsof -a -d cwd`. It sends TERM, then KILL after a short grace period to
 #     any survivor whose process identity still matches. Orca uses this for
-#     its worktree and tasktmp before removal. A Treehouse task reaps its own
-#     leased worktree while its recorded lease is still held, immediately before
-#     the conditional return, and reaps tasktmp after that return.
+#     its worktree and tasktmp before removal. A Treehouse task reaps only its
+#     tasktmp: the leased worktree belongs to the pool, whose conditional release
+#     cleans processes and resets the tree under the lock that checks the lease.
 #     These roots are unique per task. An empty result is a silent no-op.
 #   Fix 3 - sweep abandoned remote job workers. A remote job worker started
 #     from a worktree's own bin/ outlives that worktree's removal without
@@ -3019,9 +3019,11 @@ elif [ "$KIND" != secondmate ]; then
     if [ "$FORCE" != "--force" ] && [ "$KIND" != scout ]; then
       post_lock_cleanup_check=validate_worktree_teardown_safety
     fi
-    # Firstmate-owned cleanup of its own leased worktree runs while the
-    # recorded lease is still held, before the conditional return.
-    reap_task_worktree_processes worktree "$WT"
+    # No Firstmate process reap runs on the leased worktree. A recorded
+    # treehouse_lease_state=held is exactly what the ABA case falsifies, so it
+    # cannot gate a kill. Only Treehouse can check ownership and clean up
+    # atomically: its conditional release reaps and resets under the same state
+    # lock that verifies the lease, so it never touches a newer holder.
     teardown_treehouse_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check" \
       "$TREEHOUSE_LEASE_ID" "$TREEHOUSE_LEASE_HOLDER" || {
       echo "error: conditional treehouse return failed for worktree $WT; teardown aborted without releasing task records" >&2
@@ -3049,8 +3051,9 @@ elif [ "$KIND" != secondmate ]; then
   # This best-effort global sweep is deferred until the task's conditional
   # lease check succeeds, or a prior attempt has recorded the released phase.
   "$SCRIPT_DIR/fm-remote-job-reap-orphans.sh" >&2 || true
-  # The leased worktree is reaped above, while the lease is still held. The task
-  # temp root is separate from the lease and is reaped here.
+  # The pool's conditional release owns process cleanup under the leased
+  # worktree. The task temp root is Firstmate's own scratch area and is reaped
+  # here.
   reap_task_worktree_processes task-temp "$TASK_TMP"
 fi
 

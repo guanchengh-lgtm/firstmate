@@ -533,23 +533,6 @@ SH
   chmod +x "$case_dir/fakebin/lsof"
 }
 
-# fakebin/lsof stub: the cwd scan used by the process reap succeeds with no
-# hits, while every lock-path query errors, so only the stale-lock check is
-# affected.
-add_lsof_error_for_lock_paths_only() {
-  local case_dir=$1
-  cat > "$case_dir/fakebin/lsof" <<'SH'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  [ "$arg" = "cwd" ] || continue
-  exit 0
-done
-echo "lsof: simulated failure for ${*: -1}" >&2
-exit 2
-SH
-  chmod +x "$case_dir/fakebin/lsof"
-}
-
 add_stat_error() {
   local case_dir=$1
   cat > "$case_dir/fakebin/stat" <<'SH'
@@ -1109,9 +1092,7 @@ test_lsof_error_never_clears_index_lock() {
   git -C "$case_dir/project" fetch -q origin
 
   add_lock_aware_treehouse "$case_dir"
-  # The pre-return worktree scan must succeed so this case reaches the stale-lock
-  # check: the cwd scan reports nothing, every other lsof query errors.
-  add_lsof_error_for_lock_paths_only "$case_dir"
+  add_lsof_error "$case_dir"
 
   lock=$(git_index_lock_path "$case_dir/wt")
   mkdir -p "$(dirname "$lock")"
@@ -2339,9 +2320,6 @@ SH
   [ "$calls" -eq 1 ] || fail "release-state-rerun: first teardown made $calls Treehouse calls"
 
   printf '%s\n' 'task B content' > "$sentinel"
-  # Firstmate reaps processes under its own recorded worktree path while the
-  # recorded lease still reads held, before the conditional identity check, so
-  # this case asserts on content, metadata, endpoint, and record survival.
   ( cd "$case_dir/wt" && exec sleep 30 ) &
   b_pid=$!
   printf '%s\n' "$b_pid" > "$pid_file"
@@ -2413,6 +2391,7 @@ SH
   fi
   [ "$meta_after" = "$meta_before" ] || fail "stale-lease-mismatch: refusal changed task metadata"
   [ -e "$sentinel" ] || fail "stale-lease-mismatch: refusal reset task B content"
+  kill -0 "$b_pid" 2>/dev/null || fail "stale-lease-mismatch: refusal terminated task B"
   [ ! -s "$tmux_log" ] || fail "stale-lease-mismatch: refusal closed task B endpoint"
   assert_absent "$case_dir/nm-abort.log" \
     "stale-lease-mismatch: refusal mutated the task's no-mistakes run"
@@ -2420,7 +2399,7 @@ SH
     "stale-lease-mismatch: return did not carry both task A conditions"
   kill "$b_pid" 2>/dev/null || true
   wait "$b_pid" 2>/dev/null || true
-  pass "stale lease mismatch preserves the newer content, metadata, endpoint, and records"
+  pass "stale lease mismatch preserves the newer process, content, metadata, and endpoint"
 }
 
 test_invalid_or_legacy_lease_metadata_refuses_before_cleanup() {
@@ -2701,45 +2680,6 @@ test_own_autonomous_run_is_left_alone() {
   pass "a task-owned autonomous running step is left alone rather than aborted"
 }
 
-test_leaked_worktree_process_is_reaped() {
-  local case_dir rc pid
-  case_dir=$(make_case leaked-process-reap)
-  write_meta "$case_dir" no-mistakes ship
-  land_shippable_commit "$case_dir"
-
-  # A backgrounded, disowned process rooted (by cwd) under the task's own
-  # worktree - the same shape the observed incident's leaked `go test`
-  # binaries took (reparented to init, no live task meta to attribute them
-  # to once an unpatched teardown had already run).
-  ( cd "$case_dir/wt" && exec sleep 300 ) &
-  pid=$!
-  disown
-  sleep 0.3
-  kill -0 "$pid" 2>/dev/null || fail "leaked-process-reap: setup sleeper did not start"
-  cat > "$case_dir/fakebin/treehouse" <<'EOF'
-#!/usr/bin/env bash
-case " $* " in
-  *" --if-lease-id lease-task-x1 --if-lease-holder task-x1 "*)
-    exit 0
-    ;;
-esac
-exit 1
-EOF
-  chmod +x "$case_dir/fakebin/treehouse"
-
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-
-  expect_code 0 "$rc" "leaked-process-reap: teardown should still succeed"
-  if kill -0 "$pid" 2>/dev/null; then
-    kill -KILL "$pid" 2>/dev/null || true
-    fail "leaked-process-reap: leaked worktree process survived teardown"
-  fi
-  assert_grep "reaping leaked worktree process" "$case_dir/stderr" \
-    "leaked-process-reap: teardown did not reap the leaked worktree process itself"
-  pass "teardown reaps a leaked worktree process while the treehouse lease is still held"
-}
-
 test_leaked_tasktmp_process_is_reaped() {
   local case_dir rc pid
   case_dir=$(make_case leaked-tasktmp-reap)
@@ -2801,7 +2741,7 @@ EOF
     kill -KILL "$pid" 2>/dev/null || true
     fail "lsof-absent-process-group-reap: tmux process group survived teardown"
   fi
-  assert_grep "reaping leaked worktree process group" "$case_dir/stderr" \
+  assert_grep "reaping leaked task-temp process group" "$case_dir/stderr" \
     "lsof-absent-process-group-reap: teardown did not use the process-group fallback"
   pass "missing lsof falls back to reaping the tmux pane process group"
 }
@@ -2813,16 +2753,10 @@ test_lsof_error_refuses_before_removal() {
   printf '%s\n' "tasktmp=$case_dir/tasktmp" >> "$case_dir/state/task-x1.meta"
   mkdir -p "$case_dir/tasktmp"
   land_shippable_commit "$case_dir"
-  # The pre-return worktree scan must succeed so this case exercises the
-  # post-return task-temp scan: lsof reports nothing once, then errors.
-  cat > "$case_dir/fakebin/lsof" <<EOF
+  cat > "$case_dir/fakebin/lsof" <<'SH'
 #!/usr/bin/env bash
-count_file='$case_dir/lsof-calls'
-count=\$(cat "\$count_file" 2>/dev/null || printf '0')
-printf '%s\n' "\$((count + 1))" > "\$count_file"
-[ "\$count" -eq 0 ] || exit 1
-exit 0
-EOF
+exit 1
+SH
   cat > "$case_dir/fakebin/treehouse" <<EOF
 #!/usr/bin/env bash
 printf 'return\n' >> "$case_dir/treehouse.log"
@@ -3186,7 +3120,6 @@ test_empty_status_after_abort_refuses_unconfirmed
 test_not_found_status_after_abort_confirms_completion
 test_another_branchs_parked_run_is_never_touched
 test_own_autonomous_run_is_left_alone
-test_leaked_worktree_process_is_reaped
 test_leaked_tasktmp_process_is_reaped
 test_lsof_absent_reaps_tmux_process_group
 test_lsof_error_refuses_before_removal
