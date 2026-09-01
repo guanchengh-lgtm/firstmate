@@ -350,12 +350,17 @@ SH
   isolated_tmux_window_exists "$dir" "$socket" "$session" "$prefix_survivor" \
     || fail "missing exact target cleanup removed its prefix-matched neighbor"
 
+  # This case owns endpoint isolation, not lease policy: the worktree is
+  # deliberately absent so no worktree work is needed. A held lease with a
+  # missing worktree is refused by design, so record the lease as already
+  # released, which skips every Treehouse return path and leaves the endpoint
+  # and record cleanup under test.
   fm_write_meta "$dir/home/state/$target_id.meta" \
     "window=$session:$target" "endpoint_task_id=$target_id" \
     "worktree=$dir/nonexistent-worktree" "project=$dir/project" \
     "kind=scout" "mode=no-mistakes" \
     "treehouse_lease_id=lease-$target_id" \
-    "treehouse_lease_holder=$target_id" "treehouse_lease_state=held"
+    "treehouse_lease_holder=$target_id" "treehouse_lease_state=released"
   fm_write_none_measure "$dir/home" "$target_id"
   env -u TMUX -u TMUX_PANE FM_TEST_TMUX_SOCKET="$socket_id" \
     FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" FM_RUNTIME_LOG="$dir/runtime.log" \
