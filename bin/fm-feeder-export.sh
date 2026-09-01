@@ -576,12 +576,16 @@ dir_digest() { # <dir>; ABSENT when the directory does not exist
   fi
   if [ "$status" -eq 0 ]; then
     if [ -s "$names" ]; then
-      result=$(LC_ALL=C paste "$names" "$digests" | sha256_stdin) || status=1
+      if LC_ALL=C paste "$names" "$digests" > "$names.pair"; then
+        result=$(sha256_stdin < "$names.pair") || status=1
+      else
+        status=1
+      fi
     else
       result=EMPTY
     fi
   fi
-  rm -f "$names" "$names.nul" "$digests"
+  rm -f "$names" "$names.nul" "$names.pair" "$digests"
   [ "$status" -eq 0 ] || return 1
   printf '%s\n' "$result"
 }
@@ -601,8 +605,8 @@ git_dir_digest() { # <commit> <repository-relative-dir>
     rm -f "$paths" "$names" "$digests"
     return 1
   }
-  if git -C "$VAULT" ls-tree -r --name-only "$commit" -- "$prefix" > "$paths" 2>/dev/null; then
-    LC_ALL=C sort -o "$paths" "$paths"
+  if git -C "$VAULT" ls-tree -r --name-only "$commit" -- "$prefix" > "$paths" 2>/dev/null \
+    && LC_ALL=C sort -o "$paths" "$paths"; then
     : > "$names"
     : > "$digests"
     while IFS= read -r path; do
@@ -627,12 +631,16 @@ git_dir_digest() { # <commit> <repository-relative-dir>
   fi
   if [ "$status" -eq 0 ]; then
     if [ -s "$names" ]; then
-      result=$(LC_ALL=C paste "$names" "$digests" | sha256_stdin) || status=1
+      if LC_ALL=C paste "$names" "$digests" > "$names.pair"; then
+        result=$(sha256_stdin < "$names.pair") || status=1
+      else
+        status=1
+      fi
     else
       result=ABSENT
     fi
   fi
-  rm -f "$paths" "$names" "$digests" "$blob"
+  rm -f "$paths" "$names" "$names.pair" "$digests" "$blob"
   [ "$status" -eq 0 ] || return 1
   printf '%s\n' "$result"
 }
@@ -1927,12 +1935,16 @@ page_violations() { # <expected-type>; reads NUL-separated page paths on stdin
 }
 
 validate_generated_pages() { # <dir> <expected-type> <mirror|index>
-  local dir=$1 want=$2 scope=$3 violations
+  local dir=$1 want=$2 scope=$3 violations list="$STAGE/page-list"
   if [ "$scope" = mirror ]; then
-    violations=$(LC_ALL=C find "$dir" -type f -name '*.md' ! -name '_index.md' -print0 | page_violations "$want")
+    LC_ALL=C find "$dir" -type f -name '*.md' ! -name '_index.md' -print0 > "$list" \
+      || die 1 "cannot enumerate the staged pages under $dir"
   else
-    violations=$(printf '%s\0' "$dir/_index.md" | page_violations "$want")
+    printf '%s\0' "$dir/_index.md" > "$list" \
+      || die 1 "cannot list the staged index under $dir"
   fi
+  violations=$(page_violations "$want" < "$list") \
+    || die 1 "cannot validate the staged pages under $dir"
   [ -z "$violations" ] || die 1 "the staged mirror is malformed: $(printf '%s' "$violations" | head -3)"
 }
 

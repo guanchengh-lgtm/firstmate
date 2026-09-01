@@ -222,6 +222,23 @@ SH
   done
 }
 
+make_live_digest_enumeration_failure() {  # <dir>
+  local dir=$1 real
+  real=$(command -v find)
+  cat > "$dir/fakebin/find" <<SH
+#!/usr/bin/env bash
+case "\$PWD" in
+  '$dir/vault/wiki/decisions')
+    $real "\$@"
+    printf 'fake find: forced live enumeration failure\n' >&2
+    exit 2
+    ;;
+esac
+exec $real "\$@"
+SH
+  chmod +x "$dir/fakebin/find"
+}
+
 make_hits_file_blocking_cp() {  # <dir>
   local dir=$1 real
   real=$(command -v cp)
@@ -1021,6 +1038,25 @@ body
     || fail 'prior digest failure: live vault changed before journal creation'
   assert_absent "$dir/vault/.git/fm-feeder/journal" \
     'prior digest failure: journal was created with an empty digest'
+
+  dir=$(new_case prior-digest-enumeration-failure)
+  seed_records "$dir"
+  assert_export_ok "$dir" 'prior digest enumeration failure: baseline'
+  before=$(vault_state "$dir")
+  add_decision "$dir" later.md '# Later decision
+
+body
+'
+  make_live_digest_enumeration_failure "$dir"
+  run_export "$dir"
+  [ "$RC" -ne 0 ] \
+    || fail 'prior digest enumeration failure: exporter unexpectedly succeeded'
+  assert_contains "$OUT" 'cannot digest live wiki/decisions' \
+    'prior digest enumeration failure'
+  [ "$(vault_state "$dir")" = "$before" ] \
+    || fail 'prior digest enumeration failure: live vault changed before journal creation'
+  assert_absent "$dir/vault/.git/fm-feeder/journal" \
+    'prior digest enumeration failure: journal was created from a truncated listing'
 
   pass "fm-feeder-export: prior tree digests must succeed before journal creation"
 }
