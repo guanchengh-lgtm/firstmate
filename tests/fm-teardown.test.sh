@@ -2650,12 +2650,29 @@ SH
   pass "a child held lease with a missing worktree refuses with its exact lease and path"
 }
 
+# Rewrite the recorded lease id byte for byte. sed's replacement text would
+# reinterpret a backslash, and the point of these cases is that the id reaches
+# treehouse and the metadata comparison exactly as it was issued.
+set_recorded_lease_id() {  # <meta> <lease-id>
+  local meta=$1 value=$2 line tmp
+  tmp="$meta.rewrite"
+  : > "$tmp"
+  while IFS= read -r line; do
+    case "$line" in
+      treehouse_lease_id=*) printf 'treehouse_lease_id=%s\n' "$value" >> "$tmp" ;;
+      *) printf '%s\n' "$line" >> "$tmp" ;;
+    esac
+  done < "$meta"
+  mv -f "$tmp" "$meta"
+}
+
 test_non_alphanumeric_lease_id_returns_conditionally() {
   local mode case_dir lease_id rc treehouse_log
-  for mode in plus rfc3339; do
+  for mode in plus rfc3339 backslash; do
     case "$mode" in
       plus) lease_id='wt+3' ;;
       rfc3339) lease_id='2026-09-01T12:00:00+00:00' ;;
+      backslash) lease_id='wt\3' ;;
     esac
     case_dir=$(make_case "lease-id-$mode")
     write_meta "$case_dir" local-only ship
@@ -2667,9 +2684,7 @@ printf '%s\n' "$*" >> "${FM_FAKE_TREEHOUSE_LOG:?}"
 exit 0
 SH
     chmod +x "$case_dir/fakebin/treehouse"
-    sed -i.bak "s|^treehouse_lease_id=.*|treehouse_lease_id=$lease_id|" \
-      "$case_dir/state/task-x1.meta"
-    rm -f "$case_dir/state/task-x1.meta.bak"
+    set_recorded_lease_id "$case_dir/state/task-x1.meta" "$lease_id"
 
     rc=0
     FM_FAKE_TREEHOUSE_LOG="$treehouse_log" \
@@ -2704,6 +2719,42 @@ test_parked_own_run_is_aborted_before_teardown() {
   assert_grep "parked at a gate; aborting" "$case_dir/stderr" \
     "parked-run-abort: teardown did not report aborting the parked run before removing the worker"
   pass "a task's own parked no-mistakes run is aborted, not orphaned, before the worker is removed"
+}
+
+# A parked run id that teardown could never record must be refused BEFORE the
+# conditional return, or the worktree is released and the task then wedges on a
+# metadata rewrite that can no longer succeed.
+test_unrecordable_parked_run_id_refuses_before_return() {
+  local case_dir rc head treehouse_log
+  case_dir=$(make_case parked-run-unrecordable)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+  head=$(git -C "$case_dir/wt" rev-parse HEAD)
+  treehouse_log="$case_dir/treehouse.log"
+  : > "$treehouse_log"
+  cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "${FM_FAKE_TREEHOUSE_LOG:?}"
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+
+  rc=0
+  FM_FAKE_TREEHOUSE_LOG="$treehouse_log" \
+  FM_FAKE_AXI_STATUS="$(parked_axi_status_toon fm/task-x1 "$head" '01RUN BAD')" \
+  FM_FAKE_NM_ABORT_LOG="$case_dir/nm-abort.log" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  [ "$rc" -ne 0 ] || fail "parked-run-unrecordable: teardown proceeded with an unrecordable parked run id"
+  assert_grep "not a recordable run id" "$case_dir/stderr" \
+    "parked-run-unrecordable: teardown did not name the unrecordable run id"
+  assert_no_grep "return " "$treehouse_log" \
+    "parked-run-unrecordable: teardown returned the lease before the run id was validated"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "parked-run-unrecordable: teardown deleted task metadata after refusing"
+  assert_grep "treehouse_lease_state=held" "$case_dir/state/task-x1.meta" \
+    "parked-run-unrecordable: teardown mutated the recorded lease state while refusing"
+  pass "an unrecordable parked run id refuses before the conditional return, leaving the lease held"
 }
 
 test_mismatched_run_after_abort_refuses_unconfirmed() {
@@ -3290,6 +3341,7 @@ test_child_held_lease_with_missing_worktree_refuses
 test_non_alphanumeric_lease_id_returns_conditionally
 test_parked_own_run_is_aborted_before_teardown
 test_parked_own_run_refuses_when_abort_is_unconfirmed
+test_unrecordable_parked_run_id_refuses_before_return
 test_mismatched_run_after_abort_refuses_unconfirmed
 test_empty_status_after_abort_refuses_unconfirmed
 test_not_found_status_after_abort_confirms_completion

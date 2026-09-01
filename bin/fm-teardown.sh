@@ -380,7 +380,12 @@ mark_treehouse_task_lease_released() {  # <metadata> <lease-id> <holder> [parked
   meta_name=$(basename "$meta")
   tmp="$meta_dir/.$meta_name.lease.${BASHPID:-$$}.$RANDOM"
   ( umask 077; : > "$tmp" ) || return 1
-  if ! awk -F= -v lease_id="$lease_id" -v holder="$holder" -v run_id="$run_id" '
+  if ! lease_id="$lease_id" holder="$holder" run_id="$run_id" awk -F= '
+    BEGIN {
+      lease_id = ENVIRON["lease_id"]
+      holder = ENVIRON["holder"]
+      run_id = ENVIRON["run_id"]
+    }
     $1 == "treehouse_lease_id" {
       id_count++
       if ($0 != "treehouse_lease_id=" lease_id) invalid = 1
@@ -1758,6 +1763,12 @@ prepare_task_no_mistakes_run_conclusion() {  # <worktree>
   [ -d "$wt" ] || return 0
   command -v no-mistakes >/dev/null 2>&1 || return 0
   task_run_is_own_parked_run "$wt" || return 0
+  case "$TASK_RUN_ID" in
+    *[!A-Za-z0-9._:-]*)
+      echo "REFUSED: task $ID has a parked no-mistakes run whose id '$TASK_RUN_ID' is not a recordable run id; abort it manually (no-mistakes axi abort --run '$TASK_RUN_ID') before retrying teardown." >&2
+      return 1
+      ;;
+  esac
   TASK_NO_MISTAKES_RUN_ID=$TASK_RUN_ID
 }
 
@@ -2969,7 +2980,7 @@ if [ "$KIND" != secondmate ] && [ "$BACKEND" = orca ]; then
   conclude_task_no_mistakes_run "$WT"
   reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
 elif [ "$KIND" != secondmate ] && [ "$TREEHOUSE_LEASE_STATE" = held ]; then
-  prepare_task_no_mistakes_run_conclusion "$WT"
+  prepare_task_no_mistakes_run_conclusion "$WT" || exit 1
 fi
 
 # Fix 3 (see script header): sweep remote job workers abandoned by an already

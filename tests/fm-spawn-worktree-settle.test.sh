@@ -53,6 +53,7 @@ SH
   cat > "$fakebin/treehouse" <<'SH'
 #!/usr/bin/env bash
 set -u
+printf '%s\n' "$*" >> "${FM_FAKE_TREEHOUSE_LOG:-/dev/null}"
 case "${1:-}" in
   get)
     holder=
@@ -198,8 +199,38 @@ test_fresh_lease_removes_stale_hook_wiring() {
   pass "a fresh lease clears the previous task's hook wiring from a reused pool worktree"
 }
 
+# A lease whose identity cannot be parsed can never be returned, so a host
+# whose lease parser is unusable must refuse while no lease is held rather than
+# acquire a pool worktree it can only leak.
+test_unusable_lease_parser_refuses_before_acquiring() {
+  local rec id out status log
+  id=settle-parser-broken-z4
+  rec=$(make_settle_case settle-parser-broken "$id" 0)
+  read_settle_record "$rec"
+  log="$HOME_DIR/treehouse.log"
+  : > "$log"
+  cat > "$FAKEBIN_DIR/node" <<'SH'
+#!/usr/bin/env bash
+echo "node: broken on this host" >&2
+exit 127
+SH
+  chmod +x "$FAKEBIN_DIR/node"
+
+  out=$(FM_FAKE_TREEHOUSE_LOG="$log" run_settle_spawn "$id")
+  status=$?
+  [ "$status" -ne 0 ] || fail "spawn succeeded with an unusable lease parser"
+  assert_contains "$out" "lease parser is unusable" \
+    "spawn did not name the unusable lease parser"
+  assert_no_grep "get " "$log" \
+    "spawn acquired a treehouse lease it could not have returned"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] \
+    || fail "spawn published task metadata after refusing"
+  pass "an unusable lease parser refuses before any lease is acquired"
+}
+
 test_single_stale_first_read_is_not_accepted
 test_already_settled_pane_costs_one_confirm_sleep
 test_fresh_lease_removes_stale_hook_wiring
+test_unusable_lease_parser_refuses_before_acquiring
 
 echo "# all fm-spawn-worktree-settle tests passed"

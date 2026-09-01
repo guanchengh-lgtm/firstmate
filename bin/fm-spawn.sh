@@ -2986,6 +2986,15 @@ elif [ "$VERIFIER_HANDOFF" -eq 1 ]; then
   fi
   validate_spawn_worktree "verifier handoff" "$T"
 elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
+  # A lease whose identity cannot be parsed cannot be returned. Prove the
+  # parser runs on a known-good payload while no lease is held, so a missing or
+  # broken node refuses here instead of leaking a pool worktree.
+  if [ "$(parse_treehouse_task_lease \
+      '{"path":"/probe","lease_id":"probe","lease_holder":"probe"}' 2>/dev/null)" \
+      != "/probe"$'\t'"probe"$'\t'"probe" ]; then
+    echo "error: the treehouse lease parser is unusable on this host (node missing or broken); refusing to acquire a lease for task $ID" >&2
+    exit 1
+  fi
   lease_json=$(cd "$PROJ_ABS" && treehouse get --lease --json --lease-holder "$ID") || {
     echo "error: treehouse lease acquisition failed for task $ID; inspect window $T" >&2
     exit 1
