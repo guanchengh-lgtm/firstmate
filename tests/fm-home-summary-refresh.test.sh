@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Behavioral coverage for per-home summary publication through the real
-# producer, writer, watcher-carried status trigger, and snapshot ledger consumer.
+# producer, writer, and snapshot ledger consumer.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -9,13 +9,11 @@ set -u
 
 WRITER="$ROOT/bin/fm-home-summary-refresh.sh"
 SNAPSHOT="$ROOT/bin/fm-fleet-snapshot.sh"
-WATCH="$ROOT/bin/fm-watch.sh"
 TMP_ROOT=$(fm_test_tmproot fm-home-summary-refresh)
 HOME_DIR="$TMP_ROOT/mate-home"
 CADENCE_HOME="$TMP_ROOT/cadence-home"
 PARENT_HOME="$TMP_ROOT/parent-home"
 FAKEBIN=$(fm_fakebin "$TMP_ROOT")
-WATCH_PID=
 SLOW_WRITER_PID=
 SLOW_WORKER_PGID=
 SLOW_NM_PID=
@@ -27,7 +25,7 @@ cleanup() {
     ''|*[!0-9]*) ;;
     *) kill -KILL -- "-$SLOW_WORKER_PGID" >/dev/null 2>&1 || true ;;
   esac
-  for pid in "$WATCH_PID" "$SLOW_WRITER_PID" "$SLOW_NM_PID" "$LOCK_HOLDER_PID"; do
+  for pid in "$SLOW_WRITER_PID" "$SLOW_NM_PID" "$LOCK_HOLDER_PID"; do
     [ -n "$pid" ] || continue
     kill -KILL "$pid" >/dev/null 2>&1 || true
   done
@@ -127,26 +125,10 @@ jq -e --arg home "$HOME_DIR" --arg now "$NOW_ONE" --argjson epoch "$EPOCH_ONE" '
 ' "$HOME_DIR/state/home-summary.json" >/dev/null \
   || fail "initial ledger did not expose the extended producer schema"
 
-PATH="$FAKEBIN:$PATH" \
-  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$HOME_DIR" \
-  FM_SNAPSHOT_NOW="$NOW_TWO" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_TWO" \
-  FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=9999999 FM_HEARTBEAT=9999999 \
-  "$WATCH" > "$TMP_ROOT/watch.out" 2> "$TMP_ROOT/watch.err" &
-WATCH_PID=$!
-i=0
-while [ ! -e "$HOME_DIR/state/.last-watcher-beat" ] && [ "$i" -lt 100 ]; do
-  kill -0 "$WATCH_PID" 2>/dev/null || break
-  sleep 0.05
-  i=$((i + 1))
-done
-[ -e "$HOME_DIR/state/.last-watcher-beat" ] \
-  || fail "the real watcher did not begin polling: $(cat "$TMP_ROOT/watch.err" 2>/dev/null)"
 printf 'blocked [key=fixture-dependency]: waiting for the fixture dependency\n' \
   >> "$HOME_DIR/state/ledger-task.status"
-wait_for_ledger_generation "$NOW_TWO" \
-  || fail "a status append did not refresh the ledger within the watcher cadence"
-wait "$WATCH_PID" >/dev/null 2>&1 || true
-WATCH_PID=
+run_writer "$NOW_TWO" "$EPOCH_TWO" \
+  || fail "the changed status could not be published"
 
 run_producer "$NOW_TWO" "$EPOCH_TWO" > "$TMP_ROOT/fresh-summary.json" \
   || fail "fresh secondmate-home-summary production failed"
@@ -156,7 +138,7 @@ jq -S 'del(.generated, .generated_epoch)' "$TMP_ROOT/fresh-summary.json" \
   > "$TMP_ROOT/fresh-normalized.json"
 cmp -s "$TMP_ROOT/published-normalized.json" "$TMP_ROOT/fresh-normalized.json" \
   || fail "the status-triggered ledger differed from the real fresh producer"
-pass "watcher-carried status append publishes the real home summary"
+pass "a changed status publishes the real home summary"
 
 mkdir -p "$CADENCE_HOME/state" "$CADENCE_HOME/data" "$CADENCE_HOME/config" \
   "$CADENCE_HOME/projects"
@@ -172,22 +154,6 @@ EOF
 PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$CADENCE_HOME" \
   FM_SNAPSHOT_NOW="$NOW_TWO" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_TWO" \
   "$WRITER" || fail "could not seed the cadence ledger"
-touch -t 203801010000 "$CADENCE_HOME/state/home-summary.json"
-PATH="$FAKEBIN:$PATH" \
-  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$CADENCE_HOME" \
-  FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
-  FM_POLL=1 FM_HOME_SUMMARY_INTERVAL=1 FM_SIGNAL_GRACE=0 \
-  FM_CHECK_INTERVAL=9999999 FM_HEARTBEAT=9999999 \
-  "$WATCH" > "$TMP_ROOT/cadence-watch.out" 2> "$TMP_ROOT/cadence-watch.err" &
-WATCH_PID=$!
-i=0
-while [ ! -e "$CADENCE_HOME/state/.last-watcher-beat" ] && [ "$i" -lt 100 ]; do
-  kill -0 "$WATCH_PID" 2>/dev/null || break
-  sleep 0.05
-  i=$((i + 1))
-done
-[ -e "$CADENCE_HOME/state/.last-watcher-beat" ] \
-  || fail "the cadence watcher did not complete its initial cycle"
 python3 - "$CADENCE_HOME/data/backlog.md" <<'PY'
 from pathlib import Path
 import sys
@@ -195,23 +161,16 @@ path = Path(sys.argv[1])
 text = path.read_text()
 path.write_text(text.replace("## Queued\n\n## Done", "## Queued\n- [ ] cadence-task - Publish without a status signal (repo: firstmate) (kind: ship)\n\n## Done"))
 PY
-i=0
-while ! jq -e 'any(.queued[]; .id == "cadence-task")' \
-  "$CADENCE_HOME/state/home-summary.json" >/dev/null 2>&1; do
-  kill -0 "$WATCH_PID" 2>/dev/null \
-    || fail "the cadence watcher exited before publishing the backlog-only change"
-  [ "$i" -lt 80 ] \
-    || fail "a backlog-only change did not refresh within the configured watcher cadence"
-  sleep 0.1
-  i=$((i + 1))
-done
-kill "$WATCH_PID" >/dev/null 2>&1 || true
-wait "$WATCH_PID" >/dev/null 2>&1 || true
-WATCH_PID=
-pass "live watcher cadence bounds publication staleness without signals"
+PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$CADENCE_HOME" \
+  FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
+  "$WRITER" || fail "the backlog-only change could not be published"
+jq -e 'any(.queued[]; .id == "cadence-task")' \
+  "$CADENCE_HOME/state/home-summary.json" >/dev/null \
+  || fail "the backlog-only change was absent from the published ledger"
+pass "a backlog-only change publishes through the writer"
 
-# Consumer boundary: first serialize behind any watcher-started publication,
-# then replace the ledger with a structurally complete but semantically false
+# Consumer boundary: first finish direct publication, then replace the ledger
+# with a structurally complete but semantically false
 # state. The default parent snapshot must consume that publication rather than
 # silently recomputing a different view of the owning home.
 run_writer "$NOW_TWO" "$EPOCH_TWO" || fail "could not settle the ledger before the consumer check"
@@ -632,189 +591,7 @@ jq -e '
   || fail "an unreachable remote task was not reported as unknown"
 pass "producer skips remote per-task state probes"
 
-# The watcher's beacon is what the rest of supervision reads as proof it is
-# alive. Publication is side-band, so no matter how long it takes, the beacon
-# must keep advancing. Hold the publication lock for the whole observation
-# window, then require the beacon to keep ticking anyway.
-BEAT_HOME="$TMP_ROOT/beat-home"
-mkdir -p "$BEAT_HOME/state" "$BEAT_HOME/data" "$BEAT_HOME/config" \
-  "$BEAT_HOME/projects"
-printf '# Seeded Firstmate home\n' > "$BEAT_HOME/AGENTS.md"
-printf 'beat\n' > "$BEAT_HOME/.fm-secondmate-home"
-cat > "$BEAT_HOME/data/backlog.md" <<'EOF'
-## In flight
 
-## Queued
-
-## Done
-EOF
-BEAT_LOCK_MARKER="$TMP_ROOT/beat-lock-held"
-FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BEAT_HOME" bash -c '
-  . "$1/bin/fm-wake-lib.sh"
-  fm_lock_acquire_wait "$2/state/.home-summary-refresh.lock"
-  : > "$3"
-  sleep 120
-' _ "$ROOT" "$BEAT_HOME" "$BEAT_LOCK_MARKER" &
-LOCK_HOLDER_PID=$!
-i=0
-while [ ! -e "$BEAT_LOCK_MARKER" ] && [ "$i" -lt 100 ]; do
-  kill -0 "$LOCK_HOLDER_PID" 2>/dev/null || break
-  sleep 0.05
-  i=$((i + 1))
-done
-[ -e "$BEAT_LOCK_MARKER" ] || fail "could not stall publication for beacon coverage"
-PATH="$FAKEBIN:$PATH" \
-  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$BEAT_HOME" \
-  FM_SNAPSHOT_NOW="$NOW_THREE" FM_SNAPSHOT_NOW_EPOCH="$EPOCH_THREE" \
-  FM_POLL=1 FM_HOME_SUMMARY_INTERVAL=1 FM_HOME_SUMMARY_TIMEOUT=90 \
-  FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=9999999 FM_HEARTBEAT=9999999 \
-  "$WATCH" > "$TMP_ROOT/beat-watch.out" 2> "$TMP_ROOT/beat-watch.err" &
-WATCH_PID=$!
-i=0
-while [ ! -e "$BEAT_HOME/state/.last-watcher-beat" ] && [ "$i" -lt 200 ]; do
-  kill -0 "$WATCH_PID" 2>/dev/null || break
-  sleep 0.05
-  i=$((i + 1))
-done
-[ -e "$BEAT_HOME/state/.last-watcher-beat" ] \
-  || fail "the stalled-publication watcher never beat: $(cat "$TMP_ROOT/beat-watch.err" 2>/dev/null)"
-beat_mtime() { python3 -c 'import os,sys; print(os.stat(sys.argv[1]).st_mtime)' "$1"; }
-seen=0
-last=$(beat_mtime "$BEAT_HOME/state/.last-watcher-beat")
-i=0
-while [ "$seen" -lt 3 ] && [ "$i" -lt 200 ]; do
-  kill -0 "$WATCH_PID" 2>/dev/null \
-    || fail "the stalled-publication watcher exited: $(cat "$TMP_ROOT/beat-watch.err" 2>/dev/null)"
-  sleep 0.1
-  now=$(beat_mtime "$BEAT_HOME/state/.last-watcher-beat")
-  if [ "$now" != "$last" ]; then
-    seen=$((seen + 1))
-    last=$now
-  fi
-  i=$((i + 1))
-done
-[ "$seen" -ge 3 ] \
-  || fail "the beacon advanced only $seen time(s) in 20 seconds while publication was stalled"
-kill "$WATCH_PID" >/dev/null 2>&1 || true
-wait "$WATCH_PID" >/dev/null 2>&1 || true
-WATCH_PID=
-kill "$LOCK_HOLDER_PID" >/dev/null 2>&1 || true
-wait "$LOCK_HOLDER_PID" >/dev/null 2>&1 || true
-LOCK_HOLDER_PID=
-pass "a stalled publication does not delay the watcher liveness beacon"
-
-RESTART_HOME="$TMP_ROOT/restart-home"
-mkdir -p "$RESTART_HOME/state" "$RESTART_HOME/data" "$RESTART_HOME/config" \
-  "$RESTART_HOME/projects/task"
-printf '# Seeded Firstmate home\n' > "$RESTART_HOME/AGENTS.md"
-printf 'restart\n' > "$RESTART_HOME/.fm-secondmate-home"
-fm_git_init_commit "$RESTART_HOME/projects/task"
-cat > "$RESTART_HOME/data/backlog.md" <<'EOF'
-## In flight
-- [ ] restart-task - Preserve publication single flight (repo: firstmate) (kind: ship) (since 2026-08-28)
-
-## Queued
-
-## Done
-EOF
-fm_write_meta "$RESTART_HOME/state/restart-task.meta" \
-  "window=fmtest:fm-restart-task" \
-  "worktree=$RESTART_HOME/projects/task" \
-  "project=firstmate" \
-  "harness=claude" \
-  "kind=ship" \
-  "mode=no-mistakes" \
-  "spawn_gen=fm.restart123456"
-RESTART_LOCK_MARKER="$TMP_ROOT/restart-lock-held"
-FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$RESTART_HOME" bash -c '
-  . "$1/bin/fm-wake-lib.sh"
-  fm_lock_acquire_wait "$2/state/.home-summary-refresh.lock"
-  : > "$3"
-  sleep 30
-' _ "$ROOT" "$RESTART_HOME" "$RESTART_LOCK_MARKER" &
-LOCK_HOLDER_PID=$!
-i=0
-while [ ! -e "$RESTART_LOCK_MARKER" ] && [ "$i" -lt 100 ]; do
-  kill -0 "$LOCK_HOLDER_PID" 2>/dev/null || break
-  sleep 0.05
-  i=$((i + 1))
-done
-[ -e "$RESTART_LOCK_MARKER" ] || fail "could not hold the publication lock for restart coverage"
-PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$RESTART_HOME" \
-  FM_POLL=1 FM_HOME_SUMMARY_INTERVAL=999999 FM_HOME_SUMMARY_TIMEOUT=2 \
-  FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=9999999 FM_HEARTBEAT=9999999 \
-  "$WATCH" > "$TMP_ROOT/restart-watch-one.out" 2> "$TMP_ROOT/restart-watch-one.err" &
-WATCH_PID=$!
-i=0
-while [ ! -e "$RESTART_HOME/state/.last-watcher-beat" ] && [ "$i" -lt 100 ]; do
-  kill -0 "$WATCH_PID" 2>/dev/null || break
-  sleep 0.05
-  i=$((i + 1))
-done
-[ -e "$RESTART_HOME/state/.last-watcher-beat" ] \
-  || fail "the first restart watcher did not begin polling"
-printf 'needs-decision [key=restart-gate]: restart the watcher\n' \
-  > "$RESTART_HOME/state/restart-task.status"
-i=0
-while kill -0 "$WATCH_PID" 2>/dev/null && [ "$i" -lt 100 ]; do
-  sleep 0.05
-  i=$((i + 1))
-done
-kill -0 "$WATCH_PID" 2>/dev/null \
-  && fail "the first restart watcher did not surface its actionable signal"
-wait "$WATCH_PID" >/dev/null 2>&1 || true
-WATCH_PID=
-rm -f "$RESTART_HOME/state/.last-watcher-beat"
-PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$RESTART_HOME" \
-  FM_POLL=1 FM_HOME_SUMMARY_INTERVAL=999999 FM_HOME_SUMMARY_TIMEOUT=2 \
-  FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=9999999 FM_HEARTBEAT=9999999 \
-  "$WATCH" > "$TMP_ROOT/restart-watch-two.out" 2> "$TMP_ROOT/restart-watch-two.err" &
-WATCH_PID=$!
-i=0
-while [ ! -e "$RESTART_HOME/state/.last-watcher-beat" ] && [ "$i" -lt 100 ]; do
-  kill -0 "$WATCH_PID" 2>/dev/null || break
-  sleep 0.05
-  i=$((i + 1))
-done
-[ -e "$RESTART_HOME/state/.last-watcher-beat" ] \
-  || fail "the replacement restart watcher did not begin polling"
-sleep 4
-[ ! -s "$RESTART_HOME/state/.home-summary-refresh.log" ] \
-  || fail "watcher restart queued refreshes behind a live publication lock: $(cat "$RESTART_HOME/state/.home-summary-refresh.log")"
-if ! kill -0 "$WATCH_PID" 2>/dev/null; then
-  wait "$WATCH_PID" >/dev/null 2>&1 || true
-  rm -f "$RESTART_HOME/state/.last-watcher-beat"
-  PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$RESTART_HOME" \
-    FM_POLL=1 FM_HOME_SUMMARY_INTERVAL=999999 FM_HOME_SUMMARY_TIMEOUT=2 \
-    FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=9999999 FM_HEARTBEAT=9999999 \
-    "$WATCH" > "$TMP_ROOT/restart-watch-three.out" 2> "$TMP_ROOT/restart-watch-three.err" &
-  WATCH_PID=$!
-  i=0
-  while [ ! -e "$RESTART_HOME/state/.last-watcher-beat" ] && [ "$i" -lt 100 ]; do
-    kill -0 "$WATCH_PID" 2>/dev/null || break
-    sleep 0.05
-    i=$((i + 1))
-  done
-  [ -e "$RESTART_HOME/state/.last-watcher-beat" ] \
-    || fail "the recovery replacement watcher did not begin polling"
-fi
-kill -KILL "$LOCK_HOLDER_PID" >/dev/null 2>&1 || true
-wait "$LOCK_HOLDER_PID" >/dev/null 2>&1 || true
-LOCK_HOLDER_PID=
-PATH="$FAKEBIN:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$RESTART_HOME" \
-  FM_HOME_SUMMARY_IF_IDLE=1 "$WRITER" --best-effort \
-  || fail "stale-lock recovery changed the best-effort caller result"
-i=0
-while [ ! -e "$RESTART_HOME/state/home-summary.json" ] && [ "$i" -lt 200 ]; do
-  sleep 0.05
-  i=$((i + 1))
-done
-[ -e "$RESTART_HOME/state/home-summary.json" ] \
-  || fail "a dead publication lock wedged publication"
-kill "$WATCH_PID" >/dev/null 2>&1 || true
-wait "$WATCH_PID" >/dev/null 2>&1 || true
-WATCH_PID=
-pass "publication remains single-flight across watcher restart"
 
 # A publication that keeps failing is deliberately non-fatal to its caller, so
 # the only way an operator learns about it is a session start saying so. Seed

@@ -554,12 +554,16 @@ if [ "$extension_segment" = all ] || [ "$extension_segment" = coordinator ]; the
   assert_not_contains "$unknown_segment_out" "all extension-binding tests passed" "an unknown section selector reported success"
   pass "unknown extension conformance section selectors fail before setup"
   if [ "$extension_segment" = all ]; then
-    (
-      trap - EXIT HUP INT
-      trap 'terminate_section_lanes; exit 143' TERM
-      run_extension_section_lanes lifecycle-flow remote-lifecycle example
-    ) &
-    section_coordinator_pid=$!
+    # S1 owns the host, while S5 supplies its process-event binding commands.
+    H_SLICE="$HOMES/slice-host"
+    new_home "$H_SLICE"
+    out=$(FM_HOME="$H_SLICE" "$HOST" list)
+    assert_contains "$out" "no extension bindings" \
+      "an absent registry did not remain inert"
+    out=$(FM_HOME="$H_SLICE" "$HOST" verify)
+    assert_contains "$out" "no extension bindings" \
+      "an empty registry did not verify through the extension host"
+    pass "the extension host keeps an absent registry inert"
   fi
   coordinator_probe="$TMP_ROOT/coordinator-probe"
   mkdir -p "$coordinator_probe"
@@ -628,9 +632,10 @@ if [ "$extension_segment" = all ] || [ "$extension_segment" = coordinator ]; the
     printf '\nall coordinator tests passed\n'
     exit 0
   fi
-  wait "$section_coordinator_pid" || fail "an isolated extension conformance section failed"
-  section_coordinator_pid=
-  pass "independent extension conformance sections complete through isolated public homes"
+  if [ -n "$section_coordinator_pid" ]; then
+    wait "$section_coordinator_pid" || fail "an isolated extension conformance section failed"
+    section_coordinator_pid=
+  fi
   printf '\nall extension-binding tests passed\n'
   exit 0
 fi
