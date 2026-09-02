@@ -115,6 +115,7 @@ init_changed_fixture_repo() {
     fm-pi-watch-extension.test.sh \
     fm-afk-return.test.sh \
     fm-bearings-snapshot.test.sh \
+    fm-bearings-board-render.test.sh \
     fm-backend-cmux.test.sh \
     fm-backend-zellij.test.sh \
     fm-control-herdr-smoke.test.sh \
@@ -127,6 +128,7 @@ init_changed_fixture_repo() {
   : >"$repo/bin/fm-notify-lib.sh"
   : >"$repo/bin/fm-supervisor-target-lib.sh"
   : >"$repo/bin/fm-control-lib.sh"
+  : >"$repo/bin/fm-dod-lib.sh"
   : >"$repo/bin/fm-timeout-lib.sh"
   : >"$repo/bin/fm-procevent-quota.sh"
   : >"$repo/bin/fm-quota-axi-lib.sh"
@@ -147,7 +149,8 @@ init_changed_fixture_repo() {
   mkdir -p \
     "$repo/.agents/skills/example" \
     "$repo/.agents/skills/harness-adapters/references/common" \
-    "$repo/.claude" "$repo/.pi/extensions" "$repo/docs" "$repo/src"
+    "$repo/.claude" "$repo/.pi/extensions" "$repo/docs" "$repo/src" \
+    "$repo/tests/assets"
   : >"$repo/.agents/skills/example/SKILL.md"
   : >"$repo/.agents/skills/harness-adapters/SKILL.md"
   : >"$repo/.agents/skills/harness-adapters/references/common/dispatch.md"
@@ -156,7 +159,10 @@ init_changed_fixture_repo() {
   : >"$repo/.pi/extensions/fm-primary-turnend-guard.ts"
   : >"$repo/docs/fm-test-isolation-proof.md"
   : >"$repo/CONTRIBUTING.md"
+  : >"$repo/GROK_BOT.md"
   : >"$repo/src/unmapped.ts"
+  : >"$repo/tests/assets/board-render-harness.mjs"
+  printf '# board-render-harness.mjs\n' >>"$repo/tests/fm-bearings-board-render.test.sh"
   git -C "$repo" init -q
   git -C "$repo" add .
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm baseline
@@ -194,6 +200,7 @@ test_changed_runner_surfaces_select_their_family() {
   # The same holds for the surfaces that document that contract.
   printf '\n' >>"$repo/docs/fm-test-isolation-proof.md"
   printf '\n' >>"$repo/CONTRIBUTING.md"
+  printf '\n' >>"$repo/GROK_BOT.md"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD | LC_ALL=C sort)
   case "$listed" in
     *tests/fm-documentation-audiences.test.sh*) ;;
@@ -221,6 +228,13 @@ test_changed_dependency_selection_and_unmapped_failure() {
   assert_contains "$listed" "tests/fm-bearings-snapshot.test.sh" "shared helper selects snapshot dependents"
   git -C "$repo" add tests/lib.sh
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm helper-change
+
+  printf '\n' >>"$repo/tests/assets/board-render-harness.mjs"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-bearings-board-render.test.sh" \
+    "test asset selects its render consumer"
+  git -C "$repo" add tests/assets/board-render-harness.mjs
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm test-asset-change
 
   printf '\n' >>"$repo/tests/fm-backend-herdr-eventwait.test.py"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
@@ -297,6 +311,13 @@ test_changed_dependency_selection_and_unmapped_failure() {
     "control library selects chooser coverage"
   git -C "$repo" add bin/fm-control-lib.sh
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm control-lib-change
+
+  printf '\n' >>"$repo/bin/fm-dod-lib.sh"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-brief.test.sh" \
+    "definition-of-done owner selects brief contract coverage"
+  git -C "$repo" add bin/fm-dod-lib.sh
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm dod-owner-change
 
   printf '\n' >>"$repo/bin/fm-timeout-lib.sh"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)

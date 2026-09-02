@@ -328,6 +328,24 @@ status_event_json() {  # <status-log>
     '{path:$path,present:$present,kind:"event_history",last_event:{state:$verb,note:$note,raw:$raw}}'
 }
 
+# Keep the point-in-time decision fold exact while avoiding its per-line shell
+# cost for history lines that cannot contain a decision transition. This filter
+# is only a safe superset; _fm_decision_fold_line remains the semantic owner.
+snapshot_open_decisions() {  # <status-file>
+  local f=$1 line resolve held open=''
+  [ -f "$f" ] && [ -r "$f" ] && [ ! -L "$f" ] || return 0
+  resolve=${FM_CLASSIFY_RESOLVE_VERB:-$FM_CLASSIFY_RESOLVE_VERB_DEFAULT}
+  held=${FM_CLASSIFY_CAPTAIN_HELD_VERB:-$FM_CLASSIFY_CAPTAIN_HELD_VERB_DEFAULT}
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      *needs-decision*|*blocked*|*"$resolve"*|*"$held"*)
+        open=$(_fm_decision_fold_line "$open" "$line" "$resolve" "$held")
+        ;;
+    esac
+  done < "$f"
+  printf '%s' "$open"
+}
+
 first_pr_url_in_file() {  # <file>
   [ -f "$1" ] || return 1
   grep -Eo 'https?://[^[:space:])"]+/pull/[0-9]+' "$1" 2>/dev/null | head -1
@@ -560,7 +578,7 @@ task_json_lines() {
     # never clear another concern's keyed decision. A parked/blocked state, or a
     # non-authoritative status-log/none read on a still-live task, keeps the fold's
     # open decision surfacing.
-    open_decisions_tsv=$(status_open_decisions "$status_log")
+    open_decisions_tsv=$(snapshot_open_decisions "$status_log")
     if [ "$kind" != secondmate ] && \
        { { { [ "$current_source" = run-step ] || [ "$current_source" = pane ]; } \
            && [ "$current_state" != parked ] && [ "$current_state" != blocked ]; } \

@@ -452,7 +452,6 @@ __FM_BEARINGS_BOARD_DATA__
     { n: callTotal, l: "need you", call: true },
     { n: data.underway.length, l: "underway" },
     { n: data.landed.length, l: "landed recently" },
-    { n: data.charted.length + (data.charted_more || 0), l: "charted next" }
     { n: chartedQueued(data.charted).length + chartedMoreQueued, l: "charted next" }
   ];
   var strip = document.getElementById("bb-stats");
