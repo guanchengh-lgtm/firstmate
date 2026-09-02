@@ -267,7 +267,6 @@ tests/fm-crew-state.test.sh
 ## Turn-end guard
 
 The blocking and bounded-follow-up mechanisms were validated across six harnesses on 2026-07-08 through 2026-08-29, with Claude's replacement Stop-owned path revalidated on 2026-07-24, Cursor's stop-hook park validated on 2026-08-13, and Pi's neutral wrapper revalidated on 2026-08-29.
-The blocking and bounded-follow-up mechanisms were validated across six harnesses on 2026-07-08 through 2026-08-13, with Claude's replacement Stop-owned path revalidated on 2026-07-24 and Cursor's stop-hook park validated on 2026-08-13.
 
 | Harness | Version verified | Mechanism | Observed result |
 | --- | --- | --- | --- |

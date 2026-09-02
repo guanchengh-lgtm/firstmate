@@ -156,7 +156,6 @@ Treat `state/x-inbox/` as the source of truth and process **every** file you fin
    - `data/projects.md` - the active projects, for naming what you work on in plain terms.
    Translate every internal item into an outcome. Example: a backlog line `fix-login-k3 - repair OAuth redirect (repo: yourapp)` becomes "patching a sign-in redirect bug on one of the apps" - no id, no repo name unless it is already public.
 2. **Drain every pending mention.** For each `state/x-inbox/*.json` file:
-   a. Read the object: you need `request_id`, `text`, `in_reply_to`, and - when present - `in_reply_to_chain`.
    a. **Read the whole object, not a fixed list of fields.**
       Inspect every key the payload actually carries - at the top level, inside `in_reply_to`, and inside each `in_reply_to_chain` entry - because the relay gains fields over time and anything you never look at is invisible to you.
       `request_id`, `text`, `in_reply_to`, and `in_reply_to_chain` are what you always work from; never assume they are all that is there.

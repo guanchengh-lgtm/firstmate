@@ -2,7 +2,6 @@
 
 Audience: maintainer verification.
 
-This record supports three active guarantees for promised public replies made through the myfirstmate relay:
 This record supports six active guarantees for promised public replies made through the myfirstmate relay:
 
 1. A promised final reply survives compaction and restart, reconciles from disk alone, and lands in the original thread exactly once.
@@ -17,7 +16,6 @@ Task chronology and delivery evidence stay outside this record.
 
 ## Environment
 
-Recorded 2026-08-21 on Darwin 25.5.0 (arm64) with GNU bash 5.3.9, tasks-axi 0.2.5, jq 1.8.1, and ShellCheck 0.11.0 (the version `bin/fm-lint.sh` pins).
 Recorded 2026-09-01 on Darwin 25.5.0 (arm64) with GNU bash 5.3.9, tasks-axi 0.2.5, jq 1.8.1, and ShellCheck 0.11.0 (the version `bin/fm-lint.sh` pins).
 The stock macOS compatibility lane additionally runs the focused first-registration regression with `/bin/bash` 3.2.57 and a real `tasks-axi` installation.
 The relay is a fakebin `curl` in every case, so no public post is ever made; `tasks-axi` and `jq` are the real tools, because stubbing the obligation state machine would verify nothing.
@@ -115,7 +113,6 @@ It delivers a `report-ready` promised-final, asserts the registration is retaine
 The concurrency and interrupted-bind cases verify that one delivered source cannot fork and that retry converges on the same destination obligation.
 A pre-change on-disk record (no `state=`, no `request_context_b64`) is an open loop and un-rechainable rather than a crash.
 
-The existing Relay mention suite (`tests/fm-x-mode.test.sh`) is unchanged by this work.
 The stock macOS Bash lane in [`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) sets `FM_TEST_ONLY=test_first_register_succeeds_with_empty_lock_list_under_bash32` and runs `tests/fm-public-followup.test.sh` through real `/bin/bash` 3.2, proving the first `register` path is safe when its registry lock list starts empty.
 
 The eight remote-route cases are the proof of guarantee 5.

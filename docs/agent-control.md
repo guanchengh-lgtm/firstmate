@@ -15,7 +15,6 @@ The failure repeated across harnesses and homes, and the workaround (remember to
 ## What the control plane owns
 
 `bin/fm-control-lib.sh` is the single executable owner of three capability tables plus the pure lifecycle classifiers derived from them, with no side effects, so it can be read as a contract:
-`bin/fm-control-lib.sh` is the single executable owner of three capability tables, with no side effects, so it can be read as a contract:
 
 - The **verb allowlist**: `interrupt`, `exit`, `relaunch`.
   There is no arbitrary-text and no generic raw-key entry point.
@@ -24,7 +23,6 @@ The failure repeated across harnesses and homes, and the workaround (remember to
   These were previously carried only in the [`harness-adapters`](../.agents/skills/harness-adapters/SKILL.md) skill's per-adapter tables, which now point here.
   The pure classifiers (`fm_control_message_verb`, `fm_control_key_verb`) expose those mechanics without side effects so the data plane can refuse before any send effect.
   `bin/fm-send.sh` consumes them and refuses recorded-task lifecycle text and keys, printing the sanctioned `bin/fm-control.sh <id> interrupt|exit` path.
-  These were previously carried only in the [`harness-adapters`](../.agents/skills/harness-adapters/SKILL.md) skill's tool references, which now point here.
   `bin/fm-send.sh`'s `--key` path reads the composer-clear table from this owner too, rather than keeping a second copy of it.
 - **Per-backend capability**: which named keys a runtime backend can deliver, and whether it has a recovery-grade agent-state classifier able to prove an agent stopped.
 
@@ -124,6 +122,5 @@ The empirical basis for each adapter's value is the `harness-adapters` skill's v
 
 - `tests/fm-control.test.sh` - the adapter contract for every verified harness, including muse's composer-clear failure path, the backend capability matrix, exact-id scoping, the closed verb list, the busy, idle, dead, and idempotent lifecycle cases, and marker non-regression, all against a stubbed session provider.
 - `tests/fm-send-strict.test.sh` - recorded-task lifecycle text and keys refuse on the data plane before any backend, inbox, remote, or busy-state effect, and name the control owner.
-- `tests/fm-control.test.sh` - the adapter contract for every verified harness, the backend capability matrix, exact-id scoping, the closed verb list, the busy, idle, dead, and idempotent lifecycle cases, and marker non-regression, all against a stubbed session provider.
 - `tests/fm-control-relaunch.test.sh` - the relaunch transaction: identity preservation, harness switching, the progress note, checkpoint refusals, and rollback after a failed launch.
 - `tests/fm-control-herdr-smoke.test.sh` - the second state-verified backend against the real herdr binary, on an isolated throwaway lab session.

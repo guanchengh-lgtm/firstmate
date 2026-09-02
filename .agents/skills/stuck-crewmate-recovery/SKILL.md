@@ -35,9 +35,7 @@ Use `treehouse status` for treehouse-backed tmux, herdr, zellij, or cmux tasks, 
 Do not sweep another home's endpoints or infer ownership from a matching window label.
 
 Before relaunch, prove that no live agent still owns the recorded task and that the existing worktree remains available.
-Preserve its uncommitted changes and commits, keep the same task identity, and resume or relaunch the recorded harness in that existing worktree plus a concise progress note.
-For `kind=ship`, pass `bin/fm-spawn.sh --role` from recorded `role=` only when `role=` is present; spawn encodes that role's file (`data/<id>/brief.md` for builder, `data/<id>/verifier-brief.md` for verifier). Do not infer role from git and do not default a missing `role=` to builder.
-For `kind=scout`, omit `--role` (spawn refuses it) and keep appending progress to `data/<id>/brief.md`.
+Preserve its uncommitted changes and commits, keep the same task identity, and resume or relaunch the recorded harness in that existing worktree with the same brief plus a concise progress note.
 Do not use a fresh generic spawn while the recorded worktree is unaccounted for, because allocating another worktree can split one task across two copies.
 If the worktree or ownership cannot be reconciled safely, leave all state intact and report the task failed or blocked with the conflicting evidence.
 
@@ -47,8 +45,6 @@ Escalate in order:
 
 1. Peek the pane, and check the task's steering inbox (`state/<id>.inbox/`) for unhandled `*.msg` records - a stale wake naming an unread firstmate instruction means the worker never acknowledged a durable steer, and the record itself shows exactly what was intended.
 2. If the crewmate is waiting on a question its brief already answers, answer in one line via `FM_HOME=<this-firstmate-home> bin/fm-send.sh` from an active firstmate session unless `FM_HOME` is already set to the active firstmate home.
-3. If the crewmate is confused or looping, interrupt through `FM_HOME=<this-firstmate-home> bin/fm-control.sh <task-id> interrupt`, then redirect with one corrective line.
-4. If the crewmate is genuinely wedged after redirection, exit the agent with the adapter's exit command and relaunch with a `progress so far` note: for `kind=ship`, pass `bin/fm-spawn.sh --role` from recorded `role=` when present and append to that role's file; for `kind=scout`, omit `--role` and append to `data/<id>/brief.md`.
 3. If the crewmate is confused or looping, interrupt with `FM_HOME=<this-firstmate-home> bin/fm-control.sh <task-id> interrupt`, then redirect with one corrective line through `fm-send`.
 4. If the crewmate is genuinely wedged after redirection, relaunch it with `FM_HOME=<this-firstmate-home> bin/fm-control.sh <task-id> relaunch --note '<progress so far>'`, which stops the agent, carries the brief plus that note into a replacement in the same local copy, and restores the prior record if the replacement cannot start.
    Pass `--harness`, `--model`, or `--effort` on that same command when the worker should come back on a different runtime.
