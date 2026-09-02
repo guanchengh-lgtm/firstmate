@@ -27,6 +27,9 @@
 # Both counts are calibrated bytes for the bound AGENTS.md blobs.
 # An override never bypasses file safety, the hard ceiling, or why traces.
 # firstmate-coding-guidelines owns the why-trace marker grammar.
+# The default (no explicit-path) path also runs bin/fm-lint-workflows.sh so a
+# malformed GitHub workflow, including a self-broken ci.yml, fails locally
+# before merge instead of only failing to run as CI.
 #
 # With no explicit paths, the file set depends on context:
 #   - In CI (GITHUB_ACTIONS=true or CI=true), on the main branch, or when no
@@ -869,6 +872,10 @@ fi
 
 # fm_lint_changed_base_ref prefers origin/main, falls back to main, and returns
 # 1 when neither target exists.
+# fm_lint_changed_base_ref prints the ref to diff the working branch against:
+# the local origin/main tracking ref when present, else local main. Returns
+# nonzero when neither is resolvable, which the caller treats as "no
+# merge-base found" and falls back to a full lint.
 fm_lint_changed_base_ref() {
   local remote_oid='' local_oid=''
   remote_oid=$(git rev-parse --verify -q 'origin/main^{commit}' 2>/dev/null) || remote_oid=

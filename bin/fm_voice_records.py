@@ -310,6 +310,13 @@ def _last_event(state_dir, task_id):
     "needs-decision [key=api-shape]: which shape". A line carrying no colon is
     not a status line, and any token outside STATE_VERBS is reported as a note
     rather than spoken aloud as a state.
+    bin/fm-classify-lib.sh remains the owner of status-verb normalization.
+    This security-bounded projection accepts the prefix before the first ':'
+    and the first '[', whichever comes first, only when it is in STATE_VERBS.
+    The bracket matters: status metadata sits between the verb and the colon,
+    as in "done [token]: shipped it" and "needs-decision [key=api-shape]: which
+    shape". A line carrying no colon is not a status line, and any unrecognized
+    prefix is reported as a note rather than spoken aloud as a state.
 
     Only the tail of the log is read; see STATUS_TAIL_BYTES.
     """

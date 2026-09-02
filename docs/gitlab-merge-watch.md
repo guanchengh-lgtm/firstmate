@@ -1,7 +1,8 @@
 # GitLab merge request watch verification
 
-Empirical record for the merge watch on GitLab, alongside the existing GitHub watch.
-Every command below was run on 2026-07-21 and its output is reproduced exactly.
+Empirical record for the GitLab merge request watch, alongside the existing GitHub watch.
+The arming, poll, and missing-`glab` evidence through the GitHub-unaffected case was collected on 2026-07-21.
+Every output is reproduced exactly.
 
 ## Versions
 
@@ -28,7 +29,7 @@ That is deliberate: the host-agnostic property is a property of the stored recor
 GitLab runs mostly on self-hosted instances, so a merge request can live under any host.
 A GitLab project also sits under at least one group at no fixed depth, so no owner-and-repository pair can address one the way it can on GitHub.
 The stored record therefore carries `provider`, `url`, `host`, `path`, and `number`, and every consumer rebuilds the URL from those parts and refuses any record that does not reconstruct the stored URL exactly.
-`tests/fm-pr-check-security.test.sh` asserts that neither `bin/fm-pr-lib.sh` nor `bin/fm-pr-poll.sh` contains the string `gitlab.com` at all.
+`tests/fm-pr-check-security.test.sh` proves the host-agnostic path through a non-default-host sidecar and verifies that `glab` receives the reconstructed project URL.
 
 ## How plain glab is invoked, and why
 
@@ -168,12 +169,10 @@ The live registration tag is `fm-pr-poll-registration-v2`, which includes the pr
 A `fm-pr-poll-registration-v1` record no longer parses.
 Arm a current watch with `bin/fm-pr-check.sh`.
 
-## What this change does not cover
+## Merge limitation
 
-`bin/fm-pr-merge.sh` addresses GitHub only, by owner and repository, and refuses a GitLab merge request URL rather than sending it to the wrong forge.
-That is a standing captain decision from the 2026-08-24 upstream merge, not a pending gap: the merge path's validation-truth second proof exists only for GitHub, so restoring a GitLab merge arm must first give GitLab an equivalent proof (see the invariant note in `bin/fm-pr-merge.sh`).
-Merging a merge request therefore stays a deliberate manual step.
-
-A GitLab task records no `pr_head=`.
-`gh` exposes the head commit as a selectable field, while plain `glab` exposes it only inside its JSON output, which would need a JSON processor firstmate does not require.
-Both consumers already treat it as optional: `bin/fm-teardown.sh` reads the head from the forge at teardown rather than from metadata and falls back to its provider-agnostic content check, and `bin/fm-review-diff.sh` resolves the head from the remote when none is recorded.
+`bin/fm-pr-merge.sh` accepts canonical GitHub pull request URLs only and refuses a GitLab merge request URL before recording merge state.
+The GitLab watch and poll path above remains supported.
+Restoring an automatic GitLab merge path requires validation truth and live-head binding equivalent to the current GitHub path.
+The invariant comment in `bin/fm-pr-merge.sh` owns that safety requirement.
+`bin/fm-pr-check.sh` records `pr_head=` only for GitHub, while GitLab watch registrations remain valid without that optional field.
