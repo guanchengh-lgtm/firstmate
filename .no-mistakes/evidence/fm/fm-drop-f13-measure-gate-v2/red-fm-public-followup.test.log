@@ -1,0 +1,21 @@
+FM_TEST_BEGIN 2026-09-02T00:39:34Z tests/fm-public-followup.test.sh family=unclassified expected_gate_skip=none
+ok - outcome text is collapsed to one line, bounded by codepoint, and never corrupts characters
+ok - restart end-to-end: typed result reconciles from disk and delivers one reply to the original thread
+ok - duplicate terminal results, restart replay, and repeated delivery are all no-ops
+ok - wrong source, wrong work id, stale generation, malformed, unsupported deliverable, and forged identity are all refused
+ok - a relay transport failure is held as retryable with no false completion, and the retry posts once
+ok - a dry-run records no public delivery and leaves the commitment retryable
+ok - a late success receipt closes the exact attempt with no second post, and a mismatched attempt is refused
+ok - typed terminal cleanup clears the legacy link without posting
+ok - a delivery interrupted between post and receipt refuses to repost
+ok - a child home reports typed results but can never become the outward-post owner
+ok - typed delivery refuses to post when its cleanup registration is missing
+not ok - missing parent binding must be an actionable teardown refusal (missing: 'cannot resolve the primary home for marked secondmate mate')
+--- output ---
+
+FM_TEST_END 2026-09-02T00:39:57Z tests/fm-public-followup.test.sh exit=1 duration_ms=22850 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=22914
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=22850 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-public-followup.test.sh duration_ms=22850
+
+MUTATION_EXIT=1

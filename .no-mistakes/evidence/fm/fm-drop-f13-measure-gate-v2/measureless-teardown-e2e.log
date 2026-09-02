@@ -1,0 +1,6 @@
+before: measure.md=absent meta=present
+teardown measureless-evidence complete (window firstmate:fm-measureless-evidence, worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-measureless-e2e.P5e2h5/missing-worktree)
+Backlog: measureless-evidence just finished. Run tasks-axi done measureless-evidence --note "local main", then run tasks-axi ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.
+command: fm-teardown.sh measureless-evidence
+exit: 0
+after: measure.md=absent meta=absent

@@ -1,0 +1,9 @@
+FM_TEST_BEGIN 2026-09-02T00:50:50Z tests/fm-backend-herdr-presentation-e2e.test.sh family=real-herdr-gated expected_gate_skip=herdr
+ok - real Herdr lab: an opted-out spawn retains the Stage 1 Herdr command sequence with zero ordering calls
+not ok - opted-out teardown failed: 
+FM_TEST_END 2026-09-02T00:51:03Z tests/fm-backend-herdr-presentation-e2e.test.sh exit=1 duration_ms=12935 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=13012
+FM_TEST_SUMMARY_FAMILY family=real-herdr-gated count=1 duration_ms=12935 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-backend-herdr-presentation-e2e.test.sh duration_ms=12935
+
+MUTATION_EXIT=1

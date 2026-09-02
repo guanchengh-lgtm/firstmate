@@ -1,0 +1,25 @@
+FM_TEST_BEGIN 2026-09-02T00:29:08Z tests/fm-validation-truth.test.sh family=pr-forge expected_gate_skip=none
+ok - validation-truth: parses run-step done
+ok - validation-truth: parses pane source
+ok - validation-truth: direct-PR is exempt
+ok - validation-truth: pane source refuses as unreadable
+ok - validation-truth: run-step done allows
+ok - validation-truth: run-step not done refuses without unreadable wording
+ok - validation-truth: pr-check refuses pane-sourced no-mistakes ships
+ok - validation-truth: non-force teardown refuses pane-sourced no-mistakes ships
+ok - validation-truth: --force teardown skips validation-truth on discard
+ok - validation-truth: missing-object lag with live remote allows
+ok - validation-truth: diverged rebase lag with live remote allows
+ok - validation-truth: cancelled PR-URL run refuses
+ok - validation-truth: PR-URL runs uses meta worktree, not caller cwd
+ok - validation-truth: sqlite PR-URL index arms when worktree is gone
+ok - validation-truth: sqlite PR-URL index is newest-first by updated_at
+ok - validation-truth: sqlite selects target PR URL beyond global top-N noise
+ok - validation-truth: forge head mismatch refuses
+ok - validation-truth: red forge rollup refuses
+ok - validation-truth: builder id with -nm PR-URL run passes check, merge, and cleanup
+# all fm-validation-truth tests passed
+FM_TEST_END 2026-09-02T00:29:25Z tests/fm-validation-truth.test.sh exit=0 duration_ms=16225 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=16293
+FM_TEST_SUMMARY_FAMILY family=pr-forge count=1 duration_ms=16225 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-validation-truth.test.sh duration_ms=16225

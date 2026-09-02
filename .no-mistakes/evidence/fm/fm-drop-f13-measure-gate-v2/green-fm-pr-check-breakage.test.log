@@ -1,0 +1,18 @@
+FM_TEST_BEGIN 2026-09-02T00:29:52Z tests/fm-pr-check-breakage.test.sh family=pr-forge expected_gate_skip=none
+ok - pr-check: missing breakage record prints one advisory line and still arms
+ok - pr-check: matching second-token coverage prints nothing
+ok - pr-check: two test files with one covering record reports m=1
+ok - pr-check: no changed test files stays silent
+ok - pr-check: unreadable test-step log prints m=? and still arms
+ok - pr-check: unreadable axi status prints m=? run unknown
+ok - pr-check: run branch mismatch stays silent
+ok - pr-check: direct-PR ships have no test step and stay silent
+ok - pr-check: final clean breakage entry does not inflate m
+ok - pr-check: wrong second-token path does not cover the changed test
+ok - pr-check: spec/ paths and *_spec.rb count as test files
+ok - pr-check: root test_*.py and __tests__/ count as test files
+ok - pr-check: real axi logs --full fixture covers per-file second tokens
+FM_TEST_END 2026-09-02T00:30:08Z tests/fm-pr-check-breakage.test.sh exit=0 duration_ms=16354 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=16420
+FM_TEST_SUMMARY_FAMILY family=pr-forge count=1 duration_ms=16354 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-pr-check-breakage.test.sh duration_ms=16354

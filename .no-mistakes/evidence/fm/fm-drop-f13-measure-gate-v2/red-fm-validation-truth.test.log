@@ -1,0 +1,17 @@
+FM_TEST_BEGIN 2026-09-02T00:29:07Z tests/fm-validation-truth.test.sh family=pr-forge expected_gate_skip=none
+ok - validation-truth: parses run-step done
+ok - validation-truth: parses pane source
+ok - validation-truth: direct-PR is exempt
+ok - validation-truth: pane source refuses as unreadable
+ok - validation-truth: run-step done allows
+ok - validation-truth: run-step not done refuses without unreadable wording
+ok - validation-truth: pr-check refuses pane-sourced no-mistakes ships
+not ok - non-force teardown pane refusal missing (missing: 'validation truth unreadable')
+--- output ---
+
+FM_TEST_END 2026-09-02T00:29:08Z tests/fm-validation-truth.test.sh exit=1 duration_ms=1488 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=1557
+FM_TEST_SUMMARY_FAMILY family=pr-forge count=1 duration_ms=1488 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-validation-truth.test.sh duration_ms=1488
+
+MUTATION_EXIT=1

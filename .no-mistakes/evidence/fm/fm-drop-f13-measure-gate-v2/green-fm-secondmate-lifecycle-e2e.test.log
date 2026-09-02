@@ -1,0 +1,12 @@
+FM_TEST_BEGIN 2026-09-02T00:43:22Z tests/fm-secondmate-lifecycle-e2e.test.sh family=secondmate expected_gate_skip=none
+ok - seed: registry scope+projects, charter copied, clones+origins, no-mistakes init in subhome only
+warning: secondmate design sync skipped before launch: diverged from e8309da3ca274ad28a577af32d9b55740ce82b2c
+ok - spawn: launches in the subhome with persistent charter, records routing meta
+ok - send: a bare fm-<id> secondmate enqueues a marked request and rings the meta window
+ok - handoff: in-scope items move verbatim, out-of-scope stays, idempotent
+ok - recovery: respawns from the durable registry and persistent home
+ok - teardown: removes the home, then clears meta and the registry route
+FM_TEST_END 2026-09-02T00:43:34Z tests/fm-secondmate-lifecycle-e2e.test.sh exit=0 duration_ms=11815 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=11878
+FM_TEST_SUMMARY_FAMILY family=secondmate count=1 duration_ms=11815 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-secondmate-lifecycle-e2e.test.sh duration_ms=11815

@@ -1,0 +1,15 @@
+FM_TEST_BEGIN 2026-09-02T00:30:54Z tests/fm-kimi-harness.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - Kimi hook install is idempotent and removal restores every foreign config byte
+ok - Kimi hook removal preserves owned newline boundaries and pristine bytes
+ok - Kimi hook install refuses missing, malformed, and surprising config without writing
+ok - Kimi hook install refuses without jq before any config write
+ok - fm-spawn: kimi launches, delivers its brief, and registers a guarded turn-end token
+ok - Kimi hook stays silent and inert without a Firstmate registry token
+ok - fm-spawn: unsafe Kimi global config refuses before pane creation
+not ok - Kimi teardown failed
+FM_TEST_END 2026-09-02T00:31:05Z tests/fm-kimi-harness.test.sh exit=1 duration_ms=10726 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=10785
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=10726 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-kimi-harness.test.sh duration_ms=10726
+
+MUTATION_EXIT=1
