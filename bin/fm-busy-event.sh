@@ -21,6 +21,10 @@
 #       hook that outlives its incarnation fails closed here. Firstmate recovery
 #       paths (fm-recovery), and compatibility with older fm-interrupt records,
 #       may pass --current-gen to bind to the incarnation armed right now.
+#       hook that outlives its incarnation fails closed here. The legacy
+#       Claude fm-send --key Escape path (fm-interrupt) and firstmate recovery
+#       paths (fm-recovery) may pass --current-gen to bind to the incarnation
+#       armed right now.
 #
 #   retire <state-dir> <id> (--gen G | --current-gen)
 #       Remove one incarnation's sidecar and record while holding the same

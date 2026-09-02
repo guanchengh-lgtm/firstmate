@@ -14,6 +14,7 @@ A decision is not a separate thing: it is simply a task waiting on the captain.
 The one primitive is an ordinary backlog task held for the captain (`tasks-axi hold <id> --kind captain`), its identity is the task id, and `bin/fm-captain-hold.sh` owns the deterministic mechanics this policy relies on.
 The same completion gate inventories unscheduled product ideas in the originating home's `data/product-ideas.md`.
 The agent performs both semantic inventories because scripts must not infer captain calls or ideas from report prose, visual-review artifacts, terminal output, or chat.
+The agent performs the semantic inventory because scripts must not infer captain calls from report prose, visual-review artifacts, terminal output, or chat.
 
 ## Policy
 
@@ -23,6 +24,7 @@ Put the question and its options in the hold reason, and keep one held task per 
 Register or re-hold through `bin/fm-captain-hold.sh hold`, which is idempotent per task id.
 Every product idea, feature proposal, or strategic suggestion not yet scheduled as work must become a well-formed home-local `PI-NNN` row whose Source names its report section, never a line number.
 After inventorying the whole report and review surface, run `bin/fm-captain-hold.sh complete` with every captain-held task id, or with `--none` only when the reviewed surface leaves nothing waiting on the captain, plus exactly one idea attestation: `--ideas <PI-id>...` or `--no-ideas`.
+After inventorying the whole report and review surface, run `bin/fm-captain-hold.sh complete` with every captain-held task id, or with `--none` only when the reviewed surface leaves nothing waiting on the captain.
 A completed investigation and an ended visual review use this same owner and completion command; a visual tool, including Lavish, never owns a parallel completion policy.
 Run the command in the originating work's authoritative `FM_HOME`; secondmate-owned work registers in that secondmate home's backlog, and a question already held anywhere is never re-registered as a second row.
 Do not close a captain-held task merely because the originating investigation completed, its report was archived, its visual review ended, or its task was torn down.

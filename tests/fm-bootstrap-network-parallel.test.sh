@@ -83,6 +83,15 @@ if [ "$slow" -eq 1 ]; then
   else
     sleep "$sleep_s"
   fi
+  # Do not let scheduler latency turn the concurrency assertion into a race
+  # between equal sleeps. If the fetch worker was launched concurrently, give
+  # it a bounded opportunity to publish its START record.
+  waited=0
+  while ! grep -q '^START fleet-fetch ' "$log" && [ "$waited" -lt 500 ]; do
+    sleep 0.01
+    waited=$((waited + 1))
+  done
+  sleep "$sleep_s"
   printf 'END %s %s %s\n' "$host" "$command_name" "$subcommand" >> "$log"
 else
   printf 'QUICK %s %s %s\n' "$host" "$command_name" "$subcommand" >> "$log"
@@ -146,12 +155,12 @@ for arg in "\$@"; do
 done
 if [ "\$slow" -eq 1 ]; then
   printf 'START fleet-fetch git fetch\n' >> '$log'
-  i=0
-  while ! grep -q '^START host-.* fm-remote-secondmate-control.sh state\$' '$log'; do
-    i=\$((i + 1))
-    [ "\$i" -le "\${FM_FAKE_BARRIER_POLLS:-200}" ] || { printf 'TIMEOUT fleet-fetch waiting for liveness probe\n' >> '$log'; break; }
-    sleep 0.05
+  waited=0
+  while ! grep -q '^START host-.* fm-remote-doctor.sh ' '$log' && [ "\$waited" -lt 500 ]; do
+    sleep 0.01
+    waited=\$((waited + 1))
   done
+  sleep "\${FM_FAKE_GIT_FETCH_SLEEP:-0.4}"
   printf 'END fleet-fetch git fetch\n' >> '$log'
 fi
 exec '$real_git' "\$@"
@@ -233,6 +242,7 @@ SH
     FM_FAKE_SSH_UNREACHABLE_HOST=host-bravo \
     FM_FAKE_SSH_FAIL_HOST=host-alpha \
     FM_FAKE_SSH_DIRTY_HOST=host-charlie \
+    FM_FAKE_GIT_FETCH_SLEEP=0.4 \
     FM_INHERITABLE_CONFIG='' \
     FM_FAKE_TREEHOUSE_LEASE_HELP=1 \
     "$ROOT/bin/fm-bootstrap.sh" 2>&1

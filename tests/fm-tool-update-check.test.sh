@@ -336,16 +336,17 @@ SH
   chmod 0755 "$dir/no-mistakes-fixture"
   write_config "$home" '{"tools":[{"name":"no-mistakes","command":"no-mistakes-fixture","version_args":["--version"],"announce_args":["--help"],"announce_pattern":"A new version of no-mistakes is available: [^ ]+ -> [^ ]+"}]}'
   out="$home/out.txt"
-  run_check "$home" "$(fixture_path "$dir")" "$out" FM_TOOL_UPDATE_BUDGET_SECS=1
+  # The deadline is whole-second granular (real_epoch is `date +%s`), so a
+  # budget of 1 leaves headroom anywhere in (0, 1] seconds: when the sweep
+  # starts near the end of a second the very first budget check already reads
+  # as exhausted and the sweep reports "before every copy answered" instead of
+  # reaching the announcement step this case is about. A budget of 2 guarantees
+  # more than a full second of headroom for the millisecond-scale work before
+  # the copy loop, while the version probe below (bounded, then sleeping 30)
+  # still exhausts the budget before the announcement check.
+  run_check "$home" "$(fixture_path "$dir")" "$out" FM_TOOL_UPDATE_BUDGET_SECS=2
   report=$(cat "$out")
-  # A loaded runner can spend this one-second budget before tool dispatch.
-  # Both reports fail closed and name the tool whose source was not checked.
-  case "$report" in
-    *"no-mistakes check failed: the time budget ran out before the update announcement was checked"*|\
-    *"check incomplete: the time budget ran out before no-mistakes"*) : ;;
-    *) fail "an announcement source that was never asked was not reported" ;;
-  esac
-  assert_not_contains "$report" "no-mistakes update available" "an unchecked announcement source was reported as an update"
+  assert_contains "$report" "no-mistakes check failed: the time budget ran out before the update announcement was checked" "an announcement source that was never asked was not reported"
   pass "an announcement source the budget could not reach is reported, not read as current"
 }
 

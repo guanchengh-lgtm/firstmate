@@ -41,10 +41,16 @@
 #   FM_SESSIONSTART_HOOK_LIVE_E2E=1 tests/fm-sessionstart-hook-live-e2e.test.sh
 #
 # It costs real model turns on every installed adapter in this suite.
+# That mode costs real model turns on every installed adapter in this suite.
+# The Pi `/new` provider-prerequisite regression has a separate offline mode
+# using a deterministic local provider and no user credentials:
+#
+#   FM_PI_SESSIONSTART_RACE_LIVE_E2E=1 tests/fm-sessionstart-hook-live-e2e.test.sh
 set -u
 
-if [ "${FM_SESSIONSTART_HOOK_LIVE_E2E:-0}" != 1 ]; then
-  echo "skip: set FM_SESSIONSTART_HOOK_LIVE_E2E=1 to run the live session-open hook regression"
+if [ "${FM_SESSIONSTART_HOOK_LIVE_E2E:-0}" != 1 ] && \
+   [ "${FM_PI_SESSIONSTART_RACE_LIVE_E2E:-0}" != 1 ]; then
+  echo "skip: set FM_SESSIONSTART_HOOK_LIVE_E2E=1 for the cross-harness guard or FM_PI_SESSIONSTART_RACE_LIVE_E2E=1 for the offline Pi /new race regression"
   exit 0
 fi
 
@@ -192,7 +198,8 @@ SH
     pi)
       mkdir -p "$lab/.pi/extensions/lib"
       cp "$ROOT/.pi/extensions/fm-primary-turnend-guard.ts" "$lab/.pi/extensions/"
-      cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" "$lab/.pi/extensions/lib/"
+      cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" \
+        "$ROOT/.pi/extensions/lib/fm-sessionstart-supervisor.mjs" "$lab/.pi/extensions/lib/"
       cp "$ROOT/bin/fm-operational-input.sh" "$lab/bin/"
       printf '%s\n' '{"compaction":{"keepRecentTokens":200}}' > "$lab/.pi/settings.json"
       ;;
@@ -340,280 +347,266 @@ probe_context_reset() {  # <harness> <version> <lab> <clear-command> <launch-arg
   tmux -L "$SOCKET" kill-session -t "$session" >/dev/null 2>&1 || true
 }
 
-# --- (d) Claude in-place session replacement ----------------------------------
+# --- real Pi provider prerequisite -------------------------------------------
 #
-# This lab runs the REAL wrapper, lock, and nudge against a stub session start,
-# so the recorded lock pair is the shipped logic's own outcome rather than a
-# re-creation of it. A shim in front of the wrapper records what the vendor
-# supplied and what the lock pair looked like on both sides of each open.
-make_replacement_lab() {  # -> echoes lab dir
-  local lab="$LAB/claude-replacement" script
-  mkdir -p "$lab/bin" "$lab/state" "$lab/.claude"
-  git init -q -b main "$lab"
-  git -C "$lab" config user.email fmtest@example.invalid
-  git -C "$lab" config user.name fmtest
-  printf '# Firstmate lab\n' > "$lab/AGENTS.md"
-  git -C "$lab" add -A >/dev/null 2>&1 || true
-  git -C "$lab" commit -q -m init >/dev/null 2>&1 || true
-  # One task in flight, so the Stop probe's supervision-need gate passes and
-  # only session identity decides whether it stands down.
-  : > "$lab/state/task.meta"
-  cp "$ROOT/.claude/settings.json" "$lab/.claude/settings.json"
-
-  for script in fm-turnend-guard.sh fm-arm-pretool-check.sh fm-cd-pretool-check.sh \
-    fm-owner-invoke-wait-check.sh fm-subagent-pretool-check.sh; do
-    printf '#!/usr/bin/env bash\nexit 0\n' > "$lab/bin/$script"
-    chmod +x "$lab/bin/$script"
-  done
-  for script in fm-sessionstart-nudge.sh fm-lock.sh fm-session-lock-lib.sh fm-cursor-lib.sh \
-    fm-wake-lib.sh fm-gate-refuse-lib.sh fm-primary-scope-lib.sh fm-hook-host-lib.sh \
-    fm-operational-input.sh fm-supervision-lib.sh; do
-    ln -sf "$ROOT/bin/$script" "$lab/bin/$script"
-  done
-  ln -sf "$ROOT/bin/fm-sessionstart-run.sh" "$lab/bin/fm-sessionstart-run-real.sh"
-  ln -sf "$ROOT/bin/fm-claude-stop-autoarm.sh" "$lab/bin/fm-claude-stop-autoarm-real.sh"
-
-  cat > "$lab/bin/fm-watch-arm.sh" <<'SH'
+# This is the end-user `/new` path, not an SDK simulation. A barrier holds the
+# native clear digest open while the first prompt is submitted. The local
+# provider would deterministically request the manual startup command if that
+# first payload lacked native context, reproducing the historical duplicate.
+# The fixed path must make no provider call before release and must expose one
+# native message on the first call. A second case proves the already-complete
+# path reaches the same result.
+probe_pi_sessionstart_prerequisite() {
+  local version lab project home config sessions session=pi-race
+  local pane i session_file first_line second_line
+  command -v pi >/dev/null 2>&1 || fail "pi not found for the offline /new provider-prerequisite regression"
+  version=$(pi --version 2>/dev/null | head -n 1)
+  [ -n "$version" ] || version=unknown
+  lab="$LAB/pi-race"
+  project="$lab/project"
+  home="$lab/home"
+  config="$lab/config"
+  sessions="$lab/sessions"
+  mkdir -p "$project/.pi/extensions/lib" "$project/bin" "$home/state" "$config" "$sessions"
+  git init -q -b main "$project"
+  git -C "$project" config user.email fmtest@example.invalid
+  git -C "$project" config user.name fmtest
+  printf '# Offline Pi startup-prerequisite lab\n' > "$project/AGENTS.md"
+  cp "$ROOT/.pi/extensions/fm-primary-turnend-guard.ts" "$project/.pi/extensions/"
+  cp "$ROOT/.pi/extensions/lib/fm-operational-input.ts" \
+    "$ROOT/.pi/extensions/lib/fm-sessionstart-supervisor.mjs" "$project/.pi/extensions/lib/"
+  cp "$ROOT/bin/fm-operational-input.sh" "$project/bin/"
+  cat > "$project/bin/fm-turnend-guard.sh" <<'SH'
 #!/usr/bin/env bash
-printf '%s\n' "$$" >> "$FM_HOME/state/arm-ran"
 exit 0
 SH
-  # Stands in for the digest: it takes the lock and records completion exactly
-  # where the real digest does, and nothing else, so no lab open can reach the
-  # fleet, the network, or a watcher.
-  cat > "$lab/bin/fm-session-start.sh" <<'SH'
+  cat > "$project/bin/fm-sessionstart-run.sh" <<'SH'
 #!/usr/bin/env bash
 set -u
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-reemit=0
-source=none
+state=${FM_HOME:?}/state
+source_name=
 while [ $# -gt 0 ]; do
   case "$1" in
-    --reemit) reemit=1; shift ;;
-    --source) source=${2:-none}; shift 2 || shift ;;
+    --source) source_name=${2:-}; shift 2 ;;
     *) shift ;;
   esac
 done
-if [ "$reemit" -eq 0 ]; then
-  "$SCRIPT_DIR/fm-lock.sh" > "$FM_HOME/state/lock.out" 2>&1 || true
-  if [ -f "$FM_HOME/state/.lock" ]; then
-    cp "$FM_HOME/state/.lock" "$FM_HOME/state/.session-start-complete"
-  fi
+if [ "$source_name" != clear ]; then
+  printf 'INITIAL_STARTUP source=%s\n' "$source_name"
+  exit 0
 fi
-printf 'FMSTART-%s-reemit%s\n' "$source" "$reemit"
-exit 0
+count=$(( $(grep -c '^clear-start:' "$state/events" 2>/dev/null || true) + 1 ))
+printf 'clear-start:%s:%s\n' "$count" "$$" >> "$state/events"
+: > "$state/native-started-$count"
+while [ ! -f "$state/release-native-$count" ]; do sleep 0.02; done
+printf 'RACE_NATIVE generation=%s\n' "$count"
+: > "$state/native-completed-$count"
+printf 'clear-complete:%s:%s\n' "$count" "$$" >> "$state/events"
 SH
-  # The interactive pane must not arm supervision on every turn, and the point
-  # of the probe is one background Stop hook inside that pane's own process
-  # tree, so only the marked probe reaches the real auto-arm.
-  cat > "$lab/bin/fm-claude-stop-autoarm.sh" <<'SH'
+  cat > "$project/bin/fm-session-start.sh" <<'SH'
 #!/usr/bin/env bash
 set -u
-[ "${FM_LIVE_STOP_PROBE:-0}" = 1 ] || exit 0
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-printf '%s|%s|%s|%s\n' "${CLAUDE_CODE_SESSION_ID:-absent}" \
-  "${CLAUDE_PID:-absent}" \
-  "$(cat "$FM_HOME/state/.lock" 2>/dev/null || printf absent)" \
-  "$(cat "$FM_HOME/state/.lock.session" 2>/dev/null || printf absent)" \
-  >> "$FM_HOME/state/stop-probe.log"
-exec "$SCRIPT_DIR/fm-claude-stop-autoarm-real.sh" "$@"
+state=${FM_HOME:?}/state
+: > "$state/manual-started"
+printf 'RACE_MANUAL\n'
 SH
-  cat > "$lab/bin/fm-sessionstart-run.sh" <<'SH'
-#!/usr/bin/env bash
-# Records what the vendor delivered and what the shipped wrapper then did with
-# the lock pair, and forwards the payload untouched so the wrapper's own stdout
-# still reaches model context.
-set -u
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# shellcheck source=/dev/null
-. "$SCRIPT_DIR/fm-session-lock-lib.sh"
-record=${FM_LIVE_RECORD:?}
-payload=$(cat 2>/dev/null || true)
-field() {
-  printf '%s' "$payload" | awk -v key="$1" '
-    BEGIN { RS = "\"" }
-    seen == 2 { print; exit }
-    seen == 1 && $0 ~ /^[[:space:]]*:[[:space:]]*$/ { seen = 2; next }
-    seen == 1 { seen = 0 }
-    $0 == key { seen = 1 }
-  '
-}
-read_state() { cat "$FM_HOME/state/$1" 2>/dev/null || printf absent; }
-event=$(field hook_event_name)
-source=$(field source)
-payload_session=$(field session_id)
-lock_before=$(read_state .lock)
-sidecar_before=$(read_state .lock.session)
-outer=absent
-fm_session_lock_identity && outer=$FM_SESSION_ANCESTRY_PID
-printf '%s' "$payload" | "$SCRIPT_DIR/fm-sessionstart-run-real.sh" || true
-printf '%s|%s|%s|%s|%s|%s|%s|%s|%s\n' "${event:-absent}" "${source:-absent}" \
-  "${payload_session:-absent}" "${CLAUDE_CODE_SESSION_ID:-absent}" \
-  "$lock_before" "$sidecar_before" "$(read_state .lock)" "$(read_state .lock.session)" \
-  "$outer" >> "$record"
-exit 0
-SH
-  chmod +x "$lab/bin/fm-sessionstart-run.sh" "$lab/bin/fm-session-start.sh" \
-    "$lab/bin/fm-claude-stop-autoarm.sh" "$lab/bin/fm-watch-arm.sh"
-  printf '%s\n' "$lab"
+  cat > "$project/.pi/extensions/race-local-provider.ts" <<'TS'
+import { appendFileSync } from "node:fs";
+import {
+  type AssistantMessage,
+  createAssistantMessageEventStream,
+} from "@earendil-works/pi-ai";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+
+function textOf(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((item): item is { type: "text"; text: string } =>
+      typeof item === "object" && item !== null &&
+      (item as { type?: unknown }).type === "text" &&
+      typeof (item as { text?: unknown }).text === "string")
+    .map((item) => item.text)
+    .join("\n");
 }
 
-REPLACEMENT_RECORD=
-replacement_field() {  # <line-number> <field-number>
-  sed -n "${1}p" "$REPLACEMENT_RECORD" | cut -d'|' -f"$2"
+function assistant(model: { api: string; provider: string; id: string }): AssistantMessage {
+  return {
+    role: "assistant",
+    content: [],
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: Date.now(),
+  };
 }
 
-wait_for_open() {  # <line-number> [attempts]
-  local line=$1 attempts=${2:-40} i=0
-  while [ "$i" -lt "$attempts" ]; do
-    [ -n "$(replacement_field "$line" 1)" ] && return 0
-    sleep 3
+export default function (pi: ExtensionAPI): void {
+  pi.registerProvider("race-local", {
+    baseUrl: "http://127.0.0.1/unused",
+    apiKey: "offline-test-only",
+    api: "race-local-api",
+    models: [{
+      id: "deterministic",
+      name: "Deterministic startup prerequisite provider",
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 16384,
+      maxTokens: 128,
+    }],
+    streamSimple(model, context) {
+      const stream = createAssistantMessageEventStream();
+      const texts = context.messages.map((message) => textOf(message.content));
+      const all = texts.join("\n");
+      const prompt = all.includes("IMMEDIATE_RACE_PROMPT")
+        ? "immediate"
+        : all.includes("PROVEN_RACE_PROMPT")
+          ? "proven"
+          : "other";
+      const nativeCount = texts.filter((text) => text.includes("RACE_NATIVE generation=")).length;
+      const manual = all.includes("RACE_MANUAL");
+      if (prompt !== "other") {
+        appendFileSync(
+          `${process.env.FM_HOME}/state/provider-calls`,
+          `prompt=${prompt} native_count=${nativeCount} manual=${manual}\n`,
+        );
+      }
+      const output = assistant(model);
+      queueMicrotask(() => {
+        stream.push({ type: "start", partial: output });
+        if (prompt !== "other" && nativeCount === 0 && !manual) {
+          output.stopReason = "toolUse";
+          const toolCall = {
+            type: "toolCall" as const,
+            id: `manual-${Date.now()}`,
+            name: "bash",
+            arguments: { command: "bin/fm-session-start.sh" },
+          };
+          output.content.push(toolCall);
+          stream.push({ type: "toolcall_start", contentIndex: 0, partial: output });
+          stream.push({
+            type: "toolcall_delta",
+            contentIndex: 0,
+            delta: JSON.stringify(toolCall.arguments),
+            partial: output,
+          });
+          stream.push({ type: "toolcall_end", contentIndex: 0, toolCall, partial: output });
+          stream.push({ type: "done", reason: "toolUse", message: output });
+          stream.end();
+          return;
+        }
+        const responseText = `RACE_RESULT prompt=${prompt} native_count=${nativeCount} manual=${manual}`;
+        const block = { type: "text" as const, text: responseText };
+        output.content.push(block);
+        stream.push({ type: "text_start", contentIndex: 0, partial: output });
+        stream.push({ type: "text_delta", contentIndex: 0, delta: responseText, partial: output });
+        stream.push({ type: "text_end", contentIndex: 0, content: responseText, partial: output });
+        stream.push({ type: "done", reason: "stop", message: output });
+        stream.end();
+      });
+      return stream;
+    },
+  });
+}
+TS
+  chmod +x "$project/bin/"*.sh
+  git -C "$project" add -A
+  git -C "$project" commit -q -m init
+
+  tmux -L "$SOCKET" new-session -d -s "$session" -c "$project" -x 180 -y 50 \
+    "env FM_HOME='$home' FM_ROOT_OVERRIDE='$project' PI_CODING_AGENT_DIR='$config' PI_OFFLINE=1 pi --approve --session-dir '$sessions' --no-context-files --no-skills --no-prompt-templates --tools bash --model race-local/deterministic; rc=\$?; printf '\nPI_EXIT=%s\n' \"\$rc\"; sleep 60" \
+    || fail "Pi $version: could not start the offline /new lab"
+  i=0
+  while [ "$i" -lt 200 ]; do
+    pane=$(capture "$session")
+    printf '%s\n' "$pane" | grep -Fq 'race-local-provider.ts' && \
+      printf '%s\n' "$pane" | grep -Fq 'deterministic' && break
+    sleep 0.05
     i=$((i + 1))
   done
-  return 1
-}
+  printf '%s\n' "$pane" | grep -Fq 'deterministic' \
+    || { printf '%s\n' "$pane" >&2; fail "Pi $version: offline local provider did not reach the ready composer"; }
 
-# One in-place replacement command: the vendor must keep the durable pid, issue
-# a new session id, agree with its own payload, and leave the shipped wrapper
-# holding a lock whose sidecar is the NEW id on the SAME pid.
-assert_in_place_replacement() {  # <version> <command> <line> <session-pane>
-  local version=$1 command=$2 line=$3 pane=$4
-  local event source payload_session env_session lock_before sidecar_before
-  local lock_after sidecar_after outer previous_pid previous_session expected_source
-  wait_for_open "$line" \
-    || { capture "$pane" >&2; fail "claude $version: '$command' fired no session-open hook at all"; }
-  event=$(replacement_field "$line" 1)
-  source=$(replacement_field "$line" 2)
-  payload_session=$(replacement_field "$line" 3)
-  env_session=$(replacement_field "$line" 4)
-  lock_before=$(replacement_field "$line" 5)
-  sidecar_before=$(replacement_field "$line" 6)
-  lock_after=$(replacement_field "$line" 7)
-  sidecar_after=$(replacement_field "$line" 8)
-  outer=$(replacement_field "$line" 9)
-  previous_pid=$(replacement_field "$((line - 1))" 7)
-  previous_session=$(replacement_field "$((line - 1))" 8)
-
-  [ "$event" = SessionStart ] \
-    || fail "claude $version: '$command' delivered event '$event', so the wrapper's native-payload gate would refuse it"
-  case "$command" in
-    /clear|/new) expected_source=clear ;;
-    /resume) expected_source=resume ;;
-    *) fail "claude $version: the live guard has no expected source for '$command'" ;;
-  esac
-  [ "$source" = "$expected_source" ] \
-    || fail "claude $version: '$command' reported source '$source', not '$expected_source'; refresh docs/verification/supervision.md before trusting this coverage"
-  [ "$payload_session" = "$env_session" ] \
-    || fail "claude $version: '$command' payload id '$payload_session' differs from the environment id '$env_session', so the wrapper cannot tie the event to this session"
-  [ "$env_session" != "$previous_session" ] \
-    || fail "claude $version: '$command' kept session id '$env_session', so this case proved no replacement at all"
-  [ "$lock_before" = "$previous_pid" ] && [ "$sidecar_before" = "$previous_session" ] \
-    || fail "claude $version: '$command' did not meet the recorded stale pair (lock $previous_pid, sidecar $previous_session); it saw $lock_before/$sidecar_before"
-  [ "$outer" = "$previous_pid" ] \
-    || fail "claude $version: '$command' resolved durable pid $outer, not the recorded $previous_pid, so it is not an in-place replacement on this version"
-  [ "$lock_after" = "$previous_pid" ] \
-    || fail "claude $version: '$command' moved the lock from $previous_pid to $lock_after"
-  [ "$sidecar_after" = "$env_session" ] \
-    || fail "claude $version: '$command' left sidecar '$sidecar_after' instead of the current session '$env_session', so the session stays locked out of its own home"
-  pass "claude $version: '$command' replaces the session in place and the wrapper reclaims its own lock"
-}
-
-probe_claude_session_replacement() {  # <version>
-  local version=$1 lab pane n line lock_pair_before probe_line probe_claude_pid probe_lock_pid
-  lab=$(make_replacement_lab)
-  REPLACEMENT_RECORD="$lab/record"
-  : > "$REPLACEMENT_RECORD"
-  pane=fmss-claude-replacement
-  tmux -L "$SOCKET" new-session -d -s "$pane" -c "$lab" -x 200 -y 50 \
-    -e FM_LIVE_RECORD="$REPLACEMENT_RECORD" -e FM_ROOT_OVERRIDE="$lab" -e FM_HOME="$lab" \
-    -e FM_GATE_REFUSE_BYPASS=0 \
-    "claude --permission-mode bypassPermissions" \
-    || fail "claude $version: could not start the in-place replacement lab session"
-
-  n=0
-  while [ "$n" -lt 60 ] && ! wait_for_open 1 1; do
-    if capture "$pane" | grep -qiE 'trust (this|the|parent)?[[:space:]]*(folder|project)'; then
-      answer_trust_prompt "$pane"
-      sleep 5
-    fi
-    n=$((n + 1))
+  tmux -L "$SOCKET" send-keys -t "$session" -l /new
+  tmux -L "$SOCKET" send-keys -t "$session" Enter
+  i=0
+  while [ "$i" -lt 500 ] && [ ! -f "$home/state/native-started-1" ]; do sleep 0.01; i=$((i + 1)); done
+  [ -f "$home/state/native-started-1" ] \
+    || { capture "$session" >&2; fail "Pi $version: immediate /new native generation never started"; }
+  tmux -L "$SOCKET" send-keys -t "$session" -l IMMEDIATE_RACE_PROMPT
+  tmux -L "$SOCKET" send-keys -t "$session" Enter
+  sleep 0.5
+  [ ! -s "$home/state/provider-calls" ] \
+    || fail "Pi $version: the immediate first provider call escaped before native startup settled"
+  [ ! -f "$home/state/manual-started" ] \
+    || fail "Pi $version: manual startup ran concurrently with the native generation"
+  : > "$home/state/release-native-1"
+  i=0
+  while [ "$i" -lt 1000 ] && ! grep -Fq 'prompt=immediate native_count=1 manual=false' "$home/state/provider-calls" 2>/dev/null; do
+    sleep 0.01
+    i=$((i + 1))
   done
-  wait_for_open 1 \
-    || { capture "$pane" >&2; fail "claude $version: the replacement lab fired no cold session-open hook"; }
-  [ "$(replacement_field 1 8)" = "$(replacement_field 1 4)" ] \
-    || fail "claude $version: the cold open did not record its own session id as the lock sidecar"
+  grep -Fqx 'prompt=immediate native_count=1 manual=false' "$home/state/provider-calls" \
+    || { capture "$session" >&2; fail "Pi $version: immediate first payload lacked exactly one native startup context"; }
+  wait_for_text "$session" 'RACE_RESULT prompt=immediate native_count=1 manual=false' 60 \
+    || fail "Pi $version: immediate local-provider turn did not settle"
+  session_file=$(find "$sessions" -type f -name '*.jsonl' -exec grep -l IMMEDIATE_RACE_PROMPT {} + 2>/dev/null | head -1 || true)
+  [ -n "$session_file" ] || fail "Pi $version: immediate /new session file was not found"
+  [ "$(grep -Fc 'RACE_NATIVE generation=1' "$session_file")" -eq 1 ] \
+    || fail "Pi $version: immediate generation persisted other than one native startup context"
+  [ "$(grep -c '^clear-start:1:' "$home/state/events")" -eq 1 ] \
+    || fail "Pi $version: immediate generation executed native startup other than once"
+  [ ! -f "$home/state/manual-started" ] \
+    || fail "Pi $version: immediate fixed path still executed manual startup"
 
-  send_line "$pane" /clear
-  assert_in_place_replacement "$version" /clear 2 "$pane"
-  send_line "$pane" /new
-  assert_in_place_replacement "$version" /new 3 "$pane"
+  tmux -L "$SOCKET" send-keys -t "$session" -l /new
+  tmux -L "$SOCKET" send-keys -t "$session" Enter
+  i=0
+  while [ "$i" -lt 500 ] && [ ! -f "$home/state/native-started-2" ]; do sleep 0.01; i=$((i + 1)); done
+  [ -f "$home/state/native-started-2" ] \
+    || { capture "$session" >&2; fail "Pi $version: proven /new native generation never started"; }
+  : > "$home/state/release-native-2"
+  i=0
+  while [ "$i" -lt 500 ] && [ ! -f "$home/state/native-completed-2" ]; do sleep 0.01; i=$((i + 1)); done
+  [ -f "$home/state/native-completed-2" ] || fail "Pi $version: proven native generation did not complete"
+  tmux -L "$SOCKET" send-keys -t "$session" -l PROVEN_RACE_PROMPT
+  tmux -L "$SOCKET" send-keys -t "$session" Enter
+  wait_for_text "$session" 'RACE_RESULT prompt=proven native_count=1 manual=false' 60 \
+    || fail "Pi $version: proven completed-before-prompt path lacked exactly one native context"
+  first_line=$(sed -n '1p' "$home/state/provider-calls")
+  second_line=$(sed -n '2p' "$home/state/provider-calls")
+  [ "$first_line" = 'prompt=immediate native_count=1 manual=false' ] \
+    || fail "Pi $version: immediate provider evidence changed unexpectedly: $first_line"
+  [ "$second_line" = 'prompt=proven native_count=1 manual=false' ] \
+    || fail "Pi $version: proven provider evidence changed unexpectedly: $second_line"
+  [ "$(grep -c '^clear-start:' "$home/state/events")" -eq 2 ] \
+    || fail "Pi $version: two /new generations did not execute native startup exactly once each"
+  [ ! -f "$home/state/manual-started" ] \
+    || fail "Pi $version: proven fixed path executed manual startup"
 
-  # The picker's default selection is the most recent conversation, so a bare
-  # Enter takes it. A version that changes that shape must fail loudly here
-  # rather than let the ship keep claiming resume coverage.
-  send_line "$pane" /resume
-  sleep 5
-  tmux -L "$SOCKET" send-keys -t "$pane" Enter
-  assert_in_place_replacement "$version" /resume 4 "$pane"
-
-  # /fork copies the conversation into a BACKGROUND session while this one keeps
-  # running, so it must never be able to rewrite the primary's lock pair.
-  # 2.1.251 refuses to fork an empty conversation ("Nothing to fork yet"), so
-  # seed one completed turn first; the expected token differs from the typed
-  # line so the wait matches the model's reply, never the input echo.
-  send_line "$pane" "Reply with only the word fork spelled backwards, lowercase."
-  wait_for_text "$pane" krof 60 \
-    || { capture "$pane" >&2; fail "claude $version: the fork-seed turn never completed, so /fork cannot be exercised"; }
-  lock_pair_before="$(cat "$lab/state/.lock" 2>/dev/null)|$(cat "$lab/state/.lock.session" 2>/dev/null)"
-  send_line "$pane" /fork
-  # 2.1.251 parks the fork as a background session that fires NO session-open
-  # hook until its first prompt, so there are two provable shapes: a parked
-  # fork with no hook record, or a hook record that must report source `fork`
-  # (which the wrapper excludes from replacement). Any other shape - no parked
-  # fork and no record, or a record with a different source - fails loudly.
-  # The fork-source payload exclusion itself stays proven portably in
-  # tests/fm-sessionstart-nudge.test.sh.
-  if wait_for_open 5 10; then
-    [ "$(replacement_field 5 2)" = fork ] \
-      || fail "claude $version: /fork reported source '$(replacement_field 5 2)', which the wrapper would not exclude from replacement"
-  else
-    wait_for_text "$pane" "waiting for a prompt" 10 \
-      || { capture "$pane" >&2; fail "claude $version: /fork neither parked a background session nor fired a session-open hook, so its exclusion was NOT proven"; }
-  fi
-  [ "$lock_pair_before" = "$(cat "$lab/state/.lock" 2>/dev/null)|$(cat "$lab/state/.lock.session" 2>/dev/null)" ] \
-    || fail "claude $version: /fork rewrote the primary session's lock pair"
-  pass "claude $version: /fork cannot rewrite the live primary session's lock pair"
-
-  # A background Stop probe inside THIS pane's own process tree: the exact PR #74
-  # shape, where the recorded owner is live and in the probe's own ancestry and
-  # only the session id differs. It must stand down, not claim the home.
-  rm -f "$lab/state/arm-ran" "$lab/state/stop-probe.log"
-  lock_pair_before="$(cat "$lab/state/.lock" 2>/dev/null)|$(cat "$lab/state/.lock.session" 2>/dev/null)"
-  # The completion token is spelled backwards in the instruction so the wait
-  # matches the model's reply, never this typed line's own echo in the pane.
-  send_line "$pane" "Run this with your Bash tool exactly once, then reply with only the word probe spelled backwards, lowercase: FM_LIVE_STOP_PROBE=1 claude -p --permission-mode bypassPermissions 'Say only OK.'"
-  wait_for_text "$pane" eborp 120 \
-    || { capture "$pane" >&2; fail "claude $version: the background Stop probe never completed"; }
-  [ -s "$lab/state/stop-probe.log" ] \
-    || { capture "$pane" >&2; fail "claude $version: no background Stop hook ran, so its inertness was NOT proven"; }
-  probe_line=$(tail -n 1 "$lab/state/stop-probe.log")
-  probe_claude_pid=$(printf '%s' "$probe_line" | cut -d'|' -f2)
-  probe_lock_pid=$(printf '%s' "$probe_line" | cut -d'|' -f3)
-  case "$probe_claude_pid" in
-    ''|*[!0-9]*) fail "claude $version: the background Stop probe had no valid vendor-set CLAUDE_PID" ;;
-  esac
-  [ "$probe_claude_pid" != "$probe_lock_pid" ] \
-    || fail "claude $version: the background Stop probe inherited the lock owner's CLAUDE_PID, so replacement isolation is unproven"
-  [ "$(printf '%s' "$probe_line" | cut -d'|' -f1)" != "$(printf '%s' "$probe_line" | cut -d'|' -f4)" ] \
-    || fail "claude $version: the background Stop probe carried the owner's own session id, so it proved nothing"
-  [ "$lock_pair_before" = "$(cat "$lab/state/.lock" 2>/dev/null)|$(cat "$lab/state/.lock.session" 2>/dev/null)" ] \
-    || fail "claude $version: a background Stop probe rewrote the live owner's lock pair"
-  [ ! -e "$lab/state/arm-ran" ] \
-    || fail "claude $version: a background Stop probe armed supervision for a home it does not own"
-  pass "claude $version: a background Stop probe in the owner's own process tree stays inert"
-
-  tmux -L "$SOCKET" kill-session -t "$pane" >/dev/null 2>&1 || true
+  tmux -L "$SOCKET" send-keys -t "$session" -l /quit
+  tmux -L "$SOCKET" send-keys -t "$session" Enter
+  wait_for_text "$session" 'PI_EXIT=0' 30 || fail "Pi $version: offline /new lab did not exit cleanly"
+  pass "Pi $version: immediate and completed-before-prompt /new paths each made one first provider call with exactly one native startup context and no manual execution"
 }
+
+if [ "${FM_PI_SESSIONSTART_RACE_LIVE_E2E:-0}" = 1 ]; then
+  probe_pi_sessionstart_prerequisite
+  if [ "${FM_SESSIONSTART_HOOK_LIVE_E2E:-0}" != 1 ]; then
+    echo "# fm-sessionstart-hook-live-e2e.test.sh: offline Pi /new race assertions passed"
+    exit 0
+  fi
+fi
 
 # --- per-harness drivers ------------------------------------------------------
 

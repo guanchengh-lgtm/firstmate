@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # fm-pending-reply-lib.sh - parent-owned secondmate missed-report guards.
 #
-# When the main firstmate delivers a marked from-firstmate request to a
-# secondmate, this library records a durable parent-owned pending-reply
+# When the main firstmate delivers a reply-bearing marked from-firstmate request
+# to a secondmate, this library records a durable parent-owned pending-reply
 # expectation BEFORE delivery, embeds a privacy-safe correlation id in the
 # outbound message, and later resolves that expectation only from a correlated
 # parent status line or status-pointed document - never from transport success,
@@ -813,6 +813,7 @@ fm_pending_reply_note_remote_channel_caught_up() {  # <state-dir> <task_id> [epo
   chmod 700 "$dir" 2>/dev/null || true
   [ ! -L "$path" ] || return 1
   tmp="$dir/.caught-up.$task_id.${BASHPID:-$$}.$RANDOM"
+  tmp="$dir/.caught-up.$task_id.$$"
   printf 'caught_up_epoch=%s\n' "$epoch" > "$tmp" || { rm -f -- "$tmp"; return 1; }
   chmod 600 "$tmp" 2>/dev/null || true
   mv -f -- "$tmp" "$path"

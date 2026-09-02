@@ -11,6 +11,8 @@
 # no-mistakes run-step safely attributed to this crew's branch under the rules
 # below, else the pane busy-signature) and reconciles the possibly-stale log
 # against it.
+# no-mistakes run-step attributed under bin/fm-nm-run-lib.sh's contract, else
+# the pane busy-signature) and reconciles the possibly-stale log against it.
 #
 # The determinism lives entirely here - only run-step / pane / log reads plus
 # fixed mapping logic, no heuristics and no LLM. Output is one stable, parseable,
@@ -36,6 +38,8 @@
 #      fm_nm_head_matches_worktree in bin/fm-nm-run-lib.sh. Residual: a parked
 #      run with an unfetchable head may degrade through the coarse view to
 #      working, never to a false terminal.
+#   2. Attribute an active or terminal no-mistakes run under the branch, head,
+#      pipeline-custody, and newest-first rules owned by bin/fm-nm-run-lib.sh.
 #      The run-step is AUTHORITATIVE: running/fixing -> working, ci -> working,
 #      awaiting_approval/fix_review -> parked (with gate findings), terminal
 #      passed/checks-passed -> done, failed/cancelled -> failed. EXCEPT: while
@@ -121,7 +125,7 @@ fi
 
 # --- status log ------------------------------------------------------------
 
-# Last non-empty status line, and its leading verb (the word before the colon).
+# Last non-empty status line; fm-classify-lib.sh owns leading-verb normalization.
 log_last_line() {
   [ -f "$LOG" ] || return 1
   grep -v '^[[:space:]]*$' "$LOG" 2>/dev/null | tail -1
@@ -220,7 +224,7 @@ crew_busy_verdict() {  # <target>
 
 # --- no-mistakes run lookup (authoritative when a run matches this branch) --
 # trim, strip_quotes, the bounded nm_run call, nm_field's TOON parse, and the
-# branch+head attribution rule below are thin wrappers over the ONE owner in
+# attribution helpers below are thin wrappers over the ONE owner in
 # bin/fm-nm-run-lib.sh, shared with fm-teardown.sh's pre-teardown run abort.
 
 trim() { fm_nm_trim "$@"; }
@@ -399,12 +403,19 @@ nm_runs_status_for_branch() {  # <branch>
     rest=$(trim "$rest")
     sha=${rest%% *}
     if [ "$br" = "$branch" ]; then
-      # The list is newest-first, so this row alone decides attribution for
-      # the branch. An executing run owns its branch even when its moving head
-      # is not fetchable; terminal and unknown rows remain identity-bound.
-      if [ "$st" = running ] || nm_coarse_head_matches_worktree "$sha"; then
+      # Newest row decides. An executing run owns the branch even when its
+      # moving head is not fetchable (fork). Terminal rows stay identity-bound.
+      # An UNRESOLVABLE non-running head is unknown attribution: stop rather
+      # than surface an older superseded row (upstream).
+      if [ "$st" = running ]; then
         printf '%s' "$st"
+        return 0
       fi
+      if ! nm_coarse_head_matches_worktree "$sha"; then
+        fm_nm_head_resolvable "$WT" "$sha" || return 0
+        continue
+      fi
+      printf '%s' "$st"
       return 0
     fi
   done <<< "$out"
@@ -459,13 +470,17 @@ if [ "$KIND" = ship ] && [ -n "$CREW_BRANCH" ] && command -v no-mistakes >/dev/n
         running|fixing|ci) run_is_executing=1 ;;
       esac
     fi
+    # Executing same-branch run owns even when its moving head is not
+    # fetchable (fork). Head equality and the pipeline-owned-active
+    # exemption (upstream) also bind.
     if [ -n "$run_branch" ] && [ "$run_branch" = "$CREW_BRANCH" ] \
-      && { [ "$run_is_executing" = 1 ] || nm_run_head_matches_worktree; }; then
+      && { [ "$run_is_executing" = 1 ] || nm_run_head_matches_worktree \
+        || fm_nm_run_is_pipeline_owned_active "$RUN_OUT"; }; then
       HAVE_RUN=1
     else
-      # The active-or-most-recent run is for another branch, or same branch with
-      # a rewritten/diverged head (the CLI is alive and answered; only the
-      # attribution missed) - try the coarse fallback.
+      # The active-or-most-recent run is for another branch, or its same-branch
+      # attribution failed (the CLI is alive and answered) - try the coarse
+      # fallback.
       # Deliberately nested inside `[ -n "$RUN_OUT" ]`: an empty/timed-out
       # primary call means the CLI itself did not respond, so retrying it
       # immediately with a second bounded call would just double the wait
@@ -493,8 +508,9 @@ if [ "$HAVE_RUN" = 1 ]; then
     # gets full detail once `axi status` reports its own branch again (e.g.
     # once its own step is the most-recently-touched one), and its own
     # needs-decision/blocked status-log append (a captain-relevant VERB) is
-    # surfaced through signal_reason_is_actionable regardless of this
-    # coarse-vs-full distinction, so a real gate is never silently missed.
+    # surfaced by each supervisor's span classification (fm-classify-lib.sh's
+    # status_span_first_actionable) regardless of this coarse-vs-full
+    # distinction, so a real gate is never silently missed.
     case "$COARSE_STATUS" in
       running)   RUN_STATE=working; RUN_DETAIL="validating (background run)" ;;
       completed) RUN_STATE="done";  RUN_DETAIL="run completed" ;;
