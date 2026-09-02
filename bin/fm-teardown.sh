@@ -1316,11 +1316,12 @@ cleanup_stale_lock_for_safety_check() {
 # Return a worktree/home via `treehouse return --force`, tolerating a transient or
 # stale git index.lock left by a killed crew process. See the script header.
 teardown_treehouse_return() {
-  local dir=$1 cd_dir=$2 label=$3 post_cleanup_check=${4:-}
+  local dir=$1 cd_dir=$2 label=$3 post_cleanup_check=${4:-} pre_return_check=${5:-}
   local out lock attempt=0 max_retries lock_desc
 
   # Capture stdout+stderr so non-lock failures stay visible and lock failures can
   # be matched by signature even when the lock file is already gone mid-check.
+  [ -z "$pre_return_check" ] || "$pre_return_check" || return 1
   if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
     [ -n "$out" ] && printf '%s\n' "$out"
     return 0
@@ -1346,6 +1347,7 @@ teardown_treehouse_return() {
     echo "teardown: $label return failed with transient git lock ($lock_desc); waiting ${TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS}s and retrying ($attempt/${max_retries})" >&2
     sleep "$TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS"
 
+    [ -z "$pre_return_check" ] || "$pre_return_check" || return 1
     if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
       [ -n "$out" ] && printf '%s\n' "$out"
       echo "teardown: $label return succeeded on retry; lock cleared on its own" >&2
@@ -1373,6 +1375,7 @@ teardown_treehouse_return() {
           return 1
         fi
       fi
+      [ -z "$pre_return_check" ] || "$pre_return_check" || return 1
       if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
         [ -n "$out" ] && printf '%s\n' "$out"
         echo "teardown: $label return succeeded after stale-lock cleanup" >&2
@@ -1783,6 +1786,10 @@ task_refuse_treehouse_return_with_protected_roots() {  # <dir>...
   local rendered
   TASK_SPARED_PIDS=
   if ! command -v lsof >/dev/null 2>&1; then
+    if ! task_load_protected_set; then
+      printf '%s\n' "$TASK_PIDS_REFUSE_REASON" >&2
+      return 1
+    fi
     [ -n "${TASK_LIVE_LOCK_PID:-}" ] || return 0
     echo "REFUSED: cannot verify whether protected session process $TASK_LIVE_LOCK_PID remains rooted in the worktree/tasktmp because lsof is unavailable; preserving the worktree/tasktmp for manual inspection or retry." >&2
     return 1
@@ -1792,6 +1799,10 @@ task_refuse_treehouse_return_with_protected_roots() {  # <dir>...
   rendered=$(printf '%s' "$TASK_SPARED_PIDS" | tr '\n' ' ')
   echo "REFUSED: protected process(es) for $ID remain rooted in the worktree/tasktmp: $rendered; preserving the worktree/tasktmp for manual inspection or retry." >&2
   return 1
+}
+
+task_recheck_treehouse_return_boundary() {
+  task_refuse_treehouse_return_with_protected_roots "$WT" "$TASK_TMP"
 }
 
 reap_task_backend_process_group() {  # <label>
@@ -2882,9 +2893,9 @@ if [ "$KIND" != secondmate ]; then
     task_refuse_treehouse_return_with_protected_roots "$WT" "$TASK_TMP" || exit 1
   else
     task_report_spared_hosts "$WT"
+    fm_lock_release "$SESSION_PUBLICATION_LOCK" || exit 1
+    SESSION_PUBLICATION_LOCK_HELD=0
   fi
-  fm_lock_release "$SESSION_PUBLICATION_LOCK" || exit 1
-  SESSION_PUBLICATION_LOCK_HELD=0
 fi
 
 # Fix 3 (see script header): sweep remote job workers abandoned by an already
@@ -2944,10 +2955,16 @@ elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   if [ "$FORCE" != "--force" ] && [ "$KIND" != scout ] && [ "$KIND" != secondmate ]; then
     post_lock_cleanup_check=validate_worktree_teardown_safety
   fi
-  teardown_treehouse_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check" || {
+  teardown_treehouse_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check" \
+    task_recheck_treehouse_return_boundary || {
     echo "error: treehouse return failed for worktree $WT; teardown aborted" >&2
     exit 1
   }
+fi
+
+if [ "$SESSION_PUBLICATION_LOCK_HELD" = 1 ]; then
+  fm_lock_release "$SESSION_PUBLICATION_LOCK" || exit 1
+  SESSION_PUBLICATION_LOCK_HELD=0
 fi
 
 HERDR_PRESENTATION_JOURNAL="$STATE/$ID.herdr-presentation"

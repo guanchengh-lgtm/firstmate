@@ -2334,6 +2334,7 @@ test_leaked_worktree_process_is_reaped() {
   kill -0 "$pid" 2>/dev/null || fail "leaked-process-reap: setup sleeper did not start"
   cat > "$case_dir/fakebin/treehouse" <<EOF
 #!/usr/bin/env bash
+[ -e "$case_dir/state/.lock.acquire" ] || exit 1
 printf 'return\n' >> "$case_dir/treehouse.log"
 EOF
   chmod +x "$case_dir/fakebin/treehouse"
@@ -2381,7 +2382,7 @@ test_leaked_tasktmp_process_is_reaped() {
 }
 
 test_lsof_absent_reaps_tmux_process_group() {
-  local case_dir rc pid path_without_lsof
+  local case_dir rc pid lock_host_pid lock_pid path_without_lsof i=0
   case_dir=$(make_case lsof-absent-process-group-reap)
   write_meta "$case_dir" no-mistakes ship
   land_shippable_commit "$case_dir"
@@ -2394,9 +2395,31 @@ test_lsof_absent_reaps_tmux_process_group() {
   disown
   sleep 0.3
   kill -0 "$pid" 2>/dev/null || fail "lsof-absent-process-group-reap: setup sleeper did not start"
+
+  (
+    sleep 300 &
+    printf '%s\n' "$!" > "$case_dir/lock.pid"
+    wait
+  ) &
+  lock_host_pid=$!
+  disown
+  while [ "$i" -lt 50 ]; do
+    [ -s "$case_dir/lock.pid" ] && break
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ -s "$case_dir/lock.pid" ] || fail "lsof-absent-process-group-reap: lock owner pid was never recorded"
+  lock_pid=$(tr -d '[:space:]' < "$case_dir/lock.pid")
+  printf '%s\n' "$lock_pid" > "$case_dir/state/.lock"
   cat > "$case_dir/fakebin/tmux" <<EOF
 #!/usr/bin/env bash
 if [ "\${1:-}" = display-message ] && [ "\${*: -1}" = '#{pane_pid}' ]; then
+  kill -TERM '$lock_pid' 2>/dev/null || true
+  i=0
+  while kill -0 '$lock_pid' 2>/dev/null && [ "\$i" -lt 50 ]; do
+    sleep 0.05
+    i=\$((i + 1))
+  done
   printf '%s\n' '$pid'
 fi
 exit 0
@@ -2410,7 +2433,12 @@ EOF
   expect_code 0 "$rc" "lsof-absent-process-group-reap: teardown should succeed"
   if kill -0 "$pid" 2>/dev/null; then
     kill -KILL "$pid" 2>/dev/null || true
+    kill -KILL "$lock_host_pid" "$lock_pid" 2>/dev/null || true
     fail "lsof-absent-process-group-reap: tmux process group survived teardown"
+  fi
+  if kill -0 "$lock_pid" 2>/dev/null; then
+    kill -KILL "$lock_host_pid" "$lock_pid" 2>/dev/null || true
+    fail "lsof-absent-process-group-reap: cached lock owner stayed live"
   fi
   assert_grep "reaping leaked worktree process group" "$case_dir/stderr" \
     "lsof-absent-process-group-reap: teardown did not use the process-group fallback"
@@ -2559,12 +2587,15 @@ test_host_session_under_worktree_is_spared() {
   write_meta "$case_dir" no-mistakes ship
   land_shippable_commit "$case_dir"
 
-  # Unrelated host shell rooted in the copy, with a child that stands in for
-  # the live session agent. The child's pid is the fixture session lock.
   (
-    cd "$case_dir/wt" || exit 1
+    cd "$case_dir" || exit 1
     sleep 300 &
     printf '%s\n' "$!" > "$case_dir/child.pid"
+    while [ ! -e "$case_dir/enter-worktree" ]; do
+      sleep 0.05
+    done
+    cd "$case_dir/wt" || exit 1
+    : > "$case_dir/host-entered-worktree"
     wait
   ) &
   host_pid=$!
@@ -2586,13 +2617,27 @@ test_host_session_under_worktree_is_spared() {
   disown
   sleep 0.3
   kill -0 "$sleeper_pid" 2>/dev/null || fail "host-session-spared: task sleeper did not start"
+  cat > "$case_dir/fakebin/git" <<EOF
+#!/usr/bin/env bash
+if [ "\${1:-}" = -C ] && [ "\${2:-}" = "$case_dir/wt" ] \
+   && [ "\${3:-}" = checkout ] && [ "\${4:-}" = --detach ]; then
+  : > "$case_dir/enter-worktree"
+  i=0
+  while [ ! -e "$case_dir/host-entered-worktree" ] && [ "\$i" -lt 50 ]; do
+    sleep 0.05
+    i=\$((i + 1))
+  done
+  [ -e "$case_dir/host-entered-worktree" ] || exit 1
+fi
+exec "$REAL_GIT_FOR_TEST" "\$@"
+EOF
   cat > "$case_dir/fakebin/treehouse" <<EOF
 #!/usr/bin/env bash
 printf 'return\n' >> "$case_dir/treehouse.log"
 kill -TERM "$host_pid" "$child_pid" 2>/dev/null || true
 exit 0
 EOF
-  chmod +x "$case_dir/fakebin/treehouse"
+  chmod +x "$case_dir/fakebin/git" "$case_dir/fakebin/treehouse"
 
   rc=0
   run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
