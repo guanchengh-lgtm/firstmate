@@ -223,6 +223,15 @@ case "${FM_FAKE_SSH_MODE:-normal}:$command_name:$command_rel" in
     printf 'harness=codex\n'
     exit 0
     ;;
+  publish-fail:fm-remote-secondmate-control.sh:*)
+    [ "$_command_action" = launch ] || exit 93
+    output=$("$FM_FAKE_REMOTE_ENTRYPOINT" "$@")
+    status=$?
+    rm -f -- "$FM_HOME/state/ios.meta"
+    mkdir "$FM_HOME/state/ios.meta"
+    printf '%s\n' "$output"
+    exit "$status"
+    ;;
   provision-block-fail:fm-remote-home-provision.sh:*)
     touch "$FM_FAKE_SEED_ENTERED"
     while [ ! -f "$FM_FAKE_SEED_RELEASE" ]; do sleep 0.02; done
@@ -734,6 +743,23 @@ publish_healthy_watcher_identity "$PARENT/state" "$PARENT" "$ROOT/bin/fm-watch.s
 pass "remote spawn launches on the remote-local backend and records a host-qualified route"
 
 remote_route_meta="$REMOTE_HOME/state/parent-route/ios.meta"
+cp "$PARENT/state/ios.meta" "$TMP_ROOT/ios-parent-before-publish-failure.meta"
+remote_target_before=$(sed -n 's/^window=//p' "$remote_route_meta")
+rm -f -- "$PARENT/state/ios.meta"
+publish_failure_status=0
+publish_failure_out=$(FM_FAKE_SSH_MODE=publish-fail remote_env "$ROOT/bin/fm-spawn.sh" ios --secondmate 2>&1) \
+  || publish_failure_status=$?
+[ "$publish_failure_status" -ne 0 ] || fail "remote spawn accepted a failed parent metadata publication"
+assert_contains "$publish_failure_out" "host-local metadata were preserved for manual reconciliation" \
+  "failed parent publication did not explain the preserved remote ownership"
+[ -d "$PARENT/state/ios.meta" ] || fail "the publication-failure fixture did not block the parent record"
+assert_present "$remote_route_meta" "failed parent publication retired the reused remote endpoint metadata"
+[ "$(sed -n 's/^window=//p' "$remote_route_meta")" = "$remote_target_before" ] \
+  || fail "failed parent publication replaced the reused remote endpoint"
+rmdir "$PARENT/state/ios.meta"
+cp "$TMP_ROOT/ios-parent-before-publish-failure.meta" "$PARENT/state/ios.meta"
+pass "failed parent publication preserves a reused remote endpoint for reconciliation"
+
 cp "$remote_route_meta" "$TMP_ROOT/remote-ios-before-default-session.meta"
 legacy_pane=$(sed -n 's/^herdr_pane_id=//p' "$remote_route_meta")
 awk -v pane="$legacy_pane" '

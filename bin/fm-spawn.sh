@@ -597,8 +597,7 @@ fi
 spawn_remote_secondmate() {
   local id=$1 remote host root home harness positional model effort backend out rc meta tmp
   local remote_backend remote_target remote_harness remote_herdr_session registry_lock remote_lock remote_generation
-  local remote_traceparent remote_recorded_traceparent remote_meta_preexisting prior_remote_target
-  local remote_record_error remote_retire_out remote_retire_rc
+  local remote_traceparent remote_recorded_traceparent remote_record_error
   local -a launch_args
   id=${POS[0]:-}
   fm_task_id_creation_valid "$id" || { echo "error: invalid task id" >&2; return 2; }
@@ -681,8 +680,6 @@ spawn_remote_secondmate() {
       ;;
   esac
   meta="$STATE/$id.meta"
-  remote_meta_preexisting=0
-  prior_remote_target=
   if [ -e "$meta" ] || [ -L "$meta" ]; then
     if ! fm_backlog_record_present "$meta" "task record" "$STATE" \
       || [ "$(fm_meta_get "$meta" kind)" != secondmate ] \
@@ -694,8 +691,6 @@ spawn_remote_secondmate() {
       echo "error: existing metadata for $id does not identify this remote secondmate route" >&2
       return 1
     fi
-    remote_meta_preexisting=1
-    prior_remote_target=$(fm_meta_get "$meta" remote_target)
   fi
   # Gate the host before anything is published or transferred, so a host that
   # cannot hold a durable Herdr endpoint refuses here rather than half-way
@@ -839,16 +834,6 @@ spawn_remote_secondmate() {
   fi
   if [ -n "$remote_record_error" ]; then
     rm -f "$tmp" 2>/dev/null || true
-    remote_retire_rc=0
-    remote_retire_out=
-    if [ "$remote_meta_preexisting" -ne 1 ] || [ "$prior_remote_target" != "$remote_target" ]; then
-      if remote_retire_out=$("$SCRIPT_DIR/fm-on.sh" "$id" \
-          fm-remote-secondmate-control.sh retire "$id" --force < /dev/null 2>&1); then
-        remote_retire_rc=0
-      else
-        remote_retire_rc=$?
-      fi
-    fi
     if [ "$SPAWN_TASK_SET_LOCK_HELD" = 1 ]; then
       SPAWN_TASK_SET_LOCK_HELD=0
       fm_lock_release "$SPAWN_TASK_SET_LOCK" || true
@@ -856,14 +841,7 @@ spawn_remote_secondmate() {
     fm_lock_release "$remote_lock" || true
     fm_lock_release "$registry_lock" || true
     fm_lock_release "$SPAWN_TASK_LOCK" || true
-    if [ "$remote_meta_preexisting" -eq 1 ] && [ "$prior_remote_target" = "$remote_target" ]; then
-      echo "error: remote secondmate $id launched, but $remote_record_error; its existing parent record still owns the reused endpoint" >&2
-    elif [ "$remote_retire_rc" -eq 0 ]; then
-      echo "error: remote secondmate $id launched, but $remote_record_error; its unowned remote endpoint was retired" >&2
-    else
-      [ -z "$remote_retire_out" ] || printf '%s\n' "$remote_retire_out" >&2
-      echo "error: remote secondmate $id launched, but $remote_record_error and its endpoint could not be retired; route $host:$home and host-local metadata were preserved for manual reconciliation" >&2
-    fi
+    echo "error: remote secondmate $id launched, but $remote_record_error; route $host:$home and host-local metadata were preserved for manual reconciliation" >&2
     return 1
   fi
   if [ "$SPAWN_TASK_SET_LOCK_HELD" = 1 ]; then
@@ -1005,30 +983,7 @@ spawn_abort_cleanup() {
       fm_backend_kill orca "$ORCA_TERMINAL" 2>/dev/null || true
     fi
     if [ -n "${ORCA_WORKTREE_ID:-}" ]; then
-      if ! fm_backend_remove_worktree orca "$ORCA_WORKTREE_ID" 2>/dev/null; then
-        mkdir -p "$STATE" 2>/dev/null || true
-        if [ -d "$STATE" ]; then
-          {
-            echo "window=$W"
-            echo "worktree=${WT:-}"
-            echo "project=$PROJ_ABS"
-            echo "harness=$HARNESS"
-            echo "kind=$KIND"
-            [ -z "${MODE:-}" ] || echo "mode=$MODE"
-            [ "${SURFACE_SET:-0}" -eq 0 ] || echo "surface=$SURFACE"
-            [ -z "${YOLO:-}" ] || echo "yolo=$YOLO"
-            [ -z "${MAP_NEXT:-}" ] || echo "map_next=$MAP_NEXT"
-            [ -z "${MAP:-}" ] || echo "map=$MAP"
-            [ -z "${OV:-}" ] || echo "ov=$OV"
-            echo "tasktmp=${TASK_TMP:-}"
-            echo "model=${MODEL:-default}"
-            echo "effort=${EFFORT:-default}"
-            echo "backend=orca"
-            echo "orca_worktree_id=$ORCA_WORKTREE_ID"
-            [ -z "${ORCA_TERMINAL:-}" ] || echo "terminal=$ORCA_TERMINAL"
-          } > "$STATE/$ID.meta" 2>/dev/null || true
-        fi
-      fi
+      fm_backend_remove_worktree orca "$ORCA_WORKTREE_ID" 2>/dev/null || true
     fi
   fi
   if [ "$SPAWN_TASK_LOCK_HELD" = 1 ]; then
