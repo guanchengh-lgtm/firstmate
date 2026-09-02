@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, fm/merge-upstream-2]
   pull_request:
-    branches: [main]
+    branches: [main, fm/merge-upstream-2-stage]
 
 permissions:
   contents: read
