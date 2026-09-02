@@ -131,10 +131,16 @@
 #     whose CURRENT WORKING DIRECTORY is this task's own worktree or tasktmp
 #     root via `lsof -a -d cwd` (cheap: bounded by process count, not by
 #     walking the worktree's file tree) and sends TERM, then KILL after a short
-#     grace period to any survivor whose process identity still matches. Both
-#     roots are unique per task and never
-#     shared, so this can never reach another task's or the primary's
-#     processes. Idempotent: nothing left to find is a silent no-op.
+#     grace period to any survivor whose process identity still matches.
+#     Those roots are unique per task, but a cwd pointing into them is not
+#     ownership: the live $STATE/.lock owner's ancestor chain and teardown's
+#     own ancestor chain are subtracted from the candidate set, using the
+#     same bounded walk as bin/fm-remote-job-reap-orphans.sh.
+#     Teardown holds $STATE/.lock.acquire through the Treehouse return.
+#     It repeats the protected-root check before each return attempt.
+#     It refuses and preserves the roots while any protected process remains.
+#     This check stops Treehouse's separate cwd reaper from killing a protected host.
+#     Idempotent: nothing left to find is a silent no-op.
 #   Fix 3 - sweep abandoned remote job workers. A remote job worker started
 #     from a worktree's own bin/ outlives that worktree's removal without
 #     being reachable by Fix 2, because its working directory is wherever it
@@ -234,6 +240,8 @@ CONTROL_LOCK="$STATE/.control-$ID.lock"
 CONTROL_LOCK_HELD=0
 META_LOCK=
 META_LOCK_HELD=0
+SESSION_PUBLICATION_LOCK=
+SESSION_PUBLICATION_LOCK_HELD=0
 DESCENDANT_LOCK_PATHS=()
 DESCENDANT_TASK_STATES=()
 DESCENDANT_TASK_IDS=()
@@ -241,6 +249,10 @@ DESCENDANT_TASK_KINDS=()
 DESCENDANT_TASK_HOMES=()
 teardown_release_locks() {
   local status=$? i
+  if [ "$SESSION_PUBLICATION_LOCK_HELD" = 1 ]; then
+    fm_lock_release "$SESSION_PUBLICATION_LOCK" || true
+    SESSION_PUBLICATION_LOCK_HELD=0
+  fi
   if declare -F teardown_release_herdr_locks >/dev/null 2>&1; then
     teardown_release_herdr_locks || true
   fi
@@ -1308,11 +1320,12 @@ cleanup_stale_lock_for_safety_check() {
 # Return a worktree/home via `treehouse return --force`, tolerating a transient or
 # stale git index.lock left by a killed crew process. See the script header.
 teardown_treehouse_return() {
-  local dir=$1 cd_dir=$2 label=$3 post_cleanup_check=${4:-}
+  local dir=$1 cd_dir=$2 label=$3 post_cleanup_check=${4:-} pre_return_check=${5:-}
   local out lock attempt=0 max_retries lock_desc
 
   # Capture stdout+stderr so non-lock failures stay visible and lock failures can
   # be matched by signature even when the lock file is already gone mid-check.
+  [ -z "$pre_return_check" ] || "$pre_return_check" || return 1
   if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
     [ -n "$out" ] && printf '%s\n' "$out"
     return 0
@@ -1338,6 +1351,7 @@ teardown_treehouse_return() {
     echo "teardown: $label return failed with transient git lock ($lock_desc); waiting ${TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS}s and retrying ($attempt/${max_retries})" >&2
     sleep "$TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS"
 
+    [ -z "$pre_return_check" ] || "$pre_return_check" || return 1
     if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
       [ -n "$out" ] && printf '%s\n' "$out"
       echo "teardown: $label return succeeded on retry; lock cleared on its own" >&2
@@ -1365,6 +1379,7 @@ teardown_treehouse_return() {
           return 1
         fi
       fi
+      [ -z "$pre_return_check" ] || "$pre_return_check" || return 1
       if out=$( ( cd "$cd_dir" && treehouse return --force "$dir" ) 2>&1 ); then
         [ -n "$out" ] && printf '%s\n' "$out"
         echo "teardown: $label return succeeded after stale-lock cleanup" >&2
@@ -1593,7 +1608,10 @@ task_process_identity() {  # <pid>
 
 task_process_identity_matches() {  # <pid> <identity>
   local current
-  current=$(task_process_identity "$1") || return 1
+  if ! current=$(task_process_identity "$1"); then
+    kill -0 "$1" 2>/dev/null && return 2
+    return 1
+  fi
   [ "$current" = "$2" ]
 }
 
@@ -1601,10 +1619,123 @@ task_pid_list_contains() {  # <pid-list> <pid>
   printf '%s\n' "$1" | grep -Fxq "$2"
 }
 
+# Bounded ancestor walk from <start-pid>, printing each pid up to but not
+# including pid 1. Modelled on bin/fm-remote-job-reap-orphans.sh
+# reap_is_self_or_ancestor; this is the one copy of the walk in this file.
+# Failure means ps errored or a parent was not numeric, so ownership cannot
+# be resolved from this starting pid.
+task_ancestor_pids() {  # <start-pid>
+  local walk=$1 i=0 next
+  case "$walk" in ''|*[!0-9]*) return 1 ;; esac
+  while [ "$walk" -gt 1 ] && [ "$i" -lt 64 ]; do
+    printf '%s\n' "$walk"
+    next=$(ps -p "$walk" -o ppid= 2>/dev/null | tr -d '[:space:]') || return 1
+    case "$next" in ''|*[!0-9]*) return 1 ;; esac
+    walk=$next
+    i=$((i + 1))
+  done
+  return 0
+}
+
+task_protected_add() {  # <pid>
+  local pid=$1 identity i
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  if [ "${#TASK_PROTECTED_PIDS[@]}" -gt 0 ]; then
+    for i in "${!TASK_PROTECTED_PIDS[@]}"; do
+      [ "${TASK_PROTECTED_PIDS[$i]}" != "$pid" ] || return 0
+    done
+  fi
+  identity=$(task_process_identity "$pid") || return 1
+  TASK_PROTECTED_PIDS+=("$pid")
+  TASK_PROTECTED_IDENTITIES+=("$identity")
+}
+
+task_record_spared() {  # <pid>
+  local pid=$1
+  task_pid_list_contains "${TASK_SPARED_PIDS:-}" "$pid" && return 0
+  TASK_SPARED_PIDS="${TASK_SPARED_PIDS:+$TASK_SPARED_PIDS
+}$pid"
+}
+
+# Union of teardown's $$ ancestor chain and, when $STATE/.lock names a live
+# pid, that owner's ancestor chain. Protect on liveness only; a recognised
+# harness name is not required. Absent, malformed, or dead lock: $$ chain
+# only. Live lock whose walk cannot be resolved: refuse.
+task_load_protected_set() {
+  local chain pid lock_file lock_pid protected_count
+  TASK_PROTECTED_PIDS=()
+  TASK_PROTECTED_IDENTITIES=()
+  TASK_LIVE_LOCK_PID=
+  TASK_PIDS_REFUSE_REASON=
+  chain=$(task_ancestor_pids "$$") || true
+  [ -n "$chain" ] || chain=$$
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    task_protected_add "$pid" || true
+  done <<EOF
+$chain
+EOF
+  lock_file=$STATE/.lock
+  [ -f "$lock_file" ] || return 0
+  lock_pid=$(LC_ALL=C awk '
+    NR == 1 && /^[0-9]+$/ { pid = $0; next }
+    { invalid = 1 }
+    END {
+      if (NR != 1 || invalid) exit 1
+      print pid
+    }
+  ' "$lock_file" 2>/dev/null) || return 0
+  kill -0 "$lock_pid" 2>/dev/null || return 0
+  protected_count=${#TASK_PROTECTED_PIDS[@]}
+  if ! chain=$(task_ancestor_pids "$lock_pid"); then
+    kill -0 "$lock_pid" 2>/dev/null || return 0
+    TASK_PIDS_REFUSE_REASON="REFUSED: cannot resolve live session owner $lock_pid ancestor chain for $ID; preserving the worktree/tasktmp for manual inspection or retry."
+    return 1
+  fi
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    if ! task_protected_add "$pid"; then
+      if kill -0 "$lock_pid" 2>/dev/null; then
+        TASK_PIDS_REFUSE_REASON="REFUSED: cannot resolve live session owner $lock_pid ancestor chain for $ID; preserving the worktree/tasktmp for manual inspection or retry."
+        return 1
+      fi
+      TASK_PROTECTED_PIDS=("${TASK_PROTECTED_PIDS[@]:0:$protected_count}")
+      TASK_PROTECTED_IDENTITIES=("${TASK_PROTECTED_IDENTITIES[@]:0:$protected_count}")
+      return 0
+    fi
+  done <<EOF
+$chain
+EOF
+  if ! kill -0 "$lock_pid" 2>/dev/null; then
+    TASK_PROTECTED_PIDS=("${TASK_PROTECTED_PIDS[@]:0:$protected_count}")
+    TASK_PROTECTED_IDENTITIES=("${TASK_PROTECTED_IDENTITIES[@]:0:$protected_count}")
+  else
+    TASK_LIVE_LOCK_PID=$lock_pid
+  fi
+  return 0
+}
+
+task_pid_is_protected() {  # <pid>
+  local pid=$1 i status
+  [ "${#TASK_PROTECTED_PIDS[@]}" -gt 0 ] || return 1
+  for i in "${!TASK_PROTECTED_PIDS[@]}"; do
+    [ "${TASK_PROTECTED_PIDS[$i]}" = "$pid" ] || continue
+    if task_process_identity_matches "$pid" "${TASK_PROTECTED_IDENTITIES[$i]}"; then
+      return 0
+    else
+      status=$?
+    fi
+    [ "$status" -ne 2 ] || return 2
+    return 1
+  done
+  return 1
+}
+
 task_pids_under_roots() {  # <dir>...
   TASK_PIDS=
   TASK_PIDS_FAILED_DIR=
-  local dir dir_pids pids=""
+  TASK_PIDS_REFUSE_REASON=
+  local dir dir_pids pids="" pid filtered="" protected_status
   for dir in "$@"; do
     [ -n "$dir" ] || continue
     if ! dir_pids=$(pids_with_cwd_under "$dir"); then
@@ -1615,6 +1746,67 @@ task_pids_under_roots() {  # <dir>...
 $dir_pids"
   done
   TASK_PIDS=$(printf '%s\n' "$pids" | grep -E '^[0-9]+$' | sort -un || true)
+  task_load_protected_set || return 1
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    if task_pid_is_protected "$pid"; then
+      task_record_spared "$pid"
+      continue
+    else
+      protected_status=$?
+      if [ "$protected_status" -eq 2 ]; then
+        task_record_spared "$pid"
+        continue
+      fi
+    fi
+    filtered="$filtered
+$pid"
+  done <<EOF
+$TASK_PIDS
+EOF
+  TASK_PIDS=$(printf '%s\n' "$filtered" | grep -E '^[0-9]+$' | sort -un || true)
+}
+
+reap_task_pids_or_refuse() {  # <dir>...
+  if task_pids_under_roots "$@"; then
+    return 0
+  fi
+  if [ -n "${TASK_PIDS_REFUSE_REASON:-}" ]; then
+    printf '%s\n' "$TASK_PIDS_REFUSE_REASON" >&2
+  else
+    echo "REFUSED: cannot determine leaked processes under ${TASK_PIDS_FAILED_DIR:-<missing>} for $ID (lsof failed); preserving the worktree/tasktmp for manual inspection or retry." >&2
+  fi
+  return 1
+}
+
+task_report_spared_hosts() {  # <root>
+  local root=$1 rendered
+  [ -n "${TASK_SPARED_PIDS:-}" ] || return 0
+  rendered=$(printf '%s' "$TASK_SPARED_PIDS" | tr '\n' ' ')
+  echo "teardown: sparing host process(es) for $ID still rooted in ${root:-<unknown>}: $rendered" >&2
+}
+
+task_refuse_treehouse_return_with_protected_roots() {  # <dir>...
+  local rendered
+  TASK_SPARED_PIDS=
+  if ! command -v lsof >/dev/null 2>&1; then
+    if ! task_load_protected_set; then
+      printf '%s\n' "$TASK_PIDS_REFUSE_REASON" >&2
+      return 1
+    fi
+    [ -n "${TASK_LIVE_LOCK_PID:-}" ] || return 0
+    echo "REFUSED: cannot verify whether protected session process $TASK_LIVE_LOCK_PID remains rooted in the worktree/tasktmp because lsof is unavailable; preserving the worktree/tasktmp for manual inspection or retry." >&2
+    return 1
+  fi
+  reap_task_pids_or_refuse "$@" || return 1
+  [ -n "${TASK_SPARED_PIDS:-}" ] || return 0
+  rendered=$(printf '%s' "$TASK_SPARED_PIDS" | tr '\n' ' ')
+  echo "REFUSED: protected process(es) for $ID remain rooted in the worktree/tasktmp: $rendered; preserving the worktree/tasktmp for manual inspection or retry." >&2
+  return 1
+}
+
+task_recheck_treehouse_return_boundary() {
+  task_refuse_treehouse_return_with_protected_roots "$WT" "$TASK_TMP"
 }
 
 reap_task_backend_process_group() {  # <label>
@@ -1662,33 +1854,37 @@ reap_task_backend_process_group() {  # <label>
 }
 
 # Reap every process rooted (by cwd) under this task's own worktree or tasktmp
-# - both unique per task and never shared - before either is removed. TERM
+# before either is removed. Those directories are unique per task, but a cwd
+# under them is not: live session-lock ancestors and teardown's own ancestor
+# chain are excluded from the candidate set (see task_ancestor_pids). TERM
 # first, then KILL after a short grace period for anything still alive; a
 # process that exits on its own between the two passes is simply absent from
 # the recheck. A missing lsof uses the backend process-group fallback; an lsof
-# scan error refuses before destructive teardown.
+# scan error refuses before destructive teardown. Protection stays on under
+# --force.
 reap_task_worktree_processes() {  # <label> <dir>...
   local label=$1 pids pid identity current_pids i pass=1 max_passes=3
   local -a tracked_pids tracked_identities remaining_pids remaining_identities
   shift
+  TASK_SPARED_PIDS=
   if ! command -v lsof >/dev/null 2>&1; then
     reap_task_backend_process_group "$label"
     return 0
   fi
   while [ "$pass" -le "$max_passes" ]; do
-    if ! task_pids_under_roots "$@"; then
-      echo "REFUSED: cannot determine leaked processes under ${TASK_PIDS_FAILED_DIR:-<missing>} for $ID (lsof failed); preserving the worktree/tasktmp for manual inspection or retry." >&2
+    if ! reap_task_pids_or_refuse "$@"; then
       return 1
     fi
     pids=$TASK_PIDS
-    [ -n "$pids" ] || return 0
+    if [ -z "$pids" ]; then
+      return 0
+    fi
     tracked_pids=()
     tracked_identities=()
     while IFS= read -r pid; do
       [ -n "$pid" ] || continue
       if ! identity=$(task_process_identity "$pid"); then
-        if ! task_pids_under_roots "$@"; then
-          echo "REFUSED: cannot determine leaked processes under ${TASK_PIDS_FAILED_DIR:-<missing>} for $ID (lsof failed); preserving the worktree/tasktmp for manual inspection or retry." >&2
+        if ! reap_task_pids_or_refuse "$@"; then
           return 1
         fi
         if task_pid_list_contains "$TASK_PIDS" "$pid"; then
@@ -1706,8 +1902,7 @@ EOF
       pass=$((pass + 1))
       continue
     fi
-    if ! task_pids_under_roots "$@"; then
-      echo "REFUSED: cannot determine leaked processes under ${TASK_PIDS_FAILED_DIR:-<missing>} for $ID (lsof failed); preserving the worktree/tasktmp for manual inspection or retry." >&2
+    if ! reap_task_pids_or_refuse "$@"; then
       return 1
     fi
     current_pids=$TASK_PIDS
@@ -1721,8 +1916,7 @@ EOF
       fi
     done
     sleep 1
-    if ! task_pids_under_roots "$@"; then
-      echo "REFUSED: cannot determine leaked processes under ${TASK_PIDS_FAILED_DIR:-<missing>} for $ID (lsof failed); preserving the worktree/tasktmp for manual inspection or retry." >&2
+    if ! reap_task_pids_or_refuse "$@"; then
       return 1
     fi
     current_pids=$TASK_PIDS
@@ -1739,8 +1933,7 @@ EOF
     done
     if [ "${#remaining_pids[@]}" -gt 0 ]; then
       echo "teardown: force-killing leaked $label process(es) for $ID: ${remaining_pids[*]-}" >&2
-      if ! task_pids_under_roots "$@"; then
-        echo "REFUSED: cannot determine leaked processes under ${TASK_PIDS_FAILED_DIR:-<missing>} for $ID (lsof failed); preserving the worktree/tasktmp for manual inspection or retry." >&2
+      if ! reap_task_pids_or_refuse "$@"; then
         return 1
       fi
       current_pids=$TASK_PIDS
@@ -1755,11 +1948,12 @@ EOF
     fi
     pass=$((pass + 1))
   done
-  if ! task_pids_under_roots "$@"; then
-    echo "REFUSED: cannot determine leaked processes under ${TASK_PIDS_FAILED_DIR:-<missing>} for $ID (lsof failed); preserving the worktree/tasktmp for manual inspection or retry." >&2
+  if ! reap_task_pids_or_refuse "$@"; then
     return 1
   fi
-  [ -z "$TASK_PIDS" ] && return 0
+  if [ -z "$TASK_PIDS" ]; then
+    return 0
+  fi
   echo "REFUSED: leaked $label processes for $ID remain after $max_passes reap attempts; preserving the worktree/tasktmp for manual inspection or retry." >&2
   return 1
 }
@@ -2531,6 +2725,20 @@ remove_secondmate_registry_entry() {
   return "$rc"
 }
 
+if [ "$KIND" != secondmate ]; then
+  if ! task_load_protected_set; then
+    printf '%s\n' "$TASK_PIDS_REFUSE_REASON" >&2
+    exit 1
+  fi
+  SESSION_PUBLICATION_LOCK=$STATE/.lock.acquire
+  fm_lock_acquire_wait "$SESSION_PUBLICATION_LOCK" || exit 1
+  SESSION_PUBLICATION_LOCK_HELD=1
+  if ! task_load_protected_set; then
+    printf '%s\n' "$TASK_PIDS_REFUSE_REASON" >&2
+    exit 1
+  fi
+fi
+
 validate_pr_poll_cleanup "$STATE" "$ID" || exit 1
 
 if [ "$KIND" = secondmate ]; then
@@ -2684,7 +2892,14 @@ fi
 # not by task-worktree cleanup.
 if [ "$KIND" != secondmate ]; then
   conclude_task_no_mistakes_run "$WT"
-  reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
+  reap_task_worktree_processes worktree "$WT" "$TASK_TMP" || exit 1
+  if [ "$BACKEND" != orca ] && [ -d "$WT" ]; then
+    task_refuse_treehouse_return_with_protected_roots "$WT" "$TASK_TMP" || exit 1
+  else
+    task_report_spared_hosts "$WT"
+    fm_lock_release "$SESSION_PUBLICATION_LOCK" || exit 1
+    SESSION_PUBLICATION_LOCK_HELD=0
+  fi
 fi
 
 # Fix 3 (see script header): sweep remote job workers abandoned by an already
@@ -2736,18 +2951,26 @@ elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   # Remove our hook file so a reused pool worktree cannot fire signals for a dead task.
   rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
     "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend"
-  # Kills remaining processes in the worktree (including the agent), resets, returns
-  # to pool. treehouse resolves the pool from the working directory, so run it from
-  # the project. teardown_treehouse_return tolerates transient and stale git locks
-  # left by a killed crew process; see the script header for retry and stale-lock proof.
+  # After the protected-root guard passes, Treehouse kills remaining worktree processes.
+  # It then resets the worktree and returns it to the pool.
+  # Treehouse resolves the pool from the working directory, so run it from the project.
+  # The pre-return check repeats for every attempt while the session publication lock remains held.
+  # teardown_treehouse_return tolerates transient and stale git locks.
+  # See the script header for the retry and stale-lock proof.
   post_lock_cleanup_check=
   if [ "$FORCE" != "--force" ] && [ "$KIND" != scout ] && [ "$KIND" != secondmate ]; then
     post_lock_cleanup_check=validate_worktree_teardown_safety
   fi
-  teardown_treehouse_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check" || {
+  teardown_treehouse_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check" \
+    task_recheck_treehouse_return_boundary || {
     echo "error: treehouse return failed for worktree $WT; teardown aborted" >&2
     exit 1
   }
+fi
+
+if [ "$SESSION_PUBLICATION_LOCK_HELD" = 1 ]; then
+  fm_lock_release "$SESSION_PUBLICATION_LOCK" || exit 1
+  SESSION_PUBLICATION_LOCK_HELD=0
 fi
 
 HERDR_PRESENTATION_JOURNAL="$STATE/$ID.herdr-presentation"
