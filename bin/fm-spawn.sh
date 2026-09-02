@@ -819,6 +819,7 @@ spawn_remote_secondmate() {
     echo "kind=secondmate"
     echo "mode=secondmate"
     echo "yolo=off"
+    [ -z "$MAP_NEXT" ] || echo "map_next=$MAP_NEXT"
     echo "tasktmp="
     echo "model=${model#-}"
     echo "effort=${effort#-}"
@@ -1205,6 +1206,15 @@ if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ] && [ "$ROLE" = verifier ]; then
     exit 1
   fi
 fi
+[ "$MAP_NEXT_SET" -eq 0 ] || [ "$MAP_NEXT" != "$ID" ] || { echo "error: --map-next must name a different task id" >&2; exit 2; }
+[ "$OV_SET" -eq 0 ] || [ "$KIND" = ship ] || {
+  echo "error: --ov applies only to ship spawns" >&2
+  exit 1
+}
+[ "$OV_SET" -eq 0 ] || [ "$OV" != "$ID" ] || {
+  echo "error: --ov must name a different task id; builder self-review is not OV" >&2
+  exit 2
+}
 if [ "$KIND" = secondmate ]; then
   if spawn_remote_secondmate "$ID"; then
     exit 0
@@ -3009,12 +3019,21 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   # pane that is already settled by the first real read only costs the one existing
   # inter-poll sleep as confirmation, not a whole extra cycle on top.
   candidate=""
+  refusal=""
   for _ in $(seq 1 60); do
+    if refusal=$(treehouse_pool_refusal_reason "$WT_TARGET"); then
+      echo "error: treehouse get failed: $refusal; inspect window $T" >&2
+      exit 1
+    fi
     p=$(spawn_current_path "$WT_TARGET" || true)
     if [ -n "$p" ]; then
       p_real=$(real_path_or_raw "$p")
       if [ "$p_real" != "$PROJ_ABS_REAL" ]; then
         if [ -n "$candidate" ] && [ "$p_real" = "$candidate" ]; then
+          if refusal=$(treehouse_pool_refusal_reason "$WT_TARGET"); then
+            echo "error: treehouse get failed: $refusal; inspect window $T" >&2
+            exit 1
+          fi
           WT="$p"
           break
         fi
