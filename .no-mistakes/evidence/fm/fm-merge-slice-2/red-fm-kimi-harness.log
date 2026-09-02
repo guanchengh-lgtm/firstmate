@@ -1,0 +1,14 @@
+ok - Kimi hook install is idempotent and removal restores every foreign config byte
+ok - Kimi hook removal preserves owned newline boundaries and pristine bytes
+ok - Kimi hook install refuses missing, malformed, and surprising config without writing
+ok - Kimi hook install refuses without jq before any config write
+ok - fm-spawn: kimi launches, delivers its brief, and registers a guarded turn-end token
+ok - Kimi hook stays silent and inert without a Firstmate registry token
+ok - fm-spawn: unsafe Kimi global config refuses before pane creation
+ok - fm-teardown: Kimi task pointer and registry token are removed
+ok - fm-spawn: Kimi fallback expands the active HOME
+ok - fm-spawn: missing Kimi executable refuses before pane creation
+ok - fm-spawn: kimi treats a silent pointer drop as a failed spawn
+not ok - backlog field refusal did not explain the invalid output (missing: 'ambiguous fields')
+--- output ---
+error: task kimi-backlog-invalid-2-z2b-55155's backlog item could not be read before dispatch (tasks-axi show kimi-backlog-invalid-2-z2b-55155 returned invalid held '')

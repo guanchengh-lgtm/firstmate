@@ -1,0 +1,9 @@
+ok - fm-brief.sh: bash -n succeeds
+ok - fm-brief.sh: --help renders the complete header
+ok - fm-brief.sh: no-mistakes/direct-PR/local-only briefs generate cleanly
+ok - fm-brief.sh: ship --mode is required and closed-set validated
+ok - fm-brief.sh: product/mixed/uncertain/omitted + direct-PR refuse; internal-only and no-mistakes product still work
+ok - fm-brief.sh: the explicit ship mode wins over the registered posture
+ok - fm-brief.sh: delivery flags are refused outside ship scaffolds
+ok - fm-brief.sh: faster paths use configured authority without stacked review
+not ok - no-mistakes DOD must state the --yes ban as a prohibition

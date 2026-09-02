@@ -1,0 +1,2 @@
+jq: error: Could not open file /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-trace-context-spawn.9AB21j/tc-on/home/state/home-summary.json: No such file or directory
+not ok - successful task spawn did not publish the task in the home summary ledger

@@ -1,0 +1,3 @@
+ok - batch dispatch re-execs and reports every id=repo pair
+ok - batch detection: single pair batches, non-pair rejected, single-task and slash-id stay single
+not ok - batch refusal did not name the missing role

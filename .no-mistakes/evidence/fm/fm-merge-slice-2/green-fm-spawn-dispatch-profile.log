@@ -1,0 +1,60 @@
+ok - fm-spawn: help reports the complete dispatch contract
+ok - ship spawn refuses a missing --role and an invalid direct-PR surface
+ok - no --model/--effort records defaults and types the claude launch instructions
+ok - non-cursor launches clear inherited Cursor identity markers
+ok - relative home overrides ignore CDPATH and become absolute before spawn launch construction
+ok - FM_HOME defaults resolve relative paths and preserve absolute spellings
+ok - absolute override spellings are preserved in spawn launch paths
+ok - unresolvable relative spawn overrides fail with named diagnostics
+ok - active crew-dispatch profile requires an explicit harness for ship spawns
+ok - active crew-dispatch profile requires an explicit harness for scout spawns
+ok - active crew-dispatch profile requires an explicit model for ship spawns
+ok - active crew-dispatch profile requires an explicit effort for ship spawns
+ok - active crew-dispatch profile allows an explicit resolved harness
+ok - active crew-dispatch profile allows the legacy positional harness form
+ok - active crew-dispatch profile allows the raw launch-command escape hatch
+ok - claude receives --model and --effort profile flags
+ok - codex receives --model and model_reasoning_effort profile flags
+ok - codex omits unsupported max effort instead of passing a bad config value
+ok - grok receives --model and --reasoning-effort profile flags
+ok - grok omits unsupported max reasoning effort
+ok - grok receives --reasoning-effort xhigh
+ok - opencode receives --model and omits the unsupported effort axis
+ok - pi receives --model and --thinking max profile flags
+ok - Pi launch probing omits --tui-mode on older Pi and preserves it on supporting Pi
+ok - pi-signed shares Pi launch semantics while preserving its configured and recorded identity
+ok - Pi workers scope Calm off while keeping discovery and the generated task extension
+ok - pi-signed refuses safely and actionably when the selected executable is unavailable
+ok - pi-signed is a distinct persistent secondmate runtime with shared Pi supervision semantics
+ok - batch dispatch forwards shared --harness, --model, and --effort to every pair
+ok - fm-spawn: --map-next records a valid id and refuses unsafe ids
+ok - fm-spawn: filled ships require a distinct spawned OV worker
+ok - fm-spawn: --map refuses live and structural fog and records a clean map
+ok - fm-spawn: fake worker slash refuses before endpoint creation
+ok - claude forwards firstmate's CLAUDE_CONFIG_DIR so the crewmate uses the same credential store
+ok - claude omits the config-dir prefix when firstmate runs with the single-store default
+ok - non-claude harnesses do not receive the claude CLAUDE_CONFIG_DIR prefix
+ok - active crew-dispatch profile does not block secondmate launches
+ok - fm-spawn: --role verifier encodes verifier-brief.md and records role=verifier
+ok - fm-spawn: verifier handoff preserves builder yolo authority
+ok - fm-spawn: verifier handoff cannot synthesize missing builder surface metadata
+ok - fm-spawn: verifier handoff retires builder wiring before replacement
+ok - fm-spawn: verifier handoff retires builder busy generation
+ok - fm-spawn: verifier handoff preserves staged, unstaged, and untracked builder work
+ok - fm-spawn: verifier handoff refuses rebase state and preserves existing stash
+ok - fm-spawn: verifier handoff reuses detached builder HEAD exactly
+ok - fm-spawn: verifier handoff refuses unreadable worktree ownership
+ok - fm-spawn: verifier handoff adoption failure retires its new endpoint
+ok - fm-spawn: verifier handoff requires confirmed endpoint retirement
+ok - fm-spawn: verifier handoff publication failure retires replacement state
+ok - fm-spawn: fresh publication failure does not create a nonstandard recovery record
+ok - fm-spawn: verifier handoff teardown returns one worktree and one endpoint
+ok - fm-spawn: verifier handoff refuses live and unverified builder endpoints
+ok - fm-spawn: verifier handoff follows resolved backend selection
+ok - fm-spawn: verifier handoff refuses an unbound Herdr quarantine
+ok - fm-spawn: tmux verifier retires an exact Herdr quarantine
+ok - fm-spawn: verifier handoff refuses Orca worktree ownership changes
+ok - fm-spawn: verifier handoff participates in lifecycle serialization
+ok - fm-spawn: verifier handoff refuses invalid builder worktree records
+ok - fm-spawn: verifier ships enforce explicit OV worker and skill rules
+# all fm-spawn-dispatch-profile tests passed

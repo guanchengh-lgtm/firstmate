@@ -1,0 +1,12 @@
+ok - a stale pooled worktree refreshes to current origin/main before a crew branch is created
+ok - a stale pooled worktree resolves and refreshes a non-main default branch
+ok - direct-PR ships and scouts both refresh stale pooled worktrees before launch
+ok - a dirty pooled worktree is refused without discarding its local work
+ok - an unresolved remote default branch refuses the pooled worktree
+ok - an unreachable origin refuses a potentially stale pooled worktree
+ok - two consecutive spawns across a moved submodule pin report both pins
+not ok - an unpushed submodule commit was not refused as uncommitted work (missing: 'refusing to discard uncommitted work')
+--- output ---
+warning: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-pool-base-freshen.9O19Wl/sub-unpushed/home/data/pool-sub-unpushed-r10/mode records no delivery mode (scaffolded before ship tasks recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+error: submodule 'ui' is checked out at 559d686c1696a4ba875e86e54d86f573d5e01867, but this base records 015ecd76f999c311bea574e1f74bf783abd93ae6
+error: pooled worktree '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-spawn-pool-base-freshen.9O19Wl/sub-unpushed/pool' has a stale submodule checkout, not uncommitted work; refusing to launch and leaving it untouched

@@ -1,0 +1,5 @@
+skip: set FM_HARNESS_ADAPTER_INSTRUCTION_EVAL=1 and FM_HARNESS_ADAPTER_LOCAL_MODEL=<model> to run the local instruction evaluation
+
+# enabled probe
+curl: (7) Failed to connect to 127.0.0.1 port 11434 after 0 ms: Couldn't connect to server
+not ok - local Ollama is unavailable at 127.0.0.1:11434; no remote provider fallback is allowed

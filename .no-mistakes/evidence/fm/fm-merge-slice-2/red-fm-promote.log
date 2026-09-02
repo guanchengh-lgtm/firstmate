@@ -1,0 +1,2 @@
+ok - fm-promote: help owns the promotion workflow without runtime state
+not ok - direct-PR promotion delivered a different Definition of done block than a ship brief

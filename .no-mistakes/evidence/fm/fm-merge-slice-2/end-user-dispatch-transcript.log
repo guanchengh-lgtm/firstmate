@@ -1,0 +1,7 @@
+$ bin/fm-spawn.sh dispatch-no-role project --mode no-mistakes --yolo off
+error: ship spawns require --role <builder|verifier>; do not default an omitted role to builder
+exit=1
+
+$ bin/fm-spawn.sh dispatch-no-surface project --mode direct-PR --yolo off --role builder
+error: --mode direct-PR requires --surface internal-only; product, mixed, or uncertain work must ship no-mistakes
+exit=1
