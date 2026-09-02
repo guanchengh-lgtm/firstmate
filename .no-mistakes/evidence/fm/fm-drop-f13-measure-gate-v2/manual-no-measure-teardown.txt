@@ -1,0 +1,6 @@
+before: measure.md=absent meta=present tasktmp=present
+teardown manual-no-measure complete (window fakeses:fm-manual-no-measure, worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-gotmp-tests.OCKIOg/nonexistent-worktree-manual-no-measure)
+Backlog: manual-no-measure just finished. Update data/backlog.md - move manual-no-measure to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+command: fm-teardown.sh manual-no-measure
+exit: 0
+after: measure.md=absent meta=absent tasktmp=absent

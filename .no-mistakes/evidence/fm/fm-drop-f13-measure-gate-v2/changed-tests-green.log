@@ -1,0 +1,707 @@
+FM_TEST_BEGIN 2026-09-02T01:59:46Z tests/fm-backend-autodetect-smoke.test.sh family=real-herdr-gated expected_gate_skip=herdr
+ok - real herdr: fm-spawn.sh auto-detects herdr from HERDR_ENV=1 (no explicit config) and prints the loud notice
+ok - real herdr: auto-detected spawn records backend=herdr and herdr_session/workspace/tab/pane fields in meta
+ok - real herdr: the auto-detected spawn's launch command actually ran in the herdr pane
+ok - real herdr: teardown completes the auto-detected spawn/teardown cycle (meta cleared, pane closed)
+ok - real herdr: isolated lab session removed and default fleet session unchanged
+FM_TEST_END 2026-09-02T02:00:04Z tests/fm-backend-autodetect-smoke.test.sh exit=0 duration_ms=18204 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:00:04Z tests/fm-backend-herdr-launcher-workspace-e2e.test.sh family=real-herdr-gated expected_gate_skip=herdr
+ok - real herdr E2E: with one 'firstmate' workspace and no herdr parent, a crewmate still lands in this home's own workspace without stealing focus
+ok - real herdr E2E: the normal unique-label path is unchanged when the launcher's own pane identifies the workspace
+ok - real herdr E2E: presentation spaces still create the isolated child workspace and bind it under the launcher's exact parent, without stealing focus
+ok - real herdr E2E: with two 'firstmate' workspaces, a worker spawned from inside the second one lands in that exact workspace
+ok - real herdr E2E: the duplicate-labeled sibling workspace is left entirely untouched and focus is preserved
+ok - real herdr E2E: with a duplicated home label, a projected worker still hangs off the launcher's exact workspace and the sibling stays untouched
+ok - real herdr E2E: an ambiguous home label with no launcher identity refuses before any worker endpoint exists
+ok - real herdr E2E: a launcher pane that no longer exists refuses before any worker endpoint exists
+ok - real herdr E2E: a secondmate launching its own worker gets the same exact-workspace guarantee, and its same-labeled sibling is untouched
+ok - real herdr E2E: a --secondmate launch still stands up that secondmate's own workspace instead of inheriting the launcher's
+ok - real herdr E2E: teardown closes only the worker's own pane and leaves the launcher, its workspace, and the same-labeled sibling intact
+ok - real herdr E2E: isolated lab session removed and default fleet session unchanged
+FM_TEST_END 2026-09-02T02:00:59Z tests/fm-backend-herdr-launcher-workspace-e2e.test.sh exit=0 duration_ms=54931 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:00:59Z tests/fm-backend-herdr-presentation-e2e.test.sh family=real-herdr-gated expected_gate_skip=herdr
+ok - real Herdr lab: an opted-out spawn retains the Stage 1 Herdr command sequence with zero ordering calls
+ok - real Herdr lab: a home that configured nothing is projected by default on herdr 0.8.2
+ok - real Herdr lab: every projected create, task-tab create, seeded prune, and move preserves active workspace and tab
+warning: herdr presentation cleanup could not verify the exact pane; refusing focus-unsafe pane close
+ok - real Herdr lab: active seeded-tab pruning refuses the exact pane and preserves exact focus
+ok - real Herdr lab: bounded lock contention warns and falls back flat without projection or focus drift
+ok - real Herdr lab: concurrent primary workers form one stable contiguous block without active workspace/tab drift
+ok - real Herdr lab: forced workspace.move failure leaves a successful worker in default order with a warning and no cleanup
+ok - real Herdr lab: concurrent post-create abort cleanup stays serialized with exact focus restoration
+ok - real Herdr lab: Treehouse commands and metadata shape are byte-identical except for endpoint IDs and spawn incarnation
+ok - real Herdr lab: exact task-pane close removes the projected workspace with no unrestored wrong-focus interval
+ok - real Herdr lab: concurrent projected cleanup is serialized and leaves active workspace/tab unchanged
+ok - real Herdr lab: three repeated concurrent create/order/cleanup waves have zero active workspace or tab drift
+ok - real Herdr lab: the primary presentation setting inherits into real secondmate homes
+ok - real Herdr lab: primary and two secondmate homes each own a top-level contiguous child block
+ok - real Herdr lab: concurrent primary/A/B spawns preserve parent order and exact focus
+ok - real Herdr lab: session lock contention from a secondmate home falls back flat with no journal
+ok - real Herdr lab: Hi Bit and Wheelhouse-style same-identity restarts reclaim one nested space with exact focus and idempotence
+ok - real Herdr lab: secondmate restart binding and reclaim stay isolated to the exact child home and parent
+ok - real Herdr lab: concurrent cross-home recoveries replace exact husks under one session lock with no focus drift
+ok - real Herdr lab: legacy projection labels and flat secondmate tabs are left unmigrated
+ok - real Herdr lab: multi-home exact-pane teardowns restore captain focus without workspace close authority
+warning: no exact herdr presentation token match for missing1; leaving any stale space untouched and spawning flat
+warning: no exact herdr presentation token match for renamed1; leaving any stale space untouched and spawning flat
+warning: 2 exact herdr presentation token matches for duplicate1 are quarantined; inspecting only for duplicate-agent risk
+warning: quarantined herdr presentation for duplicate1 is dead or agent-free; exact bound reclaim may proceed, otherwise spawning flat
+warning: 2 exact herdr presentation token matches for duplicate1 are quarantined; inspecting only for duplicate-agent risk
+error: quarantined herdr presentation for duplicate1 has a live pane; refusing duplicate launch
+ok - real Herdr lab: missing, renamed, and duplicate tokens trigger zero destructive or adoptive calls, and live duplicate risk refuses launch
+ok - real Herdr lab validation completed on Herdr 0.8.2 with the default-session tripwire intact
+FM_TEST_END 2026-09-02T02:08:38Z tests/fm-backend-herdr-presentation-e2e.test.sh exit=0 duration_ms=459001 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:08:38Z tests/fm-backend-herdr-workspace-per-home-e2e.test.sh family=real-herdr-gated expected_gate_skip=herdr
+ok - real herdr E2E: a primary-shaped home spawns a crewmate on the herdr backend
+ok - real herdr E2E: the primary-shaped home's crewmate landed in the 'firstmate' workspace
+ok - real herdr E2E: the primary spawns a --secondmate task on the herdr backend
+ok - real herdr E2E: a --secondmate spawn by the PRIMARY lands in the SECONDMATE's own labeled workspace, distinct from the primary's
+ok - real herdr E2E: a crewmate spawns successfully FROM a secondmate-shaped home's own fm-spawn.sh process
+ok - real herdr E2E: a crewmate spawned FROM the secondmate-shaped home lands in the secondmate's OWN workspace - falls out of per-home resolution, no glue needed
+ok - real herdr E2E: list_live from the primary's own context sees only the primary's own task
+ok - real herdr E2E: list_live from the secondmate's own context sees only tasks in the secondmate's own workspace (both its own tab and its crewmate's)
+ok - real herdr E2E: tearing down cm1 closes only its own tab - the secondmate's and cm2's tabs survive untouched
+ok - real herdr E2E: tearing down cm2 closes only its own tab - the secondmate's own tab (same workspace) survives untouched
+FM_TEST_END 2026-09-02T02:09:07Z tests/fm-backend-herdr-workspace-per-home-e2e.test.sh exit=0 duration_ms=29169 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:09:07Z tests/fm-backend-orca.test.sh family=orca expected_gate_skip=optional-binary
+ok - fm_backend_orca_capture: parses result.terminal.tail and calls terminal read
+ok - fm_backend_orca_capture: falls back to result text fields
+ok - fm_backend_orca_capture: fails closed on Orca read error JSON
+ok - fm_backend_orca_runtime_check: accepts reachable ready runtime
+ok - fm_backend_orca_runtime_check: fails closed when runtime is not ready
+ok - fm_backend_orca_send_text_submit: verifies empty composer after Enter with one bounded read
+ok - fm_backend_orca_send_text_submit: a borderless claude composer confirms delivery (the missing #2029 shape)
+ok - fm_backend_orca_composer_state: a stale startup banner cannot outrank the live composer row
+ok - fm_backend_orca_send_text_submit: retries Enter while composer remains pending
+ok - fm_backend_orca_composer_state: a slash-command popup's argument-hint placeholder still reads pending
+ok - fm_backend_orca_composer_state: a bare dead-shell prompt reads unknown (unsafe-for-injection), never empty
+ok - fm_backend_orca_send_text_submit: a slash-command popup's placeholder fill on Enter #1 does not short-circuit as submitted; Enter #2 is retried and lands it
+ok - fm_backend_orca_send_literal: sends text without submitting
+ok - fm_backend_orca_send_text_submit: reports send-failed when Orca send fails
+ok - Orca send helpers: fail closed on ok:false JSON
+ok - fm_backend_orca_send_key: Enter maps to empty enter, C-c maps to interrupt
+ok - fm_backend_orca_send_key: refuses unsupported keys loudly
+ok - fm_backend_orca_send_key: refuses Escape instead of mapping it to interrupt
+ok - fm_backend_orca_kill: calls terminal close and stays best-effort
+ok - fm_backend_orca_remove_worktree: refuses empty worktree ids
+ok - fm_backend_orca_remove_worktree: fails closed on ok:false JSON
+ok - fm_backend_orca_worktree_path: resolves an Orca worktree id to its path
+ok - fm-backend dispatcher: accepts orca and routes capture through bin/backends/orca.sh
+ok - fm_backend_orca_json_get: ignores undocumented terminal id shapes
+ok - Orca lifecycle helpers: register repo, create worktree, create terminal, parse stable ids
+ok - fm_backend_orca_worktree_create: removes created worktree when path is missing
+ok - fm-spawn.sh --backend orca: preserves metadata when pathless cleanup fails
+ok - fm-spawn.sh --backend orca: reuses implicit terminal, records metadata, launches harness
+ok - fm-spawn.sh --backend orca --secondmate: refuses before secondmate-home mutation
+ok - fm-spawn.sh --backend orca: refuses before mutation when Orca runtime is not ready
+ok - fm-spawn.sh --backend orca: refuses non-isolated worktrees and closes implicit terminals
+ok - fm-spawn.sh --backend orca: removes worktree when terminal creation fails
+ok - fm-spawn.sh --backend orca: preserves metadata when abort cleanup fails
+ok - fm-spawn.sh --backend orca: releases terminal and worktree on later aborts
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 0s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: watcher still down (same stale episode; last beat: 1s ago, grace 300s) - full banner already printed this episode.
+ok - fm-peek/fm-send/fm-crew-state route through backend=orca metadata and its durable inbox
+ok - fm-peek/fm-crew-state: Orca read error JSON fails closed
+ok - fm_backend_target_exists: Orca ok:false read JSON is not live
+ok - fm-teardown.sh backend=orca: scout report gate then helper-backed worktree removal
+ok - fm-teardown.sh backend=orca: scout teardown refuses id/path mismatches
+ok - fm-teardown.sh backend=orca: releases terminal/worktree when path is absent
+ok - fm-teardown.sh backend=orca: preserves metadata on remove ok:false JSON
+ok - fm-teardown.sh backend=orca: scout report gate precedes pathless helper cleanup
+ok - fm-teardown.sh backend=orca: ship teardown fails closed when worktree path is missing
+ok - fm-teardown.sh backend=orca: ship teardown requires a matching Orca id path
+ok - fm-teardown.sh backend=orca: ship teardown fails closed when id resolution fails
+ok - fm-teardown.sh backend=orca: ship teardown refuses id/path mismatches
+ok - fm-teardown.sh backend=orca: refuses missing worktree ids before cleanup
+ok - fm-teardown.sh backend=orca: refuses incomplete worktree-only endpoint metadata before runtime dispatch
+ok - fm-teardown.sh --force: removes Orca secondmate children through Orca
+ok - fm-teardown.sh --force: refuses Orca child id/path mismatches
+ok - fm-teardown.sh --force: refuses partial Orca secondmate children before runtime dispatch
+FM_TEST_END 2026-09-02T02:09:54Z tests/fm-backend-orca.test.sh exit=0 duration_ms=46397 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:09:54Z tests/fm-backend-zellij.test.sh family=zellij expected_gate_skip=optional-binary
+ok - fm_backend_zellij_version_check: accepts the verified minimum (0.44.0)
+ok - fm_backend_zellij_version_check: accepts a newer version (0.45.2)
+ok - fm_backend_zellij_version_check: refuses an old version loudly
+ok - fm_backend_zellij_version_check: refuses loudly when zellij is not installed
+ok - fm_backend_zellij_session: defaults to 'firstmate' when FM_ZELLIJ_SESSION is unset
+ok - fm_backend_zellij_session: honors the FM_ZELLIJ_SESSION test-isolation override
+ok - fm_backend_zellij_parse_target: splits '<session>:<pane_id>' on the first colon
+ok - fm_backend_zellij_normalize_key: Enter/Escape/C-c map to zellij's verified Enter/Esc/'Ctrl c'
+ok - fm_backend_zellij_scoped_title: scopes a primary task title with firstmate plus root hash
+ok - fm_backend_zellij_scoped_title: scopes a secondmate task title with the home marker plus root hash
+ok - fm_backend_zellij_scoped_title: includes the resolved FM_ROOT hash in the home label
+ok - fm_backend_zellij_tab_matches_label: accepts an untagged legacy fm-<id> title when it is the only live tab carrying it
+ok - fm_backend_zellij_tab_matches_label: refuses an untagged legacy label match when 2+ live tabs share it (migration ambiguity guard)
+ok - fm_backend_zellij_list_live: scopes to this home's own tag - excludes a different installation's tagged tab and unrelated tabs
+ok - fm_backend_zellij_resolve_bare_selector: matches the home-scoped tagged title first
+ok - fm_backend_zellij_resolve_bare_selector: refuses an ambiguous untagged legacy label shared by 2+ live tabs
+ok - fm_backend_zellij_resolve_bare_selector: checks every session for the scoped title before legacy fallback
+ok - fm_backend_zellij_resolve_bare_selector: requires untagged legacy labels to be globally unique across sessions
+ok - fm_backend_zellij_session_exists: true when the session name is listed
+ok - fm_backend_zellij_session_exists: false when the session name is not listed
+ok - fm_backend_zellij_server_ensure: reuses an existing session without calling attach
+ok - fm_backend_validate: zellij is a known backend (P3)
+ok - fm_backend_busy_state: zellij (no native primitive) always reports unknown, same as tmux
+ok - fm_backend_zellij_create_task: refuses a duplicate home-scoped tab title (zellij's own new-tab has no uniqueness check)
+ok - fm_backend_zellij_create_task: creates a home-scoped tab and parses tab_id/pane_id from the response
+ok - fm_backend_zellij_create_task: pane discovery failure removes the partial tab
+ok - fm_backend_zellij_create_task: failed cleanup names the partial tab and keeps the original error
+ok - fm_backend_zellij_create_task: restores focus to the previously-active tab after the steal-focus new-tab call
+ok - fm_backend_zellij_create_task: skips the restore call when there was no previously-active tab
+ok - fm_backend_zellij_capture: small reads use viewport-only dump-screen and trim to N lines locally
+ok - fm_backend_zellij_capture: reads above the watcher-size threshold request --full scrollback
+ok - fm_backend_zellij_capture: fails when the specific pane is absent
+ok - fm_backend_zellij_capture: fails when the target session is not listed as active (session_exists pre-check)
+ok - fm_backend_zellij_send_key: normalizes the key (Escape -> Esc) and targets the explicit pane id
+ok - fm_backend_zellij_send_literal: calls paste with an explicit pane id and a -- separator
+ok - fm_backend_zellij_send_text_line: clears partial input when Enter fails
+ok - fm_backend_zellij_send_text_line: reports unsafe input when cleanup also fails
+ok - fm_backend_zellij_target_ready: expected labels allow matching fm-<id> tabs
+ok - fm_backend_zellij_target_ready: expected labels reject stale pane ids reused by another tab
+ok - fm_backend_zellij_current_path: actively probes with marked begin/end lines and reconstructs wrapped cwd output
+ok - fm_backend_zellij_current_path: never picks up a ~-prefixed banner line as the answer
+ok - fm_backend_zellij_kill: resolves the owning tab id fresh and calls close-tab-by-id (never a bare close-pane)
+ok - fm_backend_zellij_kill: falls back to close-pane when the owning tab cannot be resolved
+ok - fm_backend_zellij_kill: closes the recorded tab id only after label verification
+ok - fm_backend_zellij_kill: skips a stale recorded tab id whose label does not match
+ok - fm_backend_zellij_kill: never fails when the target session no longer exists
+ok - fm-teardown.sh: passes recorded zellij_tab_id with the expected task label
+ok - fm-teardown.sh: force cleanup kills zellij children using the child home tag
+ok - fm_backend_zellij_send_text_submit: reports 'empty' once the composer classifies empty (submitted)
+ok - fm_backend_zellij_send_text_submit: reports 'pending' when the composer still holds the text after retried Enters (swallowed)
+ok - fm_backend_zellij_send_text_submit: an unrelated pane change is not a delivery confirmation (false-positive regression)
+ok - fm_backend_zellij_send_text_submit: refuses confirmation when paste exits successfully without typing
+ok - fm_backend_zellij_send_text_submit: transcript echoes outside the selected composer cannot prove typing
+ok - fm_backend_zellij_send_text_submit: pre-existing text cannot prove a no-op paste landed
+ok - fm_backend_zellij_send_text_submit: unrelated drafts and furniture cannot prove typing
+ok - fm_backend_zellij_send_text_submit: observes wrapped text replacing a shell-prompt placeholder
+ok - fm_backend_zellij_send_text_submit: observes wrapped text in a bare composer
+ok - fm_backend_zellij_send_text_submit: preserves agent glyphs within wrapped content
+ok - fm_backend_zellij_send_text_submit: refuses a live shell below a stale composer
+ok - fm_backend_zellij_composer_state: classifies the real claude-in-zellij --ansi dump as empty
+ok - fm_backend_zellij_composer_state: a dead pane (empty dumps) reads unknown, never a confirmation
+ok - fm_backend_zellij_send_text_submit: reports 'send-failed' when the target session is not active
+ok - fm_backend_zellij_send_text_submit: reports 'send-failed' when the target pane is absent
+ok - fm-peek/fm-send: explicit metadata-matched targets use the recorded zellij backend
+ok - fm-peek: fm-id zellij targets verify the owning tab label before capture
+ok - fm-send: fm-id zellij targets reject pane ids whose tab label no longer matches
+FM_TEST_END 2026-09-02T02:10:15Z tests/fm-backend-zellij.test.sh exit=0 duration_ms=21663 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:10:15Z tests/fm-backend.test.sh family=backend-dispatch expected_gate_skip=none
+ok - fm_backend_name: FM_BACKEND env > config/backend > default tmux
+ok - fm_backend_detect: no markers -> undetected, HERDR_ENV=1 -> herdr, $TMUX -> tmux, CMUX_WORKSPACE_ID -> cmux, nested combinations resolve innermost-first
+ok - fm_backend_detect: falls back to __CFBundleIdentifier=com.cmuxterm.app when CMUX_WORKSPACE_ID is absent (signal bundle-id; foreign bundle ids rejected)
+ok - fm_backend_detect: the cmux fallback signals are macOS-only (inert on a non-Darwin uname)
+ok - fm_backend_detect: an inherited cmux bundle id never outranks $TMUX or HERDR_ENV (tmux/herdr-inside-cmux false positive absorbed)
+ok - fm_backend_detect: ancestry fallback matches the lsappinfo-resolved (bundle-id) cmux app pid in the parent chain
+ok - fm_backend_detect: ancestry fallback matches a bundle-shaped cmux comm path at any install location when lsappinfo cannot resolve a pid
+ok - fm_backend_detect: ancestry fallback stops undetected at launchd (a reparented tmux server never reaches cmux)
+ok - fm_backend_name: a fallback-detected cmux prints a NOTICE naming the fallback signal; the primary-marker notice is unchanged
+ok - fm_backend_name: auto-detect selects herdr or cmux (loud notice) or tmux (silent, including nested tmux-in-herdr/tmux-in-cmux)
+ok - fm_backend_name: an explicit FM_BACKEND or config/backend setting always wins over runtime auto-detection, including an ambient cmux marker
+ok - fm_backend_validate: implemented adapters accepted, unknown and blocked codex-app backends refused loudly
+ok - zsh: fm_backend_source recognizes known backends and rejects unknown ones
+ok - bash: fm_backend_source recognizes known backends and rejects unknown ones
+ok - fm_backend_validate_spawn: all implemented lifecycle backends are spawn-supported
+ok - fm_meta_get / fm_backend_of_meta: read key=value, default backend to tmux
+ok - fm_backend_resolve_selector: session:window literal, exact task id first, legacy fm-<id> label fallback, ad hoc bare name via tmux list-windows
+ok - fm_backend_of_selector: exact task ids, legacy fm-<id> labels, and matching explicit targets inherit metadata backend
+ok - fm-send.sh: explicit tmux targets are verified; text types once and submits with Enter
+ok - fm-peek.sh: capture-pane invocation and output are byte-identical old vs new
+ok - fm-spawn.sh: a project reached through a symlinked prefix (e.g. macOS /tmp -> /private/tmp) does not trip the isolation guard's false refusal
+ok - fm-teardown.sh: treehouse return remains compatible while tmux cleanup uses exact selectors
+ok - fm-spawn.sh --backend bogus is refused loudly
+ok - fm-spawn.sh --backend codex-app is refused
+ok - fm-spawn.sh honors FM_BACKEND and refuses an unimplemented value loudly
+ok - fm-spawn.sh: an explicit --backend tmux resolves silently and writes no backend= (missing means tmux)
+ok - fm-spawn.sh: explicit --backend tmux wins over an ambient HERDR_ENV=1 auto-detect marker
+ok - fm-spawn.sh: auto-detect resolves nested tmux-in-herdr to tmux and stays silent end to end
+FM_TEST_END 2026-09-02T02:10:51Z tests/fm-backend.test.sh exit=0 duration_ms=35522 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:10:51Z tests/fm-backlog-handoff.test.sh family=secondmate expected_gate_skip=none
+ok - a routed handoff wakes once and a successful rerun stays idempotent
+ok - a failed receiver wake is loud and retries from an already-present handoff
+ok - a failed advisory doorbell leaves the inbox delivery successful and idempotent
+ok - concurrent reconciliation treats enqueue as delivery despite a failed advisory ring
+tests/fm-backlog-handoff.test.sh: line 263: 32688 Killed: 9               FM_REAL_TASKS_AXI="$real_tasks" PATH="$fakebin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-backlog-handoff.sh" design crash-item > "$TMP_ROOT/move-crash.out" 2>&1
+ok - a post-move crash preserves wake intent for an idempotent retry
+tests/fm-backlog-handoff.test.sh: line 337: 40625 Killed: 9               FM_REAL_TASKS_AXI="$real_tasks" PATH="$fakebin:$PATH" FM_HOME="$home" "$ROOT/bin/fm-backlog-handoff.sh" design pre-move-crash > "$TMP_ROOT/pre-move-crash.out" 2>&1
+ok - a pre-move crash wakes only after retry makes the item durable
+tests/fm-backlog-handoff.test.sh: line 408: 46504 Killed: 9               PATH="$fakebin:$PATH" FM_REAL_RM="$real_rm" FM_CONFIRM_CRASH_ONCE="$TMP_ROOT/confirm-crash.once" FM_CONFIRM_WAKE_MARKER="$home/state/.backlog-handoff-design.wake-pending" FM_HOME="$home" "$ROOT/bin/fm-backlog-handoff.sh" design confirm-crash > "$TMP_ROOT/confirm-crash.out" 2>&1
+ok - a post-confirmation crash reconciles once without suppressing a later handoff wake
+ok - an unresolved delivery attempt refuses an immediate duplicate wake
+ok - concurrent local handoffs serialize each durable move with its wake
+ok - local teardown waits for the routed move and receiver wake
+ok - failed local home removal preserves its wake and a retry retires both
+ok - body followed by another item moves intact with no source orphans
+ok - body followed by section heading moves intact; section stays
+ok - multi-paragraph body with internal blank lines moves whole and is idempotent
+ok - body as last lines of the file moves intact
+ok - EOF body before a seeded destination section keeps its boundary
+ok - untouched EOF line preserves its original terminator
+ok - body-carrying handoff is idempotent: re-run changes nothing
+ok - noncanonical one-space and tab continuations refuse without changes
+ok - indented ## Intent / ## Acceptance are body, not section boundaries
+ok - registry home parses when summary has parentheses before (home: ...)
+ok - registry entry without (home: ...) fails cleanly with has no home
+ok - handoff reports a moved item whose public commitment still binds this home
+ok - handoff says nothing about public commitments in a relay-free home
+ALL TESTS PASSED
+FM_TEST_END 2026-09-02T02:12:09Z tests/fm-backlog-handoff.test.sh exit=0 duration_ms=77927 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:12:09Z tests/fm-captain-hold-lifecycle.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - report-only unresolved captain call is reproduced and completion refuses before loss
+ok - the completion gate attests captain-held inventory and transfers open status decisions
+ok - answer records the captain's words, closes idempotently, and releases routed work
+ok - release frees held work with the captain's words recorded and the body preserved
+ok - a deferred captain call leaves the live Captain's Call until its date and stays answerable
+ok - an out-of-band close is recordable with the captain's word and nothing else
+ok - ended visual review follows the same captain-hold completion owner
+ok - resolved findings and decision-like prose do not create captain-held tasks
+ok - terminal single-owner stale status decisions do not block empty inventory
+ok - main-home and secondmate-home captain calls remain correctly routed
+ok - a bound channel's captured answers close their captain-held tasks at answer time
+ok - a channel source with no decision binding closes nothing
+ok - legacy identities, metadata, bindings, and the shim keep working
+ok - product ideas, released state, and shipped supersession survive collapse
+ok - legacy metadata and resolved or superseded bodies remain valid
+ok - the chat channel feeds the same keyed-answer intake a captured review does
+ok - completion and verification validate origins before constructing paths
+ok - a status resolution over a still-open captain-held task is signalled, not closed
+ok - a captain call with no routed work, a verified transfer, an open decision, and an answered call all stay silent
+FM_TEST_END 2026-09-02T02:14:05Z tests/fm-captain-hold-lifecycle.test.sh exit=0 duration_ms=115748 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:14:05Z tests/fm-gate-refuse.test.sh family=session-bootstrap expected_gate_skip=none
+ok - fm-gate-refuse-lib: refuses when NO_MISTAKES_GATE is set
+ok - fm-gate-refuse-lib: refuses when NO_MISTAKES_GATE is set empty
+ok - fm-gate-refuse-lib: refuses from a gate worktree via git-common-dir (marker unset)
+ok - fm-gate-refuse-lib: no-op for a normal session (neither signal, set -eu clean)
+ok - fm-spawn: refuses on marker and gate-worktree backstop; a normal crew spawn is unaffected
+ok - fm-send: refuses on marker and gate-worktree backstop; a normal steer uses the inbox
+ok - fm-teardown: refuses on marker and gate-worktree backstop; a normal teardown is unaffected
+FM_TEST_END 2026-09-02T02:14:14Z tests/fm-gate-refuse.test.sh exit=0 duration_ms=9659 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:14:14Z tests/fm-gotmp.test.sh family=session-bootstrap expected_gate_skip=none
+ok - fm-teardown removes the dir pointed to by tasktmp= in meta
+ok - fm-teardown skips gracefully when tasktmp= is absent (backward compat)
+ok - fm-teardown skips gracefully when tasktmp= points to a nonexistent dir
+FM_TEST_END 2026-09-02T02:14:17Z tests/fm-gotmp.test.sh exit=0 duration_ms=2725 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:14:17Z tests/fm-grok-harness.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - grok global hook requires a firstmate registry token
+ok - grok teardown removes pointer and token state
+ok - fm-lock recognizes grok harness processes
+FM_TEST_END 2026-09-02T02:14:28Z tests/fm-grok-harness.test.sh exit=0 duration_ms=10580 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:14:28Z tests/fm-kimi-harness.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - Kimi hook install is idempotent and removal restores every foreign config byte
+ok - Kimi hook removal preserves owned newline boundaries and pristine bytes
+ok - Kimi hook install refuses missing, malformed, and surprising config without writing
+ok - Kimi hook install refuses without jq before any config write
+ok - fm-spawn: kimi launches, delivers its brief, and registers a guarded turn-end token
+ok - Kimi hook stays silent and inert without a Firstmate registry token
+ok - fm-spawn: unsafe Kimi global config refuses before pane creation
+ok - fm-teardown: Kimi task pointer and registry token are removed
+ok - fm-spawn: Kimi fallback expands the active HOME
+ok - fm-spawn: missing Kimi executable refuses before pane creation
+ok - fm-spawn: kimi treats a silent pointer drop as a failed spawn
+ok - fm-spawn: kimi never sends the brief pointer before an observable ready signal
+ok - fm-harness: markerless kimi is detected by ancestry after env-marker precedence
+lock acquired: harness pid 76211
+ok - fm-lock recognizes Kimi ancestry and live lock holders
+ok - busy detection: real Kimi moon-plus-middot captures require its harness while idle labels stay idle
+ok - fm-watch classifies Kimi as unknown rather than from its spinner, and Grok's fallback stays isolated
+ok - composer classifier: kimi's existing bordered > shape is already safe without an override
+FM_TEST_END 2026-09-02T02:14:54Z tests/fm-kimi-harness.test.sh exit=0 duration_ms=26014 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:14:54Z tests/fm-muse-harness.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - muse is detected through any versioned muse-bin ancestor
+ok - muse detection does not claim unrelated muse-containing commands
+ok - muse launch clears foreign harness markers before ancestry detection
+ok - muse spawn launches with autonomy, privacy control, and a positional brief
+ok - muse maps the shared effort vocabulary and reaches ultra only via explicit max
+ok - muse spawn refuses when no credential can reach the provider
+ok - muse spawn refuses a META_API_KEY that cannot reach the worker
+ok - muse spawn accepts a stored credential without META_API_KEY
+ok - muse resolves relative XDG roots before preflight and launch
+ok - muse is refused as a secondmate harness
+ok - muse spawn writes a session binding that teardown removes
+ok - the run fold tracks open, settled, interrupted, reopened, and run-free logs
+ok - a nested terminal record never settles an in-flight run
+ok - the session binding folds only the log matching this task's worktree
+ok - workspace bindings compare decoded paths literally
+ok - spawn-time exclusions select the current session across equal mtimes
+ok - the Muse session cache avoids rescans and refreshes safely across incarnations
+ok - a changed Muse namespace revalidates cached session uniqueness
+ok - sub-agent session logs are excluded from the parent's busy fold
+ok - every unproven muse binding classifies unknown rather than idle
+ok - a settled session log reads idle for both completed and interrupted turns
+ok - muse trusts no busy record source
+FM_TEST_END 2026-09-02T02:15:37Z tests/fm-muse-harness.test.sh exit=0 duration_ms=42754 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:15:37Z tests/fm-pr-check-breakage.test.sh family=pr-forge expected_gate_skip=none
+ok - pr-check: missing breakage record prints one advisory line and still arms
+ok - pr-check: matching second-token coverage prints nothing
+ok - pr-check: two test files with one covering record reports m=1
+ok - pr-check: no changed test files stays silent
+ok - pr-check: unreadable test-step log prints m=? and still arms
+ok - pr-check: unreadable axi status prints m=? run unknown
+ok - pr-check: run branch mismatch stays silent
+ok - pr-check: direct-PR ships have no test step and stay silent
+ok - pr-check: final clean breakage entry does not inflate m
+ok - pr-check: wrong second-token path does not cover the changed test
+ok - pr-check: spec/ paths and *_spec.rb count as test files
+ok - pr-check: root test_*.py and __tests__/ count as test files
+ok - pr-check: real axi logs --full fixture covers per-file second tokens
+FM_TEST_END 2026-09-02T02:15:53Z tests/fm-pr-check-breakage.test.sh exit=0 duration_ms=16620 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:15:53Z tests/fm-pr-check-security.test.sh family=pr-forge expected_gate_skip=none
+ok - raw-byte parser accepts canonical URLs and rejects the complete adversarial matrix
+ok - GitLab merge requests are followed on any instance and never wake falsely
+ok - validated merged polls notify once and retire before the next watcher cycle
+ok - merged poll retirement preserves every persistent secondmate lifecycle artifact
+ok - queue, receipt, and every fixed-path removal crash point recover without loss or repeated execution
+ok - open/red, closed-unmerged, malformed, and forge errors remain armed until an exact merged transition
+ok - replacement, nonterminal, tampered, and custom results receive no deletion authority
+ok - queue failure and untrusted receipts preserve canonical poll evidence
+ok - GitHub and GitLab exact merged results share one retirement path
+ok - PR and teardown entrypoints reject invalid arguments before every side effect
+ok - valid direct and merge flows record exact metadata and reject multiline head metadata
+ok - rejected metacharacter bytes remain inert at generation and watcher time
+ok - static poll is silent except for one merged line and remains watcher-bounded
+ok - interrupted atomic preparation cleans private temporaries and publishes nothing
+ok - concurrent watchers observe only complete private poll publications
+ok - poll publication paths refuse symlinks and directories
+ok - live poll and custom-check artifacts require private single-link files
+ok - post-rename poll validation faults revoke both names and allow a clean retry
+ok - bootstrap does not rewrite unauthenticated checks or emit retired migration diagnostics
+ok - watcher rejects unregistered, changed custom, and forged X checks
+ok - watcher signals promptly stop custom checks and clean private state
+ok - returned custom check descendants are drained on installed and fallback timeout paths
+ok - teardown removes safe poll artifacts and refuses directory-shaped check files without traversal
+FM_TEST_END 2026-09-02T02:18:56Z tests/fm-pr-check-security.test.sh exit=0 duration_ms=183193 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:18:57Z tests/fm-public-followup.test.sh family=unclassified expected_gate_skip=none
+ok - outcome text is collapsed to one line, bounded by codepoint, and never corrupts characters
+ok - restart end-to-end: typed result reconciles from disk and delivers one reply to the original thread
+ok - duplicate terminal results, restart replay, and repeated delivery are all no-ops
+ok - wrong source, wrong work id, stale generation, malformed, unsupported deliverable, and forged identity are all refused
+ok - a relay transport failure is held as retryable with no false completion, and the retry posts once
+ok - a dry-run records no public delivery and leaves the commitment retryable
+ok - a late success receipt closes the exact attempt with no second post, and a mismatched attempt is refused
+ok - typed terminal cleanup clears the legacy link without posting
+ok - a delivery interrupted between post and receipt refuses to repost
+ok - a child home reports typed results but can never become the outward-post owner
+ok - typed delivery refuses to post when its cleanup registration is missing
+ok - marked secondmate teardown resolves its parent and fails closed when unavailable
+ok - local seeding publishes durable parent state before its identity marker
+ok - a lost launch-time parent binding is recovered from the durable local record
+ok - a durable local parent record does not bypass a genuinely missing parent-side registration
+ok - unknown durable parent fields remain forward-compatible
+ok - conflicting live and durable parent bindings fail closed
+ok - unsafe durable parent records fail closed before cleanup
+ok - a NUL-bearing durable parent record fails closed before cleanup
+ok - relay-disabled unmarked teardown runs no public-followup work
+ok - a marked child proceeds without tasks-axi when its parent relay is disabled
+ok - secondmate parent resolution matches the durable registry id literally
+ok - traversal-shaped registrations are rejected before path construction or posting
+ok - pending keeps registrations when tasks-axi returns malformed JSON
+ok - the retained private request context keeps the original thread deliverable after inbox cleanup
+ok - cleanup refuses while a public reply is owed and proceeds once it has landed
+ok - a relay-disabled home runs no tasks-axi call, prints nothing, and gains no artifact
+ok - a relay-enabled home with no commitments makes no backlog call and stays silent
+ok - a relay-exhausted follow-up binding is escalated rather than retried into the thread
+ok - the relay poll stays inert without a token, silent with no commitments, and surfaces a new result once
+ok - startup surfaces unresolved public commitments only in a relay home that owes one
+ok - typed public-followup records carry only public-safe summaries and deliverables
+ok - dropped-baton regression: delivery retains the loop and pending prints open-loop
+ok - CONTROL: the identical teardown REFUSES the moment a commitment is registered
+ok - rechain posts the shipped follow-on into the same thread
+ok - rechain resumes the same obligation after an interrupted bind
+ok - concurrent rechains cannot fork one delivered source
+ok - failed rechain retirement keeps the source claimed by one resumable destination
+ok - registration replay preserves delivered and retired loop states
+ok - redelivery does not report a retired loop as open
+ok - retire closes delivered loops after secondmate home removal
+ok - retire fails closed for an unbound existing secondmate
+ok - retire fails closed when a secondmate ID is reassigned
+ok - rechain refuses an unrelated existing destination
+ok - pending skips a registration retired during settlement
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1FWZXEW0KHT3AV1VEYR61YA/bin/fm-public-followup.sh: line 569: printf: write error: Broken pipe
+ok - retire --reason closes the loop and drops the open-loop line
+ok - retention creates no false teardown refusal and pending no longer prunes
+ok - expiry escalation is pinned by FMX_NOW_OVERRIDE
+ok - brief fails explicitly when typed deliverable keys are unavailable
+ok - pre-change registrations are open loops and un-rechainable, never a crash
+ok - teardown reports an unreconciled legacy Relay link
+ok - secondmate promotion matches teardown parent resolution
+FM_TEST_END 2026-09-02T02:21:17Z tests/fm-public-followup.test.sh exit=0 duration_ms=140037 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:21:17Z tests/fm-remote-secondmate-lifecycle-e2e.test.sh family=secondmate expected_gate_skip=none
+ok - overlapping remote home provisioning serializes through publication and rollback
+ok - remote seed rollback preserves serialized competing routes
+ok - unknown readiness preserves its route and brief for reconciliation
+ok - remote seeding checks, repairs, and re-checks readiness, then stops on a remaining gap
+ok - remote seeding proceeds once the repair closes every gap
+ok - remote seeding provisions a supplied origin without touching the primary project tree
+ok - remote provisioning re-validates a supplied origin at the receiving host
+ok - seeding carries bitbucket, self-hosted, and scp-like origins through to the remote clone
+ok - remote seed registers the route and provisions the whole home and project clone on that host
+ok - remote inheritance rejects incomplete and superseded payload generations
+ok - mixed local and remote routes validate without migration
+ok - remote spawn launches on the remote-local backend and records a host-qualified route
+ok - legacy and mismatched remote endpoints fail closed before backend access
+ok - non-herdr remote endpoints are refused without changing either route
+ok - remote spawn serializes inheritance through launch publication
+ok - marked send and routed reply complete through the existing parent correlation owner
+ok - partial remote inheritance retains reread intent through bootstrap convergence
+ok - config push and bootstrap serialize remote inheritance convergence
+WARNING: watcher still down (same stale episode; last beat: 72s ago, grace 300s) - full banner already printed this episode.
+ok - remote inherited config retains and retries a failed live reread nudge
+ok - fleet snapshot projects mixed local and remote structured state
+ok - remote update honors the remote home's local update-remote preference
+ok - startup repairs remote readiness before probing without relaunching
+ok - startup reports alive legacy backends without changing their routes
+ok - unreachable remote state remains unknown with no local respawn or failover
+ok - remote retirement refuses child work, then removes only its own endpoint while a shared-session sibling survives
+ALL TESTS PASSED
+FM_TEST_END 2026-09-02T02:26:52Z tests/fm-remote-secondmate-lifecycle-e2e.test.sh exit=0 duration_ms=335542 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:26:52Z tests/fm-remote-secondmate-parent-binding.test.sh family=unclassified expected_gate_skip=none
+ok - remote provisioning publishes durable parent state before its completion marker
+ok - a remote secondmate's finished worker cleans up when the remote code root's own .env looked relay-active
+ok - a remote secondmate's finished worker cleans up when only an ambient exported token looked relay-active
+ok - a remote secondmate's finished worker cleans up with no relay signal anywhere
+ok - a remote secondmate's own committed relay token still refuses cleanup
+ALL TESTS PASSED
+FM_TEST_END 2026-09-02T02:27:25Z tests/fm-remote-secondmate-parent-binding.test.sh exit=0 duration_ms=32881 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:27:25Z tests/fm-secondmate-lifecycle-e2e.test.sh family=secondmate expected_gate_skip=none
+ok - seed: registry scope+projects, charter copied, clones+origins, no-mistakes init in subhome only
+warning: secondmate design sync skipped before launch: diverged from e8309da3ca274ad28a577af32d9b55740ce82b2c
+ok - spawn: launches in the subhome with persistent charter, records routing meta
+ok - send: a bare fm-<id> secondmate enqueues a marked request and rings the meta window
+ok - handoff: in-scope items move verbatim, out-of-scope stays, idempotent
+ok - recovery: respawns from the durable registry and persistent home
+ok - teardown: removes the home, then clears meta and the registry route
+FM_TEST_END 2026-09-02T02:27:37Z tests/fm-secondmate-lifecycle-e2e.test.sh exit=0 duration_ms=12207 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:27:37Z tests/fm-secondmate-safety.test.sh family=secondmate expected_gate_skip=none
+ok - FM_HOME parameterizes data and state paths
+ok - fm-lock status is scoped per home
+ok - seed allows overlapping project clone lists and drops the owns/owner routing
+ok - home-seed validation rejects registry records no operational parser can consume
+ok - home seeding refuses broken registry symlinks before provisioning
+ok - home seeding refuses unreadable registries before provisioning
+ok - home seed validation rejects duplicate home routes
+ok - home seed validation rejects duplicate id routes
+ok - home seed validation rejects nested home routes
+leased worktree for dash
+ok - home seeding durably leases treehouse-acquired dash homes under the secondmate id
+ok - home seeding returns rejected acquired homes through treehouse
+ok - home seed rollback warns when treehouse-acquired return fails
+ok - home seeding leaves unsafe acquired active homes untouched
+ok - home seeding rolls back failed clone attempts without residue
+ok - home seeding refuses direct seed without filled charter text
+ok - home seeding refuses unfilled placeholder charters
+ok - home seeding refuses empty normalized charter fields
+ok - home seeding scaffolds, registers, and spawns a project-less home end to end
+ok - secondmate spawn resolves home validation and projects from punctuated registry fields
+ok - secondmate spawn refuses ambiguous, supplied-home, and metadata-home registry bindings
+ok - home seeding validates reused project-less charters before mutation
+ok - home seeding refuses project-less conversion of a populated home
+ok - home seeding refuses project-less homes whose projects directory cannot be inspected
+ok - home seeding refuses project-less homes with symlinked projects directories
+ok - home seeding refuses project-less homes with non-directory projects paths
+ok - home seeding refuses project-less homes whose project registry cannot be inspected
+ok - home seeding fails loudly on accidental project omission and rejects mixed --no-projects
+ok - home seeding refuses local-only projects
+ok - home seeding refuses registry delimiter home paths
+ok - home seeding refuses active home and repo root
+ok - home seeding refuses homes marked for another id
+ok - home seeding refuses homes registered to another id
+ok - home seeding refuses same-id reassignment to a different home
+ok - home seeding refuses registered home overlaps
+ok - remote-backed subhome seeding requires a source origin
+ok - remote-backed subhome seeding validates existing destination origins
+ok - home seeding resolves relative source origins against the source project
+ok - home seeding skips initialized existing no-mistakes clones
+ok - home seeding refuses uninitialized existing no-mistakes clones
+ok - home seeding refuses project destinations outside the subhome
+ok - home seeding refuses operational directories outside the subhome
+ok - home seeding refuses symlinked and non-regular leaf files
+ok - home reseeding preserves and enforces the durable parent binding
+ok - secondmate spawn validates homes before launch
+ok - secondmate spawn refuses operational directories outside the subhome
+ok - fm-send refuses a bare firstmate window with no metadata in this home
+ok - secondmate teardown retires empty homes and releases routing
+ok - secondmate teardown refuses ambiguous and identity-mismatched registry bindings
+ok - normal secondmate teardown sweeps process events before removal
+ok - secondmate teardown preserves state when process-event sweeping is unavailable
+ok - later teardown refusals preserve active process-event sources
+ok - force teardown sweeps nested secondmate homes before deletion
+ok - force teardown preserves nested process-event restoration status and recovery state
+ok - secondmate teardown refuses to hide failed leased-home return
+ok - secondmate teardown raw-removes plain-clone homes
+ok - secondmate force teardown discards child work
+ok - secondmate force teardown preserves child worktree after unproven lock refusal
+ok - force teardown allows non-state operational directory symlinks inside the subhome
+ok - force teardown refuses operational directory symlinks outside the subhome
+ok - secondmate teardown refuses homes containing registered nested homes
+ok - secondmate teardown refuses nested homes from the child registry
+ok - force teardown validates subhome before child cleanup
+ok - forced teardown refuses a non-directory descendant state path
+ok - forced teardown refuses a symlinked descendant state path
+ok - forced teardown locks a descendant whose state directory was absent
+ok - forced teardown refuses while a fresh task is being published in the home
+ok - a fresh spawn refuses to publish while a forced teardown owns the task set
+ok - a fresh remote secondmate spawn refuses while the task set is owned
+ok - force teardown refuses child worktrees inside the active home
+ok - force teardown refuses child worktrees inside the firstmate repo
+ok - force teardown refuses unregistered child worktree paths
+ok - secondmate teardown path-boundary matrix refuses unmarked/ancestor/active-descendant/repo-descendant homes
+ok - idle kind=secondmate pane is healthy and not stale
+ok - secondmate charter brief is idle by default and does not self-initiate work
+ok - fm-backlog-handoff aborts atomically on unmatched, in-flight, and unregistered targets
+ok - fm-backlog-handoff refuses Done items under whitespace section headings and unsafe homes
+FM_TEST_END 2026-09-02T02:29:23Z tests/fm-secondmate-safety.test.sh exit=0 duration_ms=105165 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:29:23Z tests/fm-teardown-endpoint-safety.test.sh family=backend-dispatch expected_gate_skip=none
+ok - fm-teardown: missing, empty, malformed, ambiguous, and task-mismatched endpoints refuse before every mutation or runtime call
+ok - fm-teardown: a concurrent lifecycle action refuses before mutation
+ok - fm-teardown: destructive cleanup serializes with metadata writers
+ok - cleanup identity: valid tmux, Herdr, Zellij, Orca, and cmux records validate while every empty backend target refuses
+ok - tmux backend: direct empty target returns nonzero without invoking tmux
+ok - process cleanup: creation-time PID identity removes only the exact child and preserves the control child
+ok - fm-teardown: exact tmux cleanup preserves invalid and prefix-matched neighbors while removing only the recorded target
+FM_TEST_END 2026-09-02T02:29:54Z tests/fm-teardown-endpoint-safety.test.sh exit=0 duration_ms=31703 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:29:54Z tests/fm-teardown.test.sh family=pr-forge expected_gate_skip=none
+ok - local-only worktree with HEAD on a fork remote is torn down (fix holds)
+ok - teardown help owns the --force validation-truth carve-out
+ok - a ship with an unknown recorded role refuses cleanup
+ok - scout teardown requires its report and captain-hold completion, not source repetition
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 0s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ok - teardown prompts tasks-axi backlog refresh when compatible
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 0s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ok - teardown honors config/backlog-backend=manual even when tasks-axi is compatible
+ok - local-only worktree with truly unpushed work is refused (safety preserved)
+ok - local-only worktree with work merged into local main is torn down (no regression)
+ok - no-mistakes worktree with HEAD on origin is torn down (no regression)
+ok - no-mistakes worktree landed by a real merge commit is torn down
+ok - no-mistakes worktree with genuinely unlanded work is refused (safety preserved)
+ok - local-only worktree with unpushed work is torn down under --force (escape hatch)
+ok - teardown completes when an exact busy-state sidecar is already absent
+ok - herdr teardown removes pane-owned escalation dedupe state
+ok - herdr flat teardown refuses before returning the isolated copy under lock contention and the retry completes cleanly
+ok - herdr flat teardown never erases records when pane presence is unparseable
+ok - herdr flat teardown preflight refuses before every destructive change
+ok - forced secondmate teardown preflights every Herdr child before cleanup mutation
+ok - forced secondmate teardown holds every descendant lifecycle and metadata lock
+ok - forced secondmate teardown retains Herdr child identity until exact pane disappearance
+ok - forced teardown retains a nested secondmate home and its grandchild's Herdr identity when the grandchild close is unconfirmed
+ok - herdr projection teardown retires its journal only after confirming the exact recorded pane is gone
+ok - herdr projection teardown retains every record when post-close presence is unknown
+ok - herdr projection teardown surfaces failed focus restoration without turning confirmed cleanup into a hard failure
+ok - squash-merged + deleted-branch worktree (PR merged) is torn down (the fix)
+ok - squash-merged PR accepts a local HEAD that is an ancestor of the final PR head
+ok - teardown discovers a merged PR by branch name and tears down when no pr= was ever recorded
+ok - squash-merged PR accepts replayed unpushed local patches contained in the PR head
+ok - merged PR does not allow teardown after a later local commit
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 0s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: watcher still down (same stale episode; last beat: 1s ago, grace 300s) - full banner already printed this episode.
+ok - fm-pr-check does not refresh PR head after HEAD moves
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 0s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ok - fm-pr-check records the remote PR head when the local worktree lags
+ok - worktree whose content already landed in the default branch is torn down (content fallback)
+ok - content fallback refreshes origin default before comparing trees
+ok - dirty worktree is refused even when its committed work has landed (dirty always wins)
+ok - gh lookup error with content not in default refuses (fail-safe)
+ok - provably-stale worktree index.lock (old, no live holder) is cleared and teardown succeeds
+ok - live-held worktree index.lock is never removed and teardown refuses
+ok - lsof errors leave worktree index.lock in place and refuse teardown
+ok - stale lock cleanup rechecks and refuses dirty worktree before return
+ok - normal repo index.lock is resolved from the worktree and cleared when stale
+ok - lock mtime read failures leave worktree index.lock in place and refuse teardown
+ok - transient index.lock cleared after first failed return is retried successfully without force-remove
+ok - persistent index.lock exhausts retries and refuses without force-removing the lock
+ok - empty retry wait overrides use the default without aborting teardown
+ok - fractional legacy retry wait remains supported without arithmetic
+ok - a task's own parked no-mistakes run is aborted, not orphaned, before the worker is removed
+ok - teardown refuses before reap or removal when a task-owned run remains parked
+ok - a different run cannot confirm the targeted abort
+ok - empty post-abort status is not accepted as confirmation
+ok - the CLI's exact run-not-found signal confirms completion
+ok - a parked run on another branch is never aborted by this task's teardown (ownership is precise)
+ok - a task-owned autonomous running step is left alone rather than aborted
+ok - a leaked descendant process rooted under the task's worktree is reaped by teardown, not left surviving
+ok - a leaked descendant process rooted under the task's per-task tasktmp is reaped by teardown too
+ok - missing lsof falls back to reaping the tmux pane process group
+ok - an erroring lsof scan refuses teardown and preserves the task
+ok - a reused pid with a different start time is never force-killed
+ok - an exec change preserves birth identity and the process is reaped
+ok - a process spawned during grace is reaped on a later pass
+ok - persistent leaked processes refuse teardown after bounded retries
+ok - a process exiting during identity lookup does not block teardown
+ok - the run abort and the leaked-process reap both complete before the destructive worktree return
+FM_TEST_END 2026-09-02T02:33:29Z tests/fm-teardown.test.sh exit=0 duration_ms=215025 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T02:33:29Z tests/fm-validation-truth.test.sh family=pr-forge expected_gate_skip=none
+ok - validation-truth: parses run-step done
+ok - validation-truth: parses pane source
+ok - validation-truth: direct-PR is exempt
+ok - validation-truth: pane source refuses as unreadable
+ok - validation-truth: run-step done allows
+ok - validation-truth: run-step not done refuses without unreadable wording
+ok - validation-truth: pr-check refuses pane-sourced no-mistakes ships
+ok - validation-truth: non-force teardown refuses pane-sourced no-mistakes ships
+ok - validation-truth: --force teardown skips validation-truth on discard
+ok - validation-truth: missing-object lag with live remote allows
+ok - validation-truth: diverged rebase lag with live remote allows
+ok - validation-truth: cancelled PR-URL run refuses
+ok - validation-truth: PR-URL runs uses meta worktree, not caller cwd
+ok - validation-truth: sqlite PR-URL index arms when worktree is gone
+ok - validation-truth: sqlite PR-URL index is newest-first by updated_at
+ok - validation-truth: sqlite selects target PR URL beyond global top-N noise
+ok - validation-truth: forge head mismatch refuses
+ok - validation-truth: red forge rollup refuses
+ok - validation-truth: builder id with -nm PR-URL run passes check, merge, and cleanup
+# all fm-validation-truth tests passed
+FM_TEST_END 2026-09-02T02:33:46Z tests/fm-validation-truth.test.sh exit=0 duration_ms=16622 gate_skip=false
+FM_TEST_SUMMARY total=24 failed=0 skipped_gate=0 duration_ms=2040377
+FM_TEST_SUMMARY_FAMILY family=backend-dispatch count=2 duration_ms=67225 failed=0
+FM_TEST_SUMMARY_FAMILY family=orca count=1 duration_ms=46397 failed=0
+FM_TEST_SUMMARY_FAMILY family=pr-forge count=4 duration_ms=431460 failed=0
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=4 duration_ms=195096 failed=0
+FM_TEST_SUMMARY_FAMILY family=real-herdr-gated count=4 duration_ms=561305 failed=0
+FM_TEST_SUMMARY_FAMILY family=secondmate count=4 duration_ms=530841 failed=0
+FM_TEST_SUMMARY_FAMILY family=session-bootstrap count=2 duration_ms=12384 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=2 duration_ms=172918 failed=0
+FM_TEST_SUMMARY_FAMILY family=zellij count=1 duration_ms=21663 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-backend-herdr-presentation-e2e.test.sh duration_ms=459001
+FM_TEST_SLOWEST rank=2 script=tests/fm-remote-secondmate-lifecycle-e2e.test.sh duration_ms=335542
+FM_TEST_SLOWEST rank=3 script=tests/fm-teardown.test.sh duration_ms=215025
+FM_TEST_SLOWEST rank=4 script=tests/fm-pr-check-security.test.sh duration_ms=183193
+FM_TEST_SLOWEST rank=5 script=tests/fm-public-followup.test.sh duration_ms=140037
+FM_TEST_SLOWEST rank=6 script=tests/fm-captain-hold-lifecycle.test.sh duration_ms=115748
+FM_TEST_SLOWEST rank=7 script=tests/fm-secondmate-safety.test.sh duration_ms=105165
+FM_TEST_SLOWEST rank=8 script=tests/fm-backlog-handoff.test.sh duration_ms=77927
+FM_TEST_SLOWEST rank=9 script=tests/fm-backend-herdr-launcher-workspace-e2e.test.sh duration_ms=54931
+FM_TEST_SLOWEST rank=10 script=tests/fm-backend-orca.test.sh duration_ms=46397
+FM_TEST_SLOWEST rank=11 script=tests/fm-muse-harness.test.sh duration_ms=42754
+FM_TEST_SLOWEST rank=12 script=tests/fm-backend.test.sh duration_ms=35522
+FM_TEST_SLOWEST rank=13 script=tests/fm-remote-secondmate-parent-binding.test.sh duration_ms=32881
+FM_TEST_SLOWEST rank=14 script=tests/fm-teardown-endpoint-safety.test.sh duration_ms=31703
+FM_TEST_SLOWEST rank=15 script=tests/fm-backend-herdr-workspace-per-home-e2e.test.sh duration_ms=29169
