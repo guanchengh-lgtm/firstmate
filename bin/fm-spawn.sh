@@ -230,17 +230,10 @@
 # resolver because `cursor` is not the CLI name. A cursor SECONDMATE instead runs
 # the tracked project-scope .cursor/hooks.json in its own home, whose stop-hook
 # park owns that home's supervision (docs/supervision-protocols/cursor.md).
-# Publishing the record and moving this home's backlog item to In flight are one
-# step, not two: bin/fm-backlog-transition-lib.sh owns that invariant, and this
-# script performs the transition under the task's own meta lock before it reports
-# success. A ship or scout dispatch therefore REFUSES up front, before any
+# A ship or scout dispatch REFUSES up front, before any
 # endpoint, worktree, or record exists, unless the home's backlog has an
-# unheld, unblocked Queued or In flight item for the id; a transition that fails
-# after publication preserves the record as recovery evidence for the endpoint
-# and local copy. A relaunch re-reads the row instead of
-# re-running the transition, so an eligible In-flight item is left untouched.
-# The transition is
-# skipped entirely for --secondmate spawns (persistent agents are not work
+# unheld, unblocked Queued or In flight item for the id.
+# This check is skipped entirely for --secondmate spawns (persistent agents are not work
 # items), on a config/backlog-backend=manual home, and in a home that keeps no
 # data/backlog.md. An automatic-backend home with a backlog but no compatible
 # tasks-axi refuses before creating any lifecycle state.
@@ -913,10 +906,6 @@ SPAWN_META_TMP=
 SPAWN_META_LOCK=
 SPAWN_META_LOCK_HELD=0
 SPAWN_META_PUBLISH_STARTED=0
-SPAWN_FRESH_COMMIT_PENDING=0
-SPAWN_FRESH_ABORT_ENDPOINT=0
-SPAWN_FRESH_ABORT_BACKEND=
-SPAWN_FRESH_ABORT_TARGET=
 SPAWN_TASK_SET_LOCK=
 SPAWN_TASK_SET_LOCK_HELD=0
 RELAUNCH_REPLACEMENT_PENDING=0
@@ -929,16 +918,6 @@ VERIFIER_HANDOFF_ABORT_BACKEND=
 VERIFIER_HANDOFF_ABORT_TARGET=
 CONFIG_INHERIT_LOCK=
 CONFIG_INHERIT_LOCK_HELD=0
-
-spawn_fresh_commit_rollback() {
-  if fm_backlog_atomic_transition rollback "$STATE/$ID.meta" \
-      "$FM_ROOT/bin/fm-busy-event.sh" "$STATE" "$ID" "${BUSY_GEN:-}"; then
-    SPAWN_FRESH_COMMIT_PENDING=0
-    return 0
-  fi
-  echo "error: $FM_BACKLOG_TRANSITION_ERROR" >&2
-  return 1
-}
 
 parse_orca_worktree_result() {
   local raw=$1 rest
@@ -954,64 +933,6 @@ parse_orca_worktree_result() {
     ORCA_TERMINAL=${rest#*$'\t'}
   else
     ORCA_TERMINAL=
-  fi
-}
-
-spawn_publish_abort_recovery() {
-  local recovery_tmp="$STATE/.$ID.meta.spawn-recovery.${BASHPID:-$$}"
-  if [ -e "$STATE/$ID.meta" ] || [ -L "$STATE/$ID.meta" ]; then
-    fm_backlog_record_present "$STATE/$ID.meta" "task record" "$STATE" \
-      >/dev/null 2>&1 && return 0
-  fi
-  if {
-    echo "window=${SPAWN_FRESH_ABORT_TARGET:-${T:-}}"
-    echo "endpoint_task_id=$ID"
-    echo "cleanup_recovery=spawn"
-    echo "worktree=${WT:-}"
-    echo "project=$PROJ_ABS"
-    echo "harness=$HARNESS"
-    echo "kind=$KIND"
-    [ -z "${MODE:-}" ] || echo "mode=$MODE"
-    [ "${SURFACE_SET:-0}" -eq 0 ] || echo "surface=$SURFACE"
-    [ -z "${YOLO:-}" ] || echo "yolo=$YOLO"
-    [ -z "${ROLE:-}" ] || echo "role=$ROLE"
-    [ -z "${MAP_NEXT:-}" ] || echo "map_next=$MAP_NEXT"
-    [ -z "${MAP:-}" ] || echo "map=$MAP"
-    [ -z "${OV:-}" ] || echo "ov=$OV"
-    echo "tasktmp=${TASK_TMP:-}"
-    echo "model=${MODEL:-default}"
-    echo "effort=${EFFORT:-default}"
-    [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
-    [ -z "${SPAWN_GEN:-}" ] || echo "spawn_gen=$SPAWN_GEN"
-    [ "$SPAWN_FRESH_ABORT_BACKEND" = tmux ] \
-      || echo "backend=$SPAWN_FRESH_ABORT_BACKEND"
-    if [ "$SPAWN_FRESH_ABORT_BACKEND" = herdr ]; then
-      echo "herdr_session=${HERDR_SES:-}"
-      echo "herdr_workspace_id=${HERDR_WORKSPACE_ID:-}"
-      echo "herdr_tab_id=${HERDR_TAB_ID:-}"
-      echo "herdr_pane_id=${HERDR_PANE_ID:-}"
-    fi
-    if [ "$SPAWN_FRESH_ABORT_BACKEND" = zellij ]; then
-      echo "zellij_session=${ZELLIJ_SES:-}"
-      echo "zellij_tab_id=${ZELLIJ_TAB_ID:-}"
-      echo "zellij_pane_id=${ZELLIJ_PANE_ID:-}"
-    fi
-    if [ "$SPAWN_FRESH_ABORT_BACKEND" = cmux ]; then
-      echo "cmux_workspace_id=${CMUX_WORKSPACE_ID:-}"
-      echo "cmux_surface_id=${CMUX_SURFACE_ID:-}"
-    fi
-    if [ "$KIND" = secondmate ]; then
-      echo "home=$PROJ_ABS"
-      echo "projects=${SECONDMATE_PROJECTS:-}"
-    fi
-  } > "$recovery_tmp" 2>/dev/null \
-    && fm_backlog_atomic_transition publish "$recovery_tmp" \
-      "$STATE/$ID.meta" "task record" "$STATE"; then
-    SPAWN_FRESH_COMMIT_PENDING=0
-    echo "warning: failed spawn preserved recovery metadata for $ID" >&2
-  else
-    echo "warning: failed spawn could not publish recovery metadata for $ID; recovery record remains at $recovery_tmp" >&2
-    return 1
   fi
 }
 
@@ -1049,14 +970,6 @@ spawn_abort_cleanup() {
         "$VERIFIER_HANDOFF_ABORT_TARGET" 2>/dev/null || true
     fi
   fi
-  if [ "$SPAWN_FRESH_ABORT_ENDPOINT" = 1 ] \
-     && [ "$SPAWN_FRESH_ABORT_BACKEND" != orca ]; then
-    spawn_publish_abort_recovery || true
-    SPAWN_FRESH_ABORT_ENDPOINT=0
-    ORCA_ABORT_CLEANUP=0
-    HERDR_PROJECTION_ABORT_CLEANUP=0
-    HERDR_PROJECTION_ABORT_RECLAIM=0
-  fi
   if [ "$HERDR_PROJECTION_ABORT_CLEANUP" = 1 ] \
      && [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" != 1 ]; then
     if ! spawn_herdr_presentation_order_lock_acquire "${HERDR_PROJECTION_ABORT_SESSION:-}"; then
@@ -1093,34 +1006,27 @@ spawn_abort_cleanup() {
     fi
     if [ -n "${ORCA_WORKTREE_ID:-}" ]; then
       if ! fm_backend_remove_worktree orca "$ORCA_WORKTREE_ID" 2>/dev/null; then
-        if [ "$SPAWN_FRESH_COMMIT_PENDING" = 1 ]; then
-          if ! spawn_fresh_commit_rollback; then
-            status=1
-          fi
-          SPAWN_FRESH_COMMIT_PENDING=0
-        fi
         mkdir -p "$STATE" 2>/dev/null || true
         if [ -d "$STATE" ]; then
-          SPAWN_META_TMP="$STATE/.$ID.meta.orca-recovery.${BASHPID:-$$}"
           {
             echo "window=$W"
-            echo "endpoint_task_id=$ID"
-            echo "cleanup_recovery=orca"
             echo "worktree=${WT:-}"
             echo "project=$PROJ_ABS"
             echo "harness=$HARNESS"
             echo "kind=$KIND"
             [ -z "${MODE:-}" ] || echo "mode=$MODE"
+            [ "${SURFACE_SET:-0}" -eq 0 ] || echo "surface=$SURFACE"
             [ -z "${YOLO:-}" ] || echo "yolo=$YOLO"
+            [ -z "${MAP_NEXT:-}" ] || echo "map_next=$MAP_NEXT"
+            [ -z "${MAP:-}" ] || echo "map=$MAP"
+            [ -z "${OV:-}" ] || echo "ov=$OV"
             echo "tasktmp=${TASK_TMP:-}"
             echo "model=${MODEL:-default}"
             echo "effort=${EFFORT:-default}"
             echo "backend=orca"
             echo "orca_worktree_id=$ORCA_WORKTREE_ID"
             [ -z "${ORCA_TERMINAL:-}" ] || echo "terminal=$ORCA_TERMINAL"
-          } > "$SPAWN_META_TMP" 2>/dev/null \
-            && fm_backlog_atomic_transition publish "$SPAWN_META_TMP" "$STATE/$ID.meta" "task record" "$STATE" \
-            || true
+          } > "$STATE/$ID.meta" 2>/dev/null || true
         fi
       fi
     fi
@@ -2393,10 +2299,8 @@ herdr_projection_existing_meta_allows_flat() {  # <meta>
   esac
 }
 
-BACKLOG_TRANSITION=0
 BACKLOG_ROW_STATE=
 if fm_backlog_transition_applies "$CONFIG" "$DATA" "$KIND"; then
-  BACKLOG_TRANSITION=1
   if fm_backlog_row_probe "$DATA" "$ID"; then
     BACKLOG_ROW_STATE=$FM_BACKLOG_ROW_STATE
   elif [ "$FM_BACKLOG_ROW_RESULT" = not_found ]; then
@@ -2975,11 +2879,6 @@ if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
   VERIFIER_HANDOFF_ABORT_BACKEND=$BACKEND
   VERIFIER_HANDOFF_ABORT_TARGET=$T
 fi
-if [ "$RELAUNCH" -eq 0 ] && [ "$VERIFIER_HANDOFF" -eq 0 ]; then
-  SPAWN_FRESH_ABORT_ENDPOINT=1
-  SPAWN_FRESH_ABORT_BACKEND=$BACKEND
-  SPAWN_FRESH_ABORT_TARGET=$T
-fi
 if [ "$KIND" = secondmate ]; then
   FM_INHERITABLE_CONFIG=trace-context \
     propagate_inheritable_config "$CONFIG" "$PROJ_ABS/config" \
@@ -3550,7 +3449,6 @@ elif [ "$VERIFIER_HANDOFF" -eq 1 ]; then
   SPAWN_META_TMP="$STATE/.$ID.meta.handoff.${BASHPID:-$$}"
 else
   SPAWN_META_TMP="$STATE/.$ID.meta.spawn.${BASHPID:-$$}"
-  SPAWN_FRESH_COMMIT_PENDING=1
 fi
 SPAWN_META_PATH=$SPAWN_META_TMP
 SPAWN_SESSION=
@@ -3649,17 +3547,11 @@ if [ "$RELAUNCH" -eq 0 ]; then
     HERDR_PROJECTION_ABORT_RECLAIM=0
     RELAUNCH_REPLACEMENT_PENDING=0
   else
-    SPAWN_FRESH_ABORT_ENDPOINT=0
     ORCA_ABORT_CLEANUP=0
     HERDR_PROJECTION_ABORT_CLEANUP=0
     HERDR_PROJECTION_ABORT_RECLAIM=0
   fi
 fi
-
-spawn_commit_backlog_transition() {
-  [ "$BACKLOG_TRANSITION" = 1 ] || return 0
-  fm_backlog_atomic_transition dispatch "$STATE/$ID.meta" "$DATA" "$ID" "$STATE"
-}
 
 if [ "$RELAUNCH" -eq 1 ]; then
   SPAWN_META_PUBLISH_STARTED=1
@@ -3840,45 +3732,8 @@ if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then
   fm_lock_acquire_wait "$SPAWN_META_LOCK"
   SPAWN_META_LOCK_HELD=1
 fi
-SPAWN_DEFERRED_SIGNAL=
-if [ "$BACKLOG_TRANSITION" = 1 ]; then
-  trap 'SPAWN_DEFERRED_SIGNAL=HUP' HUP
-  trap 'SPAWN_DEFERRED_SIGNAL=INT' INT
-  trap 'SPAWN_DEFERRED_SIGNAL=TERM' TERM
-fi
-SPAWN_BACKLOG_COMMIT_STATUS=0
-if spawn_commit_backlog_transition; then
-  SPAWN_FRESH_COMMIT_PENDING=0
-else
-  SPAWN_BACKLOG_COMMIT_STATUS=$?
-  if spawn_commit_backlog_transition; then
-    SPAWN_BACKLOG_COMMIT_STATUS=0
-    SPAWN_FRESH_COMMIT_PENDING=0
-  fi
-fi
-if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
-  if [ "$SPAWN_FRESH_COMMIT_PENDING" = 1 ]; then
-    SPAWN_FRESH_COMMIT_PENDING=0
-    echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); its task record was preserved so the endpoint and local copy remain owned - run tasks-axi start $(shell_quote "$ID") --file $(shell_quote "$DATA/backlog.md") after fixing the backlog" >&2
-  else
-    echo "error: task $ID was republished but its backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); fix the backlog and re-run the launch" >&2
-  fi
-fi
-trap - HUP INT TERM
-if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
-  exit "$SPAWN_BACKLOG_COMMIT_STATUS"
-fi
 fm_lock_release "$SPAWN_META_LOCK"
 SPAWN_META_LOCK_HELD=0
-if [ -n "$SPAWN_DEFERRED_SIGNAL" ]; then
-  case "$SPAWN_DEFERRED_SIGNAL" in
-    HUP) SPAWN_DEFERRED_SIGNAL_STATUS=129 ;;
-    INT) SPAWN_DEFERRED_SIGNAL_STATUS=130 ;;
-    TERM) SPAWN_DEFERRED_SIGNAL_STATUS=143 ;;
-  esac
-  echo "error: spawn of $ID was interrupted after launch delivery began; its paired task record and In-flight backlog state were preserved" >&2
-  exit "$SPAWN_DEFERRED_SIGNAL_STATUS"
-fi
 
 SPAWN_DELIVERY=
 if [ -n "$MODE" ]; then

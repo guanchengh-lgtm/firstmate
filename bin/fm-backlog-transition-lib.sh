@@ -4,18 +4,8 @@
 # (this library reads that one's backend gate and never sources it itself, so a
 # caller that already sourced it keeps its memoised compatibility verdict).
 #
-# INVARIANT. In ordinary successful lifecycle state, `state/<id>.meta` exists
-# <=> this home's backlog row for <id> is In flight; the one teardown crash
-# window is represented by `state/<id>.backlog-close`. The script performing the
-# mechanical record change owns the paired backlog transition and runs it in the
-# same process, under the per-task meta lock it already holds, before it reports
-# success. Nothing else - not a later agent turn, not a printed reminder - is
-# load-bearing for the pairing.
-#   bin/fm-spawn.sh      meta published => `tasks-axi start`
-#   bin/fm-teardown.sh   meta removed => `tasks-axi done`
-#   bin/fm-bootstrap.sh  replays whatever a crash left behind, THIS HOME ONLY.
-# bin/fm-fleet-snapshot.sh's classifier and bin/fm-secondmate-reconcile.sh's
-# cross-home nudge stay defense in depth, not the primary mechanism.
+# This library validates backlog rows before dispatch and provides the backlog
+# transitions used by the lifecycle owners that opt into them.
 #
 # SCOPE. fm_backlog_transition_applies is the single gate. It excludes
 # secondmates (persistent agents are never backlog items, AGENTS.md section 10),
@@ -42,8 +32,7 @@
 # root before any recovery mutation, then re-runs exactly that close.
 # `tasks-axi done` on an already-closed task backfills links
 # without moving the close date, so replay is idempotent. Spawn needs no marker:
-# it publishes the meta first, so a crash
-# leaves the meta itself as the evidence that the row is owed a start.
+# it only reads the row before dispatch.
 
 # Set by fm_backlog_transition_applies for a return-1 exemption.
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
@@ -192,6 +181,7 @@ fm_backlog_transition_applies() {  # <config-dir> <data-dir> <kind>
 
 fm_backlog_row_probe() {  # <data-dir> <id>
   local data authorized_data=$1 file id=$2 out state held blocked command_status
+  local state_count held_count blocked_count
   if ! data=$(fm_backlog_data_absolute "$1"); then
     FM_BACKLOG_ROW_RESULT=error
     FM_BACKLOG_ROW_STATE=
@@ -225,12 +215,36 @@ fm_backlog_row_probe() {  # <data-dir> <id>
   state=$(printf '%s\n' "$out" | sed -n 's/^  state: *//p' | head -1)
   held=$(printf '%s\n' "$out" | sed -n 's/^  held: *//p' | head -1)
   blocked=$(printf '%s\n' "$out" | sed -n 's/^  blocked: *//p' | head -1)
-  if [ -z "$state" ]; then
-    FM_BACKLOG_ROW_ERROR="tasks-axi show $id returned no state"
+  state_count=$(printf '%s\n' "$out" | awk '/^  state:/{n++} END { print n + 0 }')
+  held_count=$(printf '%s\n' "$out" | awk '/^  held:/{n++} END { print n + 0 }')
+  blocked_count=$(printf '%s\n' "$out" | awk '/^  blocked:/{n++} END { print n + 0 }')
+  if [ "$state_count" -ne 1 ] || [ "$held_count" -ne 1 ] || [ "$blocked_count" -ne 1 ]; then
+    FM_BACKLOG_ROW_ERROR="tasks-axi show $id returned ambiguous fields (state=$state_count held=$held_count blocked=$blocked_count)"
     return 1
   fi
+  case "$state" in
+    queued|in_flight|done) ;;
+    *)
+      FM_BACKLOG_ROW_ERROR="tasks-axi show $id returned invalid state '$state'"
+      return 1
+      ;;
+  esac
+  case "$held" in
+    yes|no) ;;
+    *)
+      FM_BACKLOG_ROW_ERROR="tasks-axi show $id returned invalid held '$held'"
+      return 1
+      ;;
+  esac
+  case "$blocked" in
+    yes|no) ;;
+    *)
+      FM_BACKLOG_ROW_ERROR="tasks-axi show $id returned invalid blocked '$blocked'"
+      return 1
+      ;;
+  esac
   FM_BACKLOG_ROW_RESULT=found
-  FM_BACKLOG_ROW_STATE="$state ${held:-no} ${blocked:-no}"
+  FM_BACKLOG_ROW_STATE="$state $held $blocked"
   return 0
 }
 
