@@ -9,6 +9,14 @@
 # HEAD-continuity guard; see docs/architecture.md "No-mistakes gate authority boundary."
 disable_project_settings: true
 
+# Honor pr.base_branch from a pushed branch so slice PRs can target
+# fm/merge-upstream-2-stage without flipping that key on main.
+# Captain 2026-09-02 D1 (nm-route-lock option 1). This field is itself
+# read only from the trusted default-branch copy. Leave pr.base_branch
+# unset here; the stage branch carries it after H0. disable_project_settings
+# stays trusted-only regardless of this opt-in.
+allow_repo_commands: true
+
 # Trusted documentation placement policy for the Document step.
 # The audience inventory and coding guideline own the detail; keep this as a
 # pointer so gate instructions cannot become a second prose policy.
