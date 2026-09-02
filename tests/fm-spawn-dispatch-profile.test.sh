@@ -1951,6 +1951,79 @@ test_fresh_prepublication_failure_preserves_standard_record() {
   pass "fm-spawn: fresh publication failure preserves a standard endpoint record"
 }
 
+test_fresh_persistent_publication_failure_removes_hidden_record() {
+  local rec id out status meta real_mv
+  id=profile-fresh-persistent-publish-failure-z48c
+  rec=$(make_spawn_case profile-fresh-persistent-publish-failure claude "$id")
+  read_case_record "$rec"
+  meta="$HOME_DIR/state/$id.meta"
+  real_mv=$(command -v mv)
+  make_spawn_mv_failure_stub "$FAKEBIN_DIR"
+
+  out=$(FM_REAL_MV="$real_mv" FM_FAKE_META_PUBLISH_MV_FAIL="$meta" \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+      "$id" "$PROJ_DIR")
+  status=$?
+  [ "$status" -ne 0 ] || fail "fresh spawn accepted persistent metadata publication failure"
+  assert_absent "$meta" "persistent publication failure published task metadata"
+  [ -z "$(find "$HOME_DIR/state" -maxdepth 1 -name ".$id.meta.spawn.*" -print -quit)" ] \
+    || fail "persistent publication failure retained a hidden task record"
+  assert_contains "$out" "task record for $id could not be published" \
+    "persistent publication failure lacked its record diagnostic"
+  assert_contains "$out" "could not preserve the standard task record for $id" \
+    "persistent publication failure did not report the failed retry"
+  pass "fm-spawn: persistent publication failure removes its hidden record"
+}
+
+test_home_summary_refresh_follows_launch_submission() {
+  local rec id lock ready release spawn_out lock_pid spawn_pid
+  local status attempt saw_launch
+  id=profile-summary-after-launch-z48d
+  rec=$(make_spawn_case profile-summary-after-launch claude "$id")
+  read_case_record "$rec"
+  lock="$HOME_DIR/state/.home-summary-refresh.lock"
+  ready="$HOME_DIR/state/.summary-lock-ready"
+  release="$HOME_DIR/state/.summary-lock-release"
+  spawn_out="$HOME_DIR/state/.spawn-output"
+
+  FM_HOME="$HOME_DIR" STATE="$HOME_DIR/state" bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$2"
+    : > "$3"
+    while [ ! -e "$4" ]; do sleep 0.05; done
+    fm_lock_release "$2"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$lock" "$ready" "$release" &
+  lock_pid=$!
+  attempt=0
+  while [ ! -e "$ready" ] && [ "$attempt" -lt 100 ]; do
+    sleep 0.05
+    attempt=$((attempt + 1))
+  done
+  [ -e "$ready" ] || fail "home summary test could not hold the refresh lock"
+
+  run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" > "$spawn_out" 2>&1 &
+  spawn_pid=$!
+  attempt=0
+  saw_launch=0
+  while [ "$attempt" -lt 100 ]; do
+    if [ -s "$LAUNCH_LOG" ]; then
+      saw_launch=1
+      break
+    fi
+    sleep 0.05
+    attempt=$((attempt + 1))
+  done
+  : > "$release"
+  wait "$lock_pid"
+  wait "$spawn_pid"
+  status=$?
+  expect_code 0 "$status" "spawn should finish after the home summary lock is released"
+  [ "$saw_launch" -eq 1 ] \
+    || fail "home summary refresh blocked launch submission"
+  pass "fm-spawn: home summary refresh follows launch submission"
+}
+
 test_verifier_handoff_teardown_returns_single_worktree() {
   local rec id out status treehouse_log tmuxlog return_count
   id=profile-verifier-teardown-z43
@@ -2404,6 +2477,8 @@ test_verifier_handoff_adoption_failure_retires_new_endpoint
 test_verifier_handoff_requires_confirmed_endpoint_retirement
 test_verifier_handoff_prepublication_failure_retires_replacement_state
 test_fresh_prepublication_failure_preserves_standard_record
+test_fresh_persistent_publication_failure_removes_hidden_record
+test_home_summary_refresh_follows_launch_submission
 test_verifier_handoff_teardown_returns_single_worktree
 test_verifier_handoff_refuses_live_or_unverified_endpoint
 test_verifier_handoff_allows_backend_change

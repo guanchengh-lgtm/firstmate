@@ -924,11 +924,11 @@ spawn_preserve_complete_fresh_record() {
   [ "$binding" = "$ID" ] && [ -n "$harness" ] && [ -n "$spawn_gen" ] || return 1
   case "$kind" in ship|scout|secondmate) ;; *) return 1 ;; esac
   fm_backend_validate_task_endpoint "$staged" "$ID" >/dev/null 2>&1 || return 1
-  if fm_backlog_atomic_transition publish "$staged" "$STATE/$ID.meta" "task record" "$STATE"; then
-    echo "warning: failed spawn preserved the standard task record for $ID" >&2
-  else
-    echo "warning: failed spawn retained the complete task record at $staged for reconciliation" >&2
+  if ! fm_backlog_atomic_transition publish "$staged" "$STATE/$ID.meta" "task record" "$STATE"; then
+    echo "warning: failed spawn could not preserve the standard task record for $ID" >&2
+    return 1
   fi
+  echo "warning: failed spawn preserved the standard task record for $ID" >&2
   SPAWN_META_TMP=
   ORCA_ABORT_CLEANUP=0
   HERDR_PROJECTION_ABORT_CLEANUP=0
@@ -3560,7 +3560,6 @@ if [ "$SPAWN_TASK_SET_LOCK_HELD" = 1 ]; then
   SPAWN_TASK_SET_LOCK_HELD=0
   fm_lock_release "$SPAWN_TASK_SET_LOCK"
 fi
-"$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
 [ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0
 
 sq_brief=$(shell_quote "$BRIEF")
@@ -3707,6 +3706,7 @@ if [ "$HARNESS" = kimi ]; then
     exit 1
   fi
 fi
+"$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
 if [ "$KIND" = secondmate ] && [ "${FM_SKIP_SECONDMATE_INHERIT:-0}" != 1 ]; then
   if ! fm_config_reread_discard_pending "$PROJ_ABS" "$ID" "$FM_HOME"; then
     if fm_config_reread_quarantine_pending "$PROJ_ABS" "$ID" "$FM_HOME"; then
