@@ -893,7 +893,7 @@ EOF
       and (.reason | contains("terminal-ship=done"))
       and (.reason | contains("mate=") | not)
   ' >/dev/null || fail "ordinary terminal in-flight ship must still produce terminal_in_flight without listing the secondmate: $out"
-  pass "home-summary excludes kind=secondmate from unowned_current and terminal_in_flight"
+  printf '# verified - home-summary excludes kind=secondmate from child inventory\n'
 }
 
 test_empty_fleet_json

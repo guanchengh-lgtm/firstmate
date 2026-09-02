@@ -96,8 +96,8 @@
 #
 # portable-serial stays strictly serial. Its CI shards (portable-serial-<k>of<n>)
 # split it across separate runners, so two of its stateful scripts still never
-# share a machine. This script owns <n>: a lane whose <n> disagrees with the
-# configured shard count is refused, so a CI matrix cannot silently drop a shard.
+# share a machine. This script owns the canonical <n> and one complete prior
+# layout. Other counts are refused, so a CI matrix cannot silently drop a shard.
 # --changed is conservative: it over-selects related families rather than
 # under-selecting, and never expands to the complete suite unless --all. The one
 # place it is deliberately narrow is a bin/ path with no curated family: a test
@@ -154,6 +154,8 @@ CHANGED_DEFAULT_TIMEOUT_SECS=900
 # How many separate-runner shards the portable serial remainder splits into.
 # One owner: CI lane names carry this count and are refused when they disagree.
 PORTABLE_SERIAL_SHARDS=5
+# Keep the prior four-shard CI matrix as the one compatibility layout.
+PORTABLE_SERIAL_COMPAT_SHARDS=4
 
 # Balance hint for a portable-serial script with no measured duration, close to
 # the measured per-script mean so a newly added test neither starves nor
@@ -682,15 +684,15 @@ portable_serial_weight_for() {
   printf '%s\n' "$PORTABLE_SERIAL_DEFAULT_WEIGHT_MS"
 }
 
-# Longest-processing-time assignment of the serial remainder to
-# PORTABLE_SERIAL_SHARDS bins, printing "<shard>\t<script>" for every script.
+# Longest-processing-time assignment of the serial remainder to the requested
+# shard count, printing "<shard>\t<script>" for every script.
 # Deterministic: candidates are ordered by hint descending then path, and ties
 # between equally loaded bins always take the lowest bin index.
 portable_serial_assignments() {
-  local ms script i best best_load
+  local shards=${1:-$PORTABLE_SERIAL_SHARDS} ms script i best best_load
   local -a loads=()
   i=1
-  while [ "$i" -le "$PORTABLE_SERIAL_SHARDS" ]; do
+  while [ "$i" -le "$shards" ]; do
     loads[i]=0
     i=$((i + 1))
   done
@@ -699,7 +701,7 @@ portable_serial_assignments() {
     best=1
     best_load=${loads[1]}
     i=2
-    while [ "$i" -le "$PORTABLE_SERIAL_SHARDS" ]; do
+    while [ "$i" -le "$shards" ]; do
       if [ "${loads[i]}" -lt "$best_load" ]; then
         best_load=${loads[i]}
         best=$i
@@ -716,10 +718,10 @@ portable_serial_assignments() {
   )
 }
 
-# Parse "<k>of<n>" from a portable-serial shard lane and echo <k>, refusing when
-# <n> disagrees with this script's configured count so a CI matrix built for a
-# different shard count fails loudly instead of dropping tests.
-portable_serial_shard_index() {
+# Parse "<k>of<n>" from a portable-serial shard lane and echo "<k> <n>".
+# The default five-shard layout and the stage branch's prior four-shard layout
+# are complete partitions. All other counts fail before selecting tests.
+portable_serial_shard_spec() {
   local lane=$1 spec index count
   spec=${lane#portable-serial-}
   index=${spec%%of*}
@@ -734,13 +736,14 @@ portable_serial_shard_index() {
   case "$count" in
     ''|*[!0-9]*) die "unknown lane '$lane' (see --list-lanes)" ;;
   esac
-  if [ "$count" -ne "$PORTABLE_SERIAL_SHARDS" ]; then
+  if [ "$count" -ne "$PORTABLE_SERIAL_SHARDS" ] \
+    && [ "$count" -ne "$PORTABLE_SERIAL_COMPAT_SHARDS" ]; then
     die "lane '$lane' asks for $count portable serial shards but this runner is configured for $PORTABLE_SERIAL_SHARDS (see --list-lanes)"
   fi
-  if [ "$index" -lt 1 ] || [ "$index" -gt "$PORTABLE_SERIAL_SHARDS" ]; then
-    die "lane '$lane' shard index is outside 1..$PORTABLE_SERIAL_SHARDS (see --list-lanes)"
+  if [ "$index" -lt 1 ] || [ "$index" -gt "$count" ]; then
+    die "lane '$lane' shard index is outside 1..$count (see --list-lanes)"
   fi
-  printf '%s\n' "$index"
+  printf '%s %s\n' "$index" "$count"
 }
 
 select_proven_isolated() {
@@ -752,7 +755,7 @@ select_proven_isolated() {
 }
 
 select_lane() {
-  local want=$1 s shard idx found=0
+  local want=$1 s shard shard_count shard_spec idx found=0
   case "$want" in
     portable-parallel-1)
       while IFS= read -r s; do
@@ -777,14 +780,16 @@ select_lane() {
       ;;
     portable-serial-*)
       # One separate-runner shard of the same remainder, still serial in itself.
-      shard=$(portable_serial_shard_index "$want")
+      shard_spec=$(portable_serial_shard_spec "$want")
+      shard=${shard_spec%% *}
+      shard_count=${shard_spec#* }
       while IFS=$'\t' read -r idx s; do
         [ -n "$s" ] || continue
         if [ "$idx" = "$shard" ]; then
           add_script "$s"
           found=1
         fi
-      done < <(portable_serial_assignments)
+      done < <(portable_serial_assignments "$shard_count")
       ;;
     real-herdr-gated)
       select_family real-herdr-gated

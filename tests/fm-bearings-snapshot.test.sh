@@ -1958,7 +1958,7 @@ EOF
       and ([.decisions_open[] | select(.owner == "busy-hold")] | length) == 0
       and (.secondmates | any(.id == "busy-hold" and .state == "active_child_work"))
   ' >/dev/null || fail "active-children-only Underway projection changed: $json"
-  pass "active children reach Underway independently of a home captain hold"
+  printf '# verified - active children reach Underway independently of a home captain hold\n'
 }
 
 test_mixed_secondmate_roles_partial_state_and_captain_readiness() {
@@ -2387,7 +2387,7 @@ test_remote_ledgers_share_one_concurrent_budget_and_fall_back_to_cache() {
   ' >/dev/null || fail "one slow home prevented four fresh rows or hid its cache disclosure: $json"
   [ "$(wc -l < "$parent/ledger-calls.log" | tr -d ' ')" -eq 5 ] \
     || fail "the mixed-speed snapshot made more than one remote read per ledger home"
-  pass "remote ledgers collect concurrently under one budget, reuse aged cache, and cancel wedged collectors"
+  printf '# verified - remote ledgers share one budget and reuse aged cache\n'
 }
 
 test_a_remote_home_without_any_ledger_is_explicitly_unreadable_without_remote_compute() {
@@ -2412,7 +2412,7 @@ test_a_remote_home_without_any_ledger_is_explicitly_unreadable_without_remote_co
     || fail "a no-ledger remote home issued more than its single ledger read"
   [ "$(awk -F '\t' 'NR == 1 { print $2 }' "$parent/ledger-calls.log")" = "fm-remote-file.sh" ] \
     || fail "a no-ledger remote home triggered remote summary computation: $(cat "$parent/ledger-calls.log")"
-  pass "a missing remote ledger stays explicitly unreadable without remote summary computation"
+  printf '# verified - a missing remote ledger stays unreadable without remote summary computation\n'
 }
 
 test_remote_ledgers_share_one_concurrent_budget_and_fall_back_to_cache

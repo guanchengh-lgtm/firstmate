@@ -69,7 +69,8 @@
 #     untrusted supplements only and never override readable structured-home facts.
 #     Each structured-home record carries active_children, decisions_open, holds,
 #     queued, landed, endpoints, counts, and omitted. provenance.summary_source
-#     distinguishes "local-ledger", "remote-ledger", and "remote-ledger-cache";
+#     distinguishes "local-ledger", "local-direct-compat", "remote-ledger",
+#     and "remote-ledger-cache";
 #     freshness is "cached" only for the cache source, and observed_at/age_seconds
 #     come from the selected summary's generation. Every successfully sampled home also carries
 #     reconcile_inventory independently of projection trust.
@@ -1066,6 +1067,36 @@ summary_file_oversized() {  # <file>
   [ "$bytes" -gt "$FM_SNAPSHOT_SECONDMATE_MAX_BYTES" ]
 }
 
+# A local home can predate ledger publication. Compute only for an absent ledger
+# and keep malformed-ledger handling strict.
+local_summary_compat() {  # <home>
+  local home=$1 output rc
+  output=$(umask 077; mktemp "$SNAPSHOT_COLLECT_DIR/.local-summary.XXXXXX") || return 1
+  if fm_run_timed "$FM_SNAPSHOT_BUDGET" env \
+      FM_ROOT_OVERRIDE="$FM_ROOT" \
+      FM_HOME="$home" \
+      FM_STATE_OVERRIDE="$home/state" \
+      FM_DATA_OVERRIDE="$home/data" \
+      FM_CONFIG_OVERRIDE="$home/config" \
+      FM_PROJECTS_OVERRIDE="$home/projects" \
+      FM_SNAPSHOT_NOW="$SNAPSHOT_NOW" \
+      FM_SNAPSHOT_NOW_EPOCH="$SNAPSHOT_EPOCH" \
+      FM_SNAPSHOT_SECONDMATES=0 \
+      FM_SNAPSHOT_SECONDMATE_CHILDREN="$FM_SNAPSHOT_SECONDMATE_CHILDREN" \
+      FM_SNAPSHOT_SECONDMATE_QUEUED="$FM_SNAPSHOT_SECONDMATE_QUEUED" \
+      FM_SNAPSHOT_SECONDMATE_DECISIONS="$FM_SNAPSHOT_SECONDMATE_DECISIONS" \
+      FM_SNAPSHOT_SECONDMATE_LANDED_PER_HOME="$FM_SNAPSHOT_SECONDMATE_LANDED_PER_HOME" \
+      "$SCRIPT_DIR/fm-fleet-snapshot.sh" --secondmate-home-summary \
+      > "$output" 2>/dev/null; then
+    summary_file_read "$output" "$home"
+    rc=$?
+  else
+    rc=$?
+  fi
+  rm -f -- "$output"
+  return "$rc"
+}
+
 snapshot_cache_prepare() {
   local mode
   SNAPSHOT_CACHE_AVAILABLE=0
@@ -1543,6 +1574,10 @@ secondmate_current_json() {  # <parent-tasks-json>
         summary_source='local-ledger'
       elif summary_file_oversized "$home/state/home-summary.json"; then
         reason="structured home ledger exceeded byte limit"
+      elif [ ! -e "$home/state/home-summary.json" ] \
+        && [ ! -L "$home/state/home-summary.json" ] \
+        && summary=$(local_summary_compat "$home"); then
+        summary_source='local-direct-compat'
       else
         reason="structured home ledger is missing, unreadable, or invalid"
       fi

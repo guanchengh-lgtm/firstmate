@@ -697,7 +697,7 @@ test_portable_shard_union_and_coverage_guard() {
 }
 
 test_portable_serial_shards_partition_the_serial_lane() {
-  local lanes count serial shard listed union dups shard_lane total cap
+  local lanes count compat_count serial shard listed union dups shard_lane total cap
   lanes=$("$RUNNER" --list-lanes)
   count=$(printf '%s\n' "$lanes" | grep -c '^portable-serial-[0-9]*of[0-9]*$')
   [ "$count" -ge 2 ] || fail "expected at least two portable serial shard lanes, got $count"
@@ -739,6 +739,21 @@ test_portable_serial_shards_partition_the_serial_lane() {
   [ "$("$RUNNER" --list --lane "portable-serial-1of${count}")" = \
     "$("$RUNNER" --list --lane "portable-serial-1of${count}")" ] \
     || fail "portable serial shard membership must be deterministic"
+
+  # The former four-job matrix remains a complete compatibility partition.
+  compat_count=4
+  union=""
+  shard=1
+  while [ "$shard" -le "$compat_count" ]; do
+    listed=$("$RUNNER" --list --lane "portable-serial-${shard}of${compat_count}")
+    union=$(printf '%s\n%s' "$union" "$listed")
+    shard=$((shard + 1))
+  done
+  union=$(printf '%s\n' "$union" | grep -v '^$' || true)
+  [ "$(printf '%s\n' "$union" | LC_ALL=C sort)" = "$serial" ] \
+    || fail "the four-shard stage matrix must exactly cover the portable serial lane"
+  [ "$(printf '%s\n' "$union" | LC_ALL=C sort | uniq -d | wc -l | tr -d ' ')" = "0" ] \
+    || fail "the four-shard stage matrix must not duplicate scripts"
   pass "portable serial shards are a deterministic disjoint cover of the serial lane"
 }
 
