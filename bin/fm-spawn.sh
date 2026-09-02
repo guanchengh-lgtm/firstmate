@@ -2178,7 +2178,7 @@ freshen_spawn_worktree_base() {  # <worktree>
     echo "error: '$target' is not a commit for pooled worktree '$worktree'; refusing to launch from a potentially stale base" >&2
     return 1
   }
-  status=$(git -C "$worktree" -c core.quotePath=false status --porcelain) || {
+  status=$(git -C "$worktree" -c core.quotePath=false status --porcelain --ignore-submodules=none) || {
     echo "error: could not inspect pooled worktree '$worktree' before refreshing its base" >&2
     return 1
   }
@@ -2199,7 +2199,7 @@ freshen_spawn_worktree_base() {  # <worktree>
     echo "error: pooled worktree '$worktree' is at '${actual:-unknown}', not current '$target' ('$expected'); refusing to launch" >&2
     return 1
   fi
-  status=$(git -C "$worktree" -c core.quotePath=false status --porcelain) || {
+  status=$(git -C "$worktree" -c core.quotePath=false status --porcelain --ignore-submodules=none) || {
     echo "error: could not inspect pooled worktree '$worktree' after refreshing its base" >&2
     return 1
   }

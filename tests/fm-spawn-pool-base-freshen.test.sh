@@ -316,6 +316,7 @@ test_reset_refuses_new_stale_submodule_pin() {
   id='pool-post-reset-stale-pin-r12'
   rec=$(make_submodule_case post-reset-stale-pin "$id")
   read_submodule_case "$rec"
+  git -C "$POOL_DIR" config submodule.ui.ignore all
 
   out=$(run_spawn "$id" --mode no-mistakes --yolo off)
   status=$?
@@ -339,6 +340,7 @@ test_stale_submodule_pin_explains_itself() {
   rec=$(make_submodule_case stale-pin "$id")
   read_submodule_case "$rec"
   strand_submodule_pin
+  git -C "$POOL_DIR" config submodule.ui.ignore all
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
   before_sub=$(git -C "$POOL_DIR/ui" rev-parse HEAD)
 
