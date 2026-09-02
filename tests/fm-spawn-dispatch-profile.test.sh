@@ -384,6 +384,40 @@ run_ship_spawn() {
   run_spawn "$@" --mode no-mistakes --yolo off --role builder
 }
 
+test_ship_spawn_refuses_missing_role_and_invalid_direct_pr_surface() {
+  local rec id out status
+  id=profile-role-surface-neg-z0
+  rec=$(make_spawn_case profile-role-surface-neg claude "$id")
+  read_case_record "$rec"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --mode no-mistakes --yolo off)
+  status=$?
+  [ "$status" -ne 0 ] || fail "ship spawn without --role should exit non-zero"
+  assert_contains "$out" "ship spawns require --role" "missing --role did not refuse closed"
+  [ ! -s "$LAUNCH_LOG" ] || fail "missing --role published a launch command"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "missing --role published task metadata"
+
+  : > "$LAUNCH_LOG"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --mode direct-PR --yolo off --role builder)
+  status=$?
+  [ "$status" -ne 0 ] || fail "direct-PR spawn without --surface should exit non-zero"
+  assert_contains "$out" "requires --surface internal-only" "omitted surface did not fail closed"
+  [ ! -s "$LAUNCH_LOG" ] || fail "omitted surface published a launch command"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "omitted surface published task metadata"
+
+  : > "$LAUNCH_LOG"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --mode direct-PR --yolo off --role builder --surface product)
+  status=$?
+  [ "$status" -ne 0 ] || fail "product + direct-PR spawn should exit non-zero"
+  assert_contains "$out" "refused for product work" "product + direct-PR did not name the refused surface"
+  [ ! -s "$LAUNCH_LOG" ] || fail "product + direct-PR published a launch command"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "product + direct-PR published task metadata"
+  pass "ship spawn refuses a missing --role and an invalid direct-PR surface"
+}
+
 read_case_record() {
   IFS='|' read -r CASE_DIR HOME_DIR PROJ_DIR WT_DIR FAKEBIN_DIR LAUNCH_LOG <<EOF
 $1
@@ -783,7 +817,7 @@ test_grok_omits_invalid_max_reasoning_effort() {
   pass "grok omits unsupported max reasoning effort"
 }
 
-test_grok_threads_xhigh_reasoning_effort() {
+test_grok_omits_unsupported_xhigh_reasoning_effort() {
   local rec id out status launch
   id=profile-grok-xhigh-z6b
   rec=$(make_spawn_case profile-grok-xhigh grok "$id")
@@ -791,13 +825,14 @@ test_grok_threads_xhigh_reasoning_effort() {
 
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model grok-4 --effort xhigh)
   status=$?
-  expect_code 0 "$status" "grok spawn with xhigh reasoning effort should succeed"
+  expect_code 0 "$status" "grok spawn with unsupported xhigh reasoning effort should omit the effort flag"
   assert_meta_profile "$HOME_DIR/state/$id.meta" grok grok-4 xhigh
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "grok --always-approve --model 'grok-4' --reasoning-effort 'xhigh'" \
-    "grok launch did not thread xhigh as --reasoning-effort"
-  assert_not_contains "$launch" "--effort" "grok launch must use --reasoning-effort, not --effort"
-  pass "grok receives --reasoning-effort xhigh"
+  assert_contains "$launch" "grok --always-approve --model 'grok-4' \"\$('${ROOT}/bin/fm-operational-input.sh' encode launch-brief < " \
+    "grok launch did not preserve the model flag and typed brief when xhigh effort was omitted"
+  assert_not_contains "$launch" "--reasoning-effort" "grok launch must omit unsupported xhigh reasoning effort"
+  assert_not_contains "$launch" "--effort" "grok launch must not fall back to --effort for reasoning effort"
+  pass "grok omits unsupported xhigh reasoning effort"
 }
 
 test_cursor_threads_model_workspace_and_omits_effort_axis() {
@@ -1398,7 +1433,7 @@ test_active_dispatch_profile_does_not_block_secondmate_launch() {
 }
 
 test_role_verifier_encodes_verifier_brief() {
-  local rec id out status launch expected meta head_before head_after branch tmuxlog
+  local rec id out status launch expected meta head_before head_after branch tmuxlog gen
   id=profile-role-verifier-z14
   rec=$(make_spawn_case profile-role-verifier claude "$id")
   read_case_record "$rec"
@@ -1422,6 +1457,14 @@ test_role_verifier_encodes_verifier_brief() {
     "verifier spawn lost the external request link"
   assert_contains "$out" "role=verifier" "spawned line did not report role=verifier"
   assert_grep "worktree=$WT_DIR" "$meta" "verifier spawn did not retain builder worktree"
+  assert_present "$HOME_DIR/state/$id.busy-gen" \
+    "verifier handoff EXIT trap retired the replacement busy generation"
+  assert_present "$WT_DIR/.claude/settings.local.json" \
+    "verifier handoff EXIT trap stripped replacement harness wiring"
+  gen=$(sed -n 's/^busy_gen=//p' "$meta")
+  [ -n "$gen" ] || fail "verifier metadata missing replacement busy_gen"
+  [ "$(cat "$HOME_DIR/state/$id.busy-gen")" = "$gen" ] \
+    || fail "verifier busy-gen file does not match published meta"
   head_after=$(git -C "$WT_DIR" rev-parse HEAD)
   [ "$head_after" = "$head_before" ] || fail "verifier spawn changed builder HEAD"
   branch=$(git -C "$WT_DIR" symbolic-ref --quiet --short HEAD)
@@ -2250,6 +2293,7 @@ test_role_verifier_enforces_explicit_ov() {
   pass "fm-spawn: verifier ships enforce explicit OV worker and skill rules"
 }
 
+test_ship_spawn_refuses_missing_role_and_invalid_direct_pr_surface
 test_no_profile_keeps_claude_profile_defaults
 test_non_cursor_launch_clears_inherited_cursor_markers
 test_relative_home_overrides_launch_with_absolute_cross_process_paths
@@ -2268,7 +2312,7 @@ test_codex_threads_model_and_effort
 test_codex_omits_invalid_max_effort
 test_grok_threads_model_and_reasoning_effort
 test_grok_omits_invalid_max_reasoning_effort
-test_grok_threads_xhigh_reasoning_effort
+test_grok_omits_unsupported_xhigh_reasoning_effort
 test_opencode_threads_model_and_ignores_effort_axis
 test_pi_threads_model_and_max_effort
 test_pi_tui_mode_probe_is_safe_for_old_and_new_pi

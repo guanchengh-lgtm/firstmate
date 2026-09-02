@@ -7,9 +7,9 @@
 # the command substitution textually and tracks quote state through the heredoc
 # body, so a single apostrophe, unbalanced quote, or unbalanced paren anywhere
 # in that body breaks parsing of the *entire rest of the script* - `bash -n`
-# fails, not just the generated brief. The DOD and Herdr-section builders now
-# use `IFS= read -r -d '' VAR <<EOF || true` instead, which removes the `$(...)`
-# wrapper and eliminates the whole defect class regardless of future prose.
+# fails, not just the generated brief. Remaining brief heredocs use
+# `IFS= read -r -d '' VAR <<EOF || true`. Ship DOD is `DOD=$(fm_dod_block ...)`
+# from bin/fm-dod-lib.sh, whose heredocs stay in the sourced library.
 # test_no_heredoc_in_command_substitution guards that structure directly.
 # Ambient `bash -n` here is Bash 5 and cannot see the bug, so the real
 # cross-version enforcement lives in the macos-stock-bash CI job.
@@ -375,6 +375,12 @@ test_no_mistakes_dod_wording() {
     "no-mistakes DOD did not refuse builder-driven validation"
   assert_no_grep "You drive no-mistakes" "$brief" \
     "no-mistakes DOD still makes the builder drive its own gate"
+  assert_grep "NEVER pass \`--yes\` (or \`-y\`) to \`no-mistakes axi run\` or \`no-mistakes axi respond\`. It is banned fleet-wide." "$brief" \
+    "no-mistakes DOD must state the --yes ban as a prohibition"
+  assert_grep "answering your own ask-user finding is a hard rule violation" "$brief" \
+    "no-mistakes DOD must say why --yes is banned"
+  assert_no_grep "Avoid \`--yes\`" "$brief" \
+    "no-mistakes DOD still states the --yes ban as a preference"
   pass "fm-brief.sh: no-mistakes DOD keeps its apostrophe prose, now parse-safe"
 }
 
@@ -801,6 +807,7 @@ test_scout_and_secondmate_scaffold() {
   assert_present "$brief" "scout brief was not scaffolded"
   assert_grep "SCOUT task" "$brief" "scout brief must declare itself a scout task"
   assert_grep "report.md" "$brief" "scout brief must point at the report deliverable"
+  assert_grep "Lavish review loop" "$brief" "scout brief must mention the optional Lavish self-host loop"
   assert_grep 'needs-decision [key=<decision-slug>]: {summary of options}' "$brief" \
     "scout rule 6 did not show the canonical pre-colon decision key"
   assert_grep 'resolved [key=<decision-slug>]: {how it cleared}' "$brief" \

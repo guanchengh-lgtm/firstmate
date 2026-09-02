@@ -184,6 +184,8 @@ esac
 . "$SCRIPT_DIR/fm-classify-lib.sh"
 # shellcheck source=bin/fm-delivery-surface-lib.sh
 . "$SCRIPT_DIR/fm-delivery-surface-lib.sh"
+# shellcheck source=bin/fm-dod-lib.sh
+. "$SCRIPT_DIR/fm-dod-lib.sh"
 PAUSED_VERB=${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}
 
 resolve_directory_input() {
@@ -248,7 +250,7 @@ for a in "$@"; do
     --surface=*) SURFACE=${a#--surface=}; SURFACE_SET=1 ;;
     --source) want_value=source ;;
     --source=*) SOURCES+=("${a#--source=}"); SOURCE_SET=1 ;;
-    # yolo never reaches the worker: it is firstmate's approval authority, not a
+    # yolo never reaches the worker: it is firstmate's merge authority, not a
     # brief input. Refuse it loudly so it is never silently dropped here and then
     # believed to have been recorded.
     --yolo|--yolo=*) echo "error: --yolo is not a brief input; pass it to bin/fm-spawn.sh, which records the task's merge posture" >&2; exit 1 ;;
@@ -399,7 +401,8 @@ Two firstmate-specific rules layer on top of that guidance:
 - ask-user findings are never the verifier's to answer: escalate to firstmate and stop.
   Firstmate applies \`ask-user-authority\` and obtains any required captain decision.
   When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
-- Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
+- NEVER pass \`--yes\` (or \`-y\`) to \`no-mistakes axi run\` or \`no-mistakes axi respond\`. It is banned fleet-wide.
+  It auto-resolves every gate including ask-user findings with no escalation, and answering your own ask-user finding is a hard rule violation. It would silently bypass firstmate's authority check and any required captain escalation.
 
 After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), the verifier appends \`done: PR {url} checks green\` and stops.
 EOF
@@ -630,71 +633,28 @@ echo "scaffolded: $BRIEF (scout; replace {TASK})"
 exit 0
 fi
 
-# Ship task: shape Setup / Rule 1 / Definition of done by this task's explicit
-# delivery mode, validated above. The generated DOD still carries human-readable
-# "Delivery contract: mode=<mode>" and "Role: builder" lines; the launch gate in
-# bin/fm-spawn.sh reads the sibling mode/role marker files written after this brief.
+# Ship task: shape Setup / Rule 1 by this task's explicit delivery mode, validated
+# above, and render the Definition of done from its single owner, bin/fm-dod-lib.sh,
+# which bin/fm-promote.sh renders too so a promoted scout receives the same contract.
+# The generated DOD still carries human-readable "Delivery contract: mode=<mode>"
+# and "Role: builder" lines; the launch gate in bin/fm-spawn.sh reads the sibling
+# mode/role marker files written after this brief.
 case "$MODE" in
   direct-PR)
     SETUP2=""
     RULE1='1. Never push to the default branch (push only your `fm/'"$ID"'` branch). Never merge a PR.'
-    IFS= read -r -d '' DOD <<EOF || true
-# Definition of done
-Delivery contract: mode=direct-PR
-Role: builder
-This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
-The task is complete only when committed on your branch.
-When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
-Do NOT run /no-mistakes. The configured merge authority decides whether to merge the PR; firstmate relays the outcome.
-EOF
     ;;
   local-only)
     SETUP2=""
     RULE1="1. Never push to any remote and never open a PR. Work only on your \`fm/$ID\` branch; firstmate handles the merge into local \`main\`."
-    IFS= read -r -d '' DOD <<EOF || true
-# Definition of done
-Delivery contract: mode=local-only
-Role: builder
-This task ships **local-only**: no remote, no PR, no pipeline.
-The task is complete only when committed on your branch \`fm/$ID\`. Do NOT push, do NOT open a PR, do NOT merge.
-Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
-When it is implemented and committed, append \`done: ready in branch fm/$ID\` to the status file and stop.
-The configured merge authority approves the ready branch, then firstmate merges it into local \`main\` through the guarded fast-forward path.
-EOF
     ;;
   *)  # no-mistakes
     SETUP2="
 2. Run \`no-mistakes doctor\`; if it reports the repo is not initialized here, run \`no-mistakes init\`."
     RULE1='1. Never push to the default branch. Never merge a PR.'
-    IFS= read -r -d '' DOD <<EOF || true
-# Definition of done
-Delivery contract: mode=no-mistakes
-Role: builder
-The task is complete only when committed on your branch.
-When you believe it is complete, append \`done: {summary}\` to the status file and stop.
-Firstmate starts a fresh verifier context to run /no-mistakes and validate and ship a PR.
-The builder never invokes or drives that gate; builder and verifier must not share a context.
-
-The fresh verifier drives no-mistakes by responding to its gates, not by implementing fixes.
-It follows the guidance no-mistakes itself provides for the mechanics: \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
-When starting no-mistakes, it makes \`--intent\` preserve all relevant content from this brief's \`# Task\` section plus every later accepted Firstmate requirement, clarification, constraint, exclusion, and supersession, carrying only each requirement's current accepted form; it retains direct requirements instead of substituting a diff summary, and excludes generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific.
-The verifier does not hand-edit, commit, or fix findings while a run is active - the pipeline applies every fix.
-
-Two firstmate-specific rules layer on top of that guidance:
-- ask-user findings are never the verifier's to answer: escalate to firstmate and stop.
-  Firstmate applies \`ask-user-authority\` and obtains any required captain decision.
-  When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
-- Avoid \`--yes\`: it would silently bypass firstmate's authority check and any required captain escalation.
-
-After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), the verifier appends \`done: PR {url} checks green\` and stops.
-EOF
     ;;
 esac
-
-# read -r -d '' preserves the heredoc's trailing newline that the removed
-# $(...) command substitution used to strip. Drop that one newline so generated
-# briefs stay byte-identical to the historical Bash 5 output.
-DOD=${DOD%$'\n'}
+DOD=$(fm_dod_block "$MODE" "$ID") || exit 1
 
 cat > "$BRIEF" <<EOF
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
