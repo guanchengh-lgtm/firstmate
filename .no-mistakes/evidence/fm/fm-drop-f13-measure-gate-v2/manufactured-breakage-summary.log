@@ -1,0 +1,50 @@
+breakage-fm-backend-autodetect-smoke.test.log
+  not ok - fm-teardown.sh failed for the auto-detected herdr task
+breakage-fm-backend-herdr-launcher-workspace-e2e.test.log
+  not ok - fm-teardown.sh failed for dupC
+breakage-fm-backend-herdr-presentation-e2e.test.log
+  not ok - opted-out teardown failed: error: no meta for task __manufactured_breakage__ at /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-herdr-presentation.n9lDqc/home/state/__manufactured_breakage__.meta
+breakage-fm-backend-herdr-workspace-per-home-e2e.test.log
+  not ok - fm-teardown.sh failed for the primary-shaped crewmate cm1
+breakage-fm-backend-orca.test.log
+  not ok - Orca scout teardown should succeed once report exists
+breakage-fm-backend-zellij.test.log
+  not ok - fm-teardown should succeed for a zellij scout whose worktree is already gone: error: no meta for task __manufactured_breakage__ at /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-backend-zellij-tests.ehfylx/teardown-zellij-ghost/state/__manufactured_breakage__.meta: expected exit 0, got 1
+breakage-fm-backend.test.log
+  not ok - new fm-teardown.sh (scout, report present) should succeed
+breakage-fm-backlog-handoff.test.log
+  not ok - local teardown bypassed the in-flight handoff lock: error: no meta for task __manufactured_breakage__ at /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-backlog-handoff.LTQ1rF/teardown-race-main/state/__manufactured_breakage__.meta
+breakage-fm-captain-hold-lifecycle.test.log
+  not ok - refusal must be explicit
+breakage-fm-gate-refuse.test.log
+  not ok - teardown: a normal session must still tear down landed work: expected exit 0, got 1
+breakage-fm-gotmp.test.log
+  not ok - teardown exited non-zero with a valid tasktmp
+breakage-fm-grok-harness.test.log
+  not ok - grok teardown failed
+breakage-fm-kimi-harness.test.log
+  not ok - Kimi teardown failed
+breakage-fm-muse-harness.test.log
+  not ok - muse teardown failed
+breakage-fm-pr-check-breakage.test.log
+  not ok - mismatch pr-check should stay exit 0 (got:  / error: task metadata is unavailable): expected exit 0, got 1
+breakage-fm-pr-check-security.test.log
+  not ok - safe lifecycle-compatible task ID could not be torn down
+breakage-fm-public-followup.test.log
+  not ok - missing parent binding must be an actionable teardown refusal (missing: 'cannot resolve the primary home for marked secondmate mate')
+breakage-fm-remote-secondmate-lifecycle-e2e.test.log
+  not ok - remote retirement bypassed an active remote respawn
+breakage-fm-remote-secondmate-parent-binding.test.log
+  not ok - a remote-routed child must allow cleanup when only the remote code root looks relay-active (rc=1): error: no meta for task __manufactured_breakage__ at /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-remote-parent-binding.kzC8az/remote-home/state/__manufactured_breakage__.meta
+breakage-fm-secondmate-lifecycle-e2e.test.log
+  not ok - teardown failed for the empty secondmate home
+breakage-fm-secondmate-safety.test.log
+  not ok - teardown failed for empty secondmate home
+breakage-fm-teardown-endpoint-safety.test.log
+  not ok - contended teardown should serialize before reading mutable task metadata (missing: 'another lifecycle action is already running')
+breakage-fm-teardown.test.log
+  not ok - fork-allow: teardown should succeed when HEAD is on a fork remote: expected exit 0, got 1
+breakage-fm-validation-truth.test.log
+  not ok - non-force teardown pane refusal missing (missing: 'validation truth unreadable')
+breakage-lib.log
+  not ok - teardown exited non-zero with a valid tasktmp

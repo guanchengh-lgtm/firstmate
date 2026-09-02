@@ -1,0 +1,10 @@
+ok - validation-truth: parses run-step done
+ok - validation-truth: parses pane source
+ok - validation-truth: direct-PR is exempt
+ok - validation-truth: pane source refuses as unreadable
+ok - validation-truth: run-step done allows
+ok - validation-truth: run-step not done refuses without unreadable wording
+ok - validation-truth: pr-check refuses pane-sourced no-mistakes ships
+not ok - non-force teardown pane refusal missing (missing: 'validation truth unreadable')
+--- output ---
+error: no meta for task __manufactured_breakage__ at /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-validation-truth.NQocqt/td-pane/home/state/__manufactured_breakage__.meta

@@ -1,0 +1,2 @@
+ok - real Herdr lab: an opted-out spawn retains the Stage 1 Herdr command sequence with zero ordering calls
+not ok - opted-out teardown failed: error: no meta for task __manufactured_breakage__ at /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-herdr-presentation.n9lDqc/home/state/__manufactured_breakage__.meta

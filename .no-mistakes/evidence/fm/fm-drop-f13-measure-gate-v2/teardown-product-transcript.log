@@ -1,0 +1,19 @@
+CASE landed builder without measure
+measure_before=absent
+teardown_exit=0
+meta_after=absent
+result=allowed
+
+CASE unlanded builder without measure
+measure_before=absent
+teardown_exit=1
+refusal=REFUSED: worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-teardown-product-evidence.LMHn2h/product-unlanded/wt has work not on any remote and not landed.
+meta_after=present
+worktree_after=present
+
+CASE dirty builder without measure
+measure_before=absent
+teardown_exit=1
+refusal=REFUSED: worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-teardown-product-evidence.LMHn2h/product-dirty/wt has uncommitted changes.
+meta_after=present
+dirty_file_after=present

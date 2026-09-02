@@ -1,0 +1,5 @@
+ok - real herdr: fm-spawn.sh auto-detects herdr from HERDR_ENV=1 (no explicit config) and prints the loud notice
+ok - real herdr: auto-detected spawn records backend=herdr and herdr_session/workspace/tab/pane fields in meta
+ok - real herdr: the auto-detected spawn's launch command actually ran in the herdr pane
+not ok - fm-teardown.sh failed for the auto-detected herdr task
+error: no meta for task __manufactured_breakage__ at /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-backend-autodetect-smoke.1T5PaJ/state/__manufactured_breakage__.meta

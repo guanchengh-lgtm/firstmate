@@ -1,0 +1,4 @@
+ok - fm-teardown: missing, empty, malformed, ambiguous, and task-mismatched endpoints refuse before every mutation or runtime call
+not ok - contended teardown should serialize before reading mutable task metadata (missing: 'another lifecycle action is already running')
+--- output ---
+error: no meta for task __manufactured_breakage__ at /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-teardown-endpoint-safety.KlO4Ja/control-lock/home/state/__manufactured_breakage__.meta
