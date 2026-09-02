@@ -136,6 +136,10 @@
 #     ownership: the live $STATE/.lock owner's ancestor chain and teardown's
 #     own ancestor chain are subtracted from the candidate set, using the
 #     same bounded walk as bin/fm-remote-job-reap-orphans.sh.
+#     Teardown holds $STATE/.lock.acquire through the Treehouse return.
+#     It repeats the protected-root check before each return attempt.
+#     It refuses and preserves the roots while any protected process remains.
+#     This check stops Treehouse's separate cwd reaper from killing a protected host.
 #     Idempotent: nothing left to find is a silent no-op.
 #   Fix 3 - sweep abandoned remote job workers. A remote job worker started
 #     from a worktree's own bin/ outlives that worktree's removal without
@@ -2947,10 +2951,12 @@ elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   # Remove our hook file so a reused pool worktree cannot fire signals for a dead task.
   rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
     "$WT/.fm-grok-turnend" "$WT/.fm-kimi-turnend"
-  # Kills remaining processes in the worktree (including the agent), resets, returns
-  # to pool. treehouse resolves the pool from the working directory, so run it from
-  # the project. teardown_treehouse_return tolerates transient and stale git locks
-  # left by a killed crew process; see the script header for retry and stale-lock proof.
+  # After the protected-root guard passes, Treehouse kills remaining worktree processes.
+  # It then resets the worktree and returns it to the pool.
+  # Treehouse resolves the pool from the working directory, so run it from the project.
+  # The pre-return check repeats for every attempt while the session publication lock remains held.
+  # teardown_treehouse_return tolerates transient and stale git locks.
+  # See the script header for the retry and stale-lock proof.
   post_lock_cleanup_check=
   if [ "$FORCE" != "--force" ] && [ "$KIND" != scout ] && [ "$KIND" != secondmate ]; then
     post_lock_cleanup_check=validate_worktree_teardown_safety
