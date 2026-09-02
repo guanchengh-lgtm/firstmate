@@ -1,0 +1,17 @@
+command: bin/fm-teardown.sh task-x1 --force
+captured stderr:
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 2s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown: reaping leaked worktree process(es) for task-x1: 48105
+REFUSED: protected process(es) for task-x1 remain rooted in the worktree/tasktmp: 47871; preserving the worktree/tasktmp for manual inspection or retry.
+error: treehouse return failed for worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-teardown-tests.DDATuf/host-session-spared/wt; teardown aborted
+observed result: teardown exit code 1
+observed result: live host and lock-owner child survived the teardown call
+observed result: leaked worktree sleeper did not survive the teardown call
+observed result: worktree and task metadata remain present
+observed result: treehouse return was not called

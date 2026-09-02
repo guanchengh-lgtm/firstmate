@@ -1,0 +1,4 @@
+not ok - host-session-spared: live session host or child was reaped
+manufactured mutation: bin/fm-teardown.sh:1324 changed failed pre-return protection check to continue
+selector: test_host_session_under_worktree_is_spared
+exit_code: 1
