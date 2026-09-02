@@ -85,7 +85,6 @@ while [ $# -gt 0 ]; do
       if [ $# -ge 2 ]; then shift 2; else shift; fi
       ;;
     --source=*) SOURCE_EXPLICIT=1; SOURCE=${1#--source=}; shift ;;
-    --source=*) SOURCE=${1#--source=}; shift ;;
     --pi-prerequisite) PI_PREREQUISITE=1; shift ;;
     *) shift ;;
   esac
