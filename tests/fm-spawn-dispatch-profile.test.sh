@@ -817,7 +817,7 @@ test_grok_omits_invalid_max_reasoning_effort() {
   pass "grok omits unsupported max reasoning effort"
 }
 
-test_grok_omits_unsupported_xhigh_reasoning_effort() {
+test_grok_threads_xhigh_reasoning_effort() {
   local rec id out status launch
   id=profile-grok-xhigh-z6b
   rec=$(make_spawn_case profile-grok-xhigh grok "$id")
@@ -825,14 +825,13 @@ test_grok_omits_unsupported_xhigh_reasoning_effort() {
 
   out=$(run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" --model grok-4 --effort xhigh)
   status=$?
-  expect_code 0 "$status" "grok spawn with unsupported xhigh reasoning effort should omit the effort flag"
+  expect_code 0 "$status" "grok spawn with xhigh reasoning effort should succeed"
   assert_meta_profile "$HOME_DIR/state/$id.meta" grok grok-4 xhigh
   launch=$(cat "$LAUNCH_LOG")
-  assert_contains "$launch" "grok --always-approve --model 'grok-4' \"\$('${ROOT}/bin/fm-operational-input.sh' encode launch-brief < " \
-    "grok launch did not preserve the model flag and typed brief when xhigh effort was omitted"
-  assert_not_contains "$launch" "--reasoning-effort" "grok launch must omit unsupported xhigh reasoning effort"
-  assert_not_contains "$launch" "--effort" "grok launch must not fall back to --effort for reasoning effort"
-  pass "grok omits unsupported xhigh reasoning effort"
+  assert_contains "$launch" "grok --always-approve --model 'grok-4' --reasoning-effort 'xhigh'" \
+    "grok launch did not thread xhigh as --reasoning-effort"
+  assert_not_contains "$launch" "--effort" "grok launch must use --reasoning-effort, not --effort"
+  pass "grok receives --reasoning-effort xhigh"
 }
 
 test_cursor_threads_model_workspace_and_omits_effort_axis() {
@@ -2312,7 +2311,7 @@ test_codex_threads_model_and_effort
 test_codex_omits_invalid_max_effort
 test_grok_threads_model_and_reasoning_effort
 test_grok_omits_invalid_max_reasoning_effort
-test_grok_omits_unsupported_xhigh_reasoning_effort
+test_grok_threads_xhigh_reasoning_effort
 test_opencode_threads_model_and_ignores_effort_axis
 test_pi_threads_model_and_max_effort
 test_pi_tui_mode_probe_is_safe_for_old_and_new_pi

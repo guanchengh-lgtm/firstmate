@@ -493,7 +493,55 @@ test_kimi_unconfirmed_delivery_fails_loudly() {
     "unconfirmed kimi delivery lacked a loud diagnostic"
   assert_grep 'failed: kimi brief pointer delivery was not confirmed' "$HOME_DIR/state/$id.status" \
     "unconfirmed kimi delivery did not leave a supervisor-visible failure"
+  assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" \
+    "unconfirmed kimi delivery orphaned its endpoint and local copy by removing metadata"
   pass "fm-spawn: kimi treats a silent pointer drop as a failed spawn"
+}
+
+test_backlog_commit_failure_preserves_recovery_record() {
+  local id rec out rc task_tmp starts
+  id="kimi-backlog-fail-z2b-$$"
+  task_tmp="/tmp/fm-$id"
+  rec=$(make_spawn_case backlog-fail "$id")
+  read_spawn_record "$rec"
+  cat > "$FAKEBIN_DIR/tasks-axi" <<'SH'
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "$*" >> "$FM_FAKE_TASKS_LOG"
+case "$*" in
+  --version) printf '%s\n' 'tasks-axi 0.2.4' ;;
+  'update --help') printf '%s\n' '--archive-body' ;;
+  'mv --help') printf '%s\n' '[<id>...]' ;;
+  show\ *) printf '%s\n' '  state: queued' '  held: no' '  blocked: no' ;;
+  start\ *) printf '%s\n' 'forced tasks-axi start failure' >&2; exit 23 ;;
+esac
+SH
+  chmod +x "$FAKEBIN_DIR/tasks-axi"
+  cat > "$HOME_DIR/data/backlog.md" <<EOF
+# Backlog
+
+## In flight
+
+## Queued
+
+- [ ] $id - Kimi backlog failure fixture
+
+## Done
+EOF
+  rc=0
+  out=$(FM_FAKE_TASKS_LOG="$CASE_DIR/tasks.log" run_spawn \
+    "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") || rc=$?
+  [ "$rc" -ne 0 ] || fail "two failed backlog commits should fail the spawn"
+  starts=$(grep -c '^start ' "$CASE_DIR/tasks.log" 2>/dev/null || true)
+  [ "$starts" -eq 2 ] || fail "spawn made $starts backlog start attempts instead of two"
+  assert_contains "$out" "task record was preserved" \
+    "backlog commit failure did not report its recovery record"
+  assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" \
+    "backlog commit failure orphaned its endpoint and local copy by removing metadata"
+  [ "$(cat "$CASE_DIR/kimi.state")" = delivered ] \
+    || fail "backlog commit failure fixture did not reach a live delivered endpoint"
+  rm -rf "$task_tmp"
+  pass "fm-spawn: backlog commit failure preserves resource ownership metadata"
 }
 
 test_kimi_readiness_gate_precedes_pointer() {
@@ -678,6 +726,7 @@ test_kimi_teardown_removes_pointer_and_registry_token
 test_kimi_falls_back_to_expanded_home_binary
 test_kimi_missing_binary_refuses_before_pane_creation
 test_kimi_unconfirmed_delivery_fails_loudly
+test_backlog_commit_failure_preserves_recovery_record
 test_kimi_readiness_gate_precedes_pointer
 test_kimi_detection_uses_ancestry_after_markers
 test_kimi_session_lock_identity

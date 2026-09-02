@@ -234,8 +234,8 @@
 # success. A ship or scout dispatch therefore REFUSES up front, before any
 # endpoint, worktree, or record exists, unless the home's backlog has an
 # unheld, unblocked Queued or In flight item for the id; a transition that fails
-# after publication removes the record it just wrote rather than leaving a
-# worker the backlog does not own. A relaunch re-reads the row instead of
+# after publication preserves the record as recovery evidence for the endpoint
+# and local copy. A relaunch re-reads the row instead of
 # re-running the transition, so an eligible In-flight item is left untouched.
 # The transition is
 # skipped entirely for --secondmate spawns (persistent agents are not work
@@ -1014,11 +1014,6 @@ spawn_abort_cleanup() {
     SPAWN_TASK_LOCK_HELD=0
     fm_lock_release "$SPAWN_TASK_LOCK" || true
   fi
-  if [ "$SPAWN_FRESH_COMMIT_PENDING" = 1 ]; then
-    if ! spawn_fresh_commit_rollback; then
-      status=1
-    fi
-  fi
   if [ "$SPAWN_META_LOCK_HELD" = 1 ]; then
     SPAWN_META_LOCK_HELD=0
     fm_lock_release "$SPAWN_META_LOCK" || true
@@ -1707,11 +1702,11 @@ effort_flag_for_harness() {
       ;;
     grok)
       # grok exposes both --effort and --reasoning-effort; firstmate's profile
-      # axis is the reasoning knob. As of grok 0.2.99, --reasoning-effort accepts
-      # only low|medium|high and rejects both xhigh and max, so omit those rather
-      # than passing a known-bad value.
+      # axis is the reasoning knob. As of grok 1.0.5, --reasoning-effort accepts
+      # low|medium|high|xhigh and rejects max, so omit max rather than passing a
+      # known-bad value.
       case "$effort" in
-        low|medium|high) printf -- '--reasoning-effort %s ' "$(shell_quote "$effort")" ;;
+        low|medium|high|xhigh) printf -- '--reasoning-effort %s ' "$(shell_quote "$effort")" ;;
       esac
       ;;
     pi|pi-signed)
@@ -3150,8 +3145,9 @@ if [ "$KIND" != secondmate ]; then
       j_stop=$(json_escape "touch $(shell_quote "$TURNEND"); $busy_cmd_prefix idle $busy_suffix --event stop 2>/dev/null || true")
       j_stopfail=$(json_escape "$busy_cmd_prefix idle $busy_suffix --event stop-failure 2>/dev/null || true")
       j_sessionend=$(json_escape "$busy_cmd_prefix idle $busy_suffix --event session-end 2>/dev/null || true")
+      j_skill=$(json_escape "$(shell_quote "$FM_ROOT/bin/fm-skill-load-record.sh") --claude 2>/dev/null || true")
       cat > "$WT/.claude/settings.local.json" <<EOF
-{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"$j_submit"}]}],"Stop":[{"hooks":[{"type":"command","command":"$j_stop"}]}],"StopFailure":[{"hooks":[{"type":"command","command":"$j_stopfail"}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"$j_sessionend"}]}]}}
+{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"$j_submit"}]}],"Stop":[{"hooks":[{"type":"command","command":"$j_stop"}]}],"StopFailure":[{"hooks":[{"type":"command","command":"$j_stopfail"}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"$j_sessionend"}]}],"PostToolUse":[{"matcher":"Skill","hooks":[{"type":"command","command":"$j_skill"}]}]}}
 EOF
       exclude_path '.claude/settings.local.json'
       ;;
@@ -3730,11 +3726,8 @@ else
 fi
 if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
   if [ "$SPAWN_FRESH_COMMIT_PENDING" = 1 ]; then
-    if spawn_fresh_commit_rollback; then
-      echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); its record was removed so no worker is left that the backlog does not own - close out endpoint $T and local copy $WT by hand, then re-run the spawn" >&2
-    else
-      echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR), and failed-dispatch cleanup is incomplete; the provisional record may remain at $STATE/$ID.meta - close out endpoint $T and local copy $WT by hand, then remove the record and busy state before retrying" >&2
-    fi
+    SPAWN_FRESH_COMMIT_PENDING=0
+    echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); its task record was preserved so the endpoint and local copy remain owned - fix the backlog and let bootstrap retry the transition" >&2
   else
     echo "error: task $ID was republished but its backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); fix the backlog and re-run the launch" >&2
   fi
