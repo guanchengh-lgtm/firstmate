@@ -143,8 +143,9 @@
 #   it; relaunch is exempt because the existing task's control lock covers it.
 #   With no harness arg, a crewmate/scout spawn resolves the CREW harness only when
 #   config/crew-dispatch.json is absent. When that file exists, crewmate/scout
-#   spawns require an explicit harness so firstmate cannot silently skip dispatch
-#   profile consultation. A --secondmate spawn is exempt and resolves the SECONDMATE
+#   spawns require an explicit harness, --model, and --effort so firstmate cannot
+#   silently skip dispatch profile consultation. A --secondmate spawn is exempt
+#   and resolves the SECONDMATE
 #   harness (config/secondmate-harness -> config/crew-harness -> own), so the
 #   secondmate-vs-crewmate split is DURABLE across every respawn (recovery,
 #   /updatefirstmate, restart). A bare adapter name (claude|codex|opencode|pi|pi-signed|grok|kimi|cursor|muse)
@@ -193,11 +194,12 @@
 # Batch dispatch: pass one or more `id=repo` pairs instead of a single <id> <project>, e.g.
 #     fm-spawn.sh fix-a-k3=projects/foo add-b-q7=projects/bar [--scout]
 #   Each pair re-execs this script in single-task mode, so the single path stays the only
-#   source of truth; shared --scout/--harness/--model/--effort/--backend/--mode/--yolo
+#   source of truth; shared --scout/--harness/--model/--effort/--backend/--mode/--yolo/--role
 #   applies to every pair. A ship batch therefore carries one delivery contract, and each
 #   pair still checks it against its own brief; a batch spanning modes is two invocations.
-#   If config/crew-dispatch.json exists, shared --harness is required for crewmate
-#   and scout batches. The loop lives here, in bash, so callers never hand-write a
+#   If config/crew-dispatch.json exists, shared --harness, --model, and --effort
+#   are required for crewmate and scout batches. The loop lives here, in bash, so
+#   callers never hand-write a
 #   multi-task shell loop (the tool shell is zsh, which does not word-split unquoted
 #   $vars and silently breaks ad-hoc `for ... in $pairs` loops).
 #   Launch templates live in launch_template() below; placeholders replaced before launch:
@@ -958,7 +960,8 @@ parse_orca_worktree_result() {
 spawn_publish_abort_recovery() {
   local recovery_tmp="$STATE/.$ID.meta.spawn-recovery.${BASHPID:-$$}"
   if [ -e "$STATE/$ID.meta" ] || [ -L "$STATE/$ID.meta" ]; then
-    return 0
+    fm_backlog_record_present "$STATE/$ID.meta" "task record" "$STATE" \
+      >/dev/null 2>&1 && return 0
   fi
   if {
     echo "window=${SPAWN_FRESH_ABORT_TARGET:-${T:-}}"
@@ -1005,16 +1008,15 @@ spawn_publish_abort_recovery() {
     && fm_backlog_atomic_transition publish "$recovery_tmp" \
       "$STATE/$ID.meta" "task record" "$STATE"; then
     SPAWN_FRESH_COMMIT_PENDING=0
-    echo "warning: failed spawn cleanup preserved recovery metadata for $ID" >&2
+    echo "warning: failed spawn preserved recovery metadata for $ID" >&2
   else
-    rm -f "$recovery_tmp" 2>/dev/null || true
-    echo "warning: failed spawn cleanup could not preserve recovery metadata for $ID" >&2
+    echo "warning: failed spawn could not publish recovery metadata for $ID; recovery record remains at $recovery_tmp" >&2
     return 1
   fi
 }
 
 spawn_abort_cleanup() {
-  local status=$? fresh_cleanup_failed=0
+  local status=$?
   if [ "$RELAUNCH_REPLACEMENT_PENDING" = 1 ] \
      && [ "$SPAWN_META_PUBLISH_STARTED" = 1 ] \
      && [ -n "$SPAWN_META_TMP" ] \
@@ -1047,20 +1049,19 @@ spawn_abort_cleanup() {
         "$VERIFIER_HANDOFF_ABORT_TARGET" 2>/dev/null || true
     fi
   fi
-  if [ "$SPAWN_FRESH_ABORT_ENDPOINT" = 1 ]; then
-    if [ "$SPAWN_FRESH_ABORT_BACKEND" != orca ] \
-       && { [ "$SPAWN_FRESH_ABORT_BACKEND" != herdr ] \
-         || [ "$HERDR_PROJECTION_ABORT_CLEANUP" != 1 ]; }; then
-      fm_backend_kill "$SPAWN_FRESH_ABORT_BACKEND" \
-        "$SPAWN_FRESH_ABORT_TARGET" 2>/dev/null || fresh_cleanup_failed=1
-    fi
+  if [ "$SPAWN_FRESH_ABORT_ENDPOINT" = 1 ] \
+     && [ "$SPAWN_FRESH_ABORT_BACKEND" != orca ]; then
+    spawn_publish_abort_recovery || true
+    SPAWN_FRESH_ABORT_ENDPOINT=0
+    ORCA_ABORT_CLEANUP=0
+    HERDR_PROJECTION_ABORT_CLEANUP=0
+    HERDR_PROJECTION_ABORT_RECLAIM=0
   fi
   if [ "$HERDR_PROJECTION_ABORT_CLEANUP" = 1 ] \
      && [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" != 1 ]; then
     if ! spawn_herdr_presentation_order_lock_acquire "${HERDR_PROJECTION_ABORT_SESSION:-}"; then
       echo "warning: herdr presentation focus lock unavailable; retaining the projection journal and refusing concurrent abort cleanup" >&2
       HERDR_PROJECTION_ABORT_CLEANUP=0
-      [ "$SPAWN_FRESH_ABORT_ENDPOINT" != 1 ] || fresh_cleanup_failed=1
     fi
   fi
   if [ "$HERDR_PROJECTION_ABORT_CLEANUP" = 1 ]; then
@@ -1073,34 +1074,17 @@ spawn_abort_cleanup() {
         "$HERDR_PROJECTION_ABORT_OLD_TAB" \
         "$HERDR_PROJECTION_ABORT_OLD_PANE" \
         "$HERDR_PROJECTION_ABORT_TASK_TAB" \
-        "$HERDR_PROJECTION_ABORT_TASK_PANE" \
-        || [ "$SPAWN_FRESH_ABORT_ENDPOINT" != 1 ] \
-        || fresh_cleanup_failed=1
+        "$HERDR_PROJECTION_ABORT_TASK_PANE" || true
     else
       fm_backend_herdr_projection_cleanup_exact \
         "$HERDR_PROJECTION_ABORT_SESSION" \
         "$HERDR_PROJECTION_ABORT_TASK_PANE" \
-        "$HERDR_PROJECTION_ABORT_SEEDED_PANE" \
-        || [ "$SPAWN_FRESH_ABORT_ENDPOINT" != 1 ] \
-        || fresh_cleanup_failed=1
+        "$HERDR_PROJECTION_ABORT_SEEDED_PANE" || true
     fi
   fi
   if [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" = 1 ]; then
     HERDR_PRESENTATION_ORDER_LOCK_HELD=0
     fm_lock_release "$HERDR_PRESENTATION_ORDER_LOCK" || true
-  fi
-  if [ "$SPAWN_FRESH_ABORT_ENDPOINT" = 1 ] \
-     && [ "$SPAWN_FRESH_ABORT_BACKEND" != orca ]; then
-    if [ "$fresh_cleanup_failed" -eq 0 ] \
-       && [ "$KIND" != secondmate ] && [ -n "${WT:-}" ]; then
-      ( cd "$PROJ_ABS" && treehouse return --force "$WT" >/dev/null ) \
-        || fresh_cleanup_failed=1
-    fi
-    if [ "$fresh_cleanup_failed" -eq 0 ]; then
-      SPAWN_FRESH_ABORT_ENDPOINT=0
-    else
-      spawn_publish_abort_recovery || true
-    fi
   fi
   if [ "$ORCA_ABORT_CLEANUP" = 1 ]; then
     ORCA_ABORT_CLEANUP=0
@@ -2834,6 +2818,7 @@ case "$BACKEND" in
             2)
               spawn_herdr_presentation_order_lock_release
               ;;
+            3) spawn_herdr_presentation_order_lock_release ;;
             *) exit 1 ;;
           esac
         else

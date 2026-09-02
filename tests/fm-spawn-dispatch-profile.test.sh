@@ -384,6 +384,20 @@ run_ship_spawn() {
   run_spawn "$@" --mode no-mistakes --yolo off --role builder
 }
 
+test_help_reports_complete_dispatch_contract() {
+  local out status
+  out=$("$SPAWN" --help 2>&1)
+  status=$?
+  expect_code 0 "$status" "fm-spawn --help should succeed"
+  assert_contains "$out" \
+    "spawns require an explicit harness, --model, and --effort" \
+    "fm-spawn help omitted required dispatch profile axes"
+  assert_contains "$out" \
+    "--backend/--mode/--yolo/--role" \
+    "fm-spawn help omitted the shared batch role"
+  pass "fm-spawn: help reports the complete dispatch contract"
+}
+
 test_ship_spawn_refuses_missing_role_and_invalid_direct_pr_surface() {
   local rec id out status
   id=profile-role-surface-neg-z0
@@ -1889,7 +1903,7 @@ test_verifier_handoff_prepublication_failure_retires_replacement_state() {
   pass "fm-spawn: verifier handoff publication failure retires replacement state"
 }
 
-test_fresh_prepublication_failure_retires_endpoint() {
+test_fresh_prepublication_failure_preserves_recovery() {
   local rec id out status meta real_mv tmuxlog treehouse_log
   id=profile-fresh-prepublish-failure-z48b
   rec=$(make_spawn_case profile-fresh-prepublish-failure claude "$id")
@@ -1906,17 +1920,23 @@ test_fresh_prepublication_failure_retires_endpoint() {
       "$id" "$PROJ_DIR")
   status=$?
   [ "$status" -ne 0 ] || fail "fresh spawn accepted failed metadata publication"
-  assert_absent "$meta" "fresh publication failure wrote task metadata"
-  [ "$(cat "$HOME_DIR/state/.fake-endpoint-state")" = missing ] \
-    || fail "fresh publication failure left an unowned endpoint"
+  assert_present "$meta" "fresh publication failure omitted recovery metadata"
+  assert_grep "cleanup_recovery=spawn" "$meta" \
+    "fresh publication failure omitted its recovery marker"
+  assert_grep "worktree=$WT_DIR" "$meta" \
+    "fresh publication failure lost its local copy ownership"
+  [ "$(cat "$HOME_DIR/state/.fake-endpoint-state")" = new ] \
+    || fail "fresh publication failure did not preserve its owned endpoint"
   tmuxlog="$HOME_DIR/state/.fake-tmux.log"
-  [ "$(grep -c '^kill-window ' "$tmuxlog" || true)" -eq 1 ] \
-    || fail "fresh publication failure did not retire its endpoint"
-  assert_grep "return --force $WT_DIR" "$treehouse_log" \
-    "fresh publication failure did not return its local copy"
+  assert_no_grep '^kill-window ' "$tmuxlog" \
+    "fresh publication failure tried to retire an unverified endpoint"
+  assert_no_grep "return --force $WT_DIR" "$treehouse_log" \
+    "fresh publication failure returned an owned local copy"
   assert_contains "$out" "task record for $id could not be published" \
     "fresh publication failure lacked its record diagnostic"
-  pass "fm-spawn: fresh publication failure retires unowned resources"
+  assert_contains "$out" "failed spawn preserved recovery metadata for $id" \
+    "fresh publication failure did not report its recovery record"
+  pass "fm-spawn: fresh publication failure preserves resource ownership"
 }
 
 test_verifier_handoff_teardown_returns_single_worktree() {
@@ -2322,6 +2342,7 @@ test_role_verifier_enforces_explicit_ov() {
   pass "fm-spawn: verifier ships enforce explicit OV worker and skill rules"
 }
 
+test_help_reports_complete_dispatch_contract
 test_ship_spawn_refuses_missing_role_and_invalid_direct_pr_surface
 test_no_profile_keeps_claude_profile_defaults
 test_non_cursor_launch_clears_inherited_cursor_markers
@@ -2370,7 +2391,7 @@ test_verifier_handoff_refuses_unreadable_worktree_ownership
 test_verifier_handoff_adoption_failure_retires_new_endpoint
 test_verifier_handoff_requires_confirmed_endpoint_retirement
 test_verifier_handoff_prepublication_failure_retires_replacement_state
-test_fresh_prepublication_failure_retires_endpoint
+test_fresh_prepublication_failure_preserves_recovery
 test_verifier_handoff_teardown_returns_single_worktree
 test_verifier_handoff_refuses_live_or_unverified_endpoint
 test_verifier_handoff_allows_backend_change
