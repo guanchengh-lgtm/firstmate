@@ -22,11 +22,10 @@
 # relocated keeps its backlog and its archive together. A root with no
 # `.tasks.toml` gets tasks-axi's built-in defaults.
 #
-# CRASH RECOVERY. Only teardown needs a durable record: it removes the meta and
-# with it the completion links, so a process killed between the two halves would
-# leave nothing to reconstruct the close from. It writes
-# `state/<id>.backlog-close` first, and removes it once the close lands.
-# The writer and replay share one complete-record validator, and teardown stages
+# CRASH RECOVERY. The close helpers support a lifecycle owner that removes task
+# metadata before closing its backlog row. Such a caller writes
+# `state/<id>.backlog-close` first and removes it after the close lands.
+# The writer and replay share one complete-record validator. A caller must stage
 # that record before destructive cleanup, so it never publishes or acts on a close
 # replay would reject. The validator pins the data path to this home's configured
 # root before any recovery mutation, then re-runs exactly that close.

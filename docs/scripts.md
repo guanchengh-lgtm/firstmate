@@ -35,11 +35,13 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-remote-doctor.sh`    | Check, and with `--fix` repair, one remote account's second-mate readiness (remote job worker, Herdr, Aqua launch agents, PATH, and required tools) |
 | `fm-backlog-handoff.sh`  | Move queued backlog items into a secondmate home and durably wake its recorded receiver |
 | `fm-backlog-receive.sh`  | Idempotently ingest one confined remote handoff outbox through tasks-axi             |
+| `fm-backlog-transition-lib.sh` | Validate dispatch backlog rows and provide guarded task-record and backlog-close transitions |
 | `fm-issue-intake.sh`     | Queue authorized labeled GitHub issues and install their authenticated watcher check |
 | `fm-captain-hold.sh`    | Hold, answer, complete, verify, supersede, and read captain-held tasks plus product-idea completion attestations |
 | `fm-decision-hold.sh`    | One-release compatibility mapping from the retired decision command surface to `fm-captain-hold.sh` |
 | `fm-product-idea-lib.sh` | Shared product-idea ledger row and unscheduled-count grammar for completion and Bearings |
 | `fm-brief.sh`            | Scaffold ship (explicit `--mode` and optional validated surface), scout, secondmate-charter, Herdr-lab, and no-mistakes verifier briefs; lint worker briefs |
+| `fm-dod-lib.sh`          | Render the shared mode-specific ship Definition of done for brief and promotion paths |
 | `fm-delivery-surface-lib.sh` | Own the task-surface closed set and direct-PR eligibility shared by brief, spawn, and promotion |
 | `fm-dod-lib.sh`          | One owner of the ship task's mode-specific definition of done, rendered by both the brief scaffold and a scout promotion |
 | `fm-herdr-lab.sh`        | Provision and guardedly operate an isolated, never-default Herdr lab session         |
