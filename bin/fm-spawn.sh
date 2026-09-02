@@ -914,6 +914,28 @@ parse_orca_worktree_result() {
   fi
 }
 
+spawn_preserve_complete_fresh_record() {
+  local staged=${SPAWN_META_TMP:-} binding harness kind spawn_gen
+  case "$staged" in "${STATE:-}/.${ID:-}.meta.spawn."*) ;; *) return 1 ;; esac
+  binding=$(fm_backend_meta_exact_value "$staged" endpoint_task_id) || return 1
+  harness=$(fm_backend_meta_exact_value "$staged" harness) || return 1
+  kind=$(fm_backend_meta_exact_value "$staged" kind) || return 1
+  spawn_gen=$(fm_backend_meta_exact_value "$staged" spawn_gen) || return 1
+  [ "$binding" = "$ID" ] && [ -n "$harness" ] && [ -n "$spawn_gen" ] || return 1
+  case "$kind" in ship|scout|secondmate) ;; *) return 1 ;; esac
+  fm_backend_validate_task_endpoint "$staged" "$ID" >/dev/null 2>&1 || return 1
+  if fm_backlog_atomic_transition publish "$staged" "$STATE/$ID.meta" "task record" "$STATE"; then
+    echo "warning: failed spawn preserved the standard task record for $ID" >&2
+  else
+    echo "warning: failed spawn retained the complete task record at $staged for reconciliation" >&2
+  fi
+  SPAWN_META_TMP=
+  ORCA_ABORT_CLEANUP=0
+  HERDR_PROJECTION_ABORT_CLEANUP=0
+  HERDR_PROJECTION_ABORT_RECLAIM=0
+  return 0
+}
+
 spawn_abort_cleanup() {
   local status=$?
   if [ "$RELAUNCH_REPLACEMENT_PENDING" = 1 ] \
@@ -923,6 +945,7 @@ spawn_abort_cleanup() {
      && [ ! -L "$SPAWN_META_TMP" ]; then
     RELAUNCH_REPLACEMENT_PENDING=0
   fi
+  spawn_preserve_complete_fresh_record || true
   if [ "$RELAUNCH_REPLACEMENT_PENDING" = 1 ]; then
     RELAUNCH_REPLACEMENT_PENDING=0
     if ! clear_relaunch_harness_wiring \
@@ -2174,6 +2197,18 @@ freshen_spawn_worktree_base() {  # <worktree>
   actual=$(git -C "$worktree" rev-parse --verify --quiet HEAD 2>/dev/null || true)
   if [ "$actual" != "$expected" ]; then
     echo "error: pooled worktree '$worktree' is at '${actual:-unknown}', not current '$target' ('$expected'); refusing to launch" >&2
+    return 1
+  fi
+  status=$(git -C "$worktree" -c core.quotePath=false status --porcelain) || {
+    echo "error: could not inspect pooled worktree '$worktree' after refreshing its base" >&2
+    return 1
+  }
+  if [ -n "$status" ]; then
+    if describe_stale_submodule_pins "$worktree" "$status"; then
+      echo "error: pooled worktree '$worktree' has a stale submodule checkout after its base refresh; refusing to launch and leaving it untouched" >&2
+    else
+      echo "error: pooled worktree '$worktree' changed while refreshing its base; refusing to launch" >&2
+    fi
     return 1
   fi
 }

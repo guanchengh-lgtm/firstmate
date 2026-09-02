@@ -223,6 +223,13 @@ case "$source_path" in
   *.meta.handoff.*|*.meta.spawn.*)
     if [ -n "${FM_FAKE_META_PUBLISH_MV_FAIL:-}" ] \
        && [ "$target_path" = "$FM_FAKE_META_PUBLISH_MV_FAIL" ]; then
+      if [ -n "${FM_FAKE_META_PUBLISH_MV_FAIL_ONCE:-}" ]; then
+        if [ ! -e "$FM_FAKE_META_PUBLISH_MV_FAIL_ONCE" ]; then
+          : > "$FM_FAKE_META_PUBLISH_MV_FAIL_ONCE"
+          exit 1
+        fi
+        exec "$FM_REAL_MV" "$@"
+      fi
       exit 1
     fi
     ;;
@@ -1903,8 +1910,8 @@ test_verifier_handoff_prepublication_failure_retires_replacement_state() {
   pass "fm-spawn: verifier handoff publication failure retires replacement state"
 }
 
-test_fresh_prepublication_failure_omits_nonstandard_recovery() {
-  local rec id out status meta real_mv tmuxlog treehouse_log
+test_fresh_prepublication_failure_preserves_standard_record() {
+  local rec id out status meta real_mv tmuxlog treehouse_log fail_once
   id=profile-fresh-prepublish-failure-z48b
   rec=$(make_spawn_case profile-fresh-prepublish-failure claude "$id")
   read_case_record "$rec"
@@ -1912,17 +1919,24 @@ test_fresh_prepublication_failure_omits_nonstandard_recovery() {
   real_mv=$(command -v mv)
   make_spawn_mv_failure_stub "$FAKEBIN_DIR"
   treehouse_log="$HOME_DIR/state/.fake-treehouse.log"
+  fail_once="$HOME_DIR/state/.fake-meta-publish-failed"
   : > "$treehouse_log"
 
   out=$(FM_REAL_MV="$real_mv" FM_FAKE_META_PUBLISH_MV_FAIL="$meta" \
+    FM_FAKE_META_PUBLISH_MV_FAIL_ONCE="$fail_once" \
     FM_FAKE_TREEHOUSE_LOG="$treehouse_log" \
     run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
       "$id" "$PROJ_DIR")
   status=$?
   [ "$status" -ne 0 ] || fail "fresh spawn accepted failed metadata publication"
-  assert_absent "$meta" "fresh publication failure wrote an unusable recovery record"
+  assert_present "$meta" "fresh publication failure lost its complete standard task record"
+  assert_grep "endpoint_task_id=$id" "$meta" "preserved task record lacks its endpoint binding"
+  assert_grep "worktree=$WT_DIR" "$meta" "preserved task record lacks its worktree"
+  assert_grep "project=$PROJ_DIR" "$meta" "preserved task record lacks its project"
+  assert_grep "harness=claude" "$meta" "preserved task record lacks its harness"
+  assert_grep "kind=ship" "$meta" "preserved task record lacks its task kind"
   [ -z "$(find "$HOME_DIR/state" -maxdepth 1 -name ".$id.meta.spawn-recovery.*" -print -quit)" ] \
-    || fail "fresh publication failure left an unusable recovery record"
+    || fail "fresh publication failure created a nonstandard recovery record"
   [ "$(cat "$HOME_DIR/state/.fake-endpoint-state")" = new ] \
     || fail "fresh publication failure did not preserve its owned endpoint"
   tmuxlog="$HOME_DIR/state/.fake-tmux.log"
@@ -1932,9 +1946,9 @@ test_fresh_prepublication_failure_omits_nonstandard_recovery() {
     "fresh publication failure returned an owned local copy"
   assert_contains "$out" "task record for $id could not be published" \
     "fresh publication failure lacked its record diagnostic"
-  assert_not_contains "$out" "recovery metadata" \
-    "fresh publication failure reported an unusable recovery record"
-  pass "fm-spawn: fresh publication failure does not create a nonstandard recovery record"
+  assert_contains "$out" "preserved the standard task record for $id" \
+    "fresh publication failure did not report its durable standard record"
+  pass "fm-spawn: fresh publication failure preserves a standard endpoint record"
 }
 
 test_verifier_handoff_teardown_returns_single_worktree() {
@@ -2389,7 +2403,7 @@ test_verifier_handoff_refuses_unreadable_worktree_ownership
 test_verifier_handoff_adoption_failure_retires_new_endpoint
 test_verifier_handoff_requires_confirmed_endpoint_retirement
 test_verifier_handoff_prepublication_failure_retires_replacement_state
-test_fresh_prepublication_failure_omits_nonstandard_recovery
+test_fresh_prepublication_failure_preserves_standard_record
 test_verifier_handoff_teardown_returns_single_worktree
 test_verifier_handoff_refuses_live_or_unverified_endpoint
 test_verifier_handoff_allows_backend_change

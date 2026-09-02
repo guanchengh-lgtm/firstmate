@@ -302,19 +302,35 @@ $1
 EOF
 }
 
-strand_submodule_pin_via_spawn() {
-  local id=$1 out status
-  mkdir -p "$HOME_DIR/data/$id"
-  printf 'brief for %s\n' "$id" > "$HOME_DIR/data/$id/brief.md"
-  printf 'builder\n' > "$HOME_DIR/data/$id/role"
+strand_submodule_pin() {
+  git -C "$POOL_DIR" fetch --quiet origin
+  git -C "$POOL_DIR" reset --hard "$ADVANCED_SHA" >/dev/null
+  [ "$(git -C "$POOL_DIR" rev-parse HEAD)" = "$ADVANCED_SHA" ] \
+    || fail "the fixture did not move the pooled base across the changed submodule pin"
+  [ "$(git -C "$POOL_DIR/ui" rev-parse HEAD)" = "$SUBPIN1" ] \
+    || fail "the fixture did not strand the submodule on the pin the old base recorded"
+}
+
+test_reset_refuses_new_stale_submodule_pin() {
+  local rec id out status
+  id='pool-post-reset-stale-pin-r12'
+  rec=$(make_submodule_case post-reset-stale-pin "$id")
+  read_submodule_case "$rec"
+
   out=$(run_spawn "$id" --mode no-mistakes --yolo off)
   status=$?
-  expect_code 0 "$status" "the spawn that moves the submodule pin should succeed"
-  assert_contains "$out" "spawned $id" "the spawn that moves the submodule pin did not report success"
+  [ "$status" -ne 0 ] || fail "spawn launched after reset changed an initialized submodule pin"
+  assert_contains "$out" "stale submodule checkout after its base refresh" \
+    "post-reset refusal did not name the stale initialized submodule"
+  assert_contains "$out" "submodule 'ui'" "post-reset refusal did not name the submodule"
+  assert_contains "$out" "$SUBPIN1" "post-reset refusal did not report the checked-out pin"
+  assert_contains "$out" "$SUBPIN2" "post-reset refusal did not report the new recorded pin"
   [ "$(git -C "$POOL_DIR" rev-parse HEAD)" = "$ADVANCED_SHA" ] \
-    || fail "the first spawn did not move the pooled base across the moved submodule pin"
+    || fail "post-reset refusal did not retain the refreshed base"
   [ "$(git -C "$POOL_DIR/ui" rev-parse HEAD)" = "$SUBPIN1" ] \
-    || fail "the first spawn did not strand the submodule on the pin the old base recorded"
+    || fail "post-reset refusal updated the initialized submodule"
+  assert_absent "$HOME_DIR/state/$id.meta" "post-reset stale submodule refusal published task metadata"
+  pass "a base refresh refuses an initialized submodule left at the old pin"
 }
 
 test_stale_submodule_pin_explains_itself() {
@@ -322,13 +338,13 @@ test_stale_submodule_pin_explains_itself() {
   id='pool-stale-pin-r7'
   rec=$(make_submodule_case stale-pin "$id")
   read_submodule_case "$rec"
-  strand_submodule_pin_via_spawn 'pool-stale-pin-seed-r7'
+  strand_submodule_pin
   before=$(git -C "$POOL_DIR" rev-parse HEAD)
   before_sub=$(git -C "$POOL_DIR/ui" rev-parse HEAD)
 
   out=$(run_spawn "$id" --mode no-mistakes --yolo off)
   status=$?
-  [ "$status" -ne 0 ] || fail "the second spawn launched from a slot carrying a stale submodule pin"
+  [ "$status" -ne 0 ] || fail "spawn launched from a slot carrying a stale submodule pin"
   assert_contains "$out" "stale submodule checkout" \
     "refusal did not name the cause as a stale submodule checkout"
   assert_contains "$out" "submodule 'ui'" "refusal did not name the submodule"
@@ -342,7 +358,7 @@ test_stale_submodule_pin_explains_itself() {
     || fail "spawn moved HEAD while refusing a stale submodule pin"
   [ "$(git -C "$POOL_DIR/ui" rev-parse HEAD)" = "$before_sub" ] \
     || fail "spawn converged the submodule while refusing the slot"
-  pass "two consecutive spawns across a moved submodule pin report both pins"
+  pass "a pre-existing stale submodule checkout reports both pins"
 }
 
 test_unpushed_submodule_commit_is_still_uncommitted_work() {
@@ -350,7 +366,7 @@ test_unpushed_submodule_commit_is_still_uncommitted_work() {
   id='pool-sub-unpushed-r10'
   rec=$(make_submodule_case sub-unpushed "$id")
   read_submodule_case "$rec"
-  strand_submodule_pin_via_spawn 'pool-sub-unpushed-seed-r10'
+  strand_submodule_pin
   printf 'unlanded submodule work\n' > "$POOL_DIR/ui/unlanded.txt"
   git -C "$POOL_DIR/ui" add unlanded.txt
   git -C "$POOL_DIR/ui" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' \
@@ -381,7 +397,7 @@ test_work_inside_submodule_is_still_uncommitted_work() {
   id='pool-sub-work-r8'
   rec=$(make_submodule_case sub-work "$id")
   read_submodule_case "$rec"
-  strand_submodule_pin_via_spawn 'pool-sub-work-seed-r8'
+  strand_submodule_pin
   git -C "$POOL_DIR/ui" checkout --quiet "$SUBPIN2"
   printf 'work that must survive\n' > "$POOL_DIR/ui/keep-me.txt"
 
@@ -402,7 +418,7 @@ test_stale_pin_carrying_real_work_is_not_called_stale() {
   id='pool-sub-both-r9'
   rec=$(make_submodule_case sub-both "$id")
   read_submodule_case "$rec"
-  strand_submodule_pin_via_spawn 'pool-sub-both-seed-r9'
+  strand_submodule_pin
   printf 'work that must survive\n' > "$POOL_DIR/ui/keep-me.txt"
 
   out=$(run_spawn "$id" --mode no-mistakes --yolo off)
@@ -422,7 +438,7 @@ test_stale_pin_beside_other_dirt_reports_one_verdict() {
   id='pool-sub-mixed-r11'
   rec=$(make_submodule_case sub-mixed "$id")
   read_submodule_case "$rec"
-  strand_submodule_pin_via_spawn 'pool-sub-mixed-seed-r11'
+  strand_submodule_pin
   printf 'notes the operator still wants\n' > "$POOL_DIR/zz-notes.txt"
 
   out=$(run_spawn "$id" --mode no-mistakes --yolo off)
@@ -445,6 +461,7 @@ test_direct_pr_and_scout_refresh_before_launch
 test_dirty_pool_refuses_without_discarding_work
 test_unresolved_remote_default_refuses_pool
 test_unreachable_origin_refuses_stale_pool_base
+test_reset_refuses_new_stale_submodule_pin
 test_stale_submodule_pin_explains_itself
 test_unpushed_submodule_commit_is_still_uncommitted_work
 test_work_inside_submodule_is_still_uncommitted_work
