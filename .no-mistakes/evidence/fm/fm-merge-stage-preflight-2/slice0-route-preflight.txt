@@ -1,0 +1,102 @@
+Slice 0 route preflight evidence
+
+Normalized route and trusted-config model:
+{
+  "ci_push_branches": [
+    "main",
+    "fm/merge-upstream-2"
+  ],
+  "ci_pull_request_branches": [
+    "main",
+    "fm/merge-upstream-2-stage"
+  ],
+  "signature_pull_request_branches": [
+    "main",
+    "fm/merge-upstream-2-stage"
+  ],
+  "allow_repo_commands": true,
+  "disable_project_settings": true,
+  "pr_base_branch_present": false
+}
+
+Rehearsal PR checks:
+summary: "12 passed, 1 failed, 13 total"
+checks[13]{name,conclusion}:
+  PR must be raised via no-mistakes,fail
+  Lint,pass
+  Test coverage guard,pass
+  Behavior portable parallel 1,pass
+  Behavior portable parallel 2,pass
+  Behavior portable serial 1,pass
+  Behavior portable serial 2,pass
+  Behavior portable serial 3,pass
+  Behavior portable serial 4,pass
+  Behavior tests (Herdr),pass
+  Stock macOS Bash snapshot compatibility,pass
+  Repo invariants,pass
+  Behavior timing aggregate,pass
+help[2]:
+  Run `gh-axi pr view 94` to see PR details
+  Run `gh-axi pr merge 94` to merge when ready
+
+Rehearsal signature run:
+run:
+  id: 33608533033
+  title: PR #94 body compliance - opened - event 141 (run 33608533033)
+  status: completed
+  conclusion: failure
+  workflow: Require no-mistakes
+  branch: fm/merge-stage-route-rehearsal
+  created: 32m ago
+jobs[1]{id,name,status,conclusion}:
+  100178010946,PR must be raised via no-mistakes,completed,failure
+
+Rehearsal teardown lookup and exact parser result:
+count: 1 of 1 total
+pull_requests[1]{number,title,state,author,draft,review}:
+  94,"docs(config): note stage PR CI base",closed,guanchengh-lgtm,no,none
+help[2]:
+  Run `gh-axi pr view <number>` to view details
+  Run `gh-axi pr create --title "..." --body-file <path>` to create
+parsed_pr_number=94
+
+Combined-main exact-SHA run:
+count: 1
+runs[1]{id,title,status,conclusion,workflow,branch,event,created}:
+  33588439832,"fix(bin): remove teardown measure gate (#92)",completed,success,CI,main,push,5h ago
+help[1]:
+  Run `gh-axi run view <id>` to view details
+run:
+  id: 33588439832
+  title: "fix(bin): remove teardown measure gate (#92)"
+  status: completed
+  conclusion: success
+  workflow: CI
+  branch: main
+  created: 5h ago
+jobs[12]{id,name,status,conclusion}:
+  100117320102,Behavior tests (Herdr),completed,success
+  100117320229,Test coverage guard,completed,success
+  100117320246,Repo invariants,completed,success
+  100117320264,Behavior portable parallel 1,completed,success
+  100117320270,Behavior portable serial 1,completed,success
+  100117320278,Lint,completed,success
+  100117320327,Stock macOS Bash snapshot compatibility,completed,success
+  100117320336,Behavior portable serial 3,completed,success
+  100117320403,Behavior portable serial 2,completed,success
+  100117320405,Behavior portable parallel 2,completed,success
+  100117320418,Behavior portable serial 4,completed,success
+  100120114177,Behavior timing aggregate,completed,success
+
+Drop ancestry at parent main:
+c771681 ancestor=yes
+8fc37c9 ancestor=yes
+6f62161 ancestor=yes
+12743809 ancestor=yes
+
+Change-scope guards:
+merge_commits_since_assigned_base=0
+.github/workflows/ci.yml
+.github/workflows/no-mistakes-required.yml
+.no-mistakes.yaml
+docs/configuration.md

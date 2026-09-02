@@ -1,0 +1,11 @@
+pull_request:
+  number: 94
+  title: "docs(config): note stage PR CI base"
+  state: closed
+  author: guanchengh-lgtm
+  draft: no
+  merged: no
+  checks: "12 passed, 1 failed, 13 total"
+  body: "## Why\n\nThis is a disposable route rehearsal for slice 0 of the option-C upstream merge. It exists to prove GitHub routing onto `fm/merge-upstream-2-stage`. It is evidence, not product. Do not merge it.\n\n## Scope\n\nOne line in `docs/configuration.md`. Base is the throwaway `fm/merge-upstream-2-stage` ref (workflows from `df753d80`, not `H0`).\n\n## Blast Radius\n\nNo product behavior. Close this PR unmerged after CI and the no-mistakes signature job appear.\n\n## Verification\n\nConfirm the PR base is `fm/merge-upstream-2-stage`, that CI jobs including macOS queue, that the no-mistakes signature job runs, and that `gh-axi pr list --state all --head fm/merge-stage-route-rehearsal` is the lookup teardown uses.\n"
+  comment_count: 0 — use --comments to see full comments
+  review_count: 0 — use --reviews to see full reviews
