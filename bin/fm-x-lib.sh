@@ -947,7 +947,6 @@ fmx_meta_link_set() {
     ''|*[!0-9]*) ;;
     *) printf 'x_reply_max_chars=%s\n' "$reply_max" >> "$tmp" || { rm -f "$tmp"; fm_lock_release "$lock"; return 1; } ;;
   esac
-  mv -f "$tmp" "$meta" || { rm -f "$tmp"; fm_lock_release "$lock"; return 1; }
   # STATE is the caller's authorized state directory, never dirname of $meta.
   # shellcheck disable=SC2153
   if ! fm_backlog_atomic_transition publish "$tmp" "$meta" "task record" "$STATE"; then

@@ -664,8 +664,6 @@ remote_handoff() { # <secondmate-id> <keys...>
   remote_deliver_outbox "$id" "$outbox" || return 1
   echo "handed off ${#requested[@]} item(s) to remote secondmate $id: ${requested[*]-}"
   [ "${#already[@]}" -eq 0 ] || echo "  already staged (recovered): ${already[*]-}"
-  echo "handed off ${#requested[@]} item(s) to remote secondmate $id: ${requested[*]}"
-  [ "${#already[@]}" -eq 0 ] || echo "  already staged (recovered): ${already[*]}"
   warn_stale_public_commitments "$id" "${requested[@]}"
 }
 

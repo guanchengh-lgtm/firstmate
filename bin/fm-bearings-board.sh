@@ -113,7 +113,6 @@ validate_payload() {  # <data.json>
     def charted_item:
       type == "object" and repo_marker and (.id | slug(128))
       and (.title | nonempty_string) and (.reason | type == "string")
-      and (.dispatchable | type == "boolean");
       and (.dispatchable | type == "boolean")
       and ((has("kind") | not) or (.kind == "queued" or .kind == "warning"))
       and (if .kind == "warning" then .dispatchable == false else true end);

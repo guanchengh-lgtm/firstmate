@@ -813,7 +813,6 @@ fm_pending_reply_note_remote_channel_caught_up() {  # <state-dir> <task_id> [epo
   chmod 700 "$dir" 2>/dev/null || true
   [ ! -L "$path" ] || return 1
   tmp="$dir/.caught-up.$task_id.${BASHPID:-$$}.$RANDOM"
-  tmp="$dir/.caught-up.$task_id.$$"
   printf 'caught_up_epoch=%s\n' "$epoch" > "$tmp" || { rm -f -- "$tmp"; return 1; }
   chmod 600 "$tmp" 2>/dev/null || true
   mv -f -- "$tmp" "$path"

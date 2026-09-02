@@ -460,7 +460,7 @@ cmd_notify() {
     | [.id, .spawn_gen, .host, $kind]
     | join($sep)')
 
-  local id sampled_spawn_gen sampled_host expected_remote_host kind path last age now delivered_at reconcile_lock control_lock meta meta_lock did send_rc
+  local id sampled_spawn_gen sampled_host expected_remote_host kind path last age now delivered_at reconcile_lock control_lock meta meta_lock did send_rc tmp
   while IFS=$'\037' read -r id sampled_spawn_gen sampled_host kind; do
     [ -n "${id:-}" ] || continue
     path=$(nudge_path "$id")
@@ -558,12 +558,14 @@ cmd_notify() {
     if [ -f "$path" ] && [ ! -L "$path" ]; then last=$(cat "$path" 2>/dev/null || true); fi
     case "$last" in ''|*[!0-9]*) last= ;; esac
     if [ -n "$last" ] && [ "$last" -gt "$delivered_at" ]; then delivered_at=$last; fi
+    tmp=
     if revalidate_identity "$meta" "$sampled_spawn_gen" "$sampled_host" \
-      && (umask 077; printf '%s\n' "$delivered_at" > "$path.tmp") \
-      && mv -f -- "$path.tmp" "$path"; then
+      && tmp=$(umask 077; mktemp "$STATE/.reconcile-nudged.XXXXXX") \
+      && printf '%s\n' "$delivered_at" > "$tmp" \
+      && mv -f -- "$tmp" "$path"; then
       printf 'sent: %s %s\n' "$id" "$kind"
     else
-      rm -f -- "$path.tmp"
+      [ -z "$tmp" ] || rm -f -- "$tmp"
       # The mate has the instruction; only this home's cooldown record is
       # missing, so say so rather than letting the next run ask again in silence.
       printf 'sent-unrecorded: %s %s\n' "$id" "$kind"

@@ -640,7 +640,6 @@ worker_run_with_timeout() { # <job-dir> <seconds> <command> [args...]
   rc=$?
   rm -f -- "$group_file" "$group_start_file" "$armed_file"
   [ "$timed_out" -eq 0 ] || return 124
-  [ "$heartbeat_failed" -eq 0 ] || return 125
   [ "$cancelled" -eq 0 ] || return 130
   [ "$WORKER_PREEMPTED" -eq 0 ] || return "$FM_REMOTE_JOB_PREEMPTED_EXIT"
   return "$rc"

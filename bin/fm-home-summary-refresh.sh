@@ -190,6 +190,10 @@ home_summary_log_failure() {
   local size stamp tmp
   stamp=$HOME_SUMMARY_FAILURE_STAMP
   [ -n "$stamp" ] || stamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  if [ -L "$ERROR_LOG" ]; then
+    printf 'fm-home-summary-refresh: %s\n' "$HOME_SUMMARY_ERROR" >&2
+    return 0
+  fi
   if ! printf '[%s] %s\n' "$stamp" "$HOME_SUMMARY_ERROR" >> "$ERROR_LOG" 2>/dev/null; then
     printf 'fm-home-summary-refresh: %s\n' "$HOME_SUMMARY_ERROR" >&2
     return 0
@@ -199,7 +203,7 @@ home_summary_log_failure() {
     ''|*[!0-9]*) return 0 ;;
   esac
   if [ "$size" -ge "$ERROR_LOG_MAX_BYTES" ]; then
-    tmp="$ERROR_LOG.tmp.${BASHPID:-$$}"
+    tmp=$(umask 077; mktemp "$STATE/.home-summary-refresh.log.XXXXXX") || return 0
     tail -n 200 "$ERROR_LOG" > "$tmp" 2>/dev/null \
       && mv -f -- "$tmp" "$ERROR_LOG" 2>/dev/null
     rm -f -- "$tmp" 2>/dev/null || true
