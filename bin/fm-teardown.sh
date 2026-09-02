@@ -236,6 +236,8 @@ CONTROL_LOCK="$STATE/.control-$ID.lock"
 CONTROL_LOCK_HELD=0
 META_LOCK=
 META_LOCK_HELD=0
+SESSION_PUBLICATION_LOCK=
+SESSION_PUBLICATION_LOCK_HELD=0
 DESCENDANT_LOCK_PATHS=()
 DESCENDANT_TASK_STATES=()
 DESCENDANT_TASK_IDS=()
@@ -243,6 +245,10 @@ DESCENDANT_TASK_KINDS=()
 DESCENDANT_TASK_HOMES=()
 teardown_release_locks() {
   local status=$? i
+  if [ "$SESSION_PUBLICATION_LOCK_HELD" = 1 ]; then
+    fm_lock_release "$SESSION_PUBLICATION_LOCK" || true
+    SESSION_PUBLICATION_LOCK_HELD=0
+  fi
   if declare -F teardown_release_herdr_locks >/dev/null 2>&1; then
     teardown_release_herdr_locks || true
   fi
@@ -1595,7 +1601,10 @@ task_process_identity() {  # <pid>
 
 task_process_identity_matches() {  # <pid> <identity>
   local current
-  current=$(task_process_identity "$1") || return 1
+  if ! current=$(task_process_identity "$1"); then
+    kill -0 "$1" 2>/dev/null && return 2
+    return 1
+  fi
   [ "$current" = "$2" ]
 }
 
@@ -1623,13 +1632,13 @@ task_ancestor_pids() {  # <start-pid>
 
 task_protected_add() {  # <pid>
   local pid=$1 identity i
-  case "$pid" in ''|*[!0-9]*) return 0 ;; esac
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
   if [ "${#TASK_PROTECTED_PIDS[@]}" -gt 0 ]; then
     for i in "${!TASK_PROTECTED_PIDS[@]}"; do
       [ "${TASK_PROTECTED_PIDS[$i]}" != "$pid" ] || return 0
     done
   fi
-  identity=$(task_process_identity "$pid") || return 0
+  identity=$(task_process_identity "$pid") || return 1
   TASK_PROTECTED_PIDS+=("$pid")
   TASK_PROTECTED_IDENTITIES+=("$identity")
 }
@@ -1646,7 +1655,7 @@ task_record_spared() {  # <pid>
 # harness name is not required. Absent, malformed, or dead lock: $$ chain
 # only. Live lock whose walk cannot be resolved: refuse.
 task_load_protected_set() {
-  local chain pid lock_file lock_pid
+  local chain pid lock_file lock_pid protected_count
   TASK_PROTECTED_PIDS=()
   TASK_PROTECTED_IDENTITIES=()
   TASK_PIDS_REFUSE_REASON=
@@ -1654,36 +1663,60 @@ task_load_protected_set() {
   [ -n "$chain" ] || chain=$$
   while IFS= read -r pid; do
     [ -n "$pid" ] || continue
-    task_protected_add "$pid"
+    task_protected_add "$pid" || true
   done <<EOF
 $chain
 EOF
   lock_file=$STATE/.lock
   [ -f "$lock_file" ] || return 0
-  lock_pid=$(tr -d '[:space:]' < "$lock_file" 2>/dev/null) || return 0
-  case "$lock_pid" in ''|*[!0-9]*) return 0 ;; esac
+  lock_pid=$(LC_ALL=C awk '
+    NR == 1 && /^[0-9]+$/ { pid = $0; next }
+    { invalid = 1 }
+    END {
+      if (NR != 1 || invalid) exit 1
+      print pid
+    }
+  ' "$lock_file" 2>/dev/null) || return 0
   kill -0 "$lock_pid" 2>/dev/null || return 0
+  protected_count=${#TASK_PROTECTED_PIDS[@]}
   if ! chain=$(task_ancestor_pids "$lock_pid"); then
+    kill -0 "$lock_pid" 2>/dev/null || return 0
     TASK_PIDS_REFUSE_REASON="REFUSED: cannot resolve live session owner $lock_pid ancestor chain for $ID; preserving the worktree/tasktmp for manual inspection or retry."
     return 1
   fi
   while IFS= read -r pid; do
     [ -n "$pid" ] || continue
-    task_protected_add "$pid"
+    if ! task_protected_add "$pid"; then
+      if kill -0 "$lock_pid" 2>/dev/null; then
+        TASK_PIDS_REFUSE_REASON="REFUSED: cannot resolve live session owner $lock_pid ancestor chain for $ID; preserving the worktree/tasktmp for manual inspection or retry."
+        return 1
+      fi
+      TASK_PROTECTED_PIDS=("${TASK_PROTECTED_PIDS[@]:0:$protected_count}")
+      TASK_PROTECTED_IDENTITIES=("${TASK_PROTECTED_IDENTITIES[@]:0:$protected_count}")
+      return 0
+    fi
   done <<EOF
 $chain
 EOF
+  if ! kill -0 "$lock_pid" 2>/dev/null; then
+    TASK_PROTECTED_PIDS=("${TASK_PROTECTED_PIDS[@]:0:$protected_count}")
+    TASK_PROTECTED_IDENTITIES=("${TASK_PROTECTED_IDENTITIES[@]:0:$protected_count}")
+  fi
   return 0
 }
 
 task_pid_is_protected() {  # <pid>
-  local pid=$1 i
+  local pid=$1 i status
   [ "${#TASK_PROTECTED_PIDS[@]}" -gt 0 ] || return 1
   for i in "${!TASK_PROTECTED_PIDS[@]}"; do
-    if [ "${TASK_PROTECTED_PIDS[$i]}" = "$pid" ] \
-       && task_process_identity_matches "$pid" "${TASK_PROTECTED_IDENTITIES[$i]}"; then
+    [ "${TASK_PROTECTED_PIDS[$i]}" = "$pid" ] || continue
+    if task_process_identity_matches "$pid" "${TASK_PROTECTED_IDENTITIES[$i]}"; then
       return 0
+    else
+      status=$?
     fi
+    [ "$status" -ne 2 ] || return 2
+    return 1
   done
   return 1
 }
@@ -1692,7 +1725,7 @@ task_pids_under_roots() {  # <dir>...
   TASK_PIDS=
   TASK_PIDS_FAILED_DIR=
   TASK_PIDS_REFUSE_REASON=
-  local dir dir_pids pids="" pid filtered=""
+  local dir dir_pids pids="" pid filtered="" protected_status
   for dir in "$@"; do
     [ -n "$dir" ] || continue
     if ! dir_pids=$(pids_with_cwd_under "$dir"); then
@@ -1709,6 +1742,12 @@ $dir_pids"
     if task_pid_is_protected "$pid"; then
       task_record_spared "$pid"
       continue
+    else
+      protected_status=$?
+      if [ "$protected_status" -eq 2 ]; then
+        task_record_spared "$pid"
+        continue
+      fi
     fi
     filtered="$filtered
 $pid"
@@ -2656,6 +2695,20 @@ remove_secondmate_registry_entry() {
   return "$rc"
 }
 
+if [ "$KIND" != secondmate ]; then
+  if ! task_load_protected_set; then
+    printf '%s\n' "$TASK_PIDS_REFUSE_REASON" >&2
+    exit 1
+  fi
+  SESSION_PUBLICATION_LOCK=$STATE/.lock.acquire
+  fm_lock_acquire_wait "$SESSION_PUBLICATION_LOCK" || exit 1
+  SESSION_PUBLICATION_LOCK_HELD=1
+  if ! task_load_protected_set; then
+    printf '%s\n' "$TASK_PIDS_REFUSE_REASON" >&2
+    exit 1
+  fi
+fi
+
 validate_pr_poll_cleanup "$STATE" "$ID" || exit 1
 
 if [ "$KIND" = secondmate ]; then
@@ -2809,7 +2862,9 @@ fi
 # not by task-worktree cleanup.
 if [ "$KIND" != secondmate ]; then
   conclude_task_no_mistakes_run "$WT"
-  reap_task_worktree_processes worktree "$WT" "$TASK_TMP"
+  reap_task_worktree_processes worktree "$WT" "$TASK_TMP" || exit 1
+  fm_lock_release "$SESSION_PUBLICATION_LOCK" || exit 1
+  SESSION_PUBLICATION_LOCK_HELD=0
 fi
 
 # Fix 3 (see script header): sweep remote job workers abandoned by an already

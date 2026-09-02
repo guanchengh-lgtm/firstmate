@@ -566,7 +566,7 @@ make_path_without_lsof() {  # <case-dir>
   local case_dir=$1 path_dir="$1/path-without-lsof" cmd resolved
   mkdir -p "$path_dir"
   for cmd in awk bash basename cat chmod cp cut date dirname env find git grep head hostname id ln \
-    mkdir mktemp mv perl ps readlink realpath rm sed sh sleep sort stat tail timeout tr uname wc xargs; do
+    mkdir mktemp mv perl ps readlink realpath rm rmdir sed sh sleep sort stat tail timeout tr uname wc xargs; do
     resolved=$(command -v "$cmd" 2>/dev/null) || continue
     case "$resolved" in /*) ln -sf "$resolved" "$path_dir/$cmd" ;; esac
   done
@@ -2603,11 +2603,127 @@ test_host_session_under_worktree_is_spared() {
   pass "an unrelated session host under the worktree is spared while task-owned processes are reaped"
 }
 
-test_live_lock_owner_unresolvable_refuses() {
+test_malformed_lock_records_do_not_form_a_pid() {
+  local case_dir rc sleeper_pid first_record second_record
+  case_dir=$(make_case malformed-lock-records)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+
+  ( cd "$case_dir/wt" && exec sleep 300 ) &
+  sleeper_pid=$!
+  disown
+  sleep 0.2
+  kill -0 "$sleeper_pid" 2>/dev/null || fail "malformed-lock-records: task sleeper did not start"
+  first_record=${sleeper_pid%?}
+  second_record=${sleeper_pid#"$first_record"}
+  [ -n "$first_record" ] && [ -n "$second_record" ] \
+    || fail "malformed-lock-records: could not split the sleeper pid"
+  printf '%s\n%s\n' "$first_record" "$second_record" > "$case_dir/state/.lock"
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if kill -0 "$sleeper_pid" 2>/dev/null; then
+    kill -KILL "$sleeper_pid" 2>/dev/null || true
+    fail "malformed-lock-records: malformed lock records protected their concatenated pid"
+  fi
+  expect_code 0 "$rc" "malformed-lock-records: teardown should complete"
+  pass "multiple numeric lock records cannot protect their concatenated pid"
+}
+
+test_live_lock_identity_failure_refuses() {
   local case_dir rc lock_pid
+  case_dir=$(make_case lock-owner-identity-failure)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+
+  sleep 300 &
+  lock_pid=$!
+  disown
+  sleep 0.2
+  kill -0 "$lock_pid" 2>/dev/null || fail "lock-owner-identity-failure: lock pid did not start"
+  printf '%s\n' "$lock_pid" > "$case_dir/state/.lock"
+  cat > "$case_dir/fakebin/ps" <<EOF
+#!/usr/bin/env bash
+if [ "\${1:-}" = -p ] && [ "\${2:-}" = "$lock_pid" ] \
+   && [ "\${3:-}" = -o ] && [ "\${4:-}" = lstart= ]; then
+  exit 1
+fi
+exec "\$REAL_PS_FOR_TEST" "\$@"
+EOF
+  cat > "$case_dir/fakebin/treehouse" <<EOF
+#!/usr/bin/env bash
+printf 'return\n' >> "$case_dir/treehouse.log"
+EOF
+  chmod +x "$case_dir/fakebin/ps" "$case_dir/fakebin/treehouse"
+
+  rc=0
+  FM_PROC_ROOT_OVERRIDE="$case_dir/no-proc" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if kill -0 "$lock_pid" 2>/dev/null; then
+    kill -KILL "$lock_pid" 2>/dev/null || true
+  fi
+  expect_code 1 "$rc" "lock-owner-identity-failure: teardown should refuse"
+  assert_grep "REFUSED: cannot resolve live session owner $lock_pid ancestor chain for task-x1" "$case_dir/stderr" \
+    "lock-owner-identity-failure: teardown did not explain the unresolved session owner"
+  assert_present "$case_dir/wt" "lock-owner-identity-failure: teardown removed the worktree"
+  assert_present "$case_dir/state/task-x1.meta" "lock-owner-identity-failure: teardown removed task metadata"
+  assert_absent "$case_dir/treehouse.log" "lock-owner-identity-failure: teardown returned the worktree"
+  pass "a live lock owner with an unreadable identity refuses teardown"
+}
+
+test_protected_identity_recheck_failure_spares_pid() {
+  local case_dir rc lock_pid
+  case_dir=$(make_case protected-identity-recheck)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+
+  ( cd "$case_dir/wt" && exec sleep 300 ) &
+  lock_pid=$!
+  disown
+  sleep 0.2
+  kill -0 "$lock_pid" 2>/dev/null || fail "protected-identity-recheck: lock pid did not start"
+  printf '%s\n' "$lock_pid" > "$case_dir/state/.lock"
+  cat > "$case_dir/fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = -p ] && [ "${2:-}" = "${FM_FAKE_LOCK_PID:-}" ] \
+   && [ "${3:-}" = -o ] && [ "${4:-}" = lstart= ]; then
+  count=0
+  [ ! -f "$FM_FAKE_PS_COUNT" ] || count=$(cat "$FM_FAKE_PS_COUNT")
+  count=$((count + 1))
+  printf '%s\n' "$count" > "$FM_FAKE_PS_COUNT"
+  [ "$count" -ne 4 ] || exit 1
+fi
+exec "$REAL_PS_FOR_TEST" "$@"
+SH
+  chmod +x "$case_dir/fakebin/ps"
+
+  rc=0
+  FM_PROC_ROOT_OVERRIDE="$case_dir/no-proc" FM_FAKE_LOCK_PID="$lock_pid" \
+  FM_FAKE_PS_COUNT="$case_dir/ps-count" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if ! kill -0 "$lock_pid" 2>/dev/null; then
+    fail "protected-identity-recheck: teardown reaped a protected pid after an identity read error"
+  fi
+  kill -KILL "$lock_pid" 2>/dev/null || true
+  expect_code 0 "$rc" "protected-identity-recheck: teardown should complete"
+  assert_grep "$lock_pid" "$case_dir/stderr" \
+    "protected-identity-recheck: spared-process line did not name the protected pid"
+  pass "a protected pid stays outside the signal set when identity recheck fails"
+}
+
+test_live_lock_owner_unresolvable_refuses() {
+  local case_dir rc lock_pid path_without_lsof
   case_dir=$(make_case lock-owner-unresolvable)
   write_meta "$case_dir" no-mistakes ship
   land_shippable_commit "$case_dir"
+  path_without_lsof=$(make_path_without_lsof "$case_dir")
+  mkdir -p "$case_dir/data/task-x1" "$case_dir/data/ship-x2"
+  printf 'new report\n' > "$case_dir/data/task-x1/report.md"
+  printf '%s\n' 'kind=ship' 'ov=task-x1' > "$case_dir/state/ship-x2.meta"
+  printf 'preserved report\n' > "$case_dir/data/ship-x2/ov-report.md"
 
   sleep 300 &
   lock_pid=$!
@@ -2631,7 +2747,8 @@ EOF
   chmod +x "$case_dir/fakebin/ps" "$case_dir/fakebin/treehouse"
 
   rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  FM_TEARDOWN_TEST_PATH="$path_without_lsof" \
+    run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
   if kill -0 "$lock_pid" 2>/dev/null; then
     kill -KILL "$lock_pid" 2>/dev/null || true
@@ -2642,6 +2759,8 @@ EOF
   assert_present "$case_dir/wt" "lock-owner-unresolvable: teardown removed the worktree"
   assert_present "$case_dir/state/task-x1.meta" "lock-owner-unresolvable: teardown removed task metadata"
   assert_absent "$case_dir/treehouse.log" "lock-owner-unresolvable: teardown returned the worktree"
+  [ "$(cat "$case_dir/data/ship-x2/ov-report.md")" = "preserved report" ] \
+    || fail "lock-owner-unresolvable: teardown overwrote the outside-voice report"
   pass "a live lock pid whose ancestor walk cannot be resolved refuses before destructive teardown"
 }
 
@@ -2863,6 +2982,9 @@ test_lsof_error_refuses_before_removal
 test_reused_pid_identity_is_not_force_killed
 test_exec_changed_process_is_still_reaped
 test_host_session_under_worktree_is_spared
+test_malformed_lock_records_do_not_form_a_pid
+test_live_lock_identity_failure_refuses
+test_protected_identity_recheck_failure_spares_pid
 test_live_lock_owner_unresolvable_refuses
 test_process_spawned_during_grace_is_reaped_on_later_pass
 test_persistent_scan_refuses_after_bounded_retries
