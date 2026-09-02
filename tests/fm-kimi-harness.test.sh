@@ -536,6 +536,8 @@ EOF
   [ "$starts" -eq 2 ] || fail "spawn made $starts backlog start attempts instead of two"
   assert_contains "$out" "task record was preserved" \
     "backlog commit failure did not report its recovery record"
+  assert_contains "$out" "tasks-axi start '$id' --file '$HOME_DIR/data/backlog.md'" \
+    "backlog commit failure did not provide the supported manual recovery command"
   assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" \
     "backlog commit failure orphaned its endpoint and local copy by removing metadata"
   [ "$(cat "$CASE_DIR/kimi.state")" = delivered ] \

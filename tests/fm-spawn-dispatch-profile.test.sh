@@ -220,7 +220,7 @@ for arg in "$@"; do
   esac
 done
 case "$source_path" in
-  *.meta.handoff.*)
+  *.meta.handoff.*|*.meta.spawn.*)
     if [ -n "${FM_FAKE_META_PUBLISH_MV_FAIL:-}" ] \
        && [ "$target_path" = "$FM_FAKE_META_PUBLISH_MV_FAIL" ]; then
       exit 1
@@ -1889,6 +1889,36 @@ test_verifier_handoff_prepublication_failure_retires_replacement_state() {
   pass "fm-spawn: verifier handoff publication failure retires replacement state"
 }
 
+test_fresh_prepublication_failure_retires_endpoint() {
+  local rec id out status meta real_mv tmuxlog treehouse_log
+  id=profile-fresh-prepublish-failure-z48b
+  rec=$(make_spawn_case profile-fresh-prepublish-failure claude "$id")
+  read_case_record "$rec"
+  meta="$HOME_DIR/state/$id.meta"
+  real_mv=$(command -v mv)
+  make_spawn_mv_failure_stub "$FAKEBIN_DIR"
+  treehouse_log="$HOME_DIR/state/.fake-treehouse.log"
+  : > "$treehouse_log"
+
+  out=$(FM_REAL_MV="$real_mv" FM_FAKE_META_PUBLISH_MV_FAIL="$meta" \
+    FM_FAKE_TREEHOUSE_LOG="$treehouse_log" \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+      "$id" "$PROJ_DIR")
+  status=$?
+  [ "$status" -ne 0 ] || fail "fresh spawn accepted failed metadata publication"
+  assert_absent "$meta" "fresh publication failure wrote task metadata"
+  [ "$(cat "$HOME_DIR/state/.fake-endpoint-state")" = missing ] \
+    || fail "fresh publication failure left an unowned endpoint"
+  tmuxlog="$HOME_DIR/state/.fake-tmux.log"
+  [ "$(grep -c '^kill-window ' "$tmuxlog" || true)" -eq 1 ] \
+    || fail "fresh publication failure did not retire its endpoint"
+  assert_grep "return --force $WT_DIR" "$treehouse_log" \
+    "fresh publication failure did not return its local copy"
+  assert_contains "$out" "task record for $id could not be published" \
+    "fresh publication failure lacked its record diagnostic"
+  pass "fm-spawn: fresh publication failure retires unowned resources"
+}
+
 test_verifier_handoff_teardown_returns_single_worktree() {
   local rec id out status treehouse_log tmuxlog return_count
   id=profile-verifier-teardown-z43
@@ -2340,6 +2370,7 @@ test_verifier_handoff_refuses_unreadable_worktree_ownership
 test_verifier_handoff_adoption_failure_retires_new_endpoint
 test_verifier_handoff_requires_confirmed_endpoint_retirement
 test_verifier_handoff_prepublication_failure_retires_replacement_state
+test_fresh_prepublication_failure_retires_endpoint
 test_verifier_handoff_teardown_returns_single_worktree
 test_verifier_handoff_refuses_live_or_unverified_endpoint
 test_verifier_handoff_allows_backend_change

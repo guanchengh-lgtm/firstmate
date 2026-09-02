@@ -602,7 +602,8 @@ fi
 spawn_remote_secondmate() {
   local id=$1 remote host root home harness positional model effort backend out rc meta tmp
   local remote_backend remote_target remote_harness remote_herdr_session registry_lock remote_lock remote_generation
-  local remote_traceparent remote_recorded_traceparent
+  local remote_traceparent remote_recorded_traceparent remote_meta_preexisting prior_remote_target
+  local remote_record_error remote_retire_out remote_retire_rc
   local -a launch_args
   id=${POS[0]:-}
   fm_task_id_creation_valid "$id" || { echo "error: invalid task id" >&2; return 2; }
@@ -685,6 +686,8 @@ spawn_remote_secondmate() {
       ;;
   esac
   meta="$STATE/$id.meta"
+  remote_meta_preexisting=0
+  prior_remote_target=
   if [ -e "$meta" ] || [ -L "$meta" ]; then
     if ! fm_backlog_record_present "$meta" "task record" "$STATE" \
       || [ "$(fm_meta_get "$meta" kind)" != secondmate ] \
@@ -696,6 +699,8 @@ spawn_remote_secondmate() {
       echo "error: existing metadata for $id does not identify this remote secondmate route" >&2
       return 1
     fi
+    remote_meta_preexisting=1
+    prior_remote_target=$(fm_meta_get "$meta" remote_target)
   fi
   # Gate the host before anything is published or transferred, so a host that
   # cannot hold a durable Herdr endpoint refuses here rather than half-way
@@ -810,7 +815,8 @@ spawn_remote_secondmate() {
   remote_recorded_traceparent=$(printf '%s\n' "$out" | sed -n 's/^traceparent=//p' | tail -1)
   fm_trace_context_valid "$remote_recorded_traceparent" || remote_recorded_traceparent=
   tmp="$meta.tmp.$$"
-  {
+  remote_record_error=
+  if ! {
     echo "window=remote:$id"
     echo "endpoint_task_id=$id"
     echo "worktree=$home"
@@ -831,8 +837,23 @@ spawn_remote_secondmate() {
     echo "remote_herdr_session=$remote_herdr_session"
     echo "remote_target=$remote_target"
     [ -z "$remote_recorded_traceparent" ] || echo "traceparent=$remote_recorded_traceparent"
-  } > "$tmp"
-  if ! fm_backlog_atomic_transition publish "$tmp" "$meta" "task record" "$STATE"; then
+  } > "$tmp"; then
+    remote_record_error="its task record could not be prepared"
+  elif ! fm_backlog_atomic_transition publish "$tmp" "$meta" "task record" "$STATE"; then
+    remote_record_error="its task record could not be published ($FM_BACKLOG_TRANSITION_ERROR)"
+  fi
+  if [ -n "$remote_record_error" ]; then
+    rm -f "$tmp" 2>/dev/null || true
+    remote_retire_rc=0
+    remote_retire_out=
+    if [ "$remote_meta_preexisting" -ne 1 ] || [ "$prior_remote_target" != "$remote_target" ]; then
+      if remote_retire_out=$("$SCRIPT_DIR/fm-on.sh" "$id" \
+          fm-remote-secondmate-control.sh retire "$id" --force < /dev/null 2>&1); then
+        remote_retire_rc=0
+      else
+        remote_retire_rc=$?
+      fi
+    fi
     if [ "$SPAWN_TASK_SET_LOCK_HELD" = 1 ]; then
       SPAWN_TASK_SET_LOCK_HELD=0
       fm_lock_release "$SPAWN_TASK_SET_LOCK" || true
@@ -840,7 +861,14 @@ spawn_remote_secondmate() {
     fm_lock_release "$remote_lock" || true
     fm_lock_release "$registry_lock" || true
     fm_lock_release "$SPAWN_TASK_LOCK" || true
-    echo "error: remote secondmate $id launched, but its task record could not be published ($FM_BACKLOG_TRANSITION_ERROR)" >&2
+    if [ "$remote_meta_preexisting" -eq 1 ] && [ "$prior_remote_target" = "$remote_target" ]; then
+      echo "error: remote secondmate $id launched, but $remote_record_error; its existing parent record still owns the reused endpoint" >&2
+    elif [ "$remote_retire_rc" -eq 0 ]; then
+      echo "error: remote secondmate $id launched, but $remote_record_error; its unowned remote endpoint was retired" >&2
+    else
+      [ -z "$remote_retire_out" ] || printf '%s\n' "$remote_retire_out" >&2
+      echo "error: remote secondmate $id launched, but $remote_record_error and its endpoint could not be retired; route $host:$home and host-local metadata were preserved for manual reconciliation" >&2
+    fi
     return 1
   fi
   if [ "$SPAWN_TASK_SET_LOCK_HELD" = 1 ]; then
@@ -865,8 +893,13 @@ ORCA_WORKTREE_ID=
 ORCA_TERMINAL=
 HERDR_PROJECTION_ABORT_CLEANUP=0
 HERDR_PROJECTION_ABORT_SESSION=
+HERDR_PROJECTION_ABORT_TASK_TAB=
 HERDR_PROJECTION_ABORT_TASK_PANE=
 HERDR_PROJECTION_ABORT_SEEDED_PANE=
+HERDR_PROJECTION_ABORT_RECLAIM=0
+HERDR_PROJECTION_ABORT_JOURNAL=
+HERDR_PROJECTION_ABORT_OLD_TAB=
+HERDR_PROJECTION_ABORT_OLD_PANE=
 HERDR_PRESENTATION_ORDER_LOCK=
 HERDR_PRESENTATION_ORDER_LOCK_HELD=0
 SPAWN_TASK_LOCK=
@@ -879,6 +912,9 @@ SPAWN_META_LOCK=
 SPAWN_META_LOCK_HELD=0
 SPAWN_META_PUBLISH_STARTED=0
 SPAWN_FRESH_COMMIT_PENDING=0
+SPAWN_FRESH_ABORT_ENDPOINT=0
+SPAWN_FRESH_ABORT_BACKEND=
+SPAWN_FRESH_ABORT_TARGET=
 SPAWN_TASK_SET_LOCK=
 SPAWN_TASK_SET_LOCK_HELD=0
 RELAUNCH_REPLACEMENT_PENDING=0
@@ -919,8 +955,66 @@ parse_orca_worktree_result() {
   fi
 }
 
+spawn_publish_abort_recovery() {
+  local recovery_tmp="$STATE/.$ID.meta.spawn-recovery.${BASHPID:-$$}"
+  if [ -e "$STATE/$ID.meta" ] || [ -L "$STATE/$ID.meta" ]; then
+    return 0
+  fi
+  if {
+    echo "window=${SPAWN_FRESH_ABORT_TARGET:-${T:-}}"
+    echo "endpoint_task_id=$ID"
+    echo "cleanup_recovery=spawn"
+    echo "worktree=${WT:-}"
+    echo "project=$PROJ_ABS"
+    echo "harness=$HARNESS"
+    echo "kind=$KIND"
+    [ -z "${MODE:-}" ] || echo "mode=$MODE"
+    [ "${SURFACE_SET:-0}" -eq 0 ] || echo "surface=$SURFACE"
+    [ -z "${YOLO:-}" ] || echo "yolo=$YOLO"
+    [ -z "${ROLE:-}" ] || echo "role=$ROLE"
+    [ -z "${MAP_NEXT:-}" ] || echo "map_next=$MAP_NEXT"
+    [ -z "${MAP:-}" ] || echo "map=$MAP"
+    [ -z "${OV:-}" ] || echo "ov=$OV"
+    echo "tasktmp=${TASK_TMP:-}"
+    echo "model=${MODEL:-default}"
+    echo "effort=${EFFORT:-default}"
+    [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
+    [ -z "${SPAWN_GEN:-}" ] || echo "spawn_gen=$SPAWN_GEN"
+    [ "$SPAWN_FRESH_ABORT_BACKEND" = tmux ] \
+      || echo "backend=$SPAWN_FRESH_ABORT_BACKEND"
+    if [ "$SPAWN_FRESH_ABORT_BACKEND" = herdr ]; then
+      echo "herdr_session=${HERDR_SES:-}"
+      echo "herdr_workspace_id=${HERDR_WORKSPACE_ID:-}"
+      echo "herdr_tab_id=${HERDR_TAB_ID:-}"
+      echo "herdr_pane_id=${HERDR_PANE_ID:-}"
+    fi
+    if [ "$SPAWN_FRESH_ABORT_BACKEND" = zellij ]; then
+      echo "zellij_session=${ZELLIJ_SES:-}"
+      echo "zellij_tab_id=${ZELLIJ_TAB_ID:-}"
+      echo "zellij_pane_id=${ZELLIJ_PANE_ID:-}"
+    fi
+    if [ "$SPAWN_FRESH_ABORT_BACKEND" = cmux ]; then
+      echo "cmux_workspace_id=${CMUX_WORKSPACE_ID:-}"
+      echo "cmux_surface_id=${CMUX_SURFACE_ID:-}"
+    fi
+    if [ "$KIND" = secondmate ]; then
+      echo "home=$PROJ_ABS"
+      echo "projects=${SECONDMATE_PROJECTS:-}"
+    fi
+  } > "$recovery_tmp" 2>/dev/null \
+    && fm_backlog_atomic_transition publish "$recovery_tmp" \
+      "$STATE/$ID.meta" "task record" "$STATE"; then
+    SPAWN_FRESH_COMMIT_PENDING=0
+    echo "warning: failed spawn cleanup preserved recovery metadata for $ID" >&2
+  else
+    rm -f "$recovery_tmp" 2>/dev/null || true
+    echo "warning: failed spawn cleanup could not preserve recovery metadata for $ID" >&2
+    return 1
+  fi
+}
+
 spawn_abort_cleanup() {
-  local status=$?
+  local status=$? fresh_cleanup_failed=0
   if [ "$RELAUNCH_REPLACEMENT_PENDING" = 1 ] \
      && [ "$SPAWN_META_PUBLISH_STARTED" = 1 ] \
      && [ -n "$SPAWN_META_TMP" ] \
@@ -953,23 +1047,60 @@ spawn_abort_cleanup() {
         "$VERIFIER_HANDOFF_ABORT_TARGET" 2>/dev/null || true
     fi
   fi
+  if [ "$SPAWN_FRESH_ABORT_ENDPOINT" = 1 ]; then
+    if [ "$SPAWN_FRESH_ABORT_BACKEND" != orca ] \
+       && { [ "$SPAWN_FRESH_ABORT_BACKEND" != herdr ] \
+         || [ "$HERDR_PROJECTION_ABORT_CLEANUP" != 1 ]; }; then
+      fm_backend_kill "$SPAWN_FRESH_ABORT_BACKEND" \
+        "$SPAWN_FRESH_ABORT_TARGET" 2>/dev/null || fresh_cleanup_failed=1
+    fi
+  fi
   if [ "$HERDR_PROJECTION_ABORT_CLEANUP" = 1 ] \
      && [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" != 1 ]; then
     if ! spawn_herdr_presentation_order_lock_acquire "${HERDR_PROJECTION_ABORT_SESSION:-}"; then
       echo "warning: herdr presentation focus lock unavailable; retaining the projection journal and refusing concurrent abort cleanup" >&2
       HERDR_PROJECTION_ABORT_CLEANUP=0
+      [ "$SPAWN_FRESH_ABORT_ENDPOINT" != 1 ] || fresh_cleanup_failed=1
     fi
   fi
   if [ "$HERDR_PROJECTION_ABORT_CLEANUP" = 1 ]; then
     HERDR_PROJECTION_ABORT_CLEANUP=0
-    fm_backend_herdr_projection_cleanup_exact \
-      "$HERDR_PROJECTION_ABORT_SESSION" \
-      "$HERDR_PROJECTION_ABORT_TASK_PANE" \
-      "$HERDR_PROJECTION_ABORT_SEEDED_PANE" || true
+    if [ "$HERDR_PROJECTION_ABORT_RECLAIM" = 1 ]; then
+      HERDR_PROJECTION_ABORT_RECLAIM=0
+      fm_backend_herdr_projection_abort_reclaim \
+        "$HERDR_PROJECTION_ABORT_SESSION" \
+        "$HERDR_PROJECTION_ABORT_JOURNAL" "$ID" \
+        "$HERDR_PROJECTION_ABORT_OLD_TAB" \
+        "$HERDR_PROJECTION_ABORT_OLD_PANE" \
+        "$HERDR_PROJECTION_ABORT_TASK_TAB" \
+        "$HERDR_PROJECTION_ABORT_TASK_PANE" \
+        || [ "$SPAWN_FRESH_ABORT_ENDPOINT" != 1 ] \
+        || fresh_cleanup_failed=1
+    else
+      fm_backend_herdr_projection_cleanup_exact \
+        "$HERDR_PROJECTION_ABORT_SESSION" \
+        "$HERDR_PROJECTION_ABORT_TASK_PANE" \
+        "$HERDR_PROJECTION_ABORT_SEEDED_PANE" \
+        || [ "$SPAWN_FRESH_ABORT_ENDPOINT" != 1 ] \
+        || fresh_cleanup_failed=1
+    fi
   fi
   if [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" = 1 ]; then
     HERDR_PRESENTATION_ORDER_LOCK_HELD=0
     fm_lock_release "$HERDR_PRESENTATION_ORDER_LOCK" || true
+  fi
+  if [ "$SPAWN_FRESH_ABORT_ENDPOINT" = 1 ] \
+     && [ "$SPAWN_FRESH_ABORT_BACKEND" != orca ]; then
+    if [ "$fresh_cleanup_failed" -eq 0 ] \
+       && [ "$KIND" != secondmate ] && [ -n "${WT:-}" ]; then
+      ( cd "$PROJ_ABS" && treehouse return --force "$WT" >/dev/null ) \
+        || fresh_cleanup_failed=1
+    fi
+    if [ "$fresh_cleanup_failed" -eq 0 ]; then
+      SPAWN_FRESH_ABORT_ENDPOINT=0
+    else
+      spawn_publish_abort_recovery || true
+    fi
   fi
   if [ "$ORCA_ABORT_CLEANUP" = 1 ]; then
     ORCA_ABORT_CLEANUP=0
@@ -2692,8 +2823,13 @@ case "$BACKEND" in
               HERDR_PANE_ID=$FM_BACKEND_HERDR_PROJECTION_PANE_ID
               HERDR_PROJECTION_ABORT_CLEANUP=1
               HERDR_PROJECTION_ABORT_SESSION=$HERDR_SES
+              HERDR_PROJECTION_ABORT_TASK_TAB=$HERDR_TAB_ID
               HERDR_PROJECTION_ABORT_TASK_PANE=$HERDR_PANE_ID
               HERDR_PROJECTION_ABORT_SEEDED_PANE=""
+              HERDR_PROJECTION_ABORT_RECLAIM=1
+              HERDR_PROJECTION_ABORT_JOURNAL=$HERDR_PRESENTATION_JOURNAL
+              HERDR_PROJECTION_ABORT_OLD_TAB=$HERDR_RECOVERY_TAB_ID
+              HERDR_PROJECTION_ABORT_OLD_PANE=$HERDR_RECOVERY_PANE_ID
               ;;
             2)
               spawn_herdr_presentation_order_lock_release
@@ -2853,6 +2989,11 @@ if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
   VERIFIER_HANDOFF_ABORT_ENDPOINT=1
   VERIFIER_HANDOFF_ABORT_BACKEND=$BACKEND
   VERIFIER_HANDOFF_ABORT_TARGET=$T
+fi
+if [ "$RELAUNCH" -eq 0 ] && [ "$VERIFIER_HANDOFF" -eq 0 ]; then
+  SPAWN_FRESH_ABORT_ENDPOINT=1
+  SPAWN_FRESH_ABORT_BACKEND=$BACKEND
+  SPAWN_FRESH_ABORT_TARGET=$T
 fi
 if [ "$KIND" = secondmate ]; then
   FM_INHERITABLE_CONFIG=trace-context \
@@ -3520,7 +3661,13 @@ if [ "$RELAUNCH" -eq 0 ]; then
   if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
     VERIFIER_HANDOFF_ABORT_ENDPOINT=0
     HERDR_PROJECTION_ABORT_CLEANUP=0
+    HERDR_PROJECTION_ABORT_RECLAIM=0
     RELAUNCH_REPLACEMENT_PENDING=0
+  else
+    SPAWN_FRESH_ABORT_ENDPOINT=0
+    ORCA_ABORT_CLEANUP=0
+    HERDR_PROJECTION_ABORT_CLEANUP=0
+    HERDR_PROJECTION_ABORT_RECLAIM=0
   fi
 fi
 
@@ -3727,7 +3874,7 @@ fi
 if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
   if [ "$SPAWN_FRESH_COMMIT_PENDING" = 1 ]; then
     SPAWN_FRESH_COMMIT_PENDING=0
-    echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); its task record was preserved so the endpoint and local copy remain owned - fix the backlog and let bootstrap retry the transition" >&2
+    echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); its task record was preserved so the endpoint and local copy remain owned - run tasks-axi start $(shell_quote "$ID") --file $(shell_quote "$DATA/backlog.md") after fixing the backlog" >&2
   else
     echo "error: task $ID was republished but its backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); fix the backlog and re-run the launch" >&2
   fi
