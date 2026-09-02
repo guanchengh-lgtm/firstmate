@@ -2332,6 +2332,11 @@ test_leaked_worktree_process_is_reaped() {
   disown
   sleep 0.3
   kill -0 "$pid" 2>/dev/null || fail "leaked-process-reap: setup sleeper did not start"
+  cat > "$case_dir/fakebin/treehouse" <<EOF
+#!/usr/bin/env bash
+printf 'return\n' >> "$case_dir/treehouse.log"
+EOF
+  chmod +x "$case_dir/fakebin/treehouse"
 
   rc=0
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
@@ -2343,7 +2348,9 @@ test_leaked_worktree_process_is_reaped() {
   fi
   assert_grep "reaping leaked worktree process" "$case_dir/stderr" \
     "leaked-process-reap: teardown did not report reaping the leaked process"
-  pass "a leaked descendant process rooted under the task's worktree is reaped by teardown, not left surviving"
+  assert_present "$case_dir/treehouse.log" \
+    "leaked-process-reap: teardown did not return the worktree after reaping the leaked process"
+  pass "a leaked descendant process is reaped before the worktree return proceeds"
 }
 
 test_leaked_tasktmp_process_is_reaped() {
@@ -2579,9 +2586,16 @@ test_host_session_under_worktree_is_spared() {
   disown
   sleep 0.3
   kill -0 "$sleeper_pid" 2>/dev/null || fail "host-session-spared: task sleeper did not start"
+  cat > "$case_dir/fakebin/treehouse" <<EOF
+#!/usr/bin/env bash
+printf 'return\n' >> "$case_dir/treehouse.log"
+kill -TERM "$host_pid" "$child_pid" 2>/dev/null || true
+exit 0
+EOF
+  chmod +x "$case_dir/fakebin/treehouse"
 
   rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
   if kill -0 "$sleeper_pid" 2>/dev/null; then
     kill -KILL "$sleeper_pid" 2>/dev/null || true
@@ -2592,15 +2606,18 @@ test_host_session_under_worktree_is_spared() {
     kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
     fail "host-session-spared: live session host or child was reaped"
   fi
-  expect_code 0 "$rc" "host-session-spared: teardown should complete"
+  expect_code 1 "$rc" "host-session-spared: teardown should refuse the worktree return"
   assert_grep "reaping leaked worktree process" "$case_dir/stderr" \
     "host-session-spared: teardown did not report reaping the task-owned process"
-  assert_grep "sparing host process" "$case_dir/stderr" \
-    "host-session-spared: teardown did not report sparing the live session host"
-  assert_grep "$host_pid" "$case_dir/stderr" \
-    "host-session-spared: spared-process line did not name the host shell"
+  assert_grep "REFUSED: protected process(es) for task-x1 remain rooted in the worktree/tasktmp" "$case_dir/stderr" \
+    "host-session-spared: teardown did not refuse the unsafe worktree return"
+  [ "$(grep -Fc "$host_pid" "$case_dir/stderr")" -eq 1 ] \
+    || fail "host-session-spared: refusal did not name the host shell exactly once"
+  assert_present "$case_dir/wt" "host-session-spared: teardown removed the worktree"
+  assert_present "$case_dir/state/task-x1.meta" "host-session-spared: teardown removed task metadata"
+  assert_absent "$case_dir/treehouse.log" "host-session-spared: teardown called treehouse return"
   kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
-  pass "an unrelated session host under the worktree is spared while task-owned processes are reaped"
+  pass "a live session host blocks treehouse return while task-owned processes are reaped"
 }
 
 test_malformed_lock_records_do_not_form_a_pid() {
@@ -2707,11 +2724,15 @@ SH
   if ! kill -0 "$lock_pid" 2>/dev/null; then
     fail "protected-identity-recheck: teardown reaped a protected pid after an identity read error"
   fi
-  kill -KILL "$lock_pid" 2>/dev/null || true
-  expect_code 0 "$rc" "protected-identity-recheck: teardown should complete"
+  expect_code 1 "$rc" "protected-identity-recheck: teardown should refuse the worktree return"
+  assert_grep "REFUSED: protected process(es) for task-x1 remain rooted in the worktree/tasktmp" "$case_dir/stderr" \
+    "protected-identity-recheck: teardown did not refuse the unsafe worktree return"
   assert_grep "$lock_pid" "$case_dir/stderr" \
     "protected-identity-recheck: spared-process line did not name the protected pid"
-  pass "a protected pid stays outside the signal set when identity recheck fails"
+  assert_present "$case_dir/wt" "protected-identity-recheck: teardown removed the worktree"
+  assert_present "$case_dir/state/task-x1.meta" "protected-identity-recheck: teardown removed task metadata"
+  kill -KILL "$lock_pid" 2>/dev/null || true
+  pass "a protected pid stays outside the signal set and blocks treehouse return when identity recheck fails"
 }
 
 test_live_lock_owner_unresolvable_refuses() {

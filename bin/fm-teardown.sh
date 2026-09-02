@@ -1658,6 +1658,7 @@ task_load_protected_set() {
   local chain pid lock_file lock_pid protected_count
   TASK_PROTECTED_PIDS=()
   TASK_PROTECTED_IDENTITIES=()
+  TASK_LIVE_LOCK_PID=
   TASK_PIDS_REFUSE_REASON=
   chain=$(task_ancestor_pids "$$") || true
   [ -n "$chain" ] || chain=$$
@@ -1701,6 +1702,8 @@ EOF
   if ! kill -0 "$lock_pid" 2>/dev/null; then
     TASK_PROTECTED_PIDS=("${TASK_PROTECTED_PIDS[@]:0:$protected_count}")
     TASK_PROTECTED_IDENTITIES=("${TASK_PROTECTED_IDENTITIES[@]:0:$protected_count}")
+  else
+    TASK_LIVE_LOCK_PID=$lock_pid
   fi
   return 0
 }
@@ -1776,6 +1779,21 @@ task_report_spared_hosts() {  # <root>
   echo "teardown: sparing host process(es) for $ID still rooted in ${root:-<unknown>}: $rendered" >&2
 }
 
+task_refuse_treehouse_return_with_protected_roots() {  # <dir>...
+  local rendered
+  TASK_SPARED_PIDS=
+  if ! command -v lsof >/dev/null 2>&1; then
+    [ -n "${TASK_LIVE_LOCK_PID:-}" ] || return 0
+    echo "REFUSED: cannot verify whether protected session process $TASK_LIVE_LOCK_PID remains rooted in the worktree/tasktmp because lsof is unavailable; preserving the worktree/tasktmp for manual inspection or retry." >&2
+    return 1
+  fi
+  reap_task_pids_or_refuse "$@" || return 1
+  [ -n "${TASK_SPARED_PIDS:-}" ] || return 0
+  rendered=$(printf '%s' "$TASK_SPARED_PIDS" | tr '\n' ' ')
+  echo "REFUSED: protected process(es) for $ID remain rooted in the worktree/tasktmp: $rendered; preserving the worktree/tasktmp for manual inspection or retry." >&2
+  return 1
+}
+
 reap_task_backend_process_group() {  # <label>
   local label=$1 leader leader_start pgid current_pgid own_pgid
   if [ "$BACKEND" != tmux ]; then
@@ -1830,10 +1848,9 @@ reap_task_backend_process_group() {  # <label>
 # scan error refuses before destructive teardown. Protection stays on under
 # --force.
 reap_task_worktree_processes() {  # <label> <dir>...
-  local label=$1 pids pid identity current_pids i pass=1 max_passes=3 spared_root
+  local label=$1 pids pid identity current_pids i pass=1 max_passes=3
   local -a tracked_pids tracked_identities remaining_pids remaining_identities
   shift
-  spared_root=${1:-}
   TASK_SPARED_PIDS=
   if ! command -v lsof >/dev/null 2>&1; then
     reap_task_backend_process_group "$label"
@@ -1845,7 +1862,6 @@ reap_task_worktree_processes() {  # <label> <dir>...
     fi
     pids=$TASK_PIDS
     if [ -z "$pids" ]; then
-      task_report_spared_hosts "$spared_root"
       return 0
     fi
     tracked_pids=()
@@ -1921,7 +1937,6 @@ EOF
     return 1
   fi
   if [ -z "$TASK_PIDS" ]; then
-    task_report_spared_hosts "$spared_root"
     return 0
   fi
   echo "REFUSED: leaked $label processes for $ID remain after $max_passes reap attempts; preserving the worktree/tasktmp for manual inspection or retry." >&2
@@ -2863,6 +2878,11 @@ fi
 if [ "$KIND" != secondmate ]; then
   conclude_task_no_mistakes_run "$WT"
   reap_task_worktree_processes worktree "$WT" "$TASK_TMP" || exit 1
+  if [ "$BACKEND" != orca ] && [ -d "$WT" ]; then
+    task_refuse_treehouse_return_with_protected_roots "$WT" "$TASK_TMP" || exit 1
+  else
+    task_report_spared_hosts "$WT"
+  fi
   fm_lock_release "$SESSION_PUBLICATION_LOCK" || exit 1
   SESSION_PUBLICATION_LOCK_HELD=0
 fi
