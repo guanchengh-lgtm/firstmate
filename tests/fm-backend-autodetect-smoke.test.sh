@@ -159,7 +159,6 @@ pass "real herdr: the auto-detected spawn's launch command actually ran in the h
 
 TEARDOWN_OUT="$TMP_ROOT/teardown.out"
 mkdir -p "$DATA/$ID"
-printf 'miss:\nnumber:\npair:\npick:\nnone: test fixture\n' > "$DATA/$ID/measure.md"
 FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$STATE" FM_DATA_OVERRIDE="$DATA" \
   FM_CONFIG_OVERRIDE="$CONFIG" \
   "$ROOT/bin/fm-teardown.sh" "$ID" >"$TEARDOWN_OUT" 2>&1

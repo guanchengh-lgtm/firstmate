@@ -829,7 +829,6 @@ test_secondmate_teardown_durable_record_with_unknown_field_succeeds() {
     "window=firstmate:fm-work-clean" "endpoint_task_id=work-clean" \
     "worktree=$child/projects/worktree" "project=$child/projects/worktree" \
     "kind=ship" "mode=local-only"
-  fm_write_none_measure "$child" work-clean
 
   rc=0
   out=$(PATH="$child/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$child" \
@@ -994,7 +993,6 @@ SH
     "window=firstmate:fm-work-disabled" "endpoint_task_id=work-disabled" \
     "worktree=$home/projects/worktree" "project=$home/projects/worktree" \
     "kind=ship" "mode=local-only"
-  fm_write_none_measure "$home" work-disabled
 
   rc=0
   out=$(PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
@@ -1031,7 +1029,6 @@ SH
     "window=firstmate:fm-work-disabled" "endpoint_task_id=work-disabled" \
     "worktree=$child/projects/worktree" "project=$child/projects/worktree" \
     "kind=ship" "mode=local-only"
-  fm_write_none_measure "$child" work-disabled
 
   rc=0
   out=$(PATH="$child/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$child" \
@@ -1151,7 +1148,6 @@ test_cleanup_refuses_while_a_public_reply_is_owed() {
     "harness=codex" \
     "kind=ship" \
     "mode=no-mistakes"
-  fm_write_none_measure "$home" ship-task
 
   rc=0
   PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
@@ -1977,7 +1973,6 @@ test_retention_creates_no_false_teardown_refusal() {
     "harness=codex" \
     "kind=ship" \
     "mode=no-mistakes"
-  fm_write_none_measure "$home" ship-retain
   emit_terminal "$home" "$home" pf-retain main ship-retain >/dev/null || fail "emit failed"
   run_pf "$home" consume >/dev/null || fail "consume failed"
   FAKE_CURL_LOG="$home/curl.log" run_pf "$home" deliver pf-retain >/dev/null || fail "delivery failed"
@@ -2133,7 +2128,6 @@ test_x_request_teardown_warns_when_final_unposted() {
     "kind=ship" \
     "mode=local-only" \
     "x_request=req-legacy-final"
-  fm_write_none_measure "$home" linked-task
   rc=0
   PATH="$home/fakebin:$PATH" FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
     FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \

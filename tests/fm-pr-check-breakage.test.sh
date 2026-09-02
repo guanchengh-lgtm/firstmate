@@ -73,13 +73,11 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/gh" "$fakebin/no-mistakes"
-  fm_write_none_measure "$dir/home" task-a
   printf '%s\n' "$dir"
 }
 
 write_task_meta() {
   local dir=$1 mode=${2:-no-mistakes} kind=${3:-ship}
-  fm_write_none_measure "$dir/home" task-a
   fm_write_meta "$dir/home/state/task-a.meta" \
     "window=firstmate:fm-task-a" \
     "endpoint_task_id=task-a" \

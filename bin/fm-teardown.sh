@@ -25,16 +25,8 @@
 # local-only projects additionally accept work merged into the local default
 # branch (firstmate performs that merge after configured approval) as a fallback
 # for the common case where there is no remote at all.
-# Every non-forced ship builder requires a valid measure at
-# $FM_HOME/data/<task-id>/measure.md. A ship with no recorded role is a legacy
-# builder. Verifiers, scouts, secondmates, remote retirements, and --force
-# discards skip the measure grammar gate.
-# A ship with any other recorded role refuses cleanup.
-# The record has exactly five lines in this order: miss:, number:, pair:, pick:,
-# none:. Either the first four values are all non-empty and none: is empty, or
-# the first four values are empty and none: gives a non-empty reason. This
-# keeps every number with its counter-metric and gives measureless work an
-# explicit reason instead of an empty artifact.
+# A ship task records role=builder or role=verifier; a ship with no recorded
+# role is a legacy builder. A ship with any other recorded role refuses cleanup.
 # Scout tasks (kind=scout in meta) carve out of the landed-work check: their worktree is
 # declared scratch and the report at data/<task-id>/report.md is the work
 # product. Teardown proceeds only once the report exists and the shared captain-hold
@@ -76,8 +68,8 @@
 #   --force skips ordinary-task dirty and landed-work checks, skips scout report
 #   checks, discards secondmate child work for kind=secondmate, and skips the
 #   no-mistakes validation-truth gate (bin/fm-validation-truth-lib.sh) because
-#   discard is not a claim that the ship is green. It also skips the measure
-#   gate. Only use it when the captain has explicitly said to discard the work.
+#   discard is not a claim that the ship is green. Only use it when the captain
+#   has explicitly said to discard the work.
 #
 # Transient / stale worktree git lock recovery (teardown-lock-race): a crew process
 # killed mid-git-operation can leave a .git/worktrees/<wt>/index.lock (or, for a
@@ -160,28 +152,13 @@ usage() {
 Usage: fm-teardown.sh <task-id> [--force]
 
 Cleanup gate:
-  Every non-forced ship builder needs a valid measure at
-  $FM_HOME/data/<task-id>/measure.md. A ship with no recorded role is a legacy
-  builder. Verifiers, scouts, secondmates, remote retirements, and --force
-  discards skip this measure gate.
-  A ship with any other recorded role refuses cleanup.
-  The file must contain exactly these five lines in this order:
-
-    miss: <value>
-    number: <value>
-    pair: <value>
-    pick: <value>
-    none:
-
-  Either fill all first four values and leave none: empty, or leave all first
-  four values empty and write none: <why>. Empty files fail. A number never
-  passes without its paired counter-metric.
+  A ship task records role=builder or role=verifier; a ship with no recorded
+  role is a legacy builder. A ship with any other recorded role refuses cleanup.
 
 Options:
   --force  Skip ordinary-task dirty and landed-work checks, skip scout report
            checks, discard secondmate child work, and skip the no-mistakes
-           validation-truth gate because discard is not a green claim. It also
-           skips the measure gate.
+           validation-truth gate because discard is not a green claim.
   -h, --help
            Show this help.
 EOF
@@ -311,48 +288,6 @@ META_LOCK=$(fm_meta_lock_path "$META") || exit 1
 fm_lock_acquire_wait "$META_LOCK"
 META_LOCK_HELD=1
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
-
-validate_measure_at() {  # <data-dir> <task-id>
-  local task_id=$2 measure="$1/$2/measure.md"
-  if [ ! -s "$measure" ]; then
-    echo "REFUSED: task $task_id has no non-empty measure at $measure." >&2
-    echo "Write the five-line measure described by fm-teardown.sh --help; non-forced ship builders cannot bypass this gate." >&2
-    return 1
-  fi
-  if ! awk '
-    NR == 1 {
-      if ($0 !~ /^miss:[[:space:]]*/) bad = 1
-      value = $0; sub(/^miss:[[:space:]]*/, "", value); miss = value ~ /[^[:space:]]/
-    }
-    NR == 2 {
-      if ($0 !~ /^number:[[:space:]]*/) bad = 1
-      value = $0; sub(/^number:[[:space:]]*/, "", value); number = value ~ /[^[:space:]]/
-    }
-    NR == 3 {
-      if ($0 !~ /^pair:[[:space:]]*/) bad = 1
-      value = $0; sub(/^pair:[[:space:]]*/, "", value); pair = value ~ /[^[:space:]]/
-    }
-    NR == 4 {
-      if ($0 !~ /^pick:[[:space:]]*/) bad = 1
-      value = $0; sub(/^pick:[[:space:]]*/, "", value); pick = value ~ /[^[:space:]]/
-    }
-    NR == 5 {
-      if ($0 !~ /^none:[[:space:]]*/) bad = 1
-      value = $0; sub(/^none:[[:space:]]*/, "", value); none = value ~ /[^[:space:]]/
-    }
-    NR > 5 { bad = 1 }
-    END {
-      if (NR != 5 || bad) exit 1
-      if (none && !miss && !number && !pair && !pick) exit 0
-      if (!none && miss && number && pair && pick) exit 0
-      exit 1
-    }
-  ' "$measure"; then
-    echo "REFUSED: task $task_id has an invalid measure at $measure." >&2
-    echo "Use all five ordered fields; fill miss/number/pair/pick together, or only none: with a reason." >&2
-    return 1
-  fi
-}
 
 take_task_done_back() {  # <reason>
   local reason=$1 status="$STATE/$ID.status" line
@@ -2736,9 +2671,6 @@ if [ -d "$WT" ] && [ "$FORCE" != "--force" ]; then
   fi
 fi
 
-if [ "$FORCE" != "--force" ] && [ "$KIND" = ship ] && [ "$ROLE" = builder ]; then
-  validate_measure_at "$DATA" "$ID" || exit 1
-fi
 if [ "$FORCE" != "--force" ]; then
   fm_require_validation_truth "$META" "$ID" || exit 1
 fi

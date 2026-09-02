@@ -47,7 +47,6 @@ make_task_home() {
   local name=$1 mode=$2
   local dir="$TMP_ROOT/$name"
   mkdir -p "$dir/home/state" "$dir/home/data" "$dir/home/config" "$dir/wt" "$dir/fakebin"
-  fm_write_none_measure "$dir/home" task-a
   fm_write_meta "$dir/home/state/task-a.meta" \
     "window=firstmate:fm-task-a" \
     "endpoint_task_id=task-a" \
@@ -137,7 +136,7 @@ prepare_teardown_home() {
   local dir=$1 line=$2
   mkdir -p "$dir/home/config" "$dir/fakebin"
   # No worktree path on disk so non-force teardown skips landed-work inspection
-  # and reaches the validation-truth gate with a valid none: measure.
+  # and reaches the validation-truth gate.
   fm_write_meta "$dir/home/state/task-a.meta" \
     "window=firstmate:fm-task-a" \
     "endpoint_task_id=task-a" \
@@ -203,26 +202,6 @@ test_teardown_force_skips_validation_truth() {
   assert_absent "$dir/home/state/task-a.meta" \
     "--force teardown left task meta in place"
   pass "validation-truth: --force teardown skips validation-truth on discard"
-}
-
-test_teardown_force_skips_measure() {
-  local dir out rc
-  dir=$(make_task_home td-force-measure no-mistakes)
-  prepare_teardown_home "$dir" 'state: failed · source: run-step · failed'
-  rm -f "$dir/home/data/task-a/measure.md"
-  set +e
-  out=$(FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
-    FM_STATE_OVERRIDE="$dir/home/state" FM_DATA_OVERRIDE="$dir/home/data" \
-    FM_CONFIG_OVERRIDE="$dir/home/config" \
-    FM_CREW_STATE_BIN="$dir/fakebin/fm-crew-state.sh" \
-    PATH="$dir/fakebin:$BASE_PATH" \
-    "$TEARDOWN" task-a --force 2>&1)
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "--force teardown did not skip the measure gate: $out"
-  assert_absent "$dir/home/state/task-a.meta" \
-    "--force measure skip left task meta in place"
-  pass "validation-truth: --force teardown skips the measure gate"
 }
 
 write_real_nm_fakebin() {  # <fakebin-dir>
@@ -693,7 +672,6 @@ test_run_step_working_refuses
 test_pr_check_refuses_pane_truth
 test_teardown_non_force_refuses_pane_truth
 test_teardown_force_skips_validation_truth
-test_teardown_force_skips_measure
 test_missing_object_lag_allows_validation_truth
 test_diverged_rebase_allows_validation_truth
 test_pr_url_proof_cancelled_run_refuses
