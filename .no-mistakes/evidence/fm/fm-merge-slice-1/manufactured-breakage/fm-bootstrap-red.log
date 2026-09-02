@@ -1,0 +1,6 @@
+FM_TEST_BEGIN 2026-09-02T14:44:32Z tests/fm-bootstrap.test.sh family=session-bootstrap expected_gate_skip=none
+not ok - treehouse without --lease reports an upgrade, gh auth is fine: missing 'MISSING: treehouse (install: curl -fsSL https://kunchenguid.github.io/treehouse/install.sh | sh)' (got: )
+FM_TEST_END 2026-09-02T14:44:33Z tests/fm-bootstrap.test.sh exit=1 duration_ms=252 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=328
+FM_TEST_SUMMARY_FAMILY family=session-bootstrap count=1 duration_ms=252 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-bootstrap.test.sh duration_ms=252

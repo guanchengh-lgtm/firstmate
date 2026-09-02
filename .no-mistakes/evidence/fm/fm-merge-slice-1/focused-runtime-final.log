@@ -1,0 +1,86 @@
+FM_TEST_BEGIN 2026-09-02T14:13:15Z tests/fm-remote-job.test.sh family=secondmate expected_gate_skip=none
+ok - default queue and execution bounds independently cover long polls
+ok - operator PATH excludes a symlinked local bin
+ok - operator PATH honors nvm defaults with a deterministic fallback
+ok - operator PATH resolves the authorized Nix profile bin link
+ok - operator PATH orders discovered tool installs deterministically
+ok - the worker preserves bounded argv and stdin in an empty environment
+ok - active jobs keep the worker ready for concurrent requests
+ok - ensure replaces a live worker after its code changes
+ok - worker identity binds the canonical configured code root
+ok - stale ownership is reclaimed without signaling a reused pid
+ok - the worker enforces the job timeout and publishes its result
+ok - the worker expires queued jobs before they can mutate
+ok - queued jobs receive a fresh bounded execution window
+ok - a queued short command preempts a running long poll instead of waiting its window
+ok - a poll re-armed after preemption reads the same cursor with nothing lost
+ok - sibling polls never preempt each other into a re-arm churn loop
+ok - worker shutdown terminates the active command tree before replacement
+ok - Linux supervision recovers crashes and stops orphaned commands
+ok - pre-execution validation obeys the job timeout
+ok - the worker drains bounded output without changing command results
+ok - the worker refuses symlinked job fields before command execution
+ok - failed shutdown quarantines ownership against replacement workers
+ok - quarantine recovery refuses unverifiable supervisors and ignores reused pids
+ok - a repeatedly signalled shutdown still releases ownership for the next worker
+ok - barely healthy worker failures remain bounded by the restart guard
+ALL TESTS PASSED
+FM_TEST_END 2026-09-02T14:14:31Z tests/fm-remote-job.test.sh exit=0 duration_ms=76255 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T14:14:31Z tests/fm-secondmate-reconcile.test.sh family=secondmate expected_gate_skip=none
+ok - reconcile requests stop oversized streams at the capture bound
+ok - reconcile requests require exactly one snapshot document
+ok - reconcile requests coalesce per target and retire independently after delivery
+ok - Bearings records locally, returns before a delayed remote queue, and supervision delivers later
+ok - a home in mismatch is asked once, and later recaps stay silent
+ok - a mismatch outliving the cooldown earns one re-nudge, then goes quiet again
+ok - the cooldown begins when delivery finishes
+ok - the cooldown window is four hours
+ok - the cooldown is per home, not fleet-wide
+not ok - the reconcile ask armed a pending-reply expectation
+FM_TEST_END 2026-09-02T14:15:19Z tests/fm-secondmate-reconcile.test.sh exit=1 duration_ms=47453 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T14:15:19Z tests/fm-pending-reply.test.sh family=unclassified expected_gate_skip=none
+ok - normal correlated reply resolves once (idempotent)
+ok - completed turn with no report triggers exactly one recovery
+ok - recovery attempts reconcile without reinjection
+ok - recovery reply resolves the original expectation
+ok - second missed turn escalates once and remains durable
+ok - escalations and replies wake; the home's own escalation close stays quiet
+ok - failed escalation publication remains retryable and publishes once
+ok - legacy escalation closes under the shared default key
+ok - legacy escalation cannot close an unrelated default-key decision
+ok - foreign correlated blocker cannot impersonate a pending-reply escalation
+ok - concurrent resolution closes one keyed escalation exactly once
+ok - concurrent escalation yields to a late correlated reply
+ok - transport success cannot masquerade as reply success
+ok - undelivered records remain immutable across scan paths
+ok - delivery confirmation fallback reconciles durably
+ok - delivery confirmation serializes with reconciliation
+ok - unrelated events and stale correlation ids cannot resolve
+ok - restart preserves expectation and exact parent destination
+ok - wrong-home reports are detected but do not silently acknowledge
+ok - direct unmarked captain input creates no expectation
+ok - fm-send marked secondmate path creates pending and embeds corr
+ok - status-pointed document resolves the expectation
+ok - optional helper report resolves without being required for correctness
+ok - backend busy/idle observation covers Pi/Claude paths without conversation scrape
+ok - tmux and zellij unknown states use bounded capture fallback
+ok - pending replies scope Kimi capture fallback by recorded harness
+ok - tick skips terminal records and reuses target observations
+ok - correlations are reused only for matching open task records
+ok - tick end-to-end: miss -> one recovery -> escalate -> durable
+ok - failed transport discards undelivered expectation only
+ok - a remote repost waits for the reply channel and still fires on a real miss
+ok - a mirrored correlated remote reply resolves without any repost
+ok - all pending-reply tests passed
+FM_TEST_END 2026-09-02T14:15:55Z tests/fm-pending-reply.test.sh exit=0 duration_ms=36427 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T14:15:55Z tests/fm-backlog-atomicity.test.sh family=session-bootstrap expected_gate_skip=none
+not ok - spawn reported success with its backlog item still queued
+FM_TEST_END 2026-09-02T14:15:59Z tests/fm-backlog-atomicity.test.sh exit=1 duration_ms=3889 gate_skip=false
+FM_TEST_SUMMARY total=4 failed=2 skipped_gate=0 duration_ms=164244
+FM_TEST_SUMMARY_FAMILY family=secondmate count=2 duration_ms=123708 failed=1
+FM_TEST_SUMMARY_FAMILY family=session-bootstrap count=1 duration_ms=3889 failed=1
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=36427 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-remote-job.test.sh duration_ms=76255
+FM_TEST_SLOWEST rank=2 script=tests/fm-secondmate-reconcile.test.sh duration_ms=47453
+FM_TEST_SLOWEST rank=3 script=tests/fm-pending-reply.test.sh duration_ms=36427
+FM_TEST_SLOWEST rank=4 script=tests/fm-backlog-atomicity.test.sh duration_ms=3889

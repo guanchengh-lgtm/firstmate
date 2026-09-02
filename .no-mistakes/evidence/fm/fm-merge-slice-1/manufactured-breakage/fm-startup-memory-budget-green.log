@@ -1,0 +1,19 @@
+FM_TEST_BEGIN 2026-09-02T15:18:32Z tests/fm-startup-memory-budget.test.sh family=secondmate expected_gate_skip=none
+ok - primary bootstrap materializes only the visible default and preserves valid captain choices
+ok - budget parser accepts one exact positive value and rejects malformed or unsafe inputs
+ok - budget accounting sums the three startup files and reports safe failures
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 0s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: watcher still down (same stale episode; last beat: 4s ago, grace 300s) - full banner already printed this episode.
+WARNING: watcher still down (same stale episode; last beat: 6s ago, grace 300s) - full banner already printed this episode.
+ok - budget propagation converges through config push with exact rereads, absence, and safe rejection
+# all fm-startup-memory-budget tests passed
+FM_TEST_END 2026-09-02T15:18:44Z tests/fm-startup-memory-budget.test.sh exit=0 duration_ms=11987 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=12072
+FM_TEST_SUMMARY_FAMILY family=secondmate count=1 duration_ms=11987 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-startup-memory-budget.test.sh duration_ms=11987

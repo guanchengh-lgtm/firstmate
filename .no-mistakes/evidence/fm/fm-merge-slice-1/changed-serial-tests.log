@@ -1,0 +1,1411 @@
+FM_TEST_BEGIN 2026-09-02T12:59:09Z tests/fm-ask-user-authority.test.sh family=pure-contract-unit expected_gate_skip=none
+not ok - generated implementation brief does not prohibit silent ask-user auto-resolution
+FM_TEST_END 2026-09-02T12:59:09Z tests/fm-ask-user-authority.test.sh exit=1 duration_ms=519 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T12:59:09Z tests/fm-backend-herdr-presentation-e2e.test.sh family=real-herdr-gated expected_gate_skip=herdr
+ok - real Herdr lab: an opted-out spawn retains the Stage 1 Herdr command sequence with zero ordering calls
+ok - real Herdr lab: a home that configured nothing is projected by default on herdr 0.8.2
+ok - real Herdr lab: every projected create, task-tab create, seeded prune, and move preserves active workspace and tab
+warning: herdr presentation cleanup could not verify the exact pane; refusing focus-unsafe pane close
+ok - real Herdr lab: active seeded-tab pruning refuses the exact pane and preserves exact focus
+ok - real Herdr lab: bounded lock contention warns and falls back flat without projection or focus drift
+ok - real Herdr lab: concurrent primary workers form one stable contiguous block without active workspace/tab drift
+ok - real Herdr lab: forced workspace.move failure leaves a successful worker in default order with a warning and no cleanup
+ok - real Herdr lab: concurrent post-create abort cleanup stays serialized with exact focus restoration
+ok - real Herdr lab: Treehouse commands and metadata shape are byte-identical except for endpoint IDs and spawn incarnation
+ok - real Herdr lab: exact task-pane close removes the projected workspace with no unrestored wrong-focus interval
+ok - real Herdr lab: concurrent projected cleanup is serialized and leaves active workspace/tab unchanged
+ok - real Herdr lab: three repeated concurrent create/order/cleanup waves have zero active workspace or tab drift
+ok - real Herdr lab: the primary presentation setting inherits into real secondmate homes
+ok - real Herdr lab: primary and two secondmate homes each own a top-level contiguous child block
+ok - real Herdr lab: concurrent primary/A/B spawns preserve parent order and exact focus
+ok - real Herdr lab: session lock contention from a secondmate home falls back flat with no journal
+ok - real Herdr lab: Hi Bit and Wheelhouse-style same-identity restarts reclaim one nested space with exact focus and idempotence
+ok - real Herdr lab: secondmate restart binding and reclaim stay isolated to the exact child home and parent
+ok - real Herdr lab: concurrent cross-home recoveries replace exact husks under one session lock with no focus drift
+ok - real Herdr lab: legacy projection labels and flat secondmate tabs are left unmigrated
+ok - real Herdr lab: multi-home exact-pane teardowns restore captain focus without workspace close authority
+warning: no exact herdr presentation token match for missing1; leaving any stale space untouched and spawning flat
+warning: no exact herdr presentation token match for renamed1; leaving any stale space untouched and spawning flat
+warning: 2 exact herdr presentation token matches for duplicate1 are quarantined; inspecting only for duplicate-agent risk
+warning: quarantined herdr presentation for duplicate1 is dead or agent-free; exact bound reclaim may proceed, otherwise spawning flat
+warning: 2 exact herdr presentation token matches for duplicate1 are quarantined; inspecting only for duplicate-agent risk
+error: quarantined herdr presentation for duplicate1 has a live pane; refusing duplicate launch
+ok - real Herdr lab: missing, renamed, and duplicate tokens trigger zero destructive or adoptive calls, and live duplicate risk refuses launch
+ok - real Herdr lab validation completed on Herdr 0.8.2 with the default-session tripwire intact
+FM_TEST_END 2026-09-02T13:07:59Z tests/fm-backend-herdr-presentation-e2e.test.sh exit=0 duration_ms=529697 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:07:59Z tests/fm-backend-orca.test.sh family=orca expected_gate_skip=optional-binary
+ok - fm_backend_orca_capture: parses result.terminal.tail and calls terminal read
+ok - fm_backend_orca_capture: falls back to result text fields
+ok - fm_backend_orca_capture: fails closed on Orca read error JSON
+ok - fm_backend_orca_runtime_check: accepts reachable ready runtime
+ok - fm_backend_orca_runtime_check: fails closed when runtime is not ready
+ok - fm_backend_orca_send_text_submit: verifies empty composer after Enter with one bounded read
+ok - fm_backend_orca_send_text_submit: a borderless claude composer confirms delivery (the missing #2029 shape)
+ok - fm_backend_orca_composer_state: a stale startup banner cannot outrank the live composer row
+ok - fm_backend_orca_send_text_submit: retries Enter while composer remains pending
+ok - fm_backend_orca_composer_state: a slash-command popup's argument-hint placeholder still reads pending
+ok - fm_backend_orca_composer_state: a bare dead-shell prompt reads unknown (unsafe-for-injection), never empty
+ok - fm_backend_orca_send_text_submit: a slash-command popup's placeholder fill on Enter #1 does not short-circuit as submitted; Enter #2 is retried and lands it
+ok - fm_backend_orca_send_literal: sends text without submitting
+ok - fm_backend_orca_send_text_submit: reports send-failed when Orca send fails
+ok - Orca send helpers: fail closed on ok:false JSON
+ok - fm_backend_orca_send_key: Enter maps to empty enter, C-c maps to interrupt
+ok - fm_backend_orca_send_key: refuses unsupported keys loudly
+ok - fm_backend_orca_send_key: refuses Escape instead of mapping it to interrupt
+ok - fm_backend_orca_kill: calls terminal close and stays best-effort
+ok - fm_backend_orca_remove_worktree: refuses empty worktree ids
+ok - fm_backend_orca_remove_worktree: fails closed on ok:false JSON
+ok - fm_backend_orca_worktree_path: resolves an Orca worktree id to its path
+ok - fm-backend dispatcher: accepts orca and routes capture through bin/backends/orca.sh
+ok - fm_backend_orca_json_get: ignores undocumented terminal id shapes
+ok - Orca lifecycle helpers: register repo, create worktree, create terminal, parse stable ids
+ok - fm_backend_orca_worktree_create: removes created worktree when path is missing
+ok - fm-spawn.sh --backend orca: preserves metadata when pathless cleanup fails
+ok - fm-spawn.sh --backend orca: reuses implicit terminal, records metadata, launches harness
+ok - fm-spawn.sh --backend orca --secondmate: refuses before secondmate-home mutation
+ok - fm-spawn.sh --backend orca: refuses before mutation when Orca runtime is not ready
+ok - fm-spawn.sh --backend orca: refuses non-isolated worktrees and closes implicit terminals
+ok - fm-spawn.sh --backend orca: removes worktree when terminal creation fails
+ok - fm-spawn.sh --backend orca: preserves metadata when abort cleanup fails
+not ok - spawn should report metadata publication failure without relying on platform-specific mv output (missing: 'task record for orcametafailz9 could not be published')
+--- output ---
+/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-backend-orca-tests.cS9I90/meta-fail-state/orcametafailz9.meta: Is a directory
+FM_TEST_END 2026-09-02T13:08:21Z tests/fm-backend-orca.test.sh exit=1 duration_ms=21742 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:08:21Z tests/fm-backlog-atomicity.test.sh family=session-bootstrap expected_gate_skip=none
+not ok - spawn failed: error: ship spawns require --role <builder|verifier>; do not default an omitted role to builder
+FM_TEST_END 2026-09-02T13:08:21Z tests/fm-backlog-atomicity.test.sh exit=1 duration_ms=354 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:08:21Z tests/fm-bearings-board-render.test.sh family=snapshot-bearings expected_gate_skip=optional-binary
+<anonymous_script>:78
+    { n: chartedQueued(data.charted).length + chartedMoreQueued, l: "charted next" }
+    ^
+
+SyntaxError: Unexpected token '{'
+    at new Function (<anonymous>)
+    at file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M1GX1VZRZDRNJMPHD5CRYRWD/tests/assets/board-render-harness.mjs:83:1
+    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:643:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)
+
+Node.js v24.18.0
+not ok - the built board could not be rendered
+not ok - the board rendered its fail-closed error instead of the fleet: 
+FM_TEST_END 2026-09-02T13:08:22Z tests/fm-bearings-board-render.test.sh exit=1 duration_ms=680 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:08:22Z tests/fm-bearings-board.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - path prints the stable home-scoped board location
+ok - build refuses malformed payloads before touching the board
+ok - charted kind is optional and accepts queued and warning
+ok - build injects the payload, binds any-origin, then arms the source
+not-autohandled: lavish-65e2b867b2c482a9 (left for the handler; still unacknowledged)
+ok - registration can consume answers only after any-origin binding exists
+ok - build establishes the Lavish session before binding and arming
+ok - rebuild refreshes the board in place without double-arming
+ok - build refuses a template without exactly one data slot
+FM_TEST_END 2026-09-02T13:08:31Z tests/fm-bearings-board.test.sh exit=0 duration_ms=8599 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:08:31Z tests/fm-bearings-snapshot.test.sh family=snapshot-bearings expected_gate_skip=optional-binary
+ok - remote ledgers collect concurrently under one budget, reuse aged cache, and cancel wedged collectors
+ok - a missing remote ledger stays explicitly unreadable without remote summary computation
+ok - Domain Alpha structured state overrides a stale parent Phase 7 event
+ok - GNU stat file reads select -c without BSD filesystem-report pollution
+ok - parent activity evidence is bounded and disclosed
+ok - Bearings excludes a status-only child decision
+ok - a structured child captain hold reaches Captain's Call
+ok - missing, invalid, unreadable, malformed, and unavailable-child homes stay explicit unknowns
+ok - a missing registered home warns by name instead of silently counting zero
+ok - a present empty secondmate home stays valid idle with no false alarm
+ok - oversized ledgers stay strict unknown
+ok - secondmate and per-home child counts are bounded, disclosed, and explicitly expandable
+ok - parent decisions remain untrusted contradiction evidence
+ok - parent evidence reconciliation distinguishes matching holds, blocks, and decisions
+ok - nonprogressing child states are explicit and inconsistent terminal rows invalidate
+ok - registry unavailability and bounded truncation remain explicit
+ok - repeated snapshots keep the same current landed baseline and ignore prior reports
+ok - default output is bounded, local-only, and marks omitted surfaces
+ok - TOON and JSON are parity representations of the same model
+ok - landed includes secondmate-managed merges alongside main-home merges
+ok - default landed selection balances one dominant home with sparse homes
+ok - landed selection refills capacity after sparse homes exhaust
+ok - landed selection uses deterministic home order when homes exceed the cap
+ok - landed selection preserves deterministic home and internal tie ordering
+ok - landed selection handles no landed items
+ok - --all-landed keeps the complete global landed output
+ok - landed stays bounded with per-home + overall caps and omitted[] disclosure
+ok - Bearings keeps a live blocker in structured live state and never converts it to Charted Next queue work
+ok - action-free items (working/done/queued/landed) do not leak into Captain's Call
+ok - main orphan in-flight stays out of Underway and is disclosed in omitted/gates
+ok - main unstructured current is disclosed while structured siblings still project
+ok - counterfactual meta clears main inventory warning and projects the live task
+ok - active children reach Underway independently of a home captain hold
+ok - mixed secondmate roles, partial state, and captain readiness project independently
+ok - main and secondmate captain actionability use the same blocker readiness
+ok - a completed scout with decision-like report prose is a pointer, not pending
+ok - an authoritative captain hold surfaces end-to-end
+ok - bearings snapshot required retrieve keeps lock words and drops asides
+ok - lock-file open Q2 surfaces in decisions_open; locked Q2 does not
+ok - current report pointers surface
+ok - superseded queued items are dropped by default and restored with --all-queued
+ok - --include-prs is the only path that fetches, and it enriches correctly
+ok - a partial GitHub failure degrades gracefully
+ok - Perl fallback bounds stalled GitHub calls without coreutils timeout
+ok - all fleet-sized sections are capped with counted opt-in expansion
+ok - captain-held tasks of any kind reach Captain's Call, deferral is honored, and landed excludes answered calls
+ok - live PR enrichment caps repositories with counted expansion
+ok - per-repository open-PR caps are disclosed with an expansion knob
+ok - projection and TOON rendering failures exit nonzero with diagnostics
+FM_TEST_END 2026-09-02T13:11:35Z tests/fm-bearings-snapshot.test.sh exit=0 duration_ms=184504 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:11:35Z tests/fm-bootstrap-network-parallel.test.sh family=session-bootstrap expected_gate_skip=none
+ok - bootstrap network (parallel): per-mate output stays intact, fail-closed, and correctly sequenced
+ok - bootstrap network (fallback): per-mate output stays intact, fail-closed, and correctly sequenced
+# all fm-bootstrap-network-parallel tests passed
+FM_TEST_END 2026-09-02T13:11:57Z tests/fm-bootstrap-network-parallel.test.sh exit=0 duration_ms=21975 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:11:57Z tests/fm-bootstrap.test.sh family=session-bootstrap expected_gate_skip=none
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+ok - bootstrap reports treehouse lease + tasks-axi/quota-axi bootstrap contracts
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+ok - bootstrap enforces no-mistakes minimum version
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+ok - bootstrap enforces gh-axi minimum version
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+ok - bootstrap enforces lavish-axi minimum version
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+ok - bootstrap enforces tasks-axi minimum version
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+ok - bootstrap enforces quota-axi minimum version
+ok - bootstrap requires git with an install instruction
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+ok - bootstrap: backend=orca gates the Orca CLI without requiring it on the default backend
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+ok - bootstrap: session-provider backends require their own CLI + jq + treehouse, never tmux
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+ok - bootstrap: a session-provider backend gates its own CLI, never a false tmux requirement
+ok - bootstrap: Herdr manual-install guidance is never executed as a shell command
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+ok - bootstrap: the bundled cmux CLI satisfies the active backend dependency
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+ok - bootstrap: unknown resolved backends fail closed with an actionable diagnostic
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+ok - bootstrap: JSON-emitting backends require jq (their genuine dep), never tmux
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+ok - bootstrap: the treehouse lease check follows the resolved backend's worktree provider
+ok - bootstrap computes a fleet-size-aware default timeout and preserves partial fleet-sync output
+ok - bootstrap keeps the quick 20s default for small fleets
+ok - bootstrap preserves FM_FLEET_SYNC_BOOTSTRAP_TIMEOUT as an explicit override
+ok - bootstrap treats a blank timeout override as unset
+ok - bootstrap computes the timeout before launching fleet sync
+ok - bootstrap keeps routine tasks-axi, harness, dispatch, and already-live liveness confirmations silent
+ok - bootstrap routine contract runs under system /bin/bash
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+ok - bootstrap: FM_BOOTSTRAP_NETWORK partitions one run into local and network halves
+ok - bootstrap: every deferred mutating sweep rechecks fleet-lock ownership
+ok - bootstrap: each deferred network phase, secondmate, and clone records its own elapsed time
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+ok - bootstrap: the tasks-axi compatibility verdict travels exactly one process hop
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+ok - bootstrap surfaces active crew-dispatch rules only as verbose BOOTSTRAP_INFO
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+ok - bootstrap validates crew-dispatch.json and reports malformed or unverified configs
+FM_TEST_END 2026-09-02T13:15:24Z tests/fm-bootstrap.test.sh exit=0 duration_ms=207297 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:15:24Z tests/fm-check-unregister.test.sh family=pr-forge expected_gate_skip=none
+ok - empty id or missing state dir refuses loudly and never rms a stray path
+ok - happy path removes only the named check.sh and check-trust
+ok - hard-linked or symlinked artifacts are refused and left in place
+FM_TEST_END 2026-09-02T13:15:26Z tests/fm-check-unregister.test.sh exit=0 duration_ms=1474 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:15:26Z tests/fm-cmux-claude-composer-live-e2e.test.sh family=live-harness-optin expected_gate_skip=optin-env
+skip: set FM_CMUX_CLAUDE_COMPOSER_LIVE=1 to run the real cmux Claude composer drift guard
+FM_TEST_END 2026-09-02T13:15:26Z tests/fm-cmux-claude-composer-live-e2e.test.sh exit=0 duration_ms=27 gate_skip=true
+FM_TEST_BEGIN 2026-09-02T13:15:26Z tests/fm-daemon.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - fm-afk-start.sh fails before daemon startup when the afk flag cannot be written
+ok - fm-afk-start.sh ignores stale pidfile-only live pids
+ok - fm-afk-start.sh reclaims stale daemon locks whose live pid identity no longer matches
+ok - supervise daemon state root is scoped by FM_HOME
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1GX1VZRZDRNJMPHD5CRYRWD/bin/fm-supervise-daemon.sh: line 564: status_daemon_seen_marker_path: command not found
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1GX1VZRZDRNJMPHD5CRYRWD/bin/fm-supervise-daemon.sh: line 574: status_presentation_marker_offset: command not found
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1GX1VZRZDRNJMPHD5CRYRWD/bin/fm-supervise-daemon.sh: line 351: status_span_first_actionable_record: command not found
+ok - routine signal self-handles
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1GX1VZRZDRNJMPHD5CRYRWD/bin/fm-supervise-daemon.sh: line 564: status_daemon_seen_marker_path: command not found
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1GX1VZRZDRNJMPHD5CRYRWD/bin/fm-supervise-daemon.sh: line 574: status_presentation_marker_offset: command not found
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1GX1VZRZDRNJMPHD5CRYRWD/bin/fm-supervise-daemon.sh: line 351: status_span_first_actionable_record: command not found
+not ok - captain verb did not escalate (done: PR https://x/y/pull/1): self|signal already escalated (catch-all scan): t.status: done: PR https://x/y/pull/1
+FM_TEST_END 2026-09-02T13:15:27Z tests/fm-daemon.test.sh exit=1 duration_ms=723 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:15:27Z tests/fm-extension-binding.test.sh family=unclassified expected_gate_skip=none
+ok - unknown extension conformance section selectors fail before setup
+cp: /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1GX1VZRZDRNJMPHD5CRYRWD/bin/fm-procevent-extension-capture.pl: No such file or directory
+error[binding-failed]: error: unknown command: extension-bind
+error[binding-failed]: error: unknown command: extension-bind
+not ok - local bind returned no binding retirement identity
+error: unknown command: register-extension
+error: source is not registered: example-file
+error[binding-failed]: error: unknown command: extension-bind
+ok - the section coordinator propagates ordered failures and bounded cleanup
+not ok - an isolated extension conformance section failed
+FM_TEST_END 2026-09-02T13:15:32Z tests/fm-extension-binding.test.sh exit=1 duration_ms=5495 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:15:32Z tests/fm-fleet-snapshot-view.test.sh family=snapshot-bearings expected_gate_skip=optional-binary
+ok - empty fleet snapshot and view use explicit absence markers
+ok - fixture snapshot covers task rows, backlog rows, pointers, and stable ordering
+ok - home-summary excludes kind=secondmate from unowned_current and terminal_in_flight
+ok - main_inventory discloses orphan/unstructured and clears when inventory is consistent
+ok - backlog normalization preserves strict roles and resolves every blocker compatibly
+ok - snapshot event hints follow reconciled current state
+ok - durable fold keeps an open decision past a later unrelated event
+ok - a live secondmate endpoint preserves unrelated open decisions
+ok - durable captain-held transfer closes the duplicate live status decision
+ok - durable fold clears a decision only on a keyed resolution
+ok - a completed scout's stale decision surfaces as a report pointer, not pending
+ok - a scout still parked at a decision stays pending (terminal clear does not over-fire)
+ok - snapshot includes durable scout reports after teardown
+ok - snapshot parses tasks-axi rows and respects operational overrides
+ok - fleet view renders the snapshot without secondmate peek guidance
+ok - fleet view renders secondmate agent liveness
+FM_TEST_END 2026-09-02T13:15:51Z tests/fm-fleet-snapshot-view.test.sh exit=0 duration_ms=18382 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:15:51Z tests/fm-gate-refuse.test.sh family=session-bootstrap expected_gate_skip=none
+ok - fm-gate-refuse-lib: refuses when NO_MISTAKES_GATE is set
+ok - fm-gate-refuse-lib: refuses when NO_MISTAKES_GATE is set empty
+ok - fm-gate-refuse-lib: refuses from a gate worktree via git-common-dir (marker unset)
+ok - fm-gate-refuse-lib: no-op for a normal session (neither signal, set -eu clean)
+ok - fm-spawn: refuses on marker and gate-worktree backstop; a normal crew spawn is unaffected
+ok - fm-send: refuses on marker and gate-worktree backstop; a normal steer uses the inbox
+ok - fm-teardown: refuses on marker and gate-worktree backstop; a normal teardown is unaffected
+FM_TEST_END 2026-09-02T13:16:02Z tests/fm-gate-refuse.test.sh exit=0 duration_ms=11347 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:16:02Z tests/fm-gotmp.test.sh family=session-bootstrap expected_gate_skip=none
+ok - fm-teardown removes the dir pointed to by tasktmp= in meta
+ln: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-gotmp-tests.mcv84D/td-absent-z3-root/bin/fm-pending-reply-lib.sh: File exists
+ln: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-gotmp-tests.mcv84D/td-absent-z3-root/bin/fm-marker-lib.sh: File exists
+ln: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-gotmp-tests.mcv84D/td-absent-z3-root/bin/fm-operational-input.sh: File exists
+ok - fm-teardown skips gracefully when tasktmp= is absent (backward compat)
+ok - fm-teardown skips gracefully when tasktmp= points to a nonexistent dir
+FM_TEST_END 2026-09-02T13:16:06Z tests/fm-gotmp.test.sh exit=0 duration_ms=4047 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:16:06Z tests/fm-harness-liveness-drift-live-e2e.test.sh family=live-harness-optin expected_gate_skip=optin-env
+skip: set FM_HARNESS_LIVENESS_DRIFT=1 to run the installed-harness liveness drift guard
+FM_TEST_END 2026-09-02T13:16:06Z tests/fm-harness-liveness-drift-live-e2e.test.sh exit=0 duration_ms=25 gate_skip=true
+FM_TEST_BEGIN 2026-09-02T13:16:06Z tests/fm-home-summary-refresh.test.sh family=snapshot-bearings expected_gate_skip=optional-binary
+ok - watcher-carried status append publishes the real home summary
+ok - live watcher cadence bounds publication staleness without signals
+ok - fleet snapshot consumes the published local ledger by default
+ok - writer kill and replacement preserve an atomic JSON ledger
+ok - best-effort publication logs and continues
+Terminated: 15
+Terminated: 15
+ok - best-effort refresh bounds publication lock acquisition
+Terminated: 15
+ok - best-effort refresh bounds validation and publication
+ok - best-effort refresh bounds state initialization
+ok - best-effort refresh logs worker termination
+ok - best-effort refresh bounds failure reporting fallback
+ok - valid publication ignores an unavailable failure record
+Terminated: 15
+not ok - an accumulated home did not publish within a 30-second deadline: [2026-09-02T13:16:27Z] refresh exceeded its 30-second deadline
+FM_TEST_END 2026-09-02T13:16:57Z tests/fm-home-summary-refresh.test.sh exit=1 duration_ms=50895 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:16:57Z tests/fm-inactive-reconcile.test.sh family=watcher-wake-lock expected_gate_skip=none
+actionable: inactive terminal outcome awaiting captain presentation: child=child state=done pr=https://example.test/owner/repo/pull/1
+ok - main direct terminal presentation has a durable receipt
+ok - secondmate reports its own inactive terminal child
+actionable: inactive terminal outcome needs parent report: child=child state=failed (missing or unreadable parent binding .fm-secondmate-parent)
+ok - relative local parent homes fail closed
+ok - invalid secondmate markers block routing and surface the obligation
+ok - remote parent-replies mirror input is durable and idempotent
+ok - reused task ids retain per-incarnation terminal receipts
+ok - legacy metadata rewrites preserve terminal receipt identity
+ok - relaunch cannot replace metadata during terminal snapshot
+actionable: inactive terminal outcome awaiting captain presentation: child=child state=done pr=https://example.test/owner/repo/pull/1
+ok - terminal reconciliation ignores heartbeat backoff state
+actionable: inactive terminal outcome awaiting captain presentation: child=child state=done pr=https://example.test/owner/repo/pull/1
+ok - scan marker replaces a symlink without overwriting its target
+ok - nonterminal and captain-held workers remain outside inactive terminal reporting
+ok - watcher hook wakes for terminal loss and preserves idle secondmate exemption
+actionable: inactive terminal outcome awaiting captain presentation: child=b state=done pr=https://example.test/owner/repo/pull/1
+ok - stalled state reads are bounded without starving later children
+ok - aggregate scan budget includes durable wake operations
+actionable: inactive terminal outcome needs parent report: child=child state=failed (missing or unreadable parent binding .fm-secondmate-parent)
+ok - notice recovery remains idempotent across queue acknowledgement
+ok - a secondmate home with no parent binding names the missing binding instead of failing quietly
+actionable: inactive terminal outcome awaiting captain presentation: child=child state=done pr=https://example.test/owner/repo/pull/1
+ok - reconciliation makes zero forge or PR API calls
+all inactive reconciliation tests passed
+FM_TEST_END 2026-09-02T13:17:49Z tests/fm-inactive-reconcile.test.sh exit=0 duration_ms=52031 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:17:49Z tests/fm-kimi-harness.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - Kimi hook install is idempotent and removal restores every foreign config byte
+ok - Kimi hook removal preserves owned newline boundaries and pristine bytes
+ok - Kimi hook install refuses missing, malformed, and surprising config without writing
+ok - Kimi hook install refuses without jq before any config write
+ok - fm-spawn: kimi launches, delivers its brief, and registers a guarded turn-end token
+ok - Kimi hook stays silent and inert without a Firstmate registry token
+ok - fm-spawn: unsafe Kimi global config refuses before pane creation
+ok - fm-teardown: Kimi task pointer and registry token are removed
+ok - fm-spawn: Kimi fallback expands the active HOME
+ok - fm-spawn: missing Kimi executable refuses before pane creation
+ok - fm-spawn: kimi treats a silent pointer drop as a failed spawn
+jq: error: Could not open file /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-kimi-harness.vM77F0/not-ready/home/state/home-summary.json: No such file or directory
+not ok - kimi readiness failure omitted its durable endpoint from the home summary
+FM_TEST_END 2026-09-02T13:18:15Z tests/fm-kimi-harness.test.sh exit=1 duration_ms=25989 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:18:15Z tests/fm-lint-workflows.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - fm-lint-workflows.sh pins an explicit actionlint version (1.7.12)
+ok - current .github/workflows YAML files parse
+ok - column-0 heredoc workflow fails validation with a clear error
+ok - valid fixture workflow passes
+ok - empty workflows directory fails closed
+ok - explicit malformed workflow path fails validation
+ok - non-mapping workflow YAML root fails
+ok - missing actionlint fails closed
+ok - fm-lint-workflows.sh refuses to lint under a non-pinned actionlint version
+ok - actionlint installer retries a transient download failure
+ok - actionlint installer selects the official archive, URL, and checksum per OS/arch
+ok - actionlint installer rejects a wrong checksum
+ok - actionlint installer falls back to shasum -a 256 when sha256sum is absent
+ok - actionlint installer prefers sha256sum when both hashers are present
+ok - actionlint installer rejects an unsupported OS or architecture
+ok - fm-lint.sh default path catches a self-broken ci.yml
+FM_TEST_END 2026-09-02T13:18:27Z tests/fm-lint-workflows.test.sh exit=0 duration_ms=11572 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:18:27Z tests/fm-muse-harness.test.sh family=pure-contract-unit expected_gate_skip=none
+cp: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-muse-harness.zCf3Pj/detect/muse-bin-0.1.0-R708.1 and /bin/bash are identical (not copied).
+cp: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-muse-harness.zCf3Pj/detect/muse-bin-9.9.9-RZZZ.9 and /bin/bash are identical (not copied).
+cp: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-muse-harness.zCf3Pj/detect/muse and /bin/bash are identical (not copied).
+ok - muse is detected through any versioned muse-bin ancestor
+cp: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-muse-harness.zCf3Pj/detect-neg/musescore and /bin/bash are identical (not copied).
+cp: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-muse-harness.zCf3Pj/detect-neg/amuse and /bin/bash are identical (not copied).
+cp: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-muse-harness.zCf3Pj/detect-neg/notmuse-bin and /bin/bash are identical (not copied).
+cp: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-muse-harness.zCf3Pj/detect-neg/muse-binary and /bin/bash are identical (not copied).
+cp: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-muse-harness.zCf3Pj/detect-neg/muse-bind and /bin/bash are identical (not copied).
+ok - muse detection does not claim unrelated muse-containing commands
+ok - muse launch clears foreign harness markers before ancestry detection
+ok - muse spawn launches with autonomy, privacy control, and a positional brief
+ok - muse maps the shared effort vocabulary and reaches ultra only via explicit max
+ok - muse spawn refuses when no credential can reach the provider
+ok - muse spawn refuses a META_API_KEY that cannot reach the worker
+ok - muse spawn accepts a stored credential without META_API_KEY
+ok - muse resolves relative XDG roots before preflight and launch
+ok - muse is refused as a secondmate harness
+ok - muse spawn writes a session binding that teardown removes
+ok - the run fold tracks open, settled, interrupted, reopened, and run-free logs
+ok - a nested terminal record never settles an in-flight run
+ok - the session binding folds only the log matching this task's worktree
+ok - workspace bindings compare decoded paths literally
+ok - spawn-time exclusions select the current session across equal mtimes
+ok - the Muse session cache avoids rescans and refreshes safely across incarnations
+ok - a changed Muse namespace revalidates cached session uniqueness
+ok - sub-agent session logs are excluded from the parent's busy fold
+ok - every unproven muse binding classifies unknown rather than idle
+ok - a settled session log reads idle for both completed and interrupted turns
+ok - muse trusts no busy record source
+FM_TEST_END 2026-09-02T13:19:12Z tests/fm-muse-harness.test.sh exit=0 duration_ms=44720 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:19:12Z tests/fm-no-mistakes-required.test.sh family=unclassified expected_gate_skip=none
+ok - shared action accepts a matching head_sha with completed required steps
+ok - shared action rejects a mismatched head_sha and names both SHAs
+ok - shared action rejects an attestation with no head_sha
+FM_TEST_END 2026-09-02T13:19:12Z tests/fm-no-mistakes-required.test.sh exit=0 duration_ms=609 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:19:12Z tests/fm-on.test.sh family=secondmate expected_gate_skip=none
+ok - fm-on --stdin preserves argv, stdin, stdout, stderr, and exit status without shell interpretation
+ok - fm-on defaults the remote command's stdin to /dev/null
+ok - fm-on arms a bounded SSH dead-peer detection window by default (15s x 3 = 45s)
+ok - fm-on's dead-peer detection window is env-overridable
+ok - fm-on rejects invalid dead-peer settings before launching ssh
+ok - the fixed entrypoint runs every command in the worker's explicit environment
+tests/fm-on.test.sh: line 255: NVM_CHILD_DIRS[@]: unbound variable
+FM_TEST_END 2026-09-02T13:19:23Z tests/fm-on.test.sh exit=0 duration_ms=10995 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:19:23Z tests/fm-operational-input.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - operational input: every current generic envelope retains its exact structured kind
+ok - operational input: the established from-firstmate carrier remains structurally typed and byte-compatible
+ok - operational input: untyped landed FIRSTMATE_OP transcripts are explicit legacy-operational input
+ok - operational input: historical prose compatibility is isolated from current parsing
+ok - operational input: quoted, ASCII-only, arbitrary-U+2063, altered-legacy, and label-only near misses stay genuine
+ok - operational input: the OpenCode adapter constructs through the canonical owner
+ok - operational input: current construction rejects legacy kinds and empty bodies
+FM_TEST_END 2026-09-02T13:19:24Z tests/fm-operational-input.test.sh exit=0 duration_ms=474 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:19:24Z tests/fm-quota-choose.test.sh family=unclassified expected_gate_skip=none
+ok - help renders the complete header only
+ok - first positive candidate wins
+ok - exhausted provider is skipped
+ok - no positive candidate returns none and exit 1
+ok - positional candidates work
+ok - specific model scope bounds generic quota
+ok - default model uses provider-wide quota
+ok - fractional positive quota is eligible
+ok - unknown harness fails closed
+ok - all candidates are validated before selection
+ok - malformed provider data fails closed
+ok - multiple JSON values fail closed
+ok - known-empty quota fails closed
+ok - semantics and availability statuses must agree
+ok - exhausted runway vetoes unknown headroom
+ok - unknown headroom is not positive quota
+ok - partial semantics accept mixed availability
+ok - stdin snapshot is accepted
+ok - empty model candidate fails closed
+ok - bare harness maps to default model
+ok - default TOON snapshot is accepted
+ok - renderer-shaped TOON snapshot is accepted
+ok - malformed nonzero TOON envelopes fail closed
+ok - zero-row TOON has no positive quota
+ok - empty-array TOON has no positive quota
+ok - inline attention TOON has no positive quota
+ok - TOON attention identities fail closed
+ok - truncated zero-row TOON fails closed
+ok - malformed zero-row TOON fails closed
+ok - zero-row TOON rejects leading garbage
+ok - counted TOON rows require every declared field
+ok - TOON conversion preserves unknown-headroom exhaustion
+ok - trailing empty TOON fields fail closed
+ok - quoted TOON scope vetoes dispatch
+ok - provider-level unknown quota is not positive
+ok - Muse candidate is accepted
+ok - Muse uses Meta quota
+ok - unsupported harness is rejected
+ok - duplicate providers fail closed
+ok - empty quota scopes fail closed
+ok - whitespace quota identities fail closed
+ok - out-of-range quota fails closed
+ok - invalid runway status fails closed
+ok - missing applicable quota is not positive
+ok - any exhausted applicable scope vetoes dispatch
+ok - named model quota matches exact identity only
+ok - invalid availability status fails closed
+ok - helper reuses the captured quota snapshot
+# all fm-quota-choose tests passed
+FM_TEST_END 2026-09-02T13:19:27Z tests/fm-quota-choose.test.sh exit=0 duration_ms=3223 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:19:27Z tests/fm-remote-job.test.sh family=secondmate expected_gate_skip=none
+ok - default queue and execution bounds independently cover long polls
+ok - operator PATH excludes a symlinked local bin
+ok - operator PATH honors nvm defaults with a deterministic fallback
+ok - operator PATH resolves the authorized Nix profile bin link
+ok - operator PATH orders discovered tool installs deterministically
+ok - the worker preserves bounded argv and stdin in an empty environment
+ok - active jobs keep the worker ready for concurrent requests
+ok - ensure replaces a live worker after its code changes
+ok - worker identity binds the canonical configured code root
+ok - stale ownership is reclaimed without signaling a reused pid
+ok - the worker enforces the job timeout and publishes its result
+ok - the worker expires queued jobs before they can mutate
+ok - queued jobs receive a fresh bounded execution window
+ok - a queued short command preempts a running long poll instead of waiting its window
+ok - a poll re-armed after preemption reads the same cursor with nothing lost
+ok - sibling polls never preempt each other into a re-arm churn loop
+ok - worker shutdown terminates the active command tree before replacement
+ok - Linux supervision recovers crashes and stops orphaned commands
+ok - pre-execution validation obeys the job timeout
+ok - the worker drains bounded output without changing command results
+ok - the worker refuses symlinked job fields before command execution
+ok - failed shutdown quarantines ownership against replacement workers
+ok - quarantine recovery refuses unverifiable supervisors and ignores reused pids
+ok - a repeatedly signalled shutdown still releases ownership for the next worker
+ok - barely healthy worker failures remain bounded by the restart guard
+ALL TESTS PASSED
+FM_TEST_END 2026-09-02T13:20:43Z tests/fm-remote-job.test.sh exit=0 duration_ms=75362 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:20:43Z tests/fm-remote-secondmate-lifecycle-e2e.test.sh family=secondmate expected_gate_skip=none
+ok - overlapping remote home provisioning serializes through publication and rollback
+ok - remote seed rollback preserves serialized competing routes
+ok - unknown readiness preserves its route and brief for reconciliation
+ok - remote seeding checks, repairs, and re-checks readiness, then stops on a remaining gap
+ok - remote seeding proceeds once the repair closes every gap
+ok - remote seeding provisions a supplied origin without touching the primary project tree
+ok - remote provisioning re-validates a supplied origin at the receiving host
+ok - seeding carries bitbucket, self-hosted, and scp-like origins through to the remote clone
+ok - remote seed registers the route and provisions the whole home and project clone on that host
+ok - remote inheritance rejects incomplete and superseded payload generations
+ok - mixed local and remote routes validate without migration
+ok - remote spawn launches on the remote-local backend and records a host-qualified route
+ok - legacy and mismatched remote endpoints fail closed before backend access
+ok - non-herdr remote endpoints are refused without changing either route
+ok - remote spawn serializes inheritance through launch publication
+ok - marked send and routed reply complete through the existing parent correlation owner
+ok - partial remote inheritance retains reread intent through bootstrap convergence
+ok - config push and bootstrap serialize remote inheritance convergence
+WARNING: watcher still down (same stale episode; last beat: 79s ago, grace 300s) - full banner already printed this episode.
+ok - remote inherited config retains and retries a failed live reread nudge
+ok - fleet snapshot projects mixed local and remote structured state
+ok - remote update honors the remote home's local update-remote preference
+ok - startup repairs remote readiness before probing without relaunching
+ok - startup reports alive legacy backends without changing their routes
+ok - unreachable no-ledger remote state remains explicit with no local respawn or failover
+ok - remote retirement refuses child work, then removes only its own endpoint while a shared-session sibling survives
+ALL TESTS PASSED
+FM_TEST_END 2026-09-02T13:27:00Z tests/fm-remote-secondmate-lifecycle-e2e.test.sh exit=0 duration_ms=376977 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:27:00Z tests/fm-remote-secondmate-parent-binding.test.sh family=unclassified expected_gate_skip=none
+ok - remote provisioning publishes durable parent state before its completion marker
+ok - a remote secondmate's finished worker cleans up when the remote code root's own .env looked relay-active
+ok - a remote secondmate's finished worker cleans up when only an ambient exported token looked relay-active
+ok - a remote secondmate's finished worker cleans up with no relay signal anywhere
+ok - a remote secondmate's own committed relay token still refuses cleanup
+not ok - remote secondmate publication accepted a target resolving outside its home
+FM_TEST_END 2026-09-02T13:27:56Z tests/fm-remote-secondmate-parent-binding.test.sh exit=1 duration_ms=56545 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:27:56Z tests/fm-remote-transport-lanes.test.sh family=secondmate expected_gate_skip=none
+ok - atomic sequence claims remain unique and reap only after expiry
+ok - lanes run homes concurrently while each home stays FIFO
+ok - same-home jobs staged in the same second execute in staging-sequence order
+ok - same-home sequence order follows completed staging publication
+ok - a caller killed mid-wait cancels its queued job before execution
+ok - a caller killed mid-wait stops its running job's process group
+ok - a signal-less caller disconnect cancels the abandoned job through the parent probe
+ok - bounded reads after a cancellation meet their own budget with no convoy
+ok - an open caller stdin no longer wedges a non-payload remote command
+ok - a live explicit-stdin stage survives the staging-litter age bound
+ok - --stdin still delivers a payload caller's bytes
+ok - abandoned stage litter is reaped by age while live staging survives
+ALL TESTS PASSED
+FM_TEST_END 2026-09-02T13:29:09Z tests/fm-remote-transport-lanes.test.sh exit=0 duration_ms=72707 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:29:09Z tests/fm-secondmate-harness.test.sh family=secondmate expected_gate_skip=none
+ok - A1 fm-harness.sh secondmate resolves the fallback chain; crew mode unchanged
+ok - fm-harness detects only Cursor Agent CLI's exact invocation marker
+ok - C1 fm-harness.sh secondmate-model/secondmate-effort resolve the optional tokens; bare harness stays empty (backward-compat)
+ok - pi-signed identity: authoritative launch selection distinguishes shared wrapper ancestry
+ok - harness identity: dash-leading ps command names are basename operands, not options
+ok - B1 propagate_inheritable_config: copy, idempotence, convergence, absence-mirror, exclusion, no-op, skip diagnostics
+ok - B2 spawn: secondmate runs the secondmate harness; its home inherits declared config
+ok - B3 spawn: an absent secondmate-harness falls back to the crew harness (backward-compat)
+ok - B4 spawn: no config at all -> own harness and no propagation side effects
+ok - B5 spawn: an explicit per-spawn harness arg overrides config/secondmate-harness
+ok - B6 spawn: an unverified resolved secondmate harness is refused (guard intact)
+ok - Cursor is accepted for secondmates and launches with the contract its park needs
+ok - B5b spawn: FM_BACKEND wins over inherited config/backend
+ok - B5c spawn: explicit --backend wins over FM_BACKEND and inherited config/backend
+ok - C2 spawn: a bare harness-only secondmate-harness file launches with no model/effort flag (backward-compat)
+ok - C3 spawn: config/secondmate-harness's model token threads --model into the launch and meta
+ok - C4 spawn: config/secondmate-harness's model+effort tokens thread into the launch and meta
+ok - C5 spawn: an explicit --model overrides config/secondmate-harness's model token; the file's effort token still applies
+ok - C6 spawn: an explicit --effort overrides config/secondmate-harness's effort token; the file's model token still applies
+ok - C7 spawn: an explicit --harness starts with clean model/effort defaults
+ok - C8 spawn: an explicit --harness still honors explicit model/effort flags
+ok - C9 spawn: secondmate launch pins supervision to its own harness
+ok - C9 spawn: the harness fallback chain still resolves with no tokens; crew/scout launches are unaffected by this feature
+ok - B7 bootstrap sweep pushes, re-converges, and mirrors absence; never inherits secondmate-harness
+ok - B8 bootstrap sweep propagates config even when the home's tracked files are already current
+ok - B9 bootstrap sweep defers new inherited config until the home ignores it
+ok - B10 bootstrap sweep materializes and inherits the startup-memory default while fast-forwarding
+ok - B12b backend inheritance: present values and primary absence converge exactly
+ok - B12c presentation inheritance: the primary default converges on, and only an explicit opt-out propagates off
+ok - B11 bootstrap sweep surfaces config propagation failures
+ok - B11 bootstrap rereads completed config writes after partial propagation
+ok - B12 config-push propagates via shared live discovery, reports items, rereads on change only, and does not fast-forward
+ok - B13 config-push reports dirty, non-allowing, and invalid homes without failing warnings-only runs
+ok - B14 config-push exits nonzero on real propagation errors
+ok - B14 config-push rereads completed config writes after partial propagation
+ok - B15 config reread is per-home, exact-byte, ordered, and pointer-only
+ok - B16 config reread isolation, ABSENT, generation safety, send failure, and retry
+ok - B20 config reread publication failures retain exact generations for retry
+ok - B21 config reread instruction-write failures retain exact retry generations
+ok - B21 config reread preserves exact bytes when temporary adoption also fails
+ok - B21 config reread serializes concurrent propagation and delivery
+ok - B22 full config reread retry queues drain before new publication
+ok - B23 mixed config reread delivery failures still bound sent history
+ok - B26 config reread delivery stops after the oldest failed generation
+ok - B17 config reread skips unchanged homes and reads destination post-write bytes
+ok - B18 bootstrap config reread path works; spawn flexibility remains defaults-only
+ok - B19 bootstrap respawns before inherited-config reread
+ok - B25 spawn quarantines stale rereads without blocking relaunch
+ok - B24 bootstrap detect-only mode remains filesystem read-only
+# all fm-secondmate-harness tests passed
+FM_TEST_END 2026-09-02T13:32:59Z tests/fm-secondmate-harness.test.sh exit=0 duration_ms=230156 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:32:59Z tests/fm-secondmate-liveness.test.sh family=secondmate expected_gate_skip=none
+ok - fm_backend_tmux_agent_state: separates live, dead, missing, ambiguous, and unreadable
+ok - fm_backend_tmux_agent_state: rejects malformed targets before probing tmux
+ok - fm_backend_herdr_agent_state: preserves missing/no-agent/live/unknown husk behavior
+ok - fm_backend_agent_state: routes tmux/Herdr and keeps Zellij unverified
+ok - sweep: a confirmed-dead secondmate endpoint is killed and respawned
+ok - sweep: an already-live secondmate is untouched and distinguishable in verbose diagnostics
+ok - sweep: an authoritatively missing Pi secondmate window is relaunched
+ok - sweep: an authoritatively missing pi-signed secondmate window is relaunched
+ok - sweep: an existing ambiguous Pi process prevents duplicate recovery
+ok - sweep: transient target unreadability never licenses recovery
+ok - sweep: failed relaunch diagnostics distinguish a confidently missing endpoint
+ok - sweep: an unverified harness blocks recovery with a concrete diagnostic
+ok - sweep: idempotent by construction - a live secondmate is never re-touched on a later run
+ok - sweep: skipped entirely under FM_BOOTSTRAP_DETECT_ONLY=1, exactly like the other mutating sweeps
+ok - sweep: a silent no-op with no kind=secondmate meta present (a secondmate home's own natural scoping)
+# all fm-secondmate-liveness tests passed
+FM_TEST_END 2026-09-02T13:33:49Z tests/fm-secondmate-liveness.test.sh exit=0 duration_ms=49509 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:33:49Z tests/fm-secondmate-reconcile.test.sh family=secondmate expected_gate_skip=none
+ok - reconcile requests stop oversized streams at the capture bound
+ok - reconcile requests require exactly one snapshot document
+ok - reconcile requests coalesce per target and retire independently after delivery
+ok - Bearings records locally, returns before a delayed remote queue, and supervision delivers later
+ok - a home in mismatch is asked once, and later recaps stay silent
+ok - a mismatch outliving the cooldown earns one re-nudge, then goes quiet again
+ok - the cooldown begins when delivery finishes
+ok - the cooldown window is four hours
+ok - the cooldown is per home, not fleet-wide
+not ok - the reconcile ask armed a pending-reply expectation
+FM_TEST_END 2026-09-02T13:34:36Z tests/fm-secondmate-reconcile.test.sh exit=1 duration_ms=46977 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:34:36Z tests/fm-secondmate-sync.test.sh family=secondmate expected_gate_skip=none
+ok - T1 updated: a behind home fast-forwards to the primary's local HEAD
+ok - T2 current: an already-current home is a no-op and reports no instruction change
+ok - T3 dirty: an uncommitted home is skipped, its edit preserved
+ok - scratchpad2/ does not mark a secondmate home dirty for the sync guard
+ok - T4 diverged: a home that is not an ancestor of the primary's HEAD is skipped
+ok - T5 in-flight: a home on a feature branch is skipped, its work preserved
+ok - T6 no fetch: the local-HEAD sync never invokes git fetch
+ok - T7 sweep nudges on a real instruction change only, but still fast-forwards
+ok - T8 bootstrap sweeps live homes and sends exactly one marked nudge for the instruction change
+ok - T8a bootstrap nudge send respects FM_STATE_OVERRIDE
+ok - T8f bootstrap nudge retry rejects malformed marker ids
+ok - T8c failed bootstrap nudge is surfaced and recorded for retry
+ok - T8d bootstrap nudge retry is idempotent after success
+ok - T8e bootstrap nudge retry refuses a changed home instead of guessing
+ok - T8b a stale herdr endpoint cannot lose a durably enqueued nudge, and fm-<id> resolves through post-respawn metadata
+ok - T9 bootstrap surfaces a skipped dirty live secondmate home
+ok - T10 spawn fast-forwards a secondmate worktree to the primary's local HEAD before launch
+ok - T11 spawn warns when pre-launch sync is skipped
+ok - T12 gitignored marker: a freshly seeded home reads clean to fleet-sync and the ff sweep
+ok - T13 gitignored marker: an existing marker-only-dirty home converges, then reads clean
+ok - T14 marker tolerance does not mask a genuinely dirty home
+# all fm-secondmate-sync tests passed
+FM_TEST_END 2026-09-02T13:35:22Z tests/fm-secondmate-sync.test.sh exit=0 duration_ms=45836 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:35:22Z tests/fm-session-start.test.sh family=session-bootstrap expected_gate_skip=none
+ok - context digest distinguishes ABSENT, empty-but-present, and populated files
+ok - a lock refusal prints a loud read-only banner, skips every mutating step, and still completes the digest
+ok - session start stays read-only when lock ownership cannot be published
+ok - locked session start freezes trace context and lock refusal leaves it unchanged
+ok - concurrent session-lock acquisition admits exactly one live harness
+ok - digest sections are ordered safety-preamble first, live fleet state before curated memory
+ok - the read-once contract is stated once, ahead of the sources it governs
+ok - session start: configured and auto-detected Herdr homes never require tmux
+ok - session start: an absent recorded tmux window relaunches its Pi secondmate exactly once, off the blocking path
+ok - session start: a deferred relaunch is always reported, so the digest's stale endpoint record cannot stand
+ok - session start: inactive reconciliation runs after the digest and retains its durable wake
+ok - session start: an unreachable host delays a reported check, not the digest
+ok - session start: a deferred result the digest outran still reaches the agent as a wake
+ok - session start: a read-only session declares its skipped network checks rather than dropping them
+ok - session start: the tasks-axi compatibility verdict is computed once and reused
+ok - session start: an existing ambiguous Pi process prevents duplicate recovery
+ok - session start: transient tmux unreadability never licenses a relaunch
+ok - session start: the proven bare-shell recovery path remains intact
+ok - session start: a confirmed Herdr husk is closed and relaunched
+ok - status tail is bounded to the configured line count, with the full log path always printed
+ok - status tail lines are capped with a truncation marker while the full log stays reachable
+ok - orphan status logs are printed once with bounded tails
+ok - tmux endpoint liveness is reported per task: alive for a live window, dead for a gone one
+ok - herdr endpoint liveness is reported per task: alive for a live pane, dead for a gone one
+ok - fm-session-start.sh composes the real fm-lock.sh, fm-bootstrap.sh, and fm-wake-drain.sh output verbatim
+not ok - locked start crossed the captain delivery barrier (unexpected: 'https://example.com/pr/b')
+--- output ---
+
+================================================================================
+SESSION START - /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-session-start-tests.78bEK3/branch-recovery/home
+================================================================================
+
+LOCK
+--------------------------------------------------------------------------------
+lock acquired: harness pid 63863
+
+BOOTSTRAP
+--------------------------------------------------------------------------------
+MISSING: tasks-axi (install: npm install -g tasks-axi)
+MISSING: quota-axi (install: npm install -g quota-axi)
+
+WAKE QUEUE
+--------------------------------------------------------------------------------
+BRANCH OUTCOMES (handled by the supervision branch, not yet seen by this session):
+{"seq":1,"epoch":1788356277,"task":"task-a","wake":"","verdict":"routine","summary":"worker recovered automatically","silent":false}
+{"seq":2,"epoch":1788356277,"task":"task-b","wake":"","verdict":"captain","summary":"PR https://example.com/pr/b checks green","silent":false}
+(no queued wakes)
+PI_WATCH_EXTENSION: not loaded - approve Pi project trust once per clone, then restart plain pi so /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-session-start-tests.78bEK3/branch-recovery/root/.pi/extensions/fm-primary-turnend-guard.ts and /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-session-start-tests.78bEK3/branch-recovery/root/.pi/extensions/fm-primary-pi-watch.ts auto-load for turn-end guard and background wake coverage; use -e /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-session-start-tests.78bEK3/branch-recovery/root/.pi/extensions/fm-primary-turnend-guard.ts -e /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-session-start-tests.78bEK3/branch-recovery/root/.pi/extensions/fm-primary-pi-watch.ts only if project hooks are not trusted
+================================================================================
+SUPERVISION OPERATING INSTRUCTIONS - primary harness: pi
+================================================================================
+Current state:
+- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.
+- Away mode: inactive.
+- X mode: inactive; use the default watcher cadence.
+- Ordinary wake: the Pi extension already owns watcher continuity; do not arm another cycle.
+
+Mode: Pi extension background wake.
+
+When this session owns supervision and away mode is not active:
+1. Drain first with `bin/fm-wake-drain.sh`.
+   After handling all emitted wakes and reconciling open decisions and unread status lines, run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`; until then the work remains durable for idempotent re-handling after interruption.
+2. Confirm the Pi primary auto-loaded both project extensions (plain `pi` or `pi-signed`, after approving project trust once per clone); if not, restart the selected executable with `-e /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-session-start-tests.78bEK3/branch-recovery/root/.pi/extensions/fm-primary-turnend-guard.ts -e /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-session-start-tests.78bEK3/branch-recovery/root/.pi/extensions/fm-primary-pi-watch.ts` as a trust-free fallback.
+3. Initial process cycle only: make the one required `fm_watch_arm_pi` call; if startup already owned the fleet lock, this is an ownership-based no-op.
+   Use `/fm-watch-arm-pi` only as a human-entered fallback.
+   Never run `bin/fm-watch-arm.sh` through Pi's bash tool because that foreground arm can wedge the agent and bypasses extension-owned cleanup.
+4. If the extension says no live session holds the lock, run `bin/fm-session-start.sh` to reclaim the session lock, then call `fm_watch_arm_pi` again.
+5. The extension starts `bin/fm-watch-arm.sh --restart`, keeps the child attached to the live Pi process, and owns every later successor launch.
+6. Ordinary same-process session replacement (`/new`, `/resume`, `/fork`, reload) retires only the prior generation; when the replacement owns the fleet lock, its `session_start` arms the new generation without a model turn or another `fm_watch_arm_pi` call.
+   The generation-owner contract and in-flight actionable-close handoff live in `.pi/extensions/fm-primary-pi-watch.ts`.
+7. After an actionable child close, the extension rechecks session-lock ownership and verifies one successor before it delivers the follow-up wake; its bounded fallback is defined in `docs/watcher-continuity.md`.
+8. Ordinary work, turn completion, and ordinary signal, stale, check, heartbeat, or other wake handling: do not call `fm_watch_arm_pi` again because continuity is extension-owned rather than model-memory-owned.
+9. An unexpected child close enters bounded exponential retry, and an exhausted retry or lost session lock is surfaced as a watcher failure instead of disappearing.
+10. Missing, failed, or unhealthy cycle only: if a later notification explicitly reports one of those repair conditions, drain queued wakes, inspect the failure text, call `fm_watch_arm_pi`, and restart the selected Pi-family executable with both extensions loaded if needed.
+   A redundant call while the extension owns an arm child or scheduled retry is an ownership-based `watcher: unchanged` no-op, not an independent health claim.
+11. Never use shell `&` for watcher supervision.
+   The arm mechanism above is extension-owned, not a model tool call, but a manual recovery probe that backgrounds, pipes, or bundles the arm is denied automatically by the PreToolUse seatbelt (`bin/fm-arm-pretool-check.sh`, wired into the turn-end guard extension at `/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-session-start-tests.78bEK3/branch-recovery/root/.pi/extensions/fm-primary-turnend-guard.ts`).
+
+The supervision branch is default-on (docs/pi-supervision-branch.md): whenever this session owns the fleet lock and away mode is not active, the watcher extension hands eligible task-local rows from ordinary actionable wakes, plus selected fleet-wide heartbeat reviews, to the persistent in-process supervision branch while main-only rows remain queued for this conversation.
+A no-change heartbeat outcome explicitly reported with `task=fleet` and `silent=true` is delivered silently with no rendered note, while every other routine outcome returns as an appended, rendered note that leads with ⛵ then the dim outcome text.
+A captain-facing outcome instead appears as one exact, sequence-keyed visible transcript entry, and then arrives in this conversation as one hidden supervision processing request listing each `[seq N] task: summary` it covers.
+That request is the one turn in which MAIN processes the outcome: give the captain a visible response where one is due, answer or escalate a decision, act on a blocker or failure, or record that no further action is needed, then call the `fm_branch_processed` tool with the highest sequence the request listed, exactly once.
+Only that call closes the outcome; an unrelated, empty, or paraphrased answer leaves it open, and the current unprocessed sequence set is presented again at the next run boundary and at session start until it is acknowledged.
+The persisted entry is already the captain-visible record, so MAIN must not re-emit it verbatim merely because it appeared.
+Before MAIN steers, controls lifecycle, or cleans up a task, claim its lease with `bin/fm-lease.sh claim <task>` and release it afterwards; a refused claim means the branch is acting on that task right now.
+This conversation still receives every other fleet-wide or unresolvable wake, the branch's wakes when it is unavailable or away mode is active, and every watcher-failure alarm regardless, so the arm and repair contract above is unchanged.
+Treat the merged fleet event as already handled for fleet operations: MAIN must not re-drain, re-run, or acknowledge it.
+Separately, MAIN applies judgment about whether and how to surface, summarize, reference, or incorporate a merged sailboat outcome in the captain conversation; event ownership does not decide the conversational treatment.
+Read the durable outcome store with the fm_branch_outcomes tool when the captain asks what happened.
+
+The turn-end guard extension lives at `/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-session-start-tests.78bEK3/branch-recovery/root/.pi/extensions/fm-primary-turnend-guard.ts`.
+The watcher extension lives at `/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-session-start-tests.78bEK3/branch-recovery/root/.pi/extensions/fm-primary-pi-watch.ts`.
+Both are tracked, project-local `.pi/extensions/*.ts` files that Pi auto-discovers once the project is trusted; `bin/fm-session-start.sh` reports when the running Pi session has not loaded both required extensions.
+
+
+================================================================================
+READ-ONCE CONTRACT
+================================================================================
+Everything below provides a required PRIOR SESSION retrieve, every state/*.meta, a
+compact data/backlog.md listing, a bounded tail of every state/*.status,
+data/projects.md, data/secondmates.md, data/captain.md, data/captain-shared.md,
+and data/learnings.md.
+Do NOT re-read any of them after reading this digest, and do NOT bulk-read
+data/backlog.md or state/*.status: re-reading everything defeats the entire
+point of this command.
+
+Go to a source directly only when:
+  - this digest flagged it ABSENT (then rebuild or create it per AGENTS.md),
+  - its contents looked unparseable or corrupt,
+  - an individual full status log is needed for older wake-event history, or a
+    status line was capped and its tail matters (each task's full log path is
+    printed with its tail),
+  - a full task body is needed (tasks-axi show <id> --full, or data/backlog.md),
+  - the backlog listing disclosed omitted queued items and this turn needs them,
+  - the PRIOR SESSION fold reported missing, unreadable, parse-failed, or
+    truncated input and this turn needs one of its three targeted categories,
+  - the NETWORK CHECKS section reported its checks still IN PROGRESS and this
+    turn needs their verdict (bin/fm-startup-network.sh report),
+  - or a STARTUP TRUNCATED banner named the stage that would have printed it, in
+    which case that stage's sources were never emitted and must be reconciled.
+
+================================================================================
+PRIOR SESSION
+================================================================================
+scope: targeted prior-talk fold only; not 100% of chat; no GBrain, Graphify, or Obsidian ingestion.
+INCOMPLETE: prior session parser produced no result.
+
+================================================================================
+FLEET STATE
+================================================================================
+
+data/backlog.md
+--------------------------------------------------------------------------------
+ABSENT
+
+Work under way (state/*.meta)
+--------------------------------------------------------------------------------
+(none)
+
+Orphan status logs (state/*.status without matching .meta)
+--------------------------------------------------------------------------------
+(none)
+
+AFK
+--------------------------------------------------------------------------------
+absent
+
+================================================================================
+NETWORK CHECKS
+================================================================================
+completed off the startup path in 1s: GitHub authentication, dead-secondmate relaunch, secondmate convergence, pending handoff delivery, project clone refresh with its drift reporting, and inactive terminal-outcome reconciliation.
+(silent - no problems found)
+
+================================================================================
+CONTEXT
+================================================================================
+
+data/projects.md
+--------------------------------------------------------------------------------
+ABSENT
+
+data/secondmates.md
+--------------------------------------------------------------------------------
+ABSENT
+
+data/captain.md
+--------------------------------------------------------------------------------
+ABSENT
+
+data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)
+--------------------------------------------------------------------------------
+ABSENT
+
+data/learnings.md
+--------------------------------------------------------------------------------
+ABSENT
+
+================================================================================
+NEXT STEP
+================================================================================
+Follow the supervision operating instructions block above for harness 'pi'.
+This script never starts supervision itself.
+
+The digest above is complete for this session start. The READ-ONCE CONTRACT
+section near the top of it governs what may still be read from disk.
+FM_TEST_END 2026-09-02T13:38:01Z tests/fm-session-start.test.sh exit=1 duration_ms=159719 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:38:01Z tests/fm-sessionstart-hook-live-e2e.test.sh family=live-harness-optin expected_gate_skip=optin-env
+skip: set FM_SESSIONSTART_HOOK_LIVE_E2E=1 for the cross-harness guard or FM_PI_SESSIONSTART_RACE_LIVE_E2E=1 for the offline Pi /new race regression
+FM_TEST_END 2026-09-02T13:38:01Z tests/fm-sessionstart-hook-live-e2e.test.sh exit=0 duration_ms=26 gate_skip=true
+FM_TEST_BEGIN 2026-09-02T13:38:01Z tests/fm-sessionstart-nudge.test.sh family=session-bootstrap expected_gate_skip=none
+ok - fm-sessionstart-nudge: a genuine primary gets one explicitly marked instruction line
+ok - fm-sessionstart-nudge: NO_MISTAKES_GATE is silent
+ok - fm-sessionstart-nudge: .no-mistakes gate common-dir is silent
+ok - fm-sessionstart-nudge: an unmarked linked task worktree is silent
+ok - fm-sessionstart-nudge: a marked linked secondmate home is a primary
+ok - fm-sessionstart-nudge: a checkout without state is silent
+ok - fm-sessionstart-nudge: a lock holder in process ancestry is already run
+ok - OpenCode session.created delivers the exact wrapper nudge once per session
+ok - run wrapper: startup runs the full digest and never also nudges
+ok - run wrapper: clear and compact re-emit the digest without repeating startup sweeps
+ok - run wrapper forwards only stale-cache rebuild sources to immutable-baseline instruction refresh
+ok - run wrapper refreshes a compact even when startup completion is unproven
+ok - run wrapper: clear falls back to full startup when completion is unproven
+ok - run wrapper: clear accepts completion only from the current harness
+ok - run wrapper: resume delegates to the nudge instead of re-running the digest
+ok - run wrapper: a native clear payload reclaims its own session lock and re-emits
+ok - run wrapper: a native resume payload repairs the sidecar and the nudge stays silent
+ok - run wrapper: only a validated native replacement in its own client process may replace the sidecar
+ok - run wrapper: loose source routing still works without python3
+ok - run wrapper: a nested clear or resume cannot reclaim the primary session lock
+ok - run wrapper: the hook payload's source field drives routing with no explicit argument
+ok - run wrapper: an unrecognized or absent source takes the helm rather than skipping it
+ok - run wrapper: ordinary ineligible opens stay silent-zero and Pi preflight gets an explicit silent stand-down
+ok - run wrapper: a session start that cannot take the lock still opens the session and says so
+cp: /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1GX1VZRZDRNJMPHD5CRYRWD/.pi/extensions/lib/fm-sessionstart-supervisor.mjs: No such file or directory
+not ok - Pi continuation classification: expected exit 0, got 1
+FM_TEST_END 2026-09-02T13:39:14Z tests/fm-sessionstart-nudge.test.sh exit=1 duration_ms=72477 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:39:14Z tests/fm-shared-captain-inheritance.test.sh family=secondmate expected_gate_skip=none
+ok - shared captain first copy converges, is read-only, and preserves local captain/learnings files
+ok - shared captain drift is quarantined collision-safely and repeated convergence is idempotent
+ok - missing primary shared file mirrors absence only after quarantining a local copy
+ok - unsafe shared captain artifacts are rejected and failure restores read-only mode
+ok - spawn convergence point propagates data/captain-shared.md from FM_DATA_OVERRIDE
+ok - bootstrap convergence point propagates data/captain-shared.md from FM_DATA_OVERRIDE
+ok - fm-config-push convergence point updates changed shared captain source bytes from FM_DATA_OVERRIDE
+ok - session-start digest renders data/captain-shared.md with the shared read-only label
+# all fm-shared-captain-inheritance tests passed
+FM_TEST_END 2026-09-02T13:39:27Z tests/fm-shared-captain-inheritance.test.sh exit=0 duration_ms=13424 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:39:27Z tests/fm-startup-memory-budget.test.sh family=secondmate expected_gate_skip=none
+ok - primary bootstrap materializes only the visible default and preserves valid captain choices
+ok - budget parser accepts one exact positive value and rejects malformed or unsafe inputs
+ok - budget accounting sums the three startup files and reports safe failures
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 0s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: watcher still down (same stale episode; last beat: 3s ago, grace 300s) - full banner already printed this episode.
+WARNING: watcher still down (same stale episode; last beat: 6s ago, grace 300s) - full banner already printed this episode.
+ok - budget propagation converges through config push with exact rereads, absence, and safe rejection
+# all fm-startup-memory-budget tests passed
+FM_TEST_END 2026-09-02T13:39:41Z tests/fm-startup-memory-budget.test.sh exit=0 duration_ms=13372 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:39:41Z tests/fm-startup-network.test.sh family=session-bootstrap expected_gate_skip=none
+ok - fm-startup-network: wait fails when no deferred stage publishes before its deadline
+ok - fm-startup-network: start returns immediately and never holds the caller's stdout open
+ok - fm-startup-network: exactly one of the digest and the wake reports each actionable result
+ok - fm-startup-network: a claimant crash after publication still surfaces the result
+ok - fm-startup-network: a report-publication failure is failed, diagnosed, and still wakes
+ok - fm-startup-network: silent and explicitly informational successes never queue a main-blocking wake
+ok - fm-startup-network: an actionable state=done report still queues a wake
+ok - fm-startup-network: deferred invalid secondmate markers produce durable wakes
+ok - fm-startup-network: manual callers cannot forge mutation authority
+ok - fm-startup-network: an aggregate bound turns a wedged sweep into an actionable line
+ok - fm-startup-network: an abandoned run reports as needing a rerun, never as in progress forever
+ok - fm-startup-network: locked requests supersede in-flight probe-only workers
+ok - fm-startup-network: a second start never launches a competing worker
+ok - fm-startup-network: start atomically reserves the generation harvest observes
+ok - fm-startup-network: a new lock owner gets a distinct worker generation
+ok - fm-startup-network: fleet-lock takeover cannot overlap a mutating sweep
+ok - fm-startup-network: timing records share one origin so their offsets form a timeline
+ok - fm-startup-network: timings are durable and printed only on demand
+ok - fm-startup-network: a timed-out run still publishes the partial timings it recorded
+ok - fm-startup-network: the timing artifact cannot carry a command line or forge records
+# fm-startup-network.test.sh: all assertions passed
+FM_TEST_END 2026-09-02T13:41:11Z tests/fm-startup-network.test.sh exit=0 duration_ms=89752 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:41:11Z tests/fm-tangle-guard.test.sh family=session-bootstrap expected_gate_skip=none
+ok - fm_primary_tangle_branch: feature branch alarms; default/detached/non-git stay silent
+ok - fm-guard: bordered tangle banner fires only for a feature branch and suppresses repair commands in read-only mode
+ok - fm-bootstrap: TANGLE problem line fires only for a feature branch and suppresses repair commands in detect-only mode
+ok - fm-brief: ship brief asserts worktree isolation before the branch step
+not ok - spawn into a genuine isolated worktree should succeed: expected exit 0, got 1
+FM_TEST_END 2026-09-02T13:41:26Z tests/fm-tangle-guard.test.sh exit=1 duration_ms=15364 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:41:26Z tests/fm-task-inbox.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - inbox: a steer is written durably and round-trips byte-exact with a self-describing doorbell
+ok - inbox: the idempotent enqueue dedups an exact re-run onto the same record, handled or not
+ok - inbox: idempotent enqueue follows a record concurrently moved to handled
+ok - inbox: the handled mv is the idempotent ack and sequences are never reissued
+ok - inbox: concurrent writers serialize on the sequence lock and lose nothing
+ok - inbox: ladder bookkeeping ignores a concurrently removed inbox
+ok - inbox: fire-and-forget records stay durable and outside the ladder
+ok - inbox: the re-ring ladder paces by grace, escalates once, and resets on ack
+ok - watcher: an unhandled aged message on an idle pane re-rings without waking firstmate, and the ack silences it
+ok - watcher: a busy pane just waits - the record is durable and no doorbell is typed
+ok - watcher: a healthy or empty inbox stays completely silent
+ok - watcher: acknowledgement silences an unwritable ladder without a stale wake
+ok - watcher: unwritable ladder bookkeeping surfaces a stale wake after the doorbell
+ok - watcher: a spent ring budget emits exactly one ordinary stale wake for recovery
+FM_TEST_END 2026-09-02T13:41:59Z tests/fm-task-inbox.test.sh exit=0 duration_ms=32641 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:41:59Z tests/fm-test-fixture-cleanup.test.sh family=unclassified expected_gate_skip=none
+ok - fm_test_tmproot cleans up its fixture root on normal exit
+ok - fm_test_tmproot cleans up its fixture root on SIGTERM
+ok - the cleanup registry cannot be injected through path precreation
+ok - failed fixture registration rolls back the new root
+ok - the orphan sweep reaps only old fixtures without a live owner
+ok - the orphan sweep reaps read-only package fixtures
+FM_TEST_END 2026-09-02T13:42:01Z tests/fm-test-fixture-cleanup.test.sh exit=0 duration_ms=1916 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:42:01Z tests/fm-test-fixtures.test.sh family=unclassified expected_gate_skip=none
+ok - fake no-mistakes --version is the shared constant and overridable
+ok - init/doctor no-mistakes stub touches markers and refuses other verbs
+ok - fake gh authenticates and fake gh-axi reports the shared version
+ok - spawn fakebin answers pane path, logs -l payloads, and installs extra tools
+ok - send stubs log typed text and fake ssh records argv with a controllable exit
+ok - spawn-home layout writes harness pin, beat, and brief
+FM_TEST_END 2026-09-02T13:42:04Z tests/fm-test-fixtures.test.sh exit=0 duration_ms=3072 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:42:04Z tests/fm-test-isolation-proof.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - unknown candidate pools are refused
+ok - family pool JSON scopes jobs admission to proven concurrency
+ok - candidate --list is non-empty, sorted, unique, and real
+ok - serial classes remain excluded from the parallel candidate set
+ok - audited fake-backend and stub-network extras are candidates
+ok - exclusion list documents serial reasons
+ok - isolation-proof contract test is family-mapped
+ok - parallel shards consume the proven-isolated set only
+FM_TEST_END 2026-09-02T13:42:10Z tests/fm-test-isolation-proof.test.sh exit=0 duration_ms=6461 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:42:10Z tests/fm-tool-update-check.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - PATH skew is reported by asking every copy on PATH for its own version
+ok - no report when PATH already resolves the newest installed copy
+ok - two copies of the same version are not skew
+ok - one copy reached through two PATH entries is probed once as one install
+ok - a copy that reports no version is a check failure, not a pass
+ok - a watched command missing from PATH is reported
+ok - a tool's own update announcement is read from its output
+ok - an announcement carried by another command is read from that command
+ok - an announce_pattern that cannot be used is reported instead of read as silence
+ok - a broken pattern is reported for its own tool and the rest of the sweep still reports
+ok - an announcement source the budget could not reach is reported, not read as current
+ok - an announcement probe that does not answer is reported, not read as current
+ok - a tool that announces nothing stays silent
+ok - commits behind the origin branch are reported without touching the repository
+ok - an omitted branch is detected from the remote's default branch
+ok - the default branch is asked of the remote when the clone has no local record
+ok - a repository that is current or ahead of its origin branch is silent
+ok - an unusable git source is reported as a check failure
+ok - a remote that cannot be read is reported as unreadable, not as a missing branch
+ok - a branch a readable remote does not have is still reported as missing
+ok - git probes stop and name their tool once the sweep budget is gone
+ok - a git probe that does not answer is reported as a failure, never as an update
+ok - a stalled repository probe is reported as no answer, not as not a repository
+ok - no watched tool registry means no output at all
+ok - a malformed registry is reported instead of quietly skipped
+ok - the same pending update is reported once, and a change is reported again
+ok - an over-long report is cut with the shared truncation marker
+ok - a finding that lands past the cut is still reported as news
+ok - probes run once per interval, not on every poll
+ok - a budget that cannot fit the watcher bound is cut and reported, and the sweep keeps working
+ok - an out of range bound or unknown action refuses instead of guessing
+ok - arm registers a trusted check and disarm removes every trace
+ok - a symlink at the shim path is refused instead of followed
+ok - a failed registration never leaves a shim without a matching trust binding
+ok - a re-arm that loses the trust binding leaves no shim behind
+ok - a relative home is resolved before it is persisted into the shim
+ok - the armed check reaches the watcher as an ordinary check wake
+FM_TEST_END 2026-09-02T13:42:45Z tests/fm-tool-update-check.test.sh exit=0 duration_ms=34237 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:42:45Z tests/fm-trace-context-spawn.test.sh family=backend-dispatch expected_gate_skip=none
+jq: error: Could not open file /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-trace-context-spawn.WNcZIh/tc-on/home/state/home-summary.json: No such file or directory
+not ok - successful task spawn did not publish the task in the home summary ledger
+FM_TEST_END 2026-09-02T13:42:49Z tests/fm-trace-context-spawn.test.sh exit=1 duration_ms=3762 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:42:49Z tests/fm-watch-recovery-loop.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - a resurfacing handling successor stays alive and supervises instead of going blind
+ok - unacknowledged recovery is announced at most once per generation and the successor stays alive
+FM_TEST_END 2026-09-02T13:43:50Z tests/fm-watch-recovery-loop.test.sh exit=0 duration_ms=61197 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T13:43:50Z tests/fm-watch-triage.test.sh family=watcher-wake-lock expected_gate_skip=none
+tests/fm-watch-triage.test.sh: line 187: status_span_has_actionable: command not found
+tests/fm-watch-triage.test.sh: line 189: status_span_has_actionable: command not found
+not ok - captain-relevant span classified benign
+FM_TEST_END 2026-09-02T13:43:50Z tests/fm-watch-triage.test.sh exit=1 duration_ms=234 gate_skip=false
+FM_TEST_SUMMARY total=49 failed=15 skipped_gate=3 duration_ms=2681461
+FM_TEST_SUMMARY_FAMILY family=backend-dispatch count=1 duration_ms=3762 failed=1
+FM_TEST_SUMMARY_FAMILY family=live-harness-optin count=3 duration_ms=78 failed=0
+FM_TEST_SUMMARY_FAMILY family=orca count=1 duration_ms=21742 failed=1
+FM_TEST_SUMMARY_FAMILY family=pr-forge count=1 duration_ms=1474 failed=0
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=7 duration_ms=98334 failed=2
+FM_TEST_SUMMARY_FAMILY family=real-herdr-gated count=1 duration_ms=529697 failed=0
+FM_TEST_SUMMARY_FAMILY family=secondmate count=10 duration_ms=935315 failed=1
+FM_TEST_SUMMARY_FAMILY family=session-bootstrap count=9 duration_ms=582332 failed=4
+FM_TEST_SUMMARY_FAMILY family=snapshot-bearings count=4 duration_ms=254461 failed=2
+FM_TEST_SUMMARY_FAMILY family=unclassified count=6 duration_ms=70860 failed=2
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=6 duration_ms=181063 failed=2
+FM_TEST_SLOWEST rank=1 script=tests/fm-backend-herdr-presentation-e2e.test.sh duration_ms=529697
+FM_TEST_SLOWEST rank=2 script=tests/fm-remote-secondmate-lifecycle-e2e.test.sh duration_ms=376977
+FM_TEST_SLOWEST rank=3 script=tests/fm-secondmate-harness.test.sh duration_ms=230156
+FM_TEST_SLOWEST rank=4 script=tests/fm-bootstrap.test.sh duration_ms=207297
+FM_TEST_SLOWEST rank=5 script=tests/fm-bearings-snapshot.test.sh duration_ms=184504
+FM_TEST_SLOWEST rank=6 script=tests/fm-session-start.test.sh duration_ms=159719
+FM_TEST_SLOWEST rank=7 script=tests/fm-startup-network.test.sh duration_ms=89752
+FM_TEST_SLOWEST rank=8 script=tests/fm-remote-job.test.sh duration_ms=75362
+FM_TEST_SLOWEST rank=9 script=tests/fm-remote-transport-lanes.test.sh duration_ms=72707
+FM_TEST_SLOWEST rank=10 script=tests/fm-sessionstart-nudge.test.sh duration_ms=72477
+FM_TEST_SLOWEST rank=11 script=tests/fm-watch-recovery-loop.test.sh duration_ms=61197
+FM_TEST_SLOWEST rank=12 script=tests/fm-remote-secondmate-parent-binding.test.sh duration_ms=56545
+FM_TEST_SLOWEST rank=13 script=tests/fm-inactive-reconcile.test.sh duration_ms=52031
+FM_TEST_SLOWEST rank=14 script=tests/fm-home-summary-refresh.test.sh duration_ms=50895
+FM_TEST_SLOWEST rank=15 script=tests/fm-secondmate-liveness.test.sh duration_ms=49509

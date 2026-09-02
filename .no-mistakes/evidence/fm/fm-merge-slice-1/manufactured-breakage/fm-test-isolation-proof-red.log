@@ -1,0 +1,6 @@
+FM_TEST_BEGIN 2026-09-02T15:21:27Z tests/fm-test-isolation-proof.test.sh family=pure-contract-unit expected_gate_skip=none
+not ok - unknown --pool must be refused with exit 2, got 97
+FM_TEST_END 2026-09-02T15:21:28Z tests/fm-test-isolation-proof.test.sh exit=1 duration_ms=246 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=370
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=246 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-test-isolation-proof.test.sh duration_ms=246

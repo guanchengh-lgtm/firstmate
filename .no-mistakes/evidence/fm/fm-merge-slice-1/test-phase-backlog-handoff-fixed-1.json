@@ -1,0 +1,30 @@
+{
+  "families": [
+    {
+      "count": 1,
+      "duration_ms": 78655,
+      "failed": 0,
+      "name": "secondmate"
+    }
+  ],
+  "finished_at": "2026-09-02T16:08:45Z",
+  "run_id": "fm-test-run-1788365246674-60935",
+  "scripts": [
+    {
+      "duration_ms": 78655,
+      "exit": 0,
+      "expected_gate_skip": "none",
+      "family": "secondmate",
+      "gate_skip": false,
+      "path": "tests/fm-backlog-handoff.test.sh"
+    }
+  ],
+  "selection": "scripts",
+  "started_at": "2026-09-02T16:07:26Z",
+  "summary": {
+    "duration_ms": 78741,
+    "failed": 0,
+    "skipped_gate": 0,
+    "total": 1
+  }
+}

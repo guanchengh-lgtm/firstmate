@@ -1,0 +1,8 @@
+FM_TEST_BEGIN 2026-09-02T14:48:20Z tests/fm-check-unregister.test.sh family=pr-forge expected_gate_skip=none
+ok - empty id or missing state dir refuses loudly and never rms a stray path
+ok - happy path removes only the named check.sh and check-trust
+ok - hard-linked or symlinked artifacts are refused and left in place
+FM_TEST_END 2026-09-02T14:48:21Z tests/fm-check-unregister.test.sh exit=0 duration_ms=766 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=852
+FM_TEST_SUMMARY_FAMILY family=pr-forge count=1 duration_ms=766 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-check-unregister.test.sh duration_ms=766

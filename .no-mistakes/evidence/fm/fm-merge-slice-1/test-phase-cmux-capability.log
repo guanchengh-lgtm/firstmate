@@ -1,0 +1,6 @@
+default-run
+skip: set FM_CMUX_CLAUDE_COMPOSER_LIVE=1 to run the real cmux Claude composer drift guard
+default-exit 0
+opt-in-run
+opt-in-exit 1
+cmux-present 1

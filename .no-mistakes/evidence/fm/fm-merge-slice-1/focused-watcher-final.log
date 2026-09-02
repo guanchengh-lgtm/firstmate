@@ -1,0 +1,23 @@
+FM_TEST_BEGIN 2026-09-02T14:18:00Z tests/fm-daemon.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - fm-afk-start.sh fails before daemon startup when the afk flag cannot be written
+ok - fm-afk-start.sh ignores stale pidfile-only live pids
+ok - fm-afk-start.sh reclaims stale daemon locks whose live pid identity no longer matches
+ok - supervise daemon state root is scoped by FM_HOME
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1GX1VZRZDRNJMPHD5CRYRWD/bin/fm-supervise-daemon.sh: line 564: status_daemon_seen_marker_path: command not found
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1GX1VZRZDRNJMPHD5CRYRWD/bin/fm-supervise-daemon.sh: line 574: status_presentation_marker_offset: command not found
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1GX1VZRZDRNJMPHD5CRYRWD/bin/fm-supervise-daemon.sh: line 351: status_span_first_actionable_record: command not found
+ok - routine signal self-handles
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1GX1VZRZDRNJMPHD5CRYRWD/bin/fm-supervise-daemon.sh: line 564: status_daemon_seen_marker_path: command not found
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1GX1VZRZDRNJMPHD5CRYRWD/bin/fm-supervise-daemon.sh: line 574: status_presentation_marker_offset: command not found
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1GX1VZRZDRNJMPHD5CRYRWD/bin/fm-supervise-daemon.sh: line 351: status_span_first_actionable_record: command not found
+not ok - captain verb did not escalate (done: PR https://x/y/pull/1): self|signal already escalated (catch-all scan): t.status: done: PR https://x/y/pull/1
+FM_TEST_END 2026-09-02T14:18:01Z tests/fm-daemon.test.sh exit=1 duration_ms=783 gate_skip=false
+FM_TEST_BEGIN 2026-09-02T14:18:01Z tests/fm-watch-triage.test.sh family=watcher-wake-lock expected_gate_skip=none
+tests/fm-watch-triage.test.sh: line 187: status_span_has_actionable: command not found
+tests/fm-watch-triage.test.sh: line 189: status_span_has_actionable: command not found
+not ok - captain-relevant span classified benign
+FM_TEST_END 2026-09-02T14:18:01Z tests/fm-watch-triage.test.sh exit=1 duration_ms=152 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=2 skipped_gate=0 duration_ms=1060
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=2 duration_ms=935 failed=2
+FM_TEST_SLOWEST rank=1 script=tests/fm-daemon.test.sh duration_ms=783
+FM_TEST_SLOWEST rank=2 script=tests/fm-watch-triage.test.sh duration_ms=152

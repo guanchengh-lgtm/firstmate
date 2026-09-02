@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+printf 'served: %s\n' "$1"

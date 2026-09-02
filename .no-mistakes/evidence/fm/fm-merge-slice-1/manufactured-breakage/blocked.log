@@ -1,0 +1,1 @@
+blocked: tests/fm-cmux-claude-composer-live-e2e.test.sh mutation stayed masked by missing cmux; default=0 mutated-optin=1 restored-optin=1

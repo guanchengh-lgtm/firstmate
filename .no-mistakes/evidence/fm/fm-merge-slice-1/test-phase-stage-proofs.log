@@ -1,0 +1,12 @@
+head 402912fb960ef246768cfb2ccb5b3b496c80f5d5
+base fe3c227662e074b3ae4319116b69b9bafca60df3
+upstream-pin-type commit
+stage-tip 4fc3a2fbc03882089f175ad56c6097dbb9ffb151
+h0-tree ac4df6326938c99ec01dcd6f323c400443c7ac27
+base-tree ac4df6326938c99ec01dcd6f323c400443c7ac27
+h0-parents fe3c227662e074b3ae4319116b69b9bafca60df3 8988af2aec351fa4ce30ef9655e3e2b7dd4fc912
+slice-merge-base 4fc3a2fbc03882089f175ad56c6097dbb9ffb151
+unmerged-count 0
+
+restored-fork-paths exact-stage-tip
+worktree clean
