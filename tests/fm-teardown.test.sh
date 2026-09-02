@@ -2546,6 +2546,105 @@ SH
   pass "an exec change preserves birth identity and the process is reaped"
 }
 
+test_host_session_under_worktree_is_spared() {
+  local case_dir rc host_pid child_pid sleeper_pid i=0
+  case_dir=$(make_case host-session-spared)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+
+  # Unrelated host shell rooted in the copy, with a child that stands in for
+  # the live session agent. The child's pid is the fixture session lock.
+  (
+    cd "$case_dir/wt" || exit 1
+    sleep 300 &
+    printf '%s\n' "$!" > "$case_dir/child.pid"
+    wait
+  ) &
+  host_pid=$!
+  disown
+  while [ "$i" -lt 50 ]; do
+    [ -s "$case_dir/child.pid" ] && break
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ -s "$case_dir/child.pid" ] || fail "host-session-spared: host child pid was never recorded"
+  child_pid=$(tr -d '[:space:]' < "$case_dir/child.pid")
+  case "$child_pid" in ''|*[!0-9]*) fail "host-session-spared: host child pid was not numeric" ;; esac
+  printf '%s\n' "$child_pid" > "$case_dir/state/.lock"
+  kill -0 "$host_pid" 2>/dev/null || fail "host-session-spared: host shell did not start"
+  kill -0 "$child_pid" 2>/dev/null || fail "host-session-spared: host child did not start"
+
+  ( cd "$case_dir/wt" && exec sleep 300 ) &
+  sleeper_pid=$!
+  disown
+  sleep 0.3
+  kill -0 "$sleeper_pid" 2>/dev/null || fail "host-session-spared: task sleeper did not start"
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if kill -0 "$sleeper_pid" 2>/dev/null; then
+    kill -KILL "$sleeper_pid" 2>/dev/null || true
+    kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
+    fail "host-session-spared: task-owned worktree process survived teardown"
+  fi
+  if ! kill -0 "$host_pid" 2>/dev/null || ! kill -0 "$child_pid" 2>/dev/null; then
+    kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
+    fail "host-session-spared: live session host or child was reaped"
+  fi
+  expect_code 0 "$rc" "host-session-spared: teardown should complete"
+  assert_grep "reaping leaked worktree process" "$case_dir/stderr" \
+    "host-session-spared: teardown did not report reaping the task-owned process"
+  assert_grep "sparing host process" "$case_dir/stderr" \
+    "host-session-spared: teardown did not report sparing the live session host"
+  assert_grep "$host_pid" "$case_dir/stderr" \
+    "host-session-spared: spared-process line did not name the host shell"
+  kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
+  pass "an unrelated session host under the worktree is spared while task-owned processes are reaped"
+}
+
+test_live_lock_owner_unresolvable_refuses() {
+  local case_dir rc lock_pid
+  case_dir=$(make_case lock-owner-unresolvable)
+  write_meta "$case_dir" no-mistakes ship
+  land_shippable_commit "$case_dir"
+
+  sleep 300 &
+  lock_pid=$!
+  disown
+  sleep 0.2
+  kill -0 "$lock_pid" 2>/dev/null || fail "lock-owner-unresolvable: lock pid did not start"
+  printf '%s\n' "$lock_pid" > "$case_dir/state/.lock"
+
+  cat > "$case_dir/fakebin/ps" <<EOF
+#!/usr/bin/env bash
+if [ "\${1:-}" = -p ] && [ "\${2:-}" = "$lock_pid" ] \
+   && [ "\${3:-}" = -o ] && [ "\${4:-}" = ppid= ]; then
+  exit 1
+fi
+exec "\$REAL_PS_FOR_TEST" "\$@"
+EOF
+  cat > "$case_dir/fakebin/treehouse" <<EOF
+#!/usr/bin/env bash
+printf 'return\n' >> "$case_dir/treehouse.log"
+EOF
+  chmod +x "$case_dir/fakebin/ps" "$case_dir/fakebin/treehouse"
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if kill -0 "$lock_pid" 2>/dev/null; then
+    kill -KILL "$lock_pid" 2>/dev/null || true
+  fi
+  expect_code 1 "$rc" "lock-owner-unresolvable: teardown should refuse"
+  assert_grep "REFUSED: cannot resolve live session owner $lock_pid ancestor chain for task-x1" "$case_dir/stderr" \
+    "lock-owner-unresolvable: teardown did not explain the unresolved session owner"
+  assert_present "$case_dir/wt" "lock-owner-unresolvable: teardown removed the worktree"
+  assert_present "$case_dir/state/task-x1.meta" "lock-owner-unresolvable: teardown removed task metadata"
+  assert_absent "$case_dir/treehouse.log" "lock-owner-unresolvable: teardown returned the worktree"
+  pass "a live lock pid whose ancestor walk cannot be resolved refuses before destructive teardown"
+}
+
 test_process_spawned_during_grace_is_reaped_on_later_pass() {
   local case_dir rc pid child_file child_pid="" parent_survived=0 child_survived=0
   case_dir=$(make_case grace-spawn-convergence)
@@ -2763,6 +2862,8 @@ test_lsof_absent_reaps_tmux_process_group
 test_lsof_error_refuses_before_removal
 test_reused_pid_identity_is_not_force_killed
 test_exec_changed_process_is_still_reaped
+test_host_session_under_worktree_is_spared
+test_live_lock_owner_unresolvable_refuses
 test_process_spawned_during_grace_is_reaped_on_later_pass
 test_persistent_scan_refuses_after_bounded_retries
 test_process_exit_during_identity_lookup_does_not_refuse
