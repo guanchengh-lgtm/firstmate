@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 # GitHub concurrency groups retain at most one pending run, replacing older
 # pending runs even when cancel-in-progress is false. Give body-bearing events
@@ -27,5 +28,21 @@ jobs:
       github.event.pull_request.user.login != 'github-actions[bot]' &&
       github.event.pull_request.user.login != 'dependabot[bot]'
     steps:
+      - uses: actions/checkout@v6
+      # no-mistakes pushes the new head first and re-attests the pull request
+      # body second, so a synchronize event's frozen body still names the previous
+      # head and a rerun replays that stale payload. Judge the live pull request
+      # instead; bin/fm-pr-attestation-live.sh --help owns the wait contract.
+      - name: Read the live pull request attestation
+        id: live
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: bin/fm-pr-attestation-live.sh --repo "$REPO" --pr "$PR_NUMBER" --output "$GITHUB_OUTPUT"
       - name: Verify no-mistakes signature and pipeline attestation
         uses: kunchenguid/no-mistakes/.github/actions/require-no-mistakes@32d396ac0f29135daf7fcb9964aba9d5f4e796d6 # post-v1.57.1, untagged (action added in #819)
+        with:
+          exempt-bot-authors: false
+          pr-body: ${{ steps.live.outputs.body }}
+          pr-head-sha: ${{ steps.live.outputs.head_sha }}

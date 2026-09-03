@@ -587,6 +587,7 @@ tests/fm-pi-branch-extension.test.sh 22239
 tests/fm-pi-branch-live-e2e.test.sh 56
 tests/fm-pi-primary-live-e2e.test.sh 41
 tests/fm-pi-watch-extension.test.sh 42970
+tests/fm-pr-attestation-live.test.sh 2500
 tests/fm-pr-check-security.test.sh 250417
 tests/fm-procevent-quota.test.sh 1949
 tests/fm-procevent-when.test.sh 17392
