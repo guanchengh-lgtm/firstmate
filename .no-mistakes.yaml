@@ -17,11 +17,6 @@ disable_project_settings: true
 # stays trusted-only regardless of this opt-in.
 allow_repo_commands: true
 
-# Stage-only: slice PRs target this review branch. Slice 5 removes the key
-# before synthesis. Do not set pr.base_branch on main.
-pr:
-  base_branch: fm/merge-upstream-2-stage
-
 # Trusted documentation placement policy for the Document step.
 # The audience inventory and coding guideline own the detail; keep this as a
 # pointer so gate instructions cannot become a second prose policy.
