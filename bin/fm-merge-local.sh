@@ -309,6 +309,7 @@ print(success[0]["databaseId"])
     echo "REFUSED: exact-sync could not read job names from tree($SYNC_M) ci.yml" >&2
     return 1
   }
+  # shellcheck disable=SC2016 # The python program is literal; sys.argv owns its values.
   printf '%s\n' "$view_json" | python3 -c '
 import json, sys
 sha, branch, event = sys.argv[1], sys.argv[2], sys.argv[3]
