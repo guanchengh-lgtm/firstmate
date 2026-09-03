@@ -294,6 +294,10 @@ github_read_outcome() {
     echo "error: could not read the GitHub pull request outcome after the merge attempt; PR metadata and merge poll remain recorded" >&2
     return 1
   fi
+  # Only a failed gh read falls back. A gh read that completes and reports the
+  # pull request as neither merged nor queued is a concrete outcome, not a
+  # missing one, so it keeps its own refusal. The gh-axi view cannot observe the
+  # merge queue, so it can only turn this into a proved merge or into a refusal.
   github_read_outcome_with_gh && return 0
   if github_read_outcome_with_gh_axi && [ "$FM_PR_GITHUB_MERGED" = true ]; then
     return 0
@@ -320,6 +324,11 @@ github_urlencode_path_segment() {
   printf '%s' "$encoded"
 }
 
+# Read the effective merge-queue method for the observed base branch. The four
+# situations the refusal has to keep apart - no queue rule, a rules response
+# that could not be read, several rules that disagree, and a rule whose method
+# this script does not recognise - are reported as a status rather than folded
+# into one failure, because each one means something different to the operator.
 FM_PR_GITHUB_QUEUE_METHOD=
 FM_PR_GITHUB_QUEUE_METHODS=
 FM_PR_GITHUB_QUEUE_STATUS=unreadable
@@ -380,6 +389,10 @@ FM_PR_GITHUB_AUTO_REQUESTED=false
 FM_PR_GITHUB_MERGE_ACCEPTED=false
 FM_PR_GITHUB_CALLER_METHOD=
 
+# The single gate every statement about what the forge accepted, armed, or
+# reported has to pass. A merge command that failed accepted nothing, so no
+# such statement may be made on its path, and routing them all through one
+# predicate keeps a later one from being written without the gate.
 github_merge_command_succeeded() {
   [ "$FM_PR_GITHUB_MERGE_ACCEPTED" = true ]
 }
