@@ -125,7 +125,7 @@ test_batch_requires_the_shared_delivery_contract() {
   status=$?
   [ "$status" -ne 0 ] || fail "a ship batch without --yolo should exit non-zero"
   printf '%s\n' "$out" | grep -F 'ship spawns require --yolo' >/dev/null \
-    || fail "batch refusal did not name the missing approval posture"
+    || fail "batch refusal did not name the missing merge posture"
 
   out=$(run_spawn nope-batch-norole-z13=projects/none-a --mode no-mistakes --yolo off)
   status=$?

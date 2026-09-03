@@ -8,8 +8,8 @@
 # fm_dod_block <no-mistakes|direct-PR|local-only> <task-id> prints the block on
 # stdout with no trailing blank line. The caller validates the mode; an unknown
 # mode is refused rather than silently rendered as the pipeline contract.
-# The block opens with the fixed machine-readable "Delivery contract: mode=<mode>"
-# line that bin/fm-spawn.sh checks a ship brief against.
+# The block opens with "Delivery contract: mode=<mode>" and "Role: builder" for
+# the worker. bin/fm-spawn.sh reads the sibling marker files, not this prose.
 # Every heredoc here stays outside a command substitution: `VAR=$(cat <<EOF ...)`
 # breaks parsing of the whole file on Bash 3.2 (tests/fm-brief.test.sh).
 
@@ -20,6 +20,7 @@ fm_dod_block() {  # <mode> <task-id>
       cat <<EOF
 # Definition of done
 Delivery contract: mode=direct-PR
+Role: builder
 This task ships **direct-PR**: you raise the PR yourself, without the no-mistakes pipeline.
 The task is complete only when committed on your branch.
 When it is implemented and committed, push your branch and open a PR with \`gh-axi\`, then append \`done: PR {url}\` to the status file and stop.
@@ -30,6 +31,7 @@ EOF
       cat <<EOF
 # Definition of done
 Delivery contract: mode=local-only
+Role: builder
 This task ships **local-only**: no remote, no PR, no pipeline.
 The task is complete only when committed on your branch \`fm/$id\`. Do NOT push, do NOT open a PR, do NOT merge.
 Keep your branch a clean fast-forward onto the current default branch - if \`main\` has advanced, rebase onto it so the eventual merge stays a fast-forward.
@@ -41,23 +43,25 @@ EOF
       cat <<EOF
 # Definition of done
 Delivery contract: mode=no-mistakes
+Role: builder
 The task is complete only when committed on your branch.
 When you believe it is complete, append \`done: {summary}\` to the status file and stop.
-Firstmate will then instruct you to run /no-mistakes to validate and ship a PR.
+Firstmate starts a fresh verifier context to run /no-mistakes and validate and ship a PR.
+The builder never invokes or drives that gate; builder and verifier must not share a context.
 
-You drive no-mistakes by responding to its gates, not by implementing fixes.
-Follow the guidance no-mistakes itself provides for the mechanics: it loads when you invoke /no-mistakes, and \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
-When starting no-mistakes, make \`--intent\` preserve all relevant content from this brief's \`# Task\` section plus every later accepted Firstmate requirement, clarification, constraint, exclusion, and supersession, carrying only each requirement's current accepted form; retain direct requirements instead of substituting a diff summary, and exclude generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific.
-Do not hand-edit, commit, or fix findings yourself while a run is active - the pipeline applies every fix.
+The fresh verifier drives no-mistakes by responding to its gates, not by implementing fixes.
+It follows the guidance no-mistakes itself provides for the mechanics: \`no-mistakes axi run --help\` plus the \`help\` lines in each \`axi\` response are authoritative and version-matched to the installed binary.
+When starting no-mistakes, it makes \`--intent\` preserve all relevant content from this brief's \`# Task\` section plus every later accepted Firstmate requirement, clarification, constraint, exclusion, and supersession, carrying only each requirement's current accepted form; it retains direct requirements instead of substituting a diff summary, and excludes generic operational, status, delivery, and other scaffold boilerplate unless it is task-specific.
+The verifier does not hand-edit, commit, or fix findings while a run is active - the pipeline applies every fix.
 
 Two firstmate-specific rules layer on top of that guidance:
-- ask-user findings are never yours to answer: escalate to firstmate (rule 6) and stop.
+- ask-user findings are never the verifier's to answer: escalate to firstmate and stop.
   Firstmate applies \`ask-user-authority\` and obtains any required captain decision.
   When the decision comes back, feed it to the gate with \`no-mistakes axi respond\` and let the pipeline apply it - do not route the question to "the user" or implement the fix yourself.
 - NEVER pass \`--yes\` (or \`-y\`) to \`no-mistakes axi run\` or \`no-mistakes axi respond\`. It is banned fleet-wide.
-  It auto-resolves every gate including ask-user findings with no escalation, and answering your own ask-user finding is a hard rule violation.
+  It auto-resolves every gate including ask-user findings with no escalation, and answering your own ask-user finding is a hard rule violation. It would silently bypass firstmate's authority check and any required captain escalation.
 
-After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), append \`done: PR {url} checks green\` and stop. You are finished.
+After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), the verifier appends \`done: PR {url} checks green\` and stops.
 EOF
       ;;
     *)

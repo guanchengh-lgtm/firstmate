@@ -4,18 +4,8 @@
 # (this library reads that one's backend gate and never sources it itself, so a
 # caller that already sourced it keeps its memoised compatibility verdict).
 #
-# INVARIANT. In ordinary successful lifecycle state, `state/<id>.meta` exists
-# <=> this home's backlog row for <id> is In flight; the one teardown crash
-# window is represented by `state/<id>.backlog-close`. The script performing the
-# mechanical record change owns the paired backlog transition and runs it in the
-# same process, under the per-task meta lock it already holds, before it reports
-# success. Nothing else - not a later agent turn, not a printed reminder - is
-# load-bearing for the pairing.
-#   bin/fm-spawn.sh      meta published => `tasks-axi start`
-#   bin/fm-teardown.sh   meta removed => `tasks-axi done`
-#   bin/fm-bootstrap.sh  replays whatever a crash left behind, THIS HOME ONLY.
-# bin/fm-fleet-snapshot.sh's classifier and bin/fm-secondmate-reconcile.sh's
-# cross-home nudge stay defense in depth, not the primary mechanism.
+# This library validates backlog rows before dispatch and provides guarded
+# publish, dispatch, rollback, and close transitions for lifecycle owners.
 #
 # SCOPE. fm_backlog_transition_applies is the single gate. It excludes
 # secondmates (persistent agents are never backlog items, AGENTS.md section 10),
@@ -32,18 +22,20 @@
 # relocated keeps its backlog and its archive together. A root with no
 # `.tasks.toml` gets tasks-axi's built-in defaults.
 #
-# CRASH RECOVERY. Only teardown needs a durable record: it removes the meta and
-# with it the completion links, so a process killed between the two halves would
-# leave nothing to reconstruct the close from. It writes
-# `state/<id>.backlog-close` first, and removes it once the close lands.
-# The writer and replay share one complete-record validator, and teardown stages
+# CRASH RECOVERY. The close helpers support a lifecycle owner that removes task
+# metadata before closing its backlog row. Such a caller writes
+# `state/<id>.backlog-close` first and removes it after the close lands.
+# The writer and replay share one complete-record validator. A caller must stage
 # that record before destructive cleanup, so it never publishes or acts on a close
 # replay would reject. The validator pins the data path to this home's configured
 # root before any recovery mutation, then re-runs exactly that close.
 # `tasks-axi done` on an already-closed task backfills links
-# without moving the close date, so replay is idempotent. Spawn needs no marker:
-# it publishes the meta first, so a crash
-# leaves the meta itself as the evidence that the row is owed a start.
+# without moving the close date, so replay is idempotent.
+#
+# DISPATCH. The dispatch helper keeps an eligible In flight row unchanged or
+# starts an eligible Queued row after it validates the task record. The rollback
+# helper removes provisional task and busy records. Callers own launch timing and
+# physical resource cleanup.
 
 # Set by fm_backlog_transition_applies for a return-1 exemption.
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.
@@ -192,6 +184,7 @@ fm_backlog_transition_applies() {  # <config-dir> <data-dir> <kind>
 
 fm_backlog_row_probe() {  # <data-dir> <id>
   local data authorized_data=$1 file id=$2 out state held blocked command_status
+  local state_count held_count blocked_count
   if ! data=$(fm_backlog_data_absolute "$1"); then
     FM_BACKLOG_ROW_RESULT=error
     FM_BACKLOG_ROW_STATE=
@@ -225,12 +218,36 @@ fm_backlog_row_probe() {  # <data-dir> <id>
   state=$(printf '%s\n' "$out" | sed -n 's/^  state: *//p' | head -1)
   held=$(printf '%s\n' "$out" | sed -n 's/^  held: *//p' | head -1)
   blocked=$(printf '%s\n' "$out" | sed -n 's/^  blocked: *//p' | head -1)
-  if [ -z "$state" ]; then
-    FM_BACKLOG_ROW_ERROR="tasks-axi show $id returned no state"
+  state_count=$(printf '%s\n' "$out" | awk '/^  state:/{n++} END { print n + 0 }')
+  held_count=$(printf '%s\n' "$out" | awk '/^  held:/{n++} END { print n + 0 }')
+  blocked_count=$(printf '%s\n' "$out" | awk '/^  blocked:/{n++} END { print n + 0 }')
+  if [ "$state_count" -ne 1 ] || [ "$held_count" -ne 1 ] || [ "$blocked_count" -ne 1 ]; then
+    FM_BACKLOG_ROW_ERROR="tasks-axi show $id returned ambiguous fields (state=$state_count held=$held_count blocked=$blocked_count)"
     return 1
   fi
+  case "$state" in
+    queued|in_flight|done) ;;
+    *)
+      FM_BACKLOG_ROW_ERROR="tasks-axi show $id returned invalid state '$state'"
+      return 1
+      ;;
+  esac
+  case "$held" in
+    yes|no) ;;
+    *)
+      FM_BACKLOG_ROW_ERROR="tasks-axi show $id returned invalid held '$held'"
+      return 1
+      ;;
+  esac
+  case "$blocked" in
+    yes|no) ;;
+    *)
+      FM_BACKLOG_ROW_ERROR="tasks-axi show $id returned invalid blocked '$blocked'"
+      return 1
+      ;;
+  esac
   FM_BACKLOG_ROW_RESULT=found
-  FM_BACKLOG_ROW_STATE="$state ${held:-no} ${blocked:-no}"
+  FM_BACKLOG_ROW_STATE="$state $held $blocked"
   return 0
 }
 

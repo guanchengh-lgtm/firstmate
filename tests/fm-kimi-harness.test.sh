@@ -493,7 +493,66 @@ test_kimi_unconfirmed_delivery_fails_loudly() {
     "unconfirmed kimi delivery lacked a loud diagnostic"
   assert_grep 'failed: kimi brief pointer delivery was not confirmed' "$HOME_DIR/state/$id.status" \
     "unconfirmed kimi delivery did not leave a supervisor-visible failure"
+  assert_grep "worktree=$WT_DIR" "$HOME_DIR/state/$id.meta" \
+    "unconfirmed kimi delivery orphaned its endpoint and local copy by removing metadata"
   pass "fm-spawn: kimi treats a silent pointer drop as a failed spawn"
+}
+
+test_backlog_probe_requires_exact_valid_fields() {
+  local id rec out rc n expect
+  for n in 1 2 3; do
+    id="kimi-backlog-invalid-$n-z2b-$$"
+    rec=$(make_spawn_case "backlog-invalid-$n" "$id")
+    read_spawn_record "$rec"
+    cat > "$FAKEBIN_DIR/tasks-axi" <<'SH'
+#!/usr/bin/env bash
+set -u
+case "$*" in
+  --version) printf '%s\n' 'tasks-axi 0.2.4' ;;
+  'update --help') printf '%s\n' '--archive-body' ;;
+  'mv --help') printf '%s\n' '[<id>...]' ;;
+  show\ *) cat "$FM_FAKE_TASKS_SHOW" ;;
+esac
+SH
+    chmod +x "$FAKEBIN_DIR/tasks-axi"
+    cat > "$HOME_DIR/data/backlog.md" <<EOF
+# Backlog
+
+## In flight
+
+## Queued
+
+- [ ] $id - Kimi backlog field fixture
+
+## Done
+EOF
+    case "$n" in
+      1)
+        printf '%s\n' '  state: queued' '  state: done' '  held: no' '  blocked: no' \
+          > "$CASE_DIR/tasks-show.out"
+        expect='ambiguous fields'
+        ;;
+      2)
+        printf '%s\n' '  state: queued' '  blocked: no' > "$CASE_DIR/tasks-show.out"
+        expect='ambiguous fields'
+        ;;
+      3)
+        printf '%s\n' '  state: queued' '  held: no' '  blocked: maybe' \
+          > "$CASE_DIR/tasks-show.out"
+        expect="invalid blocked 'maybe'"
+        ;;
+    esac
+    rc=0
+    out=$(FM_FAKE_TASKS_SHOW="$CASE_DIR/tasks-show.out" run_spawn \
+      "$CASE_DIR" "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$id") || rc=$?
+    [ "$rc" -ne 0 ] || fail "invalid backlog fields should refuse the spawn"
+    assert_contains "$out" "$expect" "backlog field refusal did not explain the invalid output"
+    assert_absent "$HOME_DIR/state/$id.meta" "invalid backlog fields published task metadata"
+    if grep -Eq '(^| )new-(session|window)( |$)' "$CASE_DIR/tmux-calls.log"; then
+      fail "invalid backlog fields created a tmux container or pane"
+    fi
+  done
+  pass "fm-spawn: backlog probing requires one valid state, held, and blocked field"
 }
 
 test_kimi_readiness_gate_precedes_pointer() {
@@ -678,6 +737,7 @@ test_kimi_teardown_removes_pointer_and_registry_token
 test_kimi_falls_back_to_expanded_home_binary
 test_kimi_missing_binary_refuses_before_pane_creation
 test_kimi_unconfirmed_delivery_fails_loudly
+test_backlog_probe_requires_exact_valid_fields
 test_kimi_readiness_gate_precedes_pointer
 test_kimi_detection_uses_ancestry_after_markers
 test_kimi_session_lock_identity

@@ -182,9 +182,15 @@
 #   origin, resolves the current remote default branch, and resets to its tip.
 #   An unreachable origin, unresolved default branch, or non-clean worktree
 #   refuses the spawn rather than risking a PR based on stale history.
-#   A no-mistakes verifier is different: it reuses the stopped builder's clean
-#   worktree and committed head, while a fresh endpoint supplies context isolation.
-#   If treehouse reports that every pooled worktree is in use or dirty, spawn relays that reason immediately instead of waiting for the cwd poll timeout.
+#   A slot whose only deviation is a stale submodule gitlink is refused by that
+#   same clean check, but is reported as a stale checkout naming each submodule
+#   and both pins; nothing is converged or removed, and no remedy is suggested.
+#   That report is only reached when each submodule's checked-out commit is
+#   already contained in one of its remotes, so a submodule carrying an unpushed
+#   commit keeps the conservative uncommitted-work refusal instead. That
+#   containment test reads local refs only and never fetches, so this gate stays
+#   usable offline; a stale remote-tracking ref can therefore make an unpushed
+#   commit look contained, which is exactly why no remedy command is printed.
 # Batch dispatch: pass one or more `id=repo` pairs instead of a single <id> <project>, e.g.
 #     fm-spawn.sh fix-a-k3=projects/foo add-b-q7=projects/bar [--scout]
 #   Each pair re-execs this script in single-task mode, so the single path stays the only
@@ -217,10 +223,30 @@
 # muse installs no hook at all - its plugin engine is off in the default build - so
 # it writes state/<id>.muse-session to bind the pane to muse's own session event
 # log; muse is crewmate/scout only and is refused for --secondmate.
+# cursor installs no per-task hook either: it writes state/<id>.cursor-session to
+# bind the pane to cursor's own conversation transcript (projects root, the exact
+# workspace path cursor records in .workspace-trusted, and the conversations that
+# already existed for that workspace). It is launched through the verified binary
+# resolver because `cursor` is not the CLI name. A cursor SECONDMATE instead runs
+# the tracked project-scope .cursor/hooks.json in its own home, whose stop-hook
+# park owns that home's supervision (docs/supervision-protocols/cursor.md).
+# A ship or scout dispatch REFUSES up front, before creating a new endpoint or
+# local copy, unless the home's backlog has an unheld, unblocked Queued or In
+# flight item for the id.
+# This check is skipped entirely for --secondmate spawns (persistent agents are not work
+# items), on a config/backlog-backend=manual home, and in a home that keeps no
+# data/backlog.md. An automatic-backend home with a backlog but no compatible
+# tasks-axi refuses before creating any lifecycle state.
+# After launch submission and any required Kimi delivery confirmation, a Queued
+# item moves to In flight before spawn reports success. If that transition fails,
+# a fresh launch attempts to retire its new endpoint and roll back provisional
+# task and busy records. It returns a worktree only when it is clean and its HEAD
+# is reachable from a remote; a successful verifier rollback restores the original
+# builder record.
 # On success prints: spawned <id> harness=<name> kind=<ship|scout|secondmate> [mode=<mode> yolo=<on|off> role=<builder|verifier>] window=<backend-target> worktree=<path>
-# A ship task records the explicit mode/yolo/role and optional validated surface
-# it was passed; a secondmate spawn records mode=secondmate, yolo=off, home=, and
-# projects=; a scout records none of those delivery fields, and both the success
+# A ship task records the explicit mode, yolo, role, and optional surface it was
+# passed. A secondmate spawn records mode=secondmate, yolo=off, home=, and
+# projects=. A scout records none of those delivery fields, and both its success
 # line and state/<id>.meta omit them.
 # Every fresh spawn or relaunch records a new spawn_gen= incarnation token so durable
 # consumers can distinguish a replacement worker that reuses the same task id.
@@ -254,8 +280,18 @@ esac
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 
+# shellcheck source=bin/fm-tasks-axi-lib.sh
+. "$SCRIPT_DIR/fm-tasks-axi-lib.sh"
+# shellcheck source=bin/fm-backlog-transition-lib.sh
+. "$SCRIPT_DIR/fm-backlog-transition-lib.sh"
+
 resolve_directory_input() {
-  local name=$1 path=$2 resolved
+  local name=$1 path=$2 resolved raw_bytes
+  raw_bytes=$(fm_backlog_bytes_of_string "$path") || return 1
+  if ! fm_backlog_control_bytes_valid 0 "$raw_bytes"; then
+    echo "error: $name directory contains an invalid control byte" >&2
+    return 1
+  fi
   case "$path" in
     /*) printf '%s\n' "$path"; return 0 ;;
   esac
@@ -278,6 +314,12 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 SUB_HOME_MARKER=".fm-secondmate-home"
+if [ -e "$STATE" ] || [ -L "$STATE" ]; then
+  fm_backlog_directory_present "$STATE" "state directory" || {
+    echo "error: spawn refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
+    exit 1
+  }
+fi
 # shellcheck source=bin/fm-ff-lib.sh
 . "$SCRIPT_DIR/fm-ff-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
@@ -296,17 +338,20 @@ SUB_HOME_MARKER=".fm-secondmate-home"
 . "$SCRIPT_DIR/fm-busy-lib.sh"
 # shellcheck source=bin/fm-cursor-lib.sh
 . "$SCRIPT_DIR/fm-cursor-lib.sh"
+# shellcheck source=bin/fm-delivery-surface-lib.sh
+. "$SCRIPT_DIR/fm-delivery-surface-lib.sh"
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
 # shellcheck source=bin/fm-trace-context-lib.sh
 . "$SCRIPT_DIR/fm-trace-context-lib.sh"
 # shellcheck source=bin/fm-remote-readiness-lib.sh
 . "$SCRIPT_DIR/fm-remote-readiness-lib.sh"
-# shellcheck source=bin/fm-delivery-surface-lib.sh
-. "$SCRIPT_DIR/fm-delivery-surface-lib.sh"
 # Fail closed before any fleet mutation: a no-mistakes gate agent must never spawn
 # a direct report (see bin/fm-gate-refuse-lib.sh).
 fm_refuse_if_gate_agent
+# Skip the watcher guard when re-exec'd for one pair of a batch (FM_SPAWN_NO_GUARD is
+# set by the batch loop below), so the guard runs once for the batch, not once per pair.
+[ -n "${FM_SPAWN_NO_GUARD:-}" ] || "$FM_ROOT/bin/fm-guard.sh" || true
 
 assert_task_surface_marker() {  # <expected-surface> <surface-set> <record-source>
   local expected=$1 surface_set=$2 record_source=$3 marker marker_count marker_surface
@@ -337,9 +382,6 @@ assert_task_surface_marker() {  # <expected-surface> <surface-set> <record-sourc
     return 1
   fi
 }
-# Skip the watcher guard when re-exec'd for one pair of a batch (FM_SPAWN_NO_GUARD is
-# set by the batch loop below), so the guard runs once for the batch, not once per pair.
-[ -n "${FM_SPAWN_NO_GUARD:-}" ] || "$FM_ROOT/bin/fm-guard.sh" || true
 KIND=ship
 KIND_SET=0
 HARNESS_ARG=
@@ -475,7 +517,7 @@ elif [ "$KIND" = ship ]; then
     exit 1
   }
   [ "$YOLO_SET" -eq 1 ] || {
-    echo "error: ship spawns require --yolo <on|off>; it is this task's routine approval authority, not a project lookup" >&2
+    echo "error: ship spawns require --yolo <on|off>; it is this task's merge authority, not a project lookup" >&2
     exit 1
   }
   case "$MODE" in
@@ -558,7 +600,7 @@ fi
 spawn_remote_secondmate() {
   local id=$1 remote host root home harness positional model effort backend out rc meta tmp
   local remote_backend remote_target remote_harness remote_herdr_session registry_lock remote_lock remote_generation
-  local remote_traceparent remote_recorded_traceparent
+  local remote_traceparent remote_recorded_traceparent remote_record_error
   local -a launch_args
   id=${POS[0]:-}
   fm_task_id_creation_valid "$id" || { echo "error: invalid task id" >&2; return 2; }
@@ -642,7 +684,7 @@ spawn_remote_secondmate() {
   esac
   meta="$STATE/$id.meta"
   if [ -e "$meta" ] || [ -L "$meta" ]; then
-    if [ ! -f "$meta" ] || [ -L "$meta" ] \
+    if ! fm_backlog_record_present "$meta" "task record" "$STATE" \
       || [ "$(fm_meta_get "$meta" kind)" != secondmate ] \
       || [ "$(fm_meta_get "$meta" remote_host)" != "$host" ] \
       || [ "$(fm_meta_get "$meta" remote_root)" != "$root" ] \
@@ -717,7 +759,7 @@ spawn_remote_secondmate() {
   launch_args=("$id" "$harness" "$model" "$effort" "$backend")
   [ -z "$remote_traceparent" ] || launch_args+=("$remote_traceparent")
   if out=$("$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-secondmate-control.sh launch \
-    ${launch_args[@]+"${launch_args[@]}"} < /dev/null 2>&1); then
+    "${launch_args[@]}" < /dev/null 2>&1); then
     rc=0
   else
     rc=$?
@@ -766,7 +808,8 @@ spawn_remote_secondmate() {
   remote_recorded_traceparent=$(printf '%s\n' "$out" | sed -n 's/^traceparent=//p' | tail -1)
   fm_trace_context_valid "$remote_recorded_traceparent" || remote_recorded_traceparent=
   tmp="$meta.tmp.$$"
-  {
+  remote_record_error=
+  if ! {
     echo "window=remote:$id"
     echo "endpoint_task_id=$id"
     echo "worktree=$home"
@@ -776,7 +819,6 @@ spawn_remote_secondmate() {
     echo "mode=secondmate"
     echo "yolo=off"
     [ -z "$MAP_NEXT" ] || echo "map_next=$MAP_NEXT"
-    [ -z "${MAP:-}" ] || echo "map=$MAP"
     echo "tasktmp="
     echo "model=${model#-}"
     echo "effort=${effort#-}"
@@ -788,8 +830,23 @@ spawn_remote_secondmate() {
     echo "remote_herdr_session=$remote_herdr_session"
     echo "remote_target=$remote_target"
     [ -z "$remote_recorded_traceparent" ] || echo "traceparent=$remote_recorded_traceparent"
-  } > "$tmp"
-  mv -f -- "$tmp" "$meta"
+  } > "$tmp"; then
+    remote_record_error="its task record could not be prepared"
+  elif ! fm_backlog_atomic_transition publish "$tmp" "$meta" "task record" "$STATE"; then
+    remote_record_error="its task record could not be published ($FM_BACKLOG_TRANSITION_ERROR)"
+  fi
+  if [ -n "$remote_record_error" ]; then
+    rm -f "$tmp" 2>/dev/null || true
+    if [ "$SPAWN_TASK_SET_LOCK_HELD" = 1 ]; then
+      SPAWN_TASK_SET_LOCK_HELD=0
+      fm_lock_release "$SPAWN_TASK_SET_LOCK" || true
+    fi
+    fm_lock_release "$remote_lock" || true
+    fm_lock_release "$registry_lock" || true
+    fm_lock_release "$SPAWN_TASK_LOCK" || true
+    echo "error: remote secondmate $id launched, but $remote_record_error; route $host:$home and host-local metadata were preserved for manual reconciliation" >&2
+    return 1
+  fi
   if [ "$SPAWN_TASK_SET_LOCK_HELD" = 1 ]; then
     SPAWN_TASK_SET_LOCK_HELD=0
     fm_lock_release "$SPAWN_TASK_SET_LOCK"
@@ -797,6 +854,7 @@ spawn_remote_secondmate() {
   fm_lock_release "$remote_lock" || true
   fm_lock_release "$registry_lock" || true
   fm_lock_release "$SPAWN_TASK_LOCK" || true
+  "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
   if ! "$SCRIPT_DIR/fm-procevent-remote-reply.sh" arm "$id" >/dev/null; then
     echo "error: remote secondmate $id launched, but its reply source could not be armed; endpoint metadata is preserved" >&2
     return 1
@@ -809,6 +867,11 @@ BACKEND=
 ORCA_ABORT_CLEANUP=0
 ORCA_WORKTREE_ID=
 ORCA_TERMINAL=
+FRESH_ABORT_ENDPOINT=0
+FRESH_ABORT_BACKEND=
+FRESH_ABORT_TARGET=
+FRESH_ABORT_WORKTREE=
+FRESH_ABORT_PROJECT=
 HERDR_PROJECTION_ABORT_CLEANUP=0
 HERDR_PROJECTION_ABORT_SESSION=
 HERDR_PROJECTION_ABORT_TASK_TAB=
@@ -829,6 +892,9 @@ SPAWN_META_TMP=
 SPAWN_META_LOCK=
 SPAWN_META_LOCK_HELD=0
 SPAWN_META_PUBLISH_STARTED=0
+SPAWN_FRESH_COMMIT_PENDING=0
+SPAWN_FRESH_BUSY_PENDING=0
+SPAWN_ABORT_ENDPOINT_RETIRED=0
 SPAWN_TASK_SET_LOCK=
 SPAWN_TASK_SET_LOCK_HELD=0
 RELAUNCH_REPLACEMENT_PENDING=0
@@ -839,6 +905,8 @@ RELAUNCH_REPLACEMENT_WT=
 VERIFIER_HANDOFF_ABORT_ENDPOINT=0
 VERIFIER_HANDOFF_ABORT_BACKEND=
 VERIFIER_HANDOFF_ABORT_TARGET=
+VERIFIER_HANDOFF_ORIGINAL_META=
+VERIFIER_HANDOFF_ORIGINAL_META_SET=0
 CONFIG_INHERIT_LOCK=
 CONFIG_INHERIT_LOCK_HELD=0
 
@@ -859,6 +927,173 @@ parse_orca_worktree_result() {
   fi
 }
 
+spawn_disarm_fresh_resources() {
+  FRESH_ABORT_ENDPOINT=0
+  FRESH_ABORT_BACKEND=
+  FRESH_ABORT_TARGET=
+  FRESH_ABORT_WORKTREE=
+  FRESH_ABORT_PROJECT=
+}
+
+spawn_arm_created_endpoint() {  # <backend> <target>
+  [ "$RELAUNCH" -eq 0 ] || return 0
+  if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+    VERIFIER_HANDOFF_ABORT_ENDPOINT=1
+    VERIFIER_HANDOFF_ABORT_BACKEND=$1
+    VERIFIER_HANDOFF_ABORT_TARGET=$2
+  else
+    FRESH_ABORT_ENDPOINT=1
+    FRESH_ABORT_BACKEND=$1
+    FRESH_ABORT_TARGET=$2
+  fi
+}
+
+spawn_retire_pending_endpoint() {
+  local backend target endpoint_state
+  [ "$SPAWN_ABORT_ENDPOINT_RETIRED" = 0 ] || return 0
+  if [ "$HERDR_PROJECTION_ABORT_CLEANUP" = 1 ]; then
+    if [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" != 1 ] \
+       && ! spawn_herdr_presentation_order_lock_acquire "$HERDR_PROJECTION_ABORT_SESSION"; then
+      FM_BACKLOG_TRANSITION_ERROR="fresh Herdr endpoint retirement lock is unavailable"
+      return 1
+    fi
+    if [ "$HERDR_PROJECTION_ABORT_RECLAIM" = 1 ]; then
+      fm_backend_herdr_projection_abort_reclaim \
+        "$HERDR_PROJECTION_ABORT_SESSION" \
+        "$HERDR_PROJECTION_ABORT_JOURNAL" "$ID" \
+        "$HERDR_PROJECTION_ABORT_OLD_TAB" \
+        "$HERDR_PROJECTION_ABORT_OLD_PANE" \
+        "$HERDR_PROJECTION_ABORT_TASK_TAB" \
+        "$HERDR_PROJECTION_ABORT_TASK_PANE" || {
+          FM_BACKLOG_TRANSITION_ERROR="fresh Herdr endpoint could not be retired"
+          return 1
+        }
+    else
+      fm_backend_herdr_projection_cleanup_exact \
+        "$HERDR_PROJECTION_ABORT_SESSION" \
+        "$HERDR_PROJECTION_ABORT_TASK_PANE" \
+        "$HERDR_PROJECTION_ABORT_SEEDED_PANE"
+    fi
+    backend=herdr
+    target="$HERDR_PROJECTION_ABORT_SESSION:$HERDR_PROJECTION_ABORT_TASK_PANE"
+  elif [ "$VERIFIER_HANDOFF_ABORT_ENDPOINT" = 1 ]; then
+    backend=$VERIFIER_HANDOFF_ABORT_BACKEND
+    target=$VERIFIER_HANDOFF_ABORT_TARGET
+    fm_backend_kill "$backend" "$target" >/dev/null 2>&1 || {
+      FM_BACKLOG_TRANSITION_ERROR="fresh verifier endpoint could not be retired"
+      return 1
+    }
+  elif [ "$FRESH_ABORT_ENDPOINT" = 1 ]; then
+    backend=$FRESH_ABORT_BACKEND
+    target=$FRESH_ABORT_TARGET
+    fm_backend_kill "$backend" "$target" >/dev/null 2>&1 || {
+      FM_BACKLOG_TRANSITION_ERROR="fresh endpoint could not be retired"
+      return 1
+    }
+  elif [ "$ORCA_ABORT_CLEANUP" = 1 ] && [ -n "${ORCA_TERMINAL:-}" ]; then
+    backend=orca
+    target=$ORCA_TERMINAL
+    fm_backend_kill "$backend" "$target" >/dev/null 2>&1 || {
+      FM_BACKLOG_TRANSITION_ERROR="fresh Orca endpoint could not be retired"
+      return 1
+    }
+  else
+    FM_BACKLOG_TRANSITION_ERROR="fresh endpoint has no retirement owner"
+    return 1
+  fi
+  endpoint_state=$(fm_backend_agent_state "$backend" "$target") \
+    || endpoint_state=unreadable
+  if [ "$endpoint_state" != missing ]; then
+    FM_BACKLOG_TRANSITION_ERROR="fresh $backend endpoint reads '$endpoint_state' after retirement, not missing"
+    return 1
+  fi
+  SPAWN_ABORT_ENDPOINT_RETIRED=1
+  VERIFIER_HANDOFF_ABORT_ENDPOINT=0
+  FRESH_ABORT_ENDPOINT=0
+  HERDR_PROJECTION_ABORT_CLEANUP=0
+  HERDR_PROJECTION_ABORT_RECLAIM=0
+  return 0
+}
+
+spawn_restore_verifier_builder_record() {
+  local staged
+  [ "$VERIFIER_HANDOFF_ORIGINAL_META_SET" = 1 ] || return 1
+  staged="$STATE/.$ID.meta.builder-restore.${BASHPID:-$$}"
+  if ! printf '%s\n' "$VERIFIER_HANDOFF_ORIGINAL_META" > "$staged" \
+     || ! fm_backlog_atomic_transition publish \
+       "$staged" "$STATE/$ID.meta" "builder task record" "$STATE"; then
+    [ -n "$FM_BACKLOG_TRANSITION_ERROR" ] \
+      || FM_BACKLOG_TRANSITION_ERROR="builder task record could not be restored"
+    rm -f "$staged" 2>/dev/null || true
+    return 1
+  fi
+  VERIFIER_HANDOFF_ORIGINAL_META=
+  VERIFIER_HANDOFF_ORIGINAL_META_SET=0
+}
+
+spawn_fresh_commit_rollback() {
+  spawn_retire_pending_endpoint || return 1
+  if [ "$VERIFIER_HANDOFF" -eq 1 ] \
+     && [ "$VERIFIER_HANDOFF_ORIGINAL_META_SET" = 1 ]; then
+    if [ -n "${BUSY_GEN:-}" ]; then
+      "$FM_ROOT/bin/fm-busy-event.sh" retire "$STATE" "$ID" \
+        --gen "$BUSY_GEN" >/dev/null 2>&1 || return 1
+      RELAUNCH_REPLACEMENT_BUSY_GEN=
+    fi
+    spawn_restore_verifier_builder_record || return 1
+  else
+    fm_backlog_atomic_transition rollback "$STATE/$ID.meta" \
+      "$FM_ROOT/bin/fm-busy-event.sh" "$STATE" "$ID" "${BUSY_GEN:-}" \
+      || return 1
+  fi
+  SPAWN_FRESH_COMMIT_PENDING=0
+  SPAWN_FRESH_BUSY_PENDING=0
+  return 0
+}
+
+spawn_fresh_busy_rollback() {
+  [ "$SPAWN_FRESH_BUSY_PENDING" = 1 ] || return 0
+  if [ -n "${BUSY_GEN:-}" ]; then
+    "$FM_ROOT/bin/fm-busy-event.sh" retire "$STATE" "$ID" \
+      --gen "$BUSY_GEN" >/dev/null 2>&1 || return 1
+  fi
+  SPAWN_FRESH_BUSY_PENDING=0
+}
+
+spawn_worktree_safe_to_return() {
+  local worktree=$1 status unpushed
+  status=$(git -C "$worktree" -c core.quotePath=false \
+    status --porcelain --ignore-submodules=none 2>/dev/null) || return 1
+  [ -z "$status" ] || return 1
+  unpushed=$(git -C "$worktree" log --format=%H --max-count=1 \
+    HEAD --not --remotes -- 2>/dev/null) || return 1
+  [ -z "$unpushed" ]
+}
+
+spawn_preserve_complete_fresh_record() {
+  local staged=${SPAWN_META_TMP:-} binding harness kind spawn_gen
+  case "$staged" in "${STATE:-}/.${ID:-}.meta.spawn."*) ;; *) return 1 ;; esac
+  binding=$(fm_backend_meta_exact_value "$staged" endpoint_task_id) || return 1
+  harness=$(fm_backend_meta_exact_value "$staged" harness) || return 1
+  kind=$(fm_backend_meta_exact_value "$staged" kind) || return 1
+  spawn_gen=$(fm_backend_meta_exact_value "$staged" spawn_gen) || return 1
+  [ "$binding" = "$ID" ] && [ -n "$harness" ] && [ -n "$spawn_gen" ] || return 1
+  case "$kind" in ship|scout|secondmate) ;; *) return 1 ;; esac
+  fm_backend_validate_task_endpoint "$staged" "$ID" >/dev/null 2>&1 || return 1
+  if ! fm_backlog_atomic_transition publish "$staged" "$STATE/$ID.meta" "task record" "$STATE"; then
+    echo "warning: failed spawn could not preserve the standard task record for $ID" >&2
+    return 1
+  fi
+  echo "warning: failed spawn preserved the standard task record for $ID" >&2
+  SPAWN_META_TMP=
+  SPAWN_FRESH_BUSY_PENDING=0
+  spawn_disarm_fresh_resources
+  ORCA_ABORT_CLEANUP=0
+  HERDR_PROJECTION_ABORT_CLEANUP=0
+  HERDR_PROJECTION_ABORT_RECLAIM=0
+  return 0
+}
+
 spawn_abort_cleanup() {
   local status=$?
   if [ "$RELAUNCH_REPLACEMENT_PENDING" = 1 ] \
@@ -867,6 +1102,25 @@ spawn_abort_cleanup() {
      && [ ! -e "$SPAWN_META_TMP" ] \
      && [ ! -L "$SPAWN_META_TMP" ]; then
     RELAUNCH_REPLACEMENT_PENDING=0
+  fi
+  if [ "$SPAWN_FRESH_COMMIT_PENDING" = 1 ]; then
+    if ! spawn_fresh_commit_rollback; then
+      status=1
+      SPAWN_FRESH_BUSY_PENDING=0
+      RELAUNCH_REPLACEMENT_PENDING=0
+      VERIFIER_HANDOFF_ABORT_ENDPOINT=0
+      FRESH_ABORT_ENDPOINT=0
+      FRESH_ABORT_WORKTREE=
+      FRESH_ABORT_PROJECT=
+      HERDR_PROJECTION_ABORT_CLEANUP=0
+      HERDR_PROJECTION_ABORT_RECLAIM=0
+      ORCA_ABORT_CLEANUP=0
+    fi
+  else
+    spawn_preserve_complete_fresh_record || true
+  fi
+  if ! spawn_fresh_busy_rollback; then
+    status=1
   fi
   if [ "$RELAUNCH_REPLACEMENT_PENDING" = 1 ]; then
     RELAUNCH_REPLACEMENT_PENDING=0
@@ -892,6 +1146,22 @@ spawn_abort_cleanup() {
       fm_backend_kill "$VERIFIER_HANDOFF_ABORT_BACKEND" \
         "$VERIFIER_HANDOFF_ABORT_TARGET" 2>/dev/null || true
     fi
+  fi
+  if [ "$FRESH_ABORT_ENDPOINT" = 1 ]; then
+    FRESH_ABORT_ENDPOINT=0
+    fm_backend_kill "$FRESH_ABORT_BACKEND" "$FRESH_ABORT_TARGET" 2>/dev/null || true
+  fi
+  if [ -n "$FRESH_ABORT_WORKTREE" ]; then
+    if spawn_worktree_safe_to_return "$FRESH_ABORT_WORKTREE"; then
+      if ! (cd "$FRESH_ABORT_PROJECT" \
+        && treehouse return --force "$FRESH_ABORT_WORKTREE") >/dev/null 2>&1; then
+        echo "warning: could not return aborted spawn worktree $FRESH_ABORT_WORKTREE" >&2
+      fi
+    else
+      echo "warning: preserving aborted spawn worktree $FRESH_ABORT_WORKTREE because it is not proven free of local work" >&2
+    fi
+    FRESH_ABORT_WORKTREE=
+    FRESH_ABORT_PROJECT=
   fi
   if [ "$HERDR_PROJECTION_ABORT_CLEANUP" = 1 ] \
      && [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" != 1 ]; then
@@ -928,29 +1198,10 @@ spawn_abort_cleanup() {
       fm_backend_kill orca "$ORCA_TERMINAL" 2>/dev/null || true
     fi
     if [ -n "${ORCA_WORKTREE_ID:-}" ]; then
-      if ! fm_backend_remove_worktree orca "$ORCA_WORKTREE_ID" 2>/dev/null; then
-        mkdir -p "$STATE" 2>/dev/null || true
-        if [ -d "$STATE" ]; then
-          {
-            echo "window=$W"
-            echo "worktree=${WT:-}"
-            echo "project=$PROJ_ABS"
-            echo "harness=$HARNESS"
-            echo "kind=$KIND"
-            [ -z "${MODE:-}" ] || echo "mode=$MODE"
-            [ "${SURFACE_SET:-0}" -eq 0 ] || echo "surface=$SURFACE"
-            [ -z "${YOLO:-}" ] || echo "yolo=$YOLO"
-            [ -z "${MAP_NEXT:-}" ] || echo "map_next=$MAP_NEXT"
-            [ -z "${MAP:-}" ] || echo "map=$MAP"
-            [ -z "${OV:-}" ] || echo "ov=$OV"
-            echo "tasktmp=${TASK_TMP:-}"
-            echo "model=${MODEL:-default}"
-            echo "effort=${EFFORT:-default}"
-            echo "backend=orca"
-            echo "orca_worktree_id=$ORCA_WORKTREE_ID"
-            [ -z "${ORCA_TERMINAL:-}" ] || echo "terminal=$ORCA_TERMINAL"
-          } > "$STATE/$ID.meta" 2>/dev/null || true
-        fi
+      if [ -n "${WT:-}" ] && spawn_worktree_safe_to_return "$WT"; then
+        fm_backend_remove_worktree orca "$ORCA_WORKTREE_ID" 2>/dev/null || true
+      else
+        echo "warning: preserving aborted Orca worktree $ORCA_WORKTREE_ID because it is not proven free of local work" >&2
       fi
     fi
   fi
@@ -1065,7 +1316,7 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
   [ "$MAP_NEXT_SET" -eq 0 ] || shared_args+=(--map-next "$MAP_NEXT")
   [ "$MAP_SET" -eq 0 ] || shared_args+=(--map "$MAP")
   [ "$OV_SET" -eq 0 ] || shared_args+=(--ov "$OV")
-  for pair in ${POS[@]+"${POS[@]}"}; do
+  for pair in "${POS[@]}"; do
     case "$pair" in
       *=*) : ;;
       *) echo "error: batch dispatch expects every argument as id=repo; got '$pair'" >&2; rc=2; continue ;;
@@ -1084,6 +1335,15 @@ if [ "${#POS[@]}" -gt 0 ] && [ "${POS[0]}" != "$idpart" ] && case "$idpart" in *
 fi
 ID=${POS[0]}
 fm_task_id_creation_valid "$ID" || { echo "error: invalid task id" >&2; exit 2; }
+if [ -e "$STATE" ] || [ -L "$STATE" ]; then
+  fm_backlog_directory_present "$STATE" "state directory" || {
+    echo "error: spawn refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
+    exit 1
+  }
+elif [ "$RELAUNCH" -eq 1 ]; then
+  echo "error: spawn refused: state directory does not exist at $STATE" >&2
+  exit 1
+fi
 # Role partition: spawning NEW work is MAIN-owned. A relaunch of an existing
 # task is legitimate branch recovery (fm-control drives it through this same
 # entrypoint), so only a fresh spawn refuses the branch actor (contract:
@@ -1113,9 +1373,10 @@ if [ "$RELAUNCH" -eq 0 ]; then
     echo "error: could not create parent state directory" >&2
     exit 1
   }
-  # A fresh spawn changes the home's task set. Serialize its publication with
-  # forced teardown, which holds this lock from enumeration through cleanup.
-  # Relaunch is exempt because the existing task's control lock covers it.
+  fm_backlog_directory_present "$STATE" "state directory" || {
+    echo "error: spawn refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
+    exit 1
+  }
   SPAWN_TASK_SET_LOCK=$(fm_task_set_lock_path "$STATE") || {
     echo "error: could not resolve the task-set lock for $STATE" >&2
     exit 1
@@ -1152,8 +1413,6 @@ if [ "$KIND" = secondmate ]; then
   fi
   [ "$remote_spawn_rc" -eq 3 ] || exit "$remote_spawn_rc"
 fi
-# Backend selection applies only after a remote secondmate route has had its
-# chance to launch on the remote host's pinned Herdr backend.
 if [ "$RELAUNCH" -eq 0 ]; then
   if [ "$BACKEND_SET" -eq 1 ]; then
     BACKEND=$BACKEND_ARG
@@ -1196,8 +1455,19 @@ if [ "$RELAUNCH" -eq 1 ]; then
     exit 1
   }
   RELAUNCH_META="$STATE/$ID.meta"
-  [ -f "$RELAUNCH_META" ] || {
+  if [ ! -e "$RELAUNCH_META" ] && [ ! -L "$RELAUNCH_META" ]; then
     echo "error: --relaunch needs an existing task record; no $RELAUNCH_META" >&2
+    exit 1
+  fi
+  fm_backlog_record_present "$RELAUNCH_META" "task record" "$STATE" || {
+    echo "error: --relaunch refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
+    exit 1
+  }
+  SPAWN_META_LOCK=$(fm_meta_lock_path "$RELAUNCH_META") || exit 1
+  fm_lock_acquire_wait "$SPAWN_META_LOCK"
+  SPAWN_META_LOCK_HELD=1
+  fm_backlog_record_present "$RELAUNCH_META" "task record" "$STATE" || {
+    echo "error: --relaunch refused after locking: $FM_BACKLOG_TRANSITION_ERROR" >&2
     exit 1
   }
   fm_backend_validate_task_endpoint "$RELAUNCH_META" "$ID" || exit 1
@@ -1446,9 +1716,7 @@ case "$ARG3" in
     ;;
 esac
 
-# Presence-only consultation backstop for the other two profile axes. An omitted
-# harness still loses first (the empty-ARG3 arm above); positional harness and
-# raw launch still have to name model and effort. `default` is a chosen axis.
+
 if [ "$KIND" != secondmate ] && [ -f "$CONFIG/crew-dispatch.json" ]; then
   if [ "$MODEL_SET" -eq 0 ]; then
     echo "error: config/crew-dispatch.json is active - pass an explicit model resolved from the dispatch rules (the consultation backstop, so the rules are never silently skipped)." >&2
@@ -1459,11 +1727,6 @@ if [ "$KIND" != secondmate ] && [ -f "$CONFIG/crew-dispatch.json" ]; then
     exit 1
   fi
 fi
-
-case "$HARNESS" in
-  pi|pi-signed) LAUNCH="FM_PI_HARNESS=$HARNESS $LAUNCH" ;;
-esac
-
 # muse is verified as a CREWMATE/SCOUT adapter only. A secondmate is a firstmate
 # instance, so it needs a primary supervision protocol; muse has none, and its
 # Claude-compatible hook dialect explicitly rejects the model-reawakening and
@@ -1820,7 +2083,11 @@ validate_firstmate_operational_dirs() {
 }
 
 if [ "$KIND" = secondmate ]; then
-  if [ -z "$FIRSTMATE_HOME" ] && [ -f "$STATE/$ID.meta" ]; then
+  if [ -z "$FIRSTMATE_HOME" ] && { [ -e "$STATE/$ID.meta" ] || [ -L "$STATE/$ID.meta" ]; }; then
+    fm_backlog_record_present "$STATE/$ID.meta" "task record" "$STATE" || {
+      echo "error: secondmate task record is unsafe: $FM_BACKLOG_TRANSITION_ERROR" >&2
+      exit 1
+    }
     FIRSTMATE_HOME=$(grep '^home=' "$STATE/$ID.meta" | cut -d= -f2- || true)
   fi
   if [ -z "$FIRSTMATE_HOME" ]; then
@@ -2062,6 +2329,30 @@ validate_spawn_worktree() {  # <source> <inspect-target>
     echo "error: $source did not yield an isolated worktree (resolved '$WT'; worktree root '${wt_top:-none}'; primary '$PROJ_ABS'); refusing to launch to avoid tangling the primary checkout. Inspect target $inspect_target" >&2
     exit 1
   fi
+  if [ "$source" = "treehouse get" ]; then
+    FRESH_ABORT_WORKTREE=$WT
+    FRESH_ABORT_PROJECT=$PROJ_ABS
+  fi
+}
+
+describe_stale_submodule_pins() {  # <worktree> <status>
+  local worktree=$1 status=$2 line path want have unpushed lines=
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case $line in ' M '*) path=${line#' M '} ;; *) return 1 ;; esac
+    [ "$(git -C "$worktree" ls-files --stage -- "$path" 2>/dev/null | cut -c1-6)" = 160000 ] || return 1
+    [ -z "$(git -C "$worktree/$path" status --porcelain 2>/dev/null)" ] || return 1
+    want=$(git -C "$worktree" rev-parse --verify --quiet "HEAD:$path" 2>/dev/null) || return 1
+    have=$(git -C "$worktree/$path" rev-parse --verify --quiet HEAD 2>/dev/null) || return 1
+    [ "$want" != "$have" ] || return 1
+    unpushed=$(git -C "$worktree/$path" log --format=%H --max-count=1 "$have" --not --remotes -- 2>/dev/null) || return 1
+    [ -z "$unpushed" ] || return 1
+    lines+="error: submodule '$path' is checked out at $have, but this base records $want"$'\n'
+  done <<EOF
+$status
+EOF
+  [ -n "$lines" ] || return 1
+  printf '%s' "$lines" >&2
 }
 
 freshen_spawn_worktree_base() {  # <worktree>
@@ -2087,12 +2378,18 @@ freshen_spawn_worktree_base() {  # <worktree>
     echo "error: '$target' is not a commit for pooled worktree '$worktree'; refusing to launch from a potentially stale base" >&2
     return 1
   }
-  status=$(git -C "$worktree" status --porcelain) || {
+  status=$(git -C "$worktree" -c core.quotePath=false status --porcelain --ignore-submodules=none) || {
     echo "error: could not inspect pooled worktree '$worktree' before refreshing its base" >&2
     return 1
   }
   if [ -n "$status" ]; then
-    echo "error: pooled worktree '$worktree' is not clean; refusing to discard uncommitted work while refreshing its base" >&2
+    FRESH_ABORT_WORKTREE=
+    FRESH_ABORT_PROJECT=
+    if describe_stale_submodule_pins "$worktree" "$status"; then
+      echo "error: pooled worktree '$worktree' has a stale submodule checkout, not uncommitted work; refusing to launch and leaving it untouched" >&2
+    else
+      echo "error: pooled worktree '$worktree' is not clean; refusing to discard uncommitted work while refreshing its base" >&2
+    fi
     return 1
   fi
   if ! git -C "$worktree" reset --hard "$target" >/dev/null; then
@@ -2102,6 +2399,20 @@ freshen_spawn_worktree_base() {  # <worktree>
   actual=$(git -C "$worktree" rev-parse --verify --quiet HEAD 2>/dev/null || true)
   if [ "$actual" != "$expected" ]; then
     echo "error: pooled worktree '$worktree' is at '${actual:-unknown}', not current '$target' ('$expected'); refusing to launch" >&2
+    return 1
+  fi
+  status=$(git -C "$worktree" -c core.quotePath=false status --porcelain --ignore-submodules=none) || {
+    echo "error: could not inspect pooled worktree '$worktree' after refreshing its base" >&2
+    return 1
+  }
+  if [ -n "$status" ]; then
+    FRESH_ABORT_WORKTREE=
+    FRESH_ABORT_PROJECT=
+    if describe_stale_submodule_pins "$worktree" "$status"; then
+      echo "error: pooled worktree '$worktree' has a stale submodule checkout after its base refresh; refusing to launch and leaving it untouched" >&2
+    else
+      echo "error: pooled worktree '$worktree' changed while refreshing its base; refusing to launch" >&2
+    fi
     return 1
   fi
 }
@@ -2182,6 +2493,38 @@ herdr_projection_existing_meta_allows_flat() {  # <meta>
   esac
 }
 
+BACKLOG_ROW_STATE=
+if fm_backlog_transition_applies "$CONFIG" "$DATA" "$KIND"; then
+  if fm_backlog_row_probe "$DATA" "$ID"; then
+    BACKLOG_ROW_STATE=$FM_BACKLOG_ROW_STATE
+  elif [ "$FM_BACKLOG_ROW_RESULT" = not_found ]; then
+    echo "error: task $ID has no backlog item in this home, so dispatching it would leave a worker no record owns; add it first (tasks-axi add $ID '<title>' --kind $KIND) and re-run" >&2
+    exit 1
+  else
+    echo "error: task $ID's backlog item could not be read before dispatch ($FM_BACKLOG_ROW_ERROR)" >&2
+    exit 1
+  fi
+  if ! fm_backlog_row_dispatchable "$BACKLOG_ROW_STATE"; then
+    echo "error: this home's backlog item $ID is not dispatchable in state $BACKLOG_ROW_STATE; refusing before creating its endpoint or local copy" >&2
+    exit 1
+  fi
+else
+  BACKLOG_GATE_STATUS=$?
+  if [ "$BACKLOG_GATE_STATUS" -eq 2 ]; then
+    echo "error: task $ID cannot be dispatched because its backlog data directory is inaccessible: $DATA ($FM_BACKLOG_TRANSITION_ERROR)" >&2
+    exit 1
+  fi
+fi
+if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then
+  SPAWN_META_LOCK=$(fm_meta_lock_path "$STATE/$ID.meta") || exit 1
+  fm_lock_acquire_wait "$SPAWN_META_LOCK"
+  SPAWN_META_LOCK_HELD=1
+fi
+if [ -e "$STATE/$ID.backlog-close" ] || [ -L "$STATE/$ID.backlog-close" ]; then
+  echo "error: task $ID has a pending authoritative backlog close at $STATE/$ID.backlog-close; finish or repair that close before dispatching a new worker" >&2
+  exit 1
+fi
+
 VERIFIER_HANDOFF=0
 VERIFIER_HANDOFF_META=
 VERIFIER_HANDOFF_PRIOR_BACKEND=
@@ -2190,6 +2533,9 @@ VERIFIER_HANDOFF_PRIOR_BUSY_GEN=
 VERIFIER_HANDOFF_PRIOR_TARGET=
 VERIFIER_HANDOFF_PRIOR_RETIRED=0
 VERIFIER_HANDOFF_RETIRED_STATE=
+VERIFIER_HANDOFF_ABORT_ENDPOINT=0
+VERIFIER_HANDOFF_ABORT_BACKEND=
+VERIFIER_HANDOFF_ABORT_TARGET=
 git_common_dir_real() {  # <worktree>
   local worktree=$1 common
   common=$(git -C "$worktree" rev-parse --git-common-dir 2>/dev/null) || return 1
@@ -2199,6 +2545,7 @@ git_common_dir_real() {  # <worktree>
   esac
   cd "$common" 2>/dev/null && pwd -P
 }
+
 
 verifier_handoff_preflight() {
   local meta=$1 prior_kind prior_mode prior_surface prior_surface_count prior_yolo prior_role
@@ -2364,6 +2711,7 @@ verifier_handoff_preflight() {
   VERIFIER_HANDOFF=1
 }
 
+
 verifier_handoff_retire_herdr_projection() {  # <journal>
   local journal=$1 session status=1 canonical_home
   fm_backend_source herdr || return 1
@@ -2398,15 +2746,47 @@ verifier_handoff_retire_herdr_projection() {  # <journal>
   return "$status"
 }
 
+
+treehouse_pool_refusal_reason() {  # <target>
+  local target=$1 pane compact reason count max
+  pane=$(fm_backend_capture "$BACKEND" "$target" 40 "$W" 2>/dev/null) || return 1
+  compact=$(printf '%s\n' "$pane" | tr -d '[:space:]')
+  reason=$(printf '%s\n' "$compact" | LC_ALL=C grep -Eo \
+    "all[0-9]+worktreesareinuseordirty\\(max_trees=[0-9]+\\)\\.Run'treehousestatus'toseedetails,orincreasemax_treesintreehouse\\.toml") \
+    || return 1
+  count=$(printf '%s\n' "$reason" | sed -E 's/^all([0-9]+).*/\1/')
+  max=$(printf '%s\n' "$reason" | sed -E 's/.*max_trees=([0-9]+).*/\1/')
+  printf "all %s worktrees are in use or dirty (max_trees = %s). Run 'treehouse status' to see details, or increase max_trees in treehouse.toml\n" \
+    "$count" "$max"
+}
+
+preserve_verifier_handoff_meta() {
+  awk -F= \
+    -v map_next_set="$MAP_NEXT_SET" \
+    -v map_set="$MAP_SET" \
+    -v ov_set="$OV_SET" '
+    BEGIN {
+      split("window endpoint_task_id worktree project harness kind mode surface yolo role tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      for (i in keys) owned[keys[i]] = 1
+      if (map_next_set == 1) owned["map_next"] = 1
+      if (map_set == 1) owned["map"] = 1
+      if (ov_set == 1) {
+        owned["ov"] = 1
+        owned["ov_harness"] = 1
+      }
+    }
+    !($1 in owned)
+  ' "$VERIFIER_HANDOFF_META"
+}
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ] && [ "$ROLE" = verifier ]; then
   VERIFIER_HANDOFF_META="$STATE/$ID.meta"
   verifier_handoff_preflight "$VERIFIER_HANDOFF_META" || exit 1
+  VERIFIER_HANDOFF_ORIGINAL_META=$(cat "$VERIFIER_HANDOFF_META") || exit 1
+  VERIFIER_HANDOFF_ORIGINAL_META_SET=1
   assert_task_surface_marker "$SURFACE" "$SURFACE_SET" "builder metadata" || exit 1
 fi
 
 W="fm-$ID"
-T=
-WT_TARGET=
 if [ "$RELAUNCH" -eq 1 ]; then
   # Adopt the recorded endpoint instead of creating one. This is what keeps a
   # relaunch a REPLACEMENT rather than a second copy of the task: no new
@@ -2463,6 +2843,7 @@ case "$BACKEND" in
     # rename-critical worktree-detection steps below; the persisted window= handle
     # stays $T (the name form), which is safe now that rename is disabled.
     WID=$(fm_backend_tmux_create_task "$SES" "$W" "$PROJ_ABS") || exit 1
+    spawn_arm_created_endpoint tmux "$T"
     WT_TARGET="$WID"
     ;;
   herdr)
@@ -2492,11 +2873,7 @@ case "$BACKEND" in
     fi
     HERDR_PRESENTATION_JOURNAL=$(fm_backend_herdr_projection_journal_path "$STATE" "$ID")
     HERDR_PROJECTED=0
-    if [ "$KIND" != secondmate ] \
-       && { fm_backend_herdr_presentation_enabled "$CONFIG" "$STATE" \
-         || { [ "$VERIFIER_HANDOFF" -eq 1 ] \
-           && { [ -e "$HERDR_PRESENTATION_JOURNAL" ] \
-             || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; }; }; }; then
+    if [ "$KIND" != secondmate ] && fm_backend_herdr_presentation_enabled "$CONFIG" "$STATE"; then
       HERDR_SES=$(fm_backend_herdr_session)
       HERDR_PARENT_LABEL=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_workspace_label)
       if [ -e "$HERDR_PRESENTATION_JOURNAL" ] || [ -L "$HERDR_PRESENTATION_JOURNAL" ]; then
@@ -2539,32 +2916,11 @@ case "$BACKEND" in
               HERDR_PROJECTION_ABORT_OLD_PANE=$HERDR_RECOVERY_PANE_ID
               ;;
             2)
-              if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
-                if [ "${FM_BACKEND_HERDR_JOURNAL_VERSION:-}" = 1 ] \
-                   && fm_backend_herdr_projection_retire_handoff_binding \
-                     "$HERDR_SES" "$HERDR_PRESENTATION_JOURNAL" "$ID" \
-                     "$HERDR_RECOVERY_WORKSPACE_ID" "$HERDR_RECOVERY_TAB_ID" \
-                     "$HERDR_RECOVERY_PANE_ID"; then
-                  spawn_herdr_presentation_order_lock_release
-                else
-                  echo "error: verifier handoff refused: projected builder endpoint could not be replaced exactly" >&2
-                  exit 1
-                fi
-              else
-                spawn_herdr_presentation_order_lock_release
-              fi
+              spawn_herdr_presentation_order_lock_release
               ;;
             3) spawn_herdr_presentation_order_lock_release ;;
             *) exit 1 ;;
           esac
-        elif [ "$VERIFIER_HANDOFF" -eq 1 ]; then
-          if ! fm_backend_herdr_projection_retire_quarantine \
-            "$HERDR_SES" "$HERDR_PRESENTATION_JOURNAL" "$ID"; then
-            spawn_herdr_presentation_order_lock_release
-            echo "error: verifier handoff refused: could not retire the quarantined herdr presentation" >&2
-            exit 1
-          fi
-          spawn_herdr_presentation_order_lock_release
         else
           spawn_herdr_presentation_order_lock_release
         fi
@@ -2662,6 +3018,9 @@ EOF
       exit 1
     fi
     T="$HERDR_SES:$HERDR_PANE_ID"
+    if [ "$HERDR_PROJECTED" -ne 1 ]; then
+      spawn_arm_created_endpoint herdr "$T"
+    fi
     ;;
   zellij)
     ZELLIJ_SES=$(fm_backend_zellij_container_ensure) || exit 1
@@ -2674,6 +3033,7 @@ EOF
       exit 1
     fi
     T="$ZELLIJ_SES:$ZELLIJ_PANE_ID"
+    spawn_arm_created_endpoint zellij "$T"
     ;;
   cmux)
     fm_backend_cmux_container_ensure || exit 1
@@ -2686,6 +3046,7 @@ EOF
       exit 1
     fi
     T="$CMUX_WORKSPACE_ID:$CMUX_SURFACE_ID"
+    spawn_arm_created_endpoint cmux "$T"
     ;;
   orca)
     set +e
@@ -2713,11 +3074,6 @@ EOF
     T="$ORCA_TERMINAL"
     ;;
 esac
-fi
-if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
-  VERIFIER_HANDOFF_ABORT_ENDPOINT=1
-  VERIFIER_HANDOFF_ABORT_BACKEND=$BACKEND
-  VERIFIER_HANDOFF_ABORT_TARGET=$T
 fi
 if [ "$KIND" = secondmate ]; then
   FM_INHERITABLE_CONFIG=trace-context \
@@ -2824,19 +3180,6 @@ kimi_spawn_fail() {  # <detail>
   echo "error: $1; inspect window $T" >&2
 }
 
-treehouse_pool_refusal_reason() {  # <target>
-  local target=$1 pane compact reason count max
-  pane=$(fm_backend_capture "$BACKEND" "$target" 40 "$W" 2>/dev/null) || return 1
-  compact=$(printf '%s\n' "$pane" | tr -d '[:space:]')
-  reason=$(printf '%s\n' "$compact" | LC_ALL=C grep -Eo \
-    "all[0-9]+worktreesareinuseordirty\\(max_trees=[0-9]+\\)\\.Run'treehousestatus'toseedetails,orincreasemax_treesintreehouse\\.toml") \
-    || return 1
-  count=$(printf '%s\n' "$reason" | sed -E 's/^all([0-9]+).*/\1/')
-  max=$(printf '%s\n' "$reason" | sed -E 's/.*max_trees=([0-9]+).*/\1/')
-  printf "all %s worktrees are in use or dirty (max_trees = %s). Run 'treehouse status' to see details, or increase max_trees in treehouse.toml\n" \
-    "$count" "$max"
-}
-
 if [ "$RELAUNCH" -eq 1 ]; then
   # No worktree is acquired: the recorded one is reused as-is. What must be
   # proven instead is that the adopted endpoint's shell is actually sitting in
@@ -2864,7 +3207,7 @@ elif [ "$VERIFIER_HANDOFF" -eq 1 ]; then
     sleep 0.5
   done
   if [ -z "$handoff_seen" ] || [ "$(real_path_or_raw "$handoff_seen")" != "$handoff_wt_real" ]; then
-    echo "error: verifier handoff endpoint is in '${handoff_seen:-unknown}', not builder worktree '$WT'; refusing to launch outside the copy holding its work" >&2
+    echo "error: verifier handoff refused: endpoint is in '${handoff_seen:-unknown}', not builder worktree '$WT'" >&2
     exit 1
   fi
   validate_spawn_worktree "verifier handoff" "$T"
@@ -2992,6 +3335,8 @@ if [ "$KIND" != secondmate ]; then
       }
       if [ "$RELAUNCH" -eq 1 ] || [ "$VERIFIER_HANDOFF" -eq 1 ]; then
         RELAUNCH_REPLACEMENT_BUSY_GEN=$BUSY_GEN
+      elif [ -n "$BACKLOG_ROW_STATE" ]; then
+        SPAWN_FRESH_BUSY_PENDING=1
       fi
       ;;
     kimi*)
@@ -3011,8 +3356,9 @@ if [ "$KIND" != secondmate ]; then
       # a turn; Stop (normal completion), StopFailure (API-error turn end),
       # and SessionEnd (process shutdown) all close it, so an abnormal end can
       # never leave a stale busy record. Claude fires no hook for a manual
-      # interrupt: fm-control preserves the adapter-owned state. Stop keeps the
-      # turn-ended NOTIFICATION touch for the watcher. Every
+      # interrupt: fm-control preserves the adapter-owned state, while the
+      # legacy fm-send --key Escape path records idle/fm-interrupt. Stop keeps
+      # the turn-ended NOTIFICATION touch for the watcher. Every
       # hook command tolerates a refused event (|| true) so a stale-gen writer
       # can never break Claude's own lifecycle.
       mkdir -p "$WT/.claude"
@@ -3022,8 +3368,6 @@ if [ "$KIND" != secondmate ]; then
       j_stop=$(json_escape "touch $(shell_quote "$TURNEND"); $busy_cmd_prefix idle $busy_suffix --event stop 2>/dev/null || true")
       j_stopfail=$(json_escape "$busy_cmd_prefix idle $busy_suffix --event stop-failure 2>/dev/null || true")
       j_sessionend=$(json_escape "$busy_cmd_prefix idle $busy_suffix --event session-end 2>/dev/null || true")
-      # Absolute FM_ROOT path: review workers run in project/feature worktrees
-      # that may lack firstmate's bin/ and cannot rely on CLAUDE_PROJECT_DIR.
       j_skill=$(json_escape "$(shell_quote "$FM_ROOT/bin/fm-skill-load-record.sh") --claude 2>/dev/null || true")
       cat > "$WT/.claude/settings.local.json" <<EOF
 {"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"$j_submit"}]}],"Stop":[{"hooks":[{"type":"command","command":"$j_stop"}]}],"StopFailure":[{"hooks":[{"type":"command","command":"$j_stopfail"}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"$j_sessionend"}]}],"PostToolUse":[{"matcher":"Skill","hooks":[{"type":"command","command":"$j_skill"}]}]}}
@@ -3292,22 +3636,32 @@ META_WINDOW=$T
 [ "$BACKEND" = orca ] && META_WINDOW=$W
 SPAWN_GEN="s$(date +%s).${BASHPID:-$$}.$RANDOM"
 SPAWN_META_PATH="$STATE/$ID.meta"
-if [ "$RELAUNCH" -eq 1 ] || [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then
   SPAWN_META_LOCK=$(fm_meta_lock_path "$STATE/$ID.meta") || exit 1
   fm_lock_acquire_wait "$SPAWN_META_LOCK"
   SPAWN_META_LOCK_HELD=1
-  if [ "$RELAUNCH" -eq 1 ]; then
-    SPAWN_META_TMP="$STATE/.$ID.meta.relaunch.${BASHPID:-$$}"
-  else
-    SPAWN_META_TMP="$STATE/.$ID.meta.handoff.${BASHPID:-$$}"
-  fi
-  SPAWN_META_PATH=$SPAWN_META_TMP
-elif [ -d "$SPAWN_META_PATH" ]; then
-  # Bash 3.2 reports a failed redirection onto a directory without failing the
-  # guarded write below, so refuse it explicitly and let the abort trap release
-  # any backend resources already created.
-  echo "$SPAWN_META_PATH: Is a directory" >&2
-  exit 1
+fi
+if [ "$RELAUNCH" -eq 1 ]; then
+  SPAWN_META_TMP="$STATE/.$ID.meta.relaunch.${BASHPID:-$$}"
+elif [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+  SPAWN_META_TMP="$STATE/.$ID.meta.handoff.${BASHPID:-$$}"
+else
+  SPAWN_META_TMP="$STATE/.$ID.meta.spawn.${BASHPID:-$$}"
+fi
+SPAWN_META_PATH=$SPAWN_META_TMP
+SPAWN_SESSION=
+if [ -f "$STATE/.lock" ] && [ ! -L "$STATE/.lock" ]; then
+  SPAWN_SESSION=$(tr -d '[:space:]' < "$STATE/.lock" 2>/dev/null || true)
+fi
+OV_HARNESS=
+if [ -n "${OV:-}" ] && [ -f "$STATE/$OV.meta" ] && [ ! -L "$STATE/$OV.meta" ]; then
+  OV_HARNESS=$(sed -n 's/^harness=//p' "$STATE/$OV.meta" 2>/dev/null | tail -1)
+fi
+if [ "$KIND" = ship ] && [ "${SURFACE_SET:-0}" -eq 1 ]; then
+  printf '%s\n' "$SURFACE" > "$DATA/$ID/surface" || {
+    echo "error: could not persist task $ID surface marker at $DATA/$ID/surface" >&2
+    exit 1
+  }
 fi
 preserve_relaunch_meta() {
   awk -F= '
@@ -3318,39 +3672,7 @@ preserve_relaunch_meta() {
     !($1 in owned)
   ' "$RELAUNCH_META"
 }
-preserve_verifier_handoff_meta() {
-  awk -F= \
-    -v map_next_set="$MAP_NEXT_SET" \
-    -v map_set="$MAP_SET" \
-    -v ov_set="$OV_SET" '
-    BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode surface yolo role tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
-      for (i in keys) owned[keys[i]] = 1
-      if (map_next_set == 1) owned["map_next"] = 1
-      if (map_set == 1) owned["map"] = 1
-      if (ov_set == 1) {
-        owned["ov"] = 1
-        owned["ov_harness"] = 1
-      }
-    }
-    !($1 in owned)
-  ' "$VERIFIER_HANDOFF_META"
-}
-SPAWN_SESSION=
-if [ -f "$STATE/.lock" ] && [ ! -L "$STATE/.lock" ]; then
-  SPAWN_SESSION=$(tr -d '[:space:]' < "$STATE/.lock" 2>/dev/null || true)
-fi
-OV_HARNESS=
-if [ -n "${OV:-}" ] && [ -f "$STATE/$OV.meta" ] && [ ! -L "$STATE/$OV.meta" ]; then
-  OV_HARNESS=$(sed -n 's/^harness=//p' "$STATE/$OV.meta" 2>/dev/null | tail -1)
-fi
-if [ "$KIND" = ship ] && [ "$SURFACE_SET" -eq 1 ]; then
-  printf '%s\n' "$SURFACE" > "$DATA/$ID/surface" || {
-    echo "error: could not persist task $ID surface marker at $DATA/$ID/surface" >&2
-    exit 1
-  }
-fi
-if ! {
+{
   echo "window=$META_WINDOW"
   echo "endpoint_task_id=$ID"
   echo "worktree=$WT"
@@ -3358,14 +3680,14 @@ if ! {
   echo "harness=$HARNESS"
   echo "kind=$KIND"
   [ -z "$MODE" ] || echo "mode=$MODE"
-  [ "$SURFACE_SET" -eq 0 ] || echo "surface=$SURFACE"
+  [ "${SURFACE_SET:-0}" -eq 0 ] || echo "surface=$SURFACE"
   [ -z "$YOLO" ] || echo "yolo=$YOLO"
   [ -z "${ROLE:-}" ] || echo "role=$ROLE"
-  [ -z "$MAP_NEXT" ] || echo "map_next=$MAP_NEXT"
+  [ -z "${MAP_NEXT:-}" ] || echo "map_next=$MAP_NEXT"
   [ -z "${MAP:-}" ] || echo "map=$MAP"
   [ -z "${OV:-}" ] || echo "ov=$OV"
   [ -z "${OV_HARNESS:-}" ] || echo "ov_harness=$OV_HARNESS"
-  [ "$VERIFIER_HANDOFF" -eq 1 ] || [ -z "$SPAWN_SESSION" ] || echo "session=$SPAWN_SESSION"
+  [ "$VERIFIER_HANDOFF" -eq 1 ] || [ -z "${SPAWN_SESSION:-}" ] || echo "session=$SPAWN_SESSION"
   echo "tasktmp=$TASK_TMP"
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"
@@ -3407,22 +3729,45 @@ if ! {
   if [ "$SPAWN_CONTROL_PARENT" = 1 ] && [ -n "${FM_CONTROL_RELAUNCH_TX:-}" ]; then
     echo "control_relaunch_tx=$FM_CONTROL_RELAUNCH_TX"
   fi
-} > "$SPAWN_META_PATH"; then
+} > "$SPAWN_META_PATH" || {
+  echo "error: task record for $ID could not be prepared at $SPAWN_META_PATH" >&2
   exit 1
+}
+if [ "$RELAUNCH" -eq 0 ]; then
+  if ! fm_backlog_atomic_transition publish "$SPAWN_META_TMP" "$STATE/$ID.meta" "task record" "$STATE"; then
+    echo "error: task record for $ID could not be published ($FM_BACKLOG_TRANSITION_ERROR)" >&2
+    exit 1
+  fi
+  SPAWN_META_TMP=
+  if [ -n "$BACKLOG_ROW_STATE" ]; then
+    SPAWN_FRESH_COMMIT_PENDING=1
+  fi
+  if [ "$SPAWN_FRESH_COMMIT_PENDING" != 1 ]; then
+    if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+      VERIFIER_HANDOFF_ABORT_ENDPOINT=0
+      HERDR_PROJECTION_ABORT_CLEANUP=0
+      HERDR_PROJECTION_ABORT_RECLAIM=0
+      RELAUNCH_REPLACEMENT_PENDING=0
+      VERIFIER_HANDOFF_ORIGINAL_META=
+      VERIFIER_HANDOFF_ORIGINAL_META_SET=0
+    else
+      spawn_disarm_fresh_resources
+      ORCA_ABORT_CLEANUP=0
+      HERDR_PROJECTION_ABORT_CLEANUP=0
+      HERDR_PROJECTION_ABORT_RECLAIM=0
+    fi
+  fi
 fi
-if [ "$RELAUNCH" -eq 1 ] || [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+
+if [ "$RELAUNCH" -eq 1 ]; then
   SPAWN_META_PUBLISH_STARTED=1
-  mv -f "$SPAWN_META_TMP" "$STATE/$ID.meta"
-  if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
-    VERIFIER_HANDOFF_ABORT_ENDPOINT=0
-    HERDR_PROJECTION_ABORT_CLEANUP=0
-    HERDR_PROJECTION_ABORT_RECLAIM=0
+  if ! fm_backlog_atomic_transition publish "$SPAWN_META_TMP" "$STATE/$ID.meta" "task record" "$STATE"; then
+    echo "error: replacement task record for $ID could not be published ($FM_BACKLOG_TRANSITION_ERROR)" >&2
+    exit 1
   fi
   RELAUNCH_REPLACEMENT_PENDING=0
   SPAWN_META_PUBLISH_STARTED=0
   SPAWN_META_TMP=
-  fm_lock_release "$SPAWN_META_LOCK"
-  SPAWN_META_LOCK_HELD=0
 fi
 if [ "$SPAWN_TASK_SET_LOCK_HELD" = 1 ]; then
   # The record is published, so this task is now part of the set a teardown
@@ -3431,7 +3776,9 @@ if [ "$SPAWN_TASK_SET_LOCK_HELD" = 1 ]; then
   SPAWN_TASK_SET_LOCK_HELD=0
   fm_lock_release "$SPAWN_TASK_SET_LOCK"
 fi
-[ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0
+if [ "$SPAWN_FRESH_COMMIT_PENDING" != 1 ] && [ "$BACKEND" = orca ]; then
+  ORCA_ABORT_CLEANUP=0
+fi
 
 sq_brief=$(shell_quote "$BRIEF")
 sq_turnend=$(shell_quote "$TURNEND")
@@ -3494,21 +3841,26 @@ if [ -z "$SPAWN_TRACEPARENT" ] && [ "$RELAUNCH" -eq 1 ]; then
 fi
 
 spawn_record_traceparent() {
-  local meta="$STATE/$ID.meta" tmp status=0
-  SPAWN_META_LOCK=$(fm_meta_lock_path "$meta") || return 1
-  fm_lock_acquire_wait "$SPAWN_META_LOCK"
-  SPAWN_META_LOCK_HELD=1
+  local meta="$STATE/$ID.meta" status=0 acquired=0
+  if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then
+    SPAWN_META_LOCK=$(fm_meta_lock_path "$meta") || return 1
+    fm_lock_acquire_wait "$SPAWN_META_LOCK"
+    SPAWN_META_LOCK_HELD=1
+    acquired=1
+  fi
   SPAWN_META_TMP="$STATE/.$ID.meta.trace.${BASHPID:-$$}"
   if [ ! -f "$meta" ] || [ ! -w "$meta" ] \
      || ! awk -F= '$1 != "traceparent"' "$meta" > "$SPAWN_META_TMP" \
      || ! printf 'traceparent=%s\n' "$SPAWN_TRACEPARENT" >> "$SPAWN_META_TMP" \
-     || ! mv -f "$SPAWN_META_TMP" "$meta"; then
+     || ! fm_backlog_atomic_transition publish "$SPAWN_META_TMP" "$meta" "task record" "$STATE"; then
     status=1
     rm -f "$SPAWN_META_TMP" 2>/dev/null || true
   fi
   SPAWN_META_TMP=
-  fm_lock_release "$SPAWN_META_LOCK" || status=1
-  SPAWN_META_LOCK_HELD=0
+  if [ "$acquired" = 1 ]; then
+    fm_lock_release "$SPAWN_META_LOCK" || status=1
+    SPAWN_META_LOCK_HELD=0
+  fi
   return "$status"
 }
 
@@ -3516,8 +3868,6 @@ spawn_record_traceparent() {
 # process (go build, go test, ...) inherit it. Sent before the launch command so
 # the env is set when the agent starts; the brief sleep lets the export land.
 spawn_send_text_line "$T" "export GOTMPDIR=$TASK_TMP/gotmp"
-# TRACEPARENT rides the same pre-launch channel/site as GOTMPDIR (ship/scout/
-# secondmate). Skipped when trace context is off. Keep adjacent to GOTMPDIR.
 if [ -n "$SPAWN_TRACEPARENT" ]; then
   if spawn_send_text_line "$T" "export TRACEPARENT=$SPAWN_TRACEPARENT"; then
     if ! spawn_record_traceparent; then
@@ -3546,7 +3896,6 @@ sleep 0.3
 spawn_send_literal "$T" "$LAUNCH"
 sleep 0.3
 if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
-  HERDR_PROJECTION_ABORT_CLEANUP=0
   spawn_herdr_presentation_order_lock_release
 fi
 spawn_send_key "$T" Enter
@@ -3559,12 +3908,12 @@ if [ "$HARNESS" = kimi ]; then
   KIMI_SUBMIT_RETRIES=${FM_KIMI_SUBMIT_RETRIES:-3}
   KIMI_SUBMIT_SLEEP=${FM_KIMI_SUBMIT_SLEEP:-${FM_KIMI_POLL_INTERVAL:-0.5}}
   KIMI_SUBMIT_SETTLE=${FM_KIMI_SUBMIT_SETTLE:-0}
-  KIMI_SUBMIT_VERDICT=$(fm_backend_send_text_submit \
-    "$BACKEND" "$T" "$KIMI_POINTER" "$KIMI_SUBMIT_RETRIES" \
-    "$KIMI_SUBMIT_SLEEP" "$KIMI_SUBMIT_SETTLE" "$W") || {
+  if ! KIMI_SUBMIT_VERDICT=$(fm_backend_send_text_submit \
+      "$BACKEND" "$T" "$KIMI_POINTER" "$KIMI_SUBMIT_RETRIES" \
+      "$KIMI_SUBMIT_SLEEP" "$KIMI_SUBMIT_SETTLE" "$W"); then
     kimi_spawn_fail "kimi brief pointer could not be submitted"
     exit 1
-  }
+  fi
   if [ "$KIMI_SUBMIT_VERDICT" = send-failed ]; then
     kimi_spawn_fail "kimi brief pointer could not be submitted"
     exit 1
@@ -3583,6 +3932,77 @@ if [ "$KIND" = secondmate ] && [ "${FM_SKIP_SECONDMATE_INHERIT:-0}" != 1 ]; then
     fi
   fi
 fi
+
+if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then
+  SPAWN_META_LOCK=$(fm_meta_lock_path "$STATE/$ID.meta") || exit 1
+  fm_lock_acquire_wait "$SPAWN_META_LOCK"
+  SPAWN_META_LOCK_HELD=1
+fi
+SPAWN_DEFERRED_SIGNAL=
+if [ -n "$BACKLOG_ROW_STATE" ]; then
+  trap 'SPAWN_DEFERRED_SIGNAL=HUP' HUP
+  trap 'SPAWN_DEFERRED_SIGNAL=INT' INT
+  trap 'SPAWN_DEFERRED_SIGNAL=TERM' TERM
+fi
+SPAWN_BACKLOG_COMMIT_STATUS=0
+if [ -n "$BACKLOG_ROW_STATE" ]; then
+  if fm_backlog_atomic_transition dispatch "$STATE/$ID.meta" "$DATA" "$ID" "$STATE"; then
+    :
+  else
+    SPAWN_BACKLOG_COMMIT_STATUS=$?
+    if fm_backlog_atomic_transition dispatch "$STATE/$ID.meta" "$DATA" "$ID" "$STATE"; then
+      SPAWN_BACKLOG_COMMIT_STATUS=0
+    fi
+  fi
+fi
+if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
+  SPAWN_BACKLOG_COMMIT_ERROR=$FM_BACKLOG_TRANSITION_ERROR
+  if [ "$SPAWN_FRESH_COMMIT_PENDING" = 1 ]; then
+    if spawn_fresh_commit_rollback; then
+      if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+        echo "error: task $ID's backlog item could not be moved to In flight ($SPAWN_BACKLOG_COMMIT_ERROR); its verifier endpoint and busy state were retired, and its builder record was restored" >&2
+      else
+        echo "error: task $ID's backlog item could not be moved to In flight ($SPAWN_BACKLOG_COMMIT_ERROR); its provisional task and busy records were removed, and its fresh resources will be retired" >&2
+      fi
+    else
+      SPAWN_BACKLOG_ROLLBACK_ERROR=$FM_BACKLOG_TRANSITION_ERROR
+      echo "error: task $ID's backlog item could not be moved to In flight ($SPAWN_BACKLOG_COMMIT_ERROR), and failed-dispatch cleanup is incomplete ($SPAWN_BACKLOG_ROLLBACK_ERROR)" >&2
+    fi
+  else
+    echo "error: task $ID was republished but its backlog item could not be moved to In flight ($SPAWN_BACKLOG_COMMIT_ERROR); fix the backlog and re-run the launch" >&2
+  fi
+fi
+trap - HUP INT TERM
+if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
+  exit "$SPAWN_BACKLOG_COMMIT_STATUS"
+fi
+if [ "$SPAWN_FRESH_COMMIT_PENDING" = 1 ]; then
+  SPAWN_FRESH_COMMIT_PENDING=0
+  SPAWN_FRESH_BUSY_PENDING=0
+  if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+    VERIFIER_HANDOFF_ABORT_ENDPOINT=0
+    RELAUNCH_REPLACEMENT_PENDING=0
+    VERIFIER_HANDOFF_ORIGINAL_META=
+    VERIFIER_HANDOFF_ORIGINAL_META_SET=0
+  else
+    spawn_disarm_fresh_resources
+  fi
+  ORCA_ABORT_CLEANUP=0
+  HERDR_PROJECTION_ABORT_CLEANUP=0
+  HERDR_PROJECTION_ABORT_RECLAIM=0
+fi
+fm_lock_release "$SPAWN_META_LOCK"
+SPAWN_META_LOCK_HELD=0
+if [ -n "$SPAWN_DEFERRED_SIGNAL" ]; then
+  case "$SPAWN_DEFERRED_SIGNAL" in
+    HUP) SPAWN_DEFERRED_SIGNAL_STATUS=129 ;;
+    INT) SPAWN_DEFERRED_SIGNAL_STATUS=130 ;;
+    TERM) SPAWN_DEFERRED_SIGNAL_STATUS=143 ;;
+  esac
+  echo "error: spawn of $ID was interrupted after launch delivery began; its paired task record and In-flight backlog state were preserved" >&2
+  exit "$SPAWN_DEFERRED_SIGNAL_STATUS"
+fi
+"$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
 
 SPAWN_DELIVERY=
 if [ -n "$MODE" ]; then
