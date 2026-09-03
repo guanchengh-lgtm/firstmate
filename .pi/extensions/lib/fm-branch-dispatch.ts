@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 
 // Shared wake-dispatch handshake between the Pi watcher extension (the
@@ -8,30 +9,39 @@ import { readdirSync, readFileSync } from "node:fs";
 // FM_BRANCH_DISPATCH_EVENT. A live, enabled branch extension calls accept()
 // SYNCHRONOUSLY inside its handler (the event bus invokes handlers
 // synchronously up to their first await), so after emit returns the watcher
-// reads `accepted`: true means the branch now owns delivering and handling the
-// wake (including its own fallback back to main on a later failure); false
+// reads `accepted`: true means the branch owns handling the wake, and its
+// settlement promise keeps the watcher outcome pending until handling finishes
+// or rejects back to the watcher's consumption-acknowledged main path; false
 // means no branch took it and the watcher delivers to main exactly as it did
 // before the branch existed. Watcher-failure alarms are never offered - only
 // main can repair the watcher cycle (fm_watch_arm_pi lives on main).
 
 export const FM_BRANCH_DISPATCH_EVENT = "fm-branch-supervision:dispatch";
 
-export type UnreadWakeScopeStatus = "safe" | "empty" | "unsafe";
+export type UnreadWakeScopeStatus = "safe" | "empty" | "main-only" | "corrupted";
 
-export function scopeForUnreadWake(state: string, heartbeat: boolean): {
+export interface UnreadWakeScope {
   status: UnreadWakeScopeStatus;
   eligible: boolean;
   projects: string[];
-} {
+  eligibleSeqs: string[];
+}
+
+const EMPTY_SCOPE: UnreadWakeScope = { status: "empty", eligible: false, projects: [], eligibleSeqs: [] };
+const CORRUPTED_SCOPE: UnreadWakeScope = { status: "corrupted", eligible: false, projects: [], eligibleSeqs: [] };
+
+// Main-only rows stay queued for main and never veto branch-owned rows.
+// Corrupted or unresolvable rows make the whole scan fail closed.
+export function scopeForUnreadWake(state: string, heartbeat: boolean): UnreadWakeScope {
   let queue = "";
   try {
     queue = readFileSync(`${state}/.wake-queue`, "utf8");
   } catch {
-    return { status: "unsafe", eligible: false, projects: [] };
+    return CORRUPTED_SCOPE;
   }
 
   const rows = queue.split(/\r?\n/).filter((line) => line.length > 0);
-  if (rows.length === 0) return { status: "empty", eligible: false, projects: [] };
+  if (rows.length === 0) return EMPTY_SCOPE;
 
   const projects = new Set<string>();
   const metadata = new Map<string, string>();
@@ -48,15 +58,26 @@ export function scopeForUnreadWake(state: string, heartbeat: boolean): {
       }
     }
   } catch {
-    return { status: "unsafe", eligible: false, projects: [] };
+    return CORRUPTED_SCOPE;
   }
 
+  const eligibleSeqs: string[] = [];
   for (const line of rows) {
     const fields = line.split("\t");
-    if (fields.length < 4 || !/^[0-9]+$/.test(fields[1])) return { status: "unsafe", eligible: false, projects: [] };
+    if (fields.length < 5 || !/^[0-9]+$/.test(fields[1])) return CORRUPTED_SCOPE;
+    const seq = fields[1];
     const kind = fields[2];
     const key = fields[3];
-    if (kind === "heartbeat") continue;
+    if (kind === "heartbeat") {
+      if (heartbeat) eligibleSeqs.push(seq);
+      continue;
+    }
+    if (kind === "check") {
+      // Always main-owned, in every mode: excluded from what the branch may
+      // claim, never a reason to reject the rest of the queue and never a
+      // reason to send an otherwise-eligible heartbeat review to main.
+      continue;
+    }
     let project = "";
     if (kind === "signal") {
       const task = key.replace(/\.(?:status|turn-ended)$/, "");
@@ -64,13 +85,88 @@ export function scopeForUnreadWake(state: string, heartbeat: boolean): {
     } else if (kind === "stale") {
       project = metadata.get(key) ?? metadata.get(key.replace(/^fm-/, "")) ?? "";
     } else {
-      return { status: "unsafe", eligible: false, projects: [] };
+      // A kind fm_wake_append never emits: structural corruption, not an
+      // ordinary main-only row.
+      return CORRUPTED_SCOPE;
     }
-    if (!project) return { status: "unsafe", eligible: false, projects: [] };
+    if (!project) return CORRUPTED_SCOPE;
     projects.add(project);
+    eligibleSeqs.push(seq);
   }
-  const eligible = heartbeat || projects.size > 0;
-  return { status: eligible ? "safe" : "unsafe", eligible, projects: [...projects] };
+  const eligible = eligibleSeqs.length > 0;
+  // Reached only after every row passed classification without a veto. A scan
+  // that ends up ineligible simply found nothing the branch may claim - a
+  // queue of purely main-only content, not a fault. (Before check rows stopped
+  // vetoing a heartbeat, this point was unreachable for a heartbeat with an
+  // empty eligible set, so reading eligibility off the claim set rather than
+  // off the heartbeat flag changes no pre-existing outcome and keeps a
+  // heartbeat from being offered with nothing to hand over.)
+  return { status: eligible ? "safe" : "main-only", eligible, projects: [...projects], eligibleSeqs };
+}
+
+// The exact state-relative filename bin/fm-wake-drain.sh reads for a
+// FM_SUPERVISION_ACTOR=branch drain or ack (its header is the single owner of
+// the consume-side contract). Written atomically, immediately before every
+// branch prompt, by writeEligibleRowsSnapshot below.
+export const BRANCH_ELIGIBLE_ROWS_FILE = ".branch-eligible-rows";
+
+// Atomically publish the exact row set a branch turn may drain and
+// acknowledge. One sequence number per line - an opaque handoff, never
+// reclassified by the consumer. A main-owned result means the competing main
+// turn won the queue-lock claim and already owns presentation; error means no
+// actor acquired the requested rows.
+export type EligibleRowsSnapshotResult = "published" | "main-owned" | "error";
+
+function runGrantScript(state: string, grantScript: string, args: readonly string[]): number | null {
+  try {
+    const result = spawnSync("bash", [grantScript, ...args], {
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        FM_STATE_OVERRIDE: state,
+        FM_WAKE_QUEUE: `${state}/.wake-queue`,
+        FM_WAKE_QUEUE_LOCK: `${state}/.wake-queue.lock`,
+      },
+    });
+    return result.status;
+  } catch {
+    return null;
+  }
+}
+
+export function activateEligibleRowsOwner(
+  state: string,
+  grantScript: string,
+  ownerPid: number,
+  generation: string,
+): boolean {
+  return runGrantScript(state, grantScript, ["activate", String(ownerPid), generation]) === 0;
+}
+
+export function writeEligibleRowsSnapshot(
+  state: string,
+  seqs: readonly string[],
+  grantScript: string,
+  generation: string,
+): EligibleRowsSnapshotResult {
+  if (seqs.length === 0 || seqs.some((seq) => !/^[0-9]+$/.test(seq))) return "error";
+  const status = runGrantScript(state, grantScript, ["publish", generation, ...seqs]);
+  if (status === 0) return "published";
+  if (status === 3) return "main-owned";
+  return "error";
+}
+
+export function releaseEligibleRowsSnapshot(state: string, grantScript: string, generation: string): boolean {
+  return runGrantScript(state, grantScript, ["release", generation]) === 0;
+}
+
+export function deactivateEligibleRowsOwner(
+  state: string,
+  grantScript: string,
+  ownerPid: number,
+  generation: string,
+): boolean {
+  return runGrantScript(state, grantScript, ["deactivate", String(ownerPid), generation]) === 0;
 }
 
 export interface BranchDispatchOffer {
@@ -83,11 +179,12 @@ export interface BranchDispatchOffer {
   projects: readonly string[];
   /** True when the watcher classified this wake as a fleet-wide heartbeat scan. */
   heartbeat: boolean;
-  /** True only when every unread queue row is safe for branch handling. */
+  /** True only when at least one currently unread row is safe for branch handling. */
   eligible: boolean;
   /** Set by accept(); read by the watcher after emit returns. */
   accepted: boolean;
-  accept(): void;
+  settlement: Promise<void>;
+  accept(settlement?: Promise<void>): void;
 }
 
 export function createBranchDispatchOffer(
@@ -102,8 +199,10 @@ export function createBranchDispatchOffer(
     heartbeat,
     eligible,
     accepted: false,
-    accept() {
+    settlement: Promise.resolve(),
+    accept(settlement = Promise.resolve()) {
       offer.accepted = true;
+      offer.settlement = settlement;
     },
   };
   return offer;
