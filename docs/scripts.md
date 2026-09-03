@@ -79,7 +79,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-config-push.sh`      | Push declared inherited local material to live local or remote secondmates and send the placement-specific config reread when changed |
 | `fm-feeder-export.sh`    | Publish and push the one-way mirror of this home's decisions and reports into the configured private feeder vault clone |
 | `fm-project-mode.sh`     | Resolve a project's registered delivery posture from `data/projects.md` for fleet sync and home seeding |
-| `fm-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval            |
+| `fm-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval; under `--exact-sync` also lands a pinned upstream-merge commit on the remote default branch |
 | `fm-review-diff.sh`      | Review a crewmate branch or resolved PR head against the authoritative base          |
 | `fm-marker-lib.sh`       | Compatibility entry point for the from-firstmate carrier owned by `fm-operational-input.sh` |
 | `fm-task-inbox-lib.sh`   | Single owner of durable steering-inbox records, acknowledgement, doorbells, and the delivery-attempt ladder |
@@ -142,7 +142,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-pr-lib.sh`           | Own canonical task and PR validation plus private atomic PR-poll publication, merge-notification identity, and retirement |
 | `fm-pr-poll.sh`          | Provide the byte-static watcher program for validated PR/MR-poll sidecars           |
 | `fm-pr-check.sh`         | Record validated PR metadata, then atomically arm a static merge poll; require validation truth |
-| `fm-pr-merge.sh`         | Record PR metadata, merge a task's canonical full GitHub or GitLab URL, then refuse an outcome it cannot prove landed or queued |
+| `fm-pr-merge.sh`         | Record PR metadata, pin the forge head, refuse a red or pending rollup, merge a task's canonical full GitHub URL, then refuse an outcome it cannot prove landed or queued |
 | `fm-promote.sh`          | Promote a scout task in place to a protected ship task with an explicit delivery mode, and write the ship instructions carrying that mode's definition of done |
 | `fm-teardown.sh`         | Fail-closed teardown: landed ship work, scout report presence and captain-hold completion, no-mistakes validation truth, secondmate retirement |
 | `fm-merge-outcome-lib.sh` | Publish a confirmed merge's durable, role-routed supervision outcome                 |

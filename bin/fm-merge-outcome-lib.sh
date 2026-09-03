@@ -23,8 +23,8 @@
 # is committed, so a failed commit stays eligible for at-least-once retry and
 # may rarely duplicate rather than leave a merge silent.
 #
-# Sourced by bin/fm-pr-merge.sh, bin/fm-watch.sh, and tests. No side effects on
-# source beyond its sourced libraries.
+# Sourced by bin/fm-pr-merge.sh, bin/fm-merge-local.sh, bin/fm-watch.sh, and
+# tests. No side effects on source beyond its sourced libraries.
 
 _FM_MERGE_OUTCOME_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-pr-lib.sh
@@ -64,33 +64,18 @@ fm_merge_outcome_append_once() {  # <path> <line>
 # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
 FM_MERGE_OUTCOME_ALREADY_RECORDED=false
 
-# fm_merge_outcome_report <home> <state> <task-id> <pr-url> <origin>
+# fm_merge_outcome_publish <home> <state> <task-id> <provider> <host> <path> \
+#   <number> <origin> <display> <wake-key>
 #
-# <origin> says who observed the merge, because that decides whether the
-# existing poll path also needs a local wake:
-#   self - this home performed the merge.
-#   poll - this home's merge poll detected the merge, so the canonical outcome
-#          also wakes this home after any upward hop needed by a secondmate.
-#
-# Returns 0 when the outcome is recorded (or already was), 2 on an invalid
-# request, 3 when this home's own role or parent binding cannot be read well
-# enough to say where the outcome belongs, and 1 on any other failure to
-# record. A caller that has already merged must report a non-zero return rather
-# than treat it as success: the merge landed and the record did not.
-fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin>
-  local home=$1 state=$2 id=$3 url=$4 origin=$5
+# The shared destination resolution, dedup lock, append, wake and marker commit
+# behind both entry points. <display> is how the landing reads in the reported
+# line and the wake note; <wake-key> is the queue key for the main-home wake.
+fm_merge_outcome_publish() {
+  local home=$1 state=$2 id=$3 provider=$4 host=$5 path=$6 number=$7
+  local origin=$8 display=$9 wake_key=${10}
   local self='' self_rc=0 destination='' line lock status=0
-  local provider host path number
   # shellcheck disable=SC2034 # Sourced wake helpers consume these scoped globals.
   local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
-  FM_MERGE_OUTCOME_ALREADY_RECORDED=false
-  case "$origin" in self|poll) ;; *) return 2 ;; esac
-  fm_pr_task_id_valid "$id" || return 2
-  fm_pr_url_parse "$url" || return 2
-  provider=$FM_PR_PROVIDER
-  host=$FM_PR_HOST
-  path=$FM_PR_PATH
-  number=$FM_PR_NUMBER
   [ -d "$state" ] && [ ! -L "$state" ] || return 1
 
   if self=$(fm_merge_outcome_home_id "$home"); then
@@ -103,7 +88,7 @@ fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin>
       remote) destination="$state/parent-replies.status" ;;
       *) return 3 ;;
     esac
-    line="done [key=merged-$id]: merged $id $FM_PR_URL"
+    line="done [key=merged-$id]: merged $id $display"
   else
     self_rc=$?
     [ "$self_rc" -eq 1 ] || return 3
@@ -126,8 +111,8 @@ fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin>
     fm_merge_outcome_append_once "$destination" "$line" || status=1
   fi
   if [ "$status" -eq 0 ] && { [ "$origin" = poll ] || [ -z "$destination" ]; }; then
-    fm_wake_append check "merged-$id-$FM_PR_URL" \
-      "check: merge landed: $id $FM_PR_URL" || status=1
+    fm_wake_append check "$wake_key" \
+      "check: merge landed: $id $display" || status=1
   fi
   if [ "$status" -eq 0 ]; then
     fm_pr_poll_merge_mark_notified "$state" "$id" \
@@ -135,4 +120,52 @@ fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin>
   fi
   fm_lock_release "$lock"
   return "$status"
+}
+
+# fm_merge_outcome_report <home> <state> <task-id> <pr-url> <origin>
+#
+# <origin> says who observed the merge, because that decides whether the
+# existing poll path also needs a local wake:
+#   self - this home performed the merge.
+#   poll - this home's merge poll detected the merge, so the canonical outcome
+#          also wakes this home after any upward hop needed by a secondmate.
+#
+# Returns 0 when the outcome is recorded (or already was), 2 on an invalid
+# request, 3 when this home's own role or parent binding cannot be read well
+# enough to say where the outcome belongs, and 1 on any other failure to
+# record. A caller that has already merged must report a non-zero return rather
+# than treat it as success: the merge landed and the record did not.
+fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin>
+  local home=$1 state=$2 id=$3 url=$4 origin=$5
+  # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
+  FM_MERGE_OUTCOME_ALREADY_RECORDED=false
+  case "$origin" in self|poll) ;; *) return 2 ;; esac
+  fm_pr_task_id_valid "$id" || return 2
+  fm_pr_url_parse "$url" || return 2
+  fm_merge_outcome_publish "$home" "$state" "$id" \
+    "$FM_PR_PROVIDER" "$FM_PR_HOST" "$FM_PR_PATH" "$FM_PR_NUMBER" \
+    "$origin" "$FM_PR_URL" "merged-$id-$FM_PR_URL"
+}
+
+# fm_merge_outcome_report_sync <home> <state> <task-id> <remote> <branch> <sha> <origin>
+#
+# Same publication as fm_merge_outcome_report for a no-PR exact-sync landing.
+# Identity is ExactSyncIdentity { provider=git, host=<remote>, path=<branch>,
+# number=<sha> }, never a forged pull-request URL.
+# <origin> is self|poll. Returns the same codes as fm_merge_outcome_report.
+fm_merge_outcome_report_sync() {  # <home> <state> <task-id> <remote> <branch> <sha> <origin>
+  local home=$1 state=$2 id=$3 remote=$4 branch=$5 sha=$6 origin=$7
+  local LC_ALL=C
+  # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
+  FM_MERGE_OUTCOME_ALREADY_RECORDED=false
+  case "$origin" in self|poll) ;; *) return 2 ;; esac
+  fm_pr_task_id_valid "$id" || return 2
+  [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || return 2
+  [[ "$remote" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || return 2
+  case "$remote" in */*) return 2 ;; esac
+  [[ "$branch" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || return 2
+  case "$branch" in */*) return 2 ;; esac
+  fm_merge_outcome_publish "$home" "$state" "$id" \
+    git "$remote" "$branch" "$sha" \
+    "$origin" "$remote/$branch@$sha" "merged-$id-sync-$remote-$branch-$sha"
 }
