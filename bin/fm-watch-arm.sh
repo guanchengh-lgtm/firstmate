@@ -457,6 +457,20 @@ if [ "$mode" = restart ]; then
       fi
     fi
   fi
+  if ! fm_pid_alive "$lock_pid"; then
+    if [ -e "$WATCH_LOCK" ] || [ -L "$WATCH_LOCK" ]; then
+      # KILL skips EXIT cleanup. --restart must drop that leftover lock even
+      # when identity strings do not match the identity-gated clearer.
+      fm_recovery_marker_publish "$STATE/.watcher-down" downtime || {
+        echo "watcher: FAILED - stale watcher recovery state could not be persisted" >&2
+        exit 1
+      }
+      fm_lock_remove_path "$WATCH_LOCK" || {
+        echo "watcher: FAILED - stale watcher lock could not be cleared" >&2
+        exit 1
+      }
+    fi
+  fi
 fi
 
 # If a genuinely live+fresh watcher already holds the lock, do not start a second

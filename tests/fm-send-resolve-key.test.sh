@@ -139,31 +139,68 @@ test_answer_send_closes_open_decision() {
   pass "fm-send --resolve-key: the answer send itself closes the open decision"
 }
 
-test_post_colon_key_is_resolvable() {
-  local dir fb log home rc out
-  dir="$TMP_ROOT/post-colon"; mkdir -p "$dir"
+# The answerer's close is this home's own bookkeeping: it must not re-wake the
+# session that wrote it, while any other writer's later line on the same task
+# still must. Both directions are read through the production seen-signature
+# gate the watcher's signal scan consumes (bin/fm-wake-lib.sh).
+test_answer_close_is_self_announced() {
+  local dir fb log home rc
+  dir="$TMP_ROOT/self-announced"; mkdir -p "$dir"
   fb=$(make_stubs "$dir"); log="$dir/send.log"
-  home=$(setup_home post-colon)
-  fm_write_meta "$home/state/post.meta" "window=sess:fm-post" "kind=ship"
-  printf 'needs-decision: [key=rendering] choose canvas or SVG\n' > "$home/state/post.status"
+  home=$(setup_home self-announced)
+  fm_write_meta "$home/state/t9.meta" "window=sess:fm-t9" "kind=ship"
+  printf 'needs-decision [key=port-choice]: 8080 or 9090\n' > "$home/state/t9.status"
+  FM_STATE_OVERRIDE="$home/state" bash -c '
+    . "$1"
+    fm_wake_status_mark_current "$2" "$3"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$home/state/t9.status" \
+    || fail "could not prime the announced baseline"
+
+  run_send "$fb" "$home" "$log" t9 --resolve-key port-choice "use 9090"; rc=$?
+  expect_code 0 "$rc" "the answer send should succeed"
+  grep -F 'resolved [key=port-choice]: answered: use 9090' "$home/state/t9.status" >/dev/null \
+    || fail "the closing resolved line is missing"
+  FM_STATE_OVERRIDE="$home/state" bash -c '
+    . "$1"; fm_wake_signal_seen_current "$2" "$3"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$home/state/t9.status" \
+    || fail "the answerer's own close was left to re-wake this same home"
+
+  printf 'done: worker finished after the answer\n' >> "$home/state/t9.status"
+  if FM_STATE_OVERRIDE="$home/state" bash -c '
+    . "$1"; fm_wake_signal_seen_current "$2" "$3"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$home/state" "$home/state/t9.status"; then
+    fail "a later worker line after the self-announced close was swallowed"
+  fi
+  pass "fm-send --resolve-key: the close never re-wakes its own home, later lines still do"
+}
+
+# The reported failure behind issue #2109: a worker that put the colon first
+# (needs-decision: [key=X] ...) had its key silently folded to "default", so
+# the answer's --resolve-key X refused with "no open decision or blocker with
+# that key". The stated key must be honored in that position too, end to end
+# through the real send.
+test_colon_first_key_position_is_answerable() {
+  local dir fb log home rc out
+  dir="$TMP_ROOT/colon-first"; mkdir -p "$dir"
+  fb=$(make_stubs "$dir"); log="$dir/send.log"
+  home=$(setup_home colon-first)
+  fm_write_meta "$home/state/t8.meta" "window=sess:fm-t8" "kind=ship"
+  printf 'needs-decision: [key=seam-max-bound] cap the seam at 4 or 8\n' > "$home/state/t8.status"
 
   out=$(drain_out "$home")
-  printf '%s' "$out" | grep -F 'post [key=rendering] needs-decision: choose canvas or SVG' >/dev/null \
-    || fail "precondition: the post-colon decision should list under its real key: $out"
+  printf '%s' "$out" | grep -F '[key=seam-max-bound]' >/dev/null \
+    || fail "precondition: the colon-first decision should list as open under its stated key: $out"
 
-  run_send "$fb" "$home" "$log" post --resolve-key rendering "use SVG"; rc=$?
-  expect_code 0 "$rc" "--resolve-key should accept a key parsed after the colon"
-  grep -qF "use SVG" "$home/state/post.inbox/001.msg" \
-    || fail "the answer to a post-colon key should reach the worker inbox"
-  assert_contains "$(cat "$log")" "Firstmate instruction waiting" \
-    "the post-colon answer should ring the inbox doorbell"
-  grep -F 'resolved [key=rendering]: answered: use SVG' "$home/state/post.status" >/dev/null \
-    || fail "fm-send did not append the closing line for a post-colon key"
+  run_send "$fb" "$home" "$log" t8 --resolve-key seam-max-bound "cap it at 4"; rc=$?
+  expect_code 0 "$rc" "answering a colon-first stated key should succeed, not refuse as unknown"
+  grep -F 'resolved [key=seam-max-bound]: answered: cap it at 4' "$home/state/t8.status" >/dev/null \
+    || fail "the closing resolved line is missing:"$'\n'"$(cat "$home/state/t8.status")"
+
   out=$(drain_out "$home")
   if printf '%s' "$out" | grep -F 'OPEN DECISIONS' >/dev/null; then
-    fail "the answered post-colon decision still lists as open: $out"
+    fail "the answered colon-first decision still lists as open: $out"
   fi
-  pass "fm-send --resolve-key accepts and closes a key written after the colon"
+  pass "fm-send --resolve-key: a colon-first stated key is open under that key and answerable"
 }
 
 test_answer_starts_work_never_orphans() {
@@ -501,7 +538,8 @@ test_flag_misuse_refuses() {
 }
 
 test_answer_send_closes_open_decision
-test_post_colon_key_is_resolvable
+test_answer_close_is_self_announced
+test_colon_first_key_position_is_answerable
 test_answer_starts_work_never_orphans
 test_routine_steer_never_closes
 test_not_open_key_refuses_before_send
