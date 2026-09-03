@@ -1,0 +1,2 @@
+not ok - hook must stay inert in a child task worktree: expected exit 0, got 97
+RED_RC=1

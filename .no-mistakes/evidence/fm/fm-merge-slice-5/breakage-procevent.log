@@ -1,0 +1,4 @@
+not ok - an unconfigured home reports no sources (missing: 'no sources registered')
+--- output ---
+
+RED_RC=1

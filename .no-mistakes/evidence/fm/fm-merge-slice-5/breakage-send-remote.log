@@ -1,0 +1,2 @@
+not ok - a durably recorded remote steer must exit 0: : expected exit 0, got 97
+RED_RC=1

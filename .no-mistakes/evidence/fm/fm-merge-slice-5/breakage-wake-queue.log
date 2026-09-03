@@ -1,0 +1,4 @@
+ok - an abandoned same-process lock hold is reclaimed; a parent's live hold is not
+ok - bounded acquire hands ownership to the waiting caller after contention
+not ok - bounded queue presentation drain failed
+RED_RC=1

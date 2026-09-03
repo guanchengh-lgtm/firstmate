@@ -1,0 +1,7 @@
+FIRST DRAIN - CAPTAIN VIEW
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+slice5-demo [key=release-window] needs-decision: choose the release window
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+
+AFTER ANSWER
+(no open decision remains)

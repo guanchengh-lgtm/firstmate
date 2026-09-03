@@ -1,0 +1,3 @@
+ok - report-only unresolved captain call is reproduced and completion refuses before loss
+not ok - could not register the captain-held task
+RED_RC=1

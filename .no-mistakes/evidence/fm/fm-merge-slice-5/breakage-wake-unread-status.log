@@ -1,0 +1,2 @@
+not ok - bootstrap drain failed while priming the unread cursor
+RED_RC=1

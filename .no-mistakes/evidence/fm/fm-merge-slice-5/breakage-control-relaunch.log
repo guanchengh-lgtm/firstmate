@@ -1,0 +1,3 @@
+not ok - a same-harness relaunch should succeed
+: expected exit 0, got 97
+RED_RC=1

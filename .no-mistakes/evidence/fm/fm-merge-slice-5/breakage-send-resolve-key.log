@@ -1,0 +1,2 @@
+not ok - an answer send with --resolve-key should succeed: expected exit 0, got 97
+RED_RC=1
