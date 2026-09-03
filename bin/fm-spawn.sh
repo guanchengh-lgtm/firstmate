@@ -890,6 +890,7 @@ SPAWN_META_LOCK=
 SPAWN_META_LOCK_HELD=0
 SPAWN_META_PUBLISH_STARTED=0
 SPAWN_FRESH_COMMIT_PENDING=0
+SPAWN_FRESH_BUSY_PENDING=0
 SPAWN_TASK_SET_LOCK=
 SPAWN_TASK_SET_LOCK_HELD=0
 RELAUNCH_REPLACEMENT_PENDING=0
@@ -945,9 +946,19 @@ spawn_fresh_commit_rollback() {
   if fm_backlog_atomic_transition rollback "$STATE/$ID.meta" \
       "$FM_ROOT/bin/fm-busy-event.sh" "$STATE" "$ID" "${BUSY_GEN:-}"; then
     SPAWN_FRESH_COMMIT_PENDING=0
+    SPAWN_FRESH_BUSY_PENDING=0
     return 0
   fi
   return 1
+}
+
+spawn_fresh_busy_rollback() {
+  [ "$SPAWN_FRESH_BUSY_PENDING" = 1 ] || return 0
+  if [ -n "${BUSY_GEN:-}" ]; then
+    "$FM_ROOT/bin/fm-busy-event.sh" retire "$STATE" "$ID" \
+      --gen "$BUSY_GEN" >/dev/null 2>&1 || return 1
+  fi
+  SPAWN_FRESH_BUSY_PENDING=0
 }
 
 spawn_preserve_complete_fresh_record() {
@@ -966,6 +977,7 @@ spawn_preserve_complete_fresh_record() {
   fi
   echo "warning: failed spawn preserved the standard task record for $ID" >&2
   SPAWN_META_TMP=
+  SPAWN_FRESH_BUSY_PENDING=0
   spawn_disarm_fresh_resources
   ORCA_ABORT_CLEANUP=0
   HERDR_PROJECTION_ABORT_CLEANUP=0
@@ -988,6 +1000,9 @@ spawn_abort_cleanup() {
     fi
   else
     spawn_preserve_complete_fresh_record || true
+  fi
+  if ! spawn_fresh_busy_rollback; then
+    status=1
   fi
   if [ "$RELAUNCH_REPLACEMENT_PENDING" = 1 ]; then
     RELAUNCH_REPLACEMENT_PENDING=0
@@ -2242,6 +2257,8 @@ freshen_spawn_worktree_base() {  # <worktree>
     return 1
   }
   if [ -n "$status" ]; then
+    FRESH_ABORT_WORKTREE=
+    FRESH_ABORT_PROJECT=
     if describe_stale_submodule_pins "$worktree" "$status"; then
       echo "error: pooled worktree '$worktree' has a stale submodule checkout, not uncommitted work; refusing to launch and leaving it untouched" >&2
     else
@@ -2263,6 +2280,8 @@ freshen_spawn_worktree_base() {  # <worktree>
     return 1
   }
   if [ -n "$status" ]; then
+    FRESH_ABORT_WORKTREE=
+    FRESH_ABORT_PROJECT=
     if describe_stale_submodule_pins "$worktree" "$status"; then
       echo "error: pooled worktree '$worktree' has a stale submodule checkout after its base refresh; refusing to launch and leaving it untouched" >&2
     else
@@ -2370,10 +2389,6 @@ else
     exit 1
   fi
 fi
-if [ "$RELAUNCH" -eq 0 ] && [ -n "$BACKLOG_ROW_STATE" ]; then
-  SPAWN_FRESH_COMMIT_PENDING=1
-fi
-
 if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then
   SPAWN_META_LOCK=$(fm_meta_lock_path "$STATE/$ID.meta") || exit 1
   fm_lock_acquire_wait "$SPAWN_META_LOCK"
@@ -3192,6 +3207,8 @@ if [ "$KIND" != secondmate ]; then
       }
       if [ "$RELAUNCH" -eq 1 ] || [ "$VERIFIER_HANDOFF" -eq 1 ]; then
         RELAUNCH_REPLACEMENT_BUSY_GEN=$BUSY_GEN
+      elif [ -n "$BACKLOG_ROW_STATE" ]; then
+        SPAWN_FRESH_BUSY_PENDING=1
       fi
       ;;
     kimi*)
@@ -3594,6 +3611,9 @@ if [ "$RELAUNCH" -eq 0 ]; then
     exit 1
   fi
   SPAWN_META_TMP=
+  if [ -n "$BACKLOG_ROW_STATE" ]; then
+    SPAWN_FRESH_COMMIT_PENDING=1
+  fi
   if [ "$SPAWN_FRESH_COMMIT_PENDING" != 1 ]; then
     if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
       VERIFIER_HANDOFF_ABORT_ENDPOINT=0
@@ -3825,6 +3845,7 @@ if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
 fi
 if [ "$SPAWN_FRESH_COMMIT_PENDING" = 1 ]; then
   SPAWN_FRESH_COMMIT_PENDING=0
+  SPAWN_FRESH_BUSY_PENDING=0
   if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
     VERIFIER_HANDOFF_ABORT_ENDPOINT=0
     RELAUNCH_REPLACEMENT_PENDING=0

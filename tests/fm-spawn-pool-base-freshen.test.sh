@@ -30,7 +30,12 @@ esac
 exit 0
 SH
   chmod +x "$fakebin/tmux"
-  fm_fake_exit0 "$fakebin" treehouse
+  cat > "$fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+set -u
+printf '%s\n' "$*" >> "${FM_FAKE_TREEHOUSE_LOG:?FM_FAKE_TREEHOUSE_LOG unset}"
+SH
+  chmod +x "$fakebin/treehouse"
   printf '%s\n' "$fakebin"
 }
 
@@ -45,6 +50,7 @@ make_case() {
   fakebin=$(make_spawn_fakebin "$case_dir/fake")
 
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config"
+  : > "$case_dir/treehouse.log"
   printf 'codex\n' > "$home/config/crew-harness"
   printf 'brief for %s\n' "$id" > "$home/data/$id/brief.md"
   printf 'builder\n' > "$home/data/$id/role"
@@ -82,6 +88,7 @@ run_spawn() {
       FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
       FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
       FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" FM_FAKE_PANE_PATH="$POOL_DIR" \
+      FM_FAKE_TREEHOUSE_LOG="$CASE_DIR/treehouse.log" \
       PATH="$FAKEBIN_DIR:$PATH" \
       "$SPAWN" "$id" "$PROJECT_DIR" "$@" 2>&1
   else
@@ -89,9 +96,15 @@ run_spawn() {
       FM_STATE_OVERRIDE="$HOME_DIR/state" FM_DATA_OVERRIDE="$HOME_DIR/data" \
       FM_PROJECTS_OVERRIDE="$HOME_DIR/projects" FM_CONFIG_OVERRIDE="$HOME_DIR/config" \
       FM_SPAWN_NO_GUARD=1 TMUX="fake,1,0" FM_FAKE_PANE_PATH="$POOL_DIR" \
+      FM_FAKE_TREEHOUSE_LOG="$CASE_DIR/treehouse.log" \
       PATH="$FAKEBIN_DIR:$PATH" \
       "$SPAWN" "$id" "$PROJECT_DIR" --role builder "$@" 2>&1
   fi
+}
+
+assert_refused_worktree_not_returned() {
+  assert_no_grep "^return --force $POOL_DIR$" "$CASE_DIR/treehouse.log" \
+    "spawn returned a refused worktree that required manual recovery"
 }
 
 test_stale_pool_base_refreshes_before_branching() {
@@ -220,6 +233,7 @@ test_dirty_pool_refuses_without_discarding_work() {
     || fail "spawn moved HEAD while refusing a dirty pooled worktree"
   assert_grep 'keep this local work' "$POOL_DIR/uncommitted.txt" \
     "spawn discarded uncommitted work while refusing the pool"
+  assert_refused_worktree_not_returned
   if [ "${FM_TEST_EVIDENCE:-0}" = 1 ]; then
     printf '# observed dirty refusal: %s; preserved=%s\n' \
       "$(printf '%s\n' "$out" | tail -n 1)" "$(cat "$POOL_DIR/uncommitted.txt")"
@@ -260,6 +274,7 @@ make_submodule_case() {
   fakebin=$(make_spawn_fakebin "$case_dir/fake")
 
   mkdir -p "$home/data/$id" "$home/projects" "$home/state" "$home/config"
+  : > "$case_dir/treehouse.log"
   printf 'codex\n' > "$home/config/crew-harness"
   printf 'brief for %s\n' "$id" > "$home/data/$id/brief.md"
   printf 'builder\n' > "$home/data/$id/role"
@@ -331,6 +346,7 @@ test_reset_refuses_new_stale_submodule_pin() {
   [ "$(git -C "$POOL_DIR/ui" rev-parse HEAD)" = "$SUBPIN1" ] \
     || fail "post-reset refusal updated the initialized submodule"
   assert_absent "$HOME_DIR/state/$id.meta" "post-reset stale submodule refusal published task metadata"
+  assert_refused_worktree_not_returned
   pass "a base refresh refuses an initialized submodule left at the old pin"
 }
 
@@ -360,6 +376,7 @@ test_stale_submodule_pin_explains_itself() {
     || fail "spawn moved HEAD while refusing a stale submodule pin"
   [ "$(git -C "$POOL_DIR/ui" rev-parse HEAD)" = "$before_sub" ] \
     || fail "spawn converged the submodule while refusing the slot"
+  assert_refused_worktree_not_returned
   pass "a pre-existing stale submodule checkout reports both pins"
 }
 
@@ -391,6 +408,7 @@ test_unpushed_submodule_commit_is_still_uncommitted_work() {
     "spawn discarded the unpushed submodule work while refusing the pool"
   [ "$(git -C "$POOL_DIR" rev-parse HEAD)" = "$before" ] \
     || fail "spawn moved HEAD while refusing a slot holding an unpushed submodule commit"
+  assert_refused_worktree_not_returned
   pass "an unpushed submodule commit remains uncommitted work and survives refusal"
 }
 
@@ -412,6 +430,7 @@ test_work_inside_submodule_is_still_uncommitted_work() {
     "real work inside a submodule was misreported as a stale pin"
   assert_grep 'work that must survive' "$POOL_DIR/ui/keep-me.txt" \
     "spawn discarded work inside the submodule while refusing the pool"
+  assert_refused_worktree_not_returned
   pass "work inside a submodule remains uncommitted work"
 }
 
@@ -432,6 +451,7 @@ test_stale_pin_carrying_real_work_is_not_called_stale() {
     "a submodule holding real work was reported as merely stale"
   assert_grep 'work that must survive' "$POOL_DIR/ui/keep-me.txt" \
     "spawn discarded work inside the submodule while refusing the pool"
+  assert_refused_worktree_not_returned
   pass "a stale pin carrying real work receives the conservative refusal"
 }
 
@@ -454,6 +474,7 @@ test_stale_pin_beside_other_dirt_reports_one_verdict() {
     "the stale-pin diagnosis appeared beside the conservative refusal"
   assert_grep 'notes the operator still wants' "$POOL_DIR/zz-notes.txt" \
     "spawn discarded the untracked file while refusing the pool"
+  assert_refused_worktree_not_returned
   pass "a stale pin beside other dirt produces one conservative verdict"
 }
 
