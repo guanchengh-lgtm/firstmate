@@ -927,6 +927,19 @@ spawn_disarm_fresh_resources() {
   FRESH_ABORT_PROJECT=
 }
 
+spawn_arm_created_endpoint() {  # <backend> <target>
+  [ "$RELAUNCH" -eq 0 ] || return 0
+  if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+    VERIFIER_HANDOFF_ABORT_ENDPOINT=1
+    VERIFIER_HANDOFF_ABORT_BACKEND=$1
+    VERIFIER_HANDOFF_ABORT_TARGET=$2
+  else
+    FRESH_ABORT_ENDPOINT=1
+    FRESH_ABORT_BACKEND=$1
+    FRESH_ABORT_TARGET=$2
+  fi
+}
+
 spawn_preserve_complete_fresh_record() {
   local staged=${SPAWN_META_TMP:-} binding harness kind spawn_gen
   case "$staged" in "${STATE:-}/.${ID:-}.meta.spawn."*) ;; *) return 1 ;; esac
@@ -2159,6 +2172,10 @@ validate_spawn_worktree() {  # <source> <inspect-target>
     echo "error: $source did not yield an isolated worktree (resolved '$WT'; worktree root '${wt_top:-none}'; primary '$PROJ_ABS'); refusing to launch to avoid tangling the primary checkout. Inspect target $inspect_target" >&2
     exit 1
   fi
+  if [ "$source" = "treehouse get" ]; then
+    FRESH_ABORT_WORKTREE=$WT
+    FRESH_ABORT_PROJECT=$PROJ_ABS
+  fi
 }
 
 describe_stale_submodule_pins() {  # <worktree> <status>
@@ -2664,6 +2681,7 @@ case "$BACKEND" in
     # rename-critical worktree-detection steps below; the persisted window= handle
     # stays $T (the name form), which is safe now that rename is disabled.
     WID=$(fm_backend_tmux_create_task "$SES" "$W" "$PROJ_ABS") || exit 1
+    spawn_arm_created_endpoint tmux "$T"
     WT_TARGET="$WID"
     ;;
   herdr)
@@ -2838,6 +2856,9 @@ EOF
       exit 1
     fi
     T="$HERDR_SES:$HERDR_PANE_ID"
+    if [ "$HERDR_PROJECTED" -ne 1 ]; then
+      spawn_arm_created_endpoint herdr "$T"
+    fi
     ;;
   zellij)
     ZELLIJ_SES=$(fm_backend_zellij_container_ensure) || exit 1
@@ -2850,6 +2871,7 @@ EOF
       exit 1
     fi
     T="$ZELLIJ_SES:$ZELLIJ_PANE_ID"
+    spawn_arm_created_endpoint zellij "$T"
     ;;
   cmux)
     fm_backend_cmux_container_ensure || exit 1
@@ -2862,6 +2884,7 @@ EOF
       exit 1
     fi
     T="$CMUX_WORKSPACE_ID:$CMUX_SURFACE_ID"
+    spawn_arm_created_endpoint cmux "$T"
     ;;
   orca)
     set +e
@@ -2889,18 +2912,6 @@ EOF
     T="$ORCA_TERMINAL"
     ;;
 esac
-if [ "$RELAUNCH" -eq 0 ] && [ "$VERIFIER_HANDOFF" -eq 0 ] && [ "$BACKEND" != orca ]; then
-  if [ "$BACKEND" != herdr ] || [ "$HERDR_PROJECTED" -ne 1 ]; then
-    FRESH_ABORT_ENDPOINT=1
-    FRESH_ABORT_BACKEND=$BACKEND
-    FRESH_ABORT_TARGET=$T
-  fi
-fi
-fi
-if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
-  VERIFIER_HANDOFF_ABORT_ENDPOINT=1
-  VERIFIER_HANDOFF_ABORT_BACKEND=$BACKEND
-  VERIFIER_HANDOFF_ABORT_TARGET=$T
 fi
 if [ "$KIND" = secondmate ]; then
   FM_INHERITABLE_CONFIG=trace-context \
@@ -3095,8 +3106,6 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   fi
 
   validate_spawn_worktree "treehouse get" "$T"
-  FRESH_ABORT_WORKTREE=$WT
-  FRESH_ABORT_PROJECT=$PROJ_ABS
 fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$VERIFIER_HANDOFF" -eq 0 ] && [ "$KIND" != secondmate ]; then
   freshen_spawn_worktree_base "$WT" || exit 1
@@ -3758,8 +3767,41 @@ if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then
   fm_lock_acquire_wait "$SPAWN_META_LOCK"
   SPAWN_META_LOCK_HELD=1
 fi
+SPAWN_DEFERRED_SIGNAL=
+if [ -n "$BACKLOG_ROW_STATE" ]; then
+  trap 'SPAWN_DEFERRED_SIGNAL=HUP' HUP
+  trap 'SPAWN_DEFERRED_SIGNAL=INT' INT
+  trap 'SPAWN_DEFERRED_SIGNAL=TERM' TERM
+fi
+SPAWN_BACKLOG_COMMIT_STATUS=0
+if [ -n "$BACKLOG_ROW_STATE" ]; then
+  if fm_backlog_atomic_transition dispatch "$STATE/$ID.meta" "$DATA" "$ID" "$STATE"; then
+    :
+  else
+    SPAWN_BACKLOG_COMMIT_STATUS=$?
+    if fm_backlog_atomic_transition dispatch "$STATE/$ID.meta" "$DATA" "$ID" "$STATE"; then
+      SPAWN_BACKLOG_COMMIT_STATUS=0
+    fi
+  fi
+fi
+if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
+  echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); its standard task record remains so the endpoint and local copy stay owned - run tasks-axi start $(shell_quote "$ID") --file $(shell_quote "$DATA/backlog.md") after fixing the backlog" >&2
+fi
+trap - HUP INT TERM
+if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
+  exit "$SPAWN_BACKLOG_COMMIT_STATUS"
+fi
 fm_lock_release "$SPAWN_META_LOCK"
 SPAWN_META_LOCK_HELD=0
+if [ -n "$SPAWN_DEFERRED_SIGNAL" ]; then
+  case "$SPAWN_DEFERRED_SIGNAL" in
+    HUP) SPAWN_DEFERRED_SIGNAL_STATUS=129 ;;
+    INT) SPAWN_DEFERRED_SIGNAL_STATUS=130 ;;
+    TERM) SPAWN_DEFERRED_SIGNAL_STATUS=143 ;;
+  esac
+  echo "error: spawn of $ID was interrupted after launch delivery began; its paired task record and In-flight backlog state were preserved" >&2
+  exit "$SPAWN_DEFERRED_SIGNAL_STATUS"
+fi
 
 SPAWN_DELIVERY=
 if [ -n "$MODE" ]; then
