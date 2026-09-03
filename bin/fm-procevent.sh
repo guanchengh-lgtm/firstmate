@@ -144,36 +144,6 @@
 # while ACTING on it is firstmate's judgement, so the capture stays unacknowledged
 # and its `check` wake reaches the handler exactly as it would have anyway.
 #
-# Announcement is adapter-owned through one more seam of the same kind. An
-# adapter that answers exit 0 to `bin/fm-procevent-<adapter>.sh self-announcing`
-# declares that every result its autohandle fully applies is announced through a
-# durable downstream channel of its own (for remote-reply, the mirrored parent
-# status append the watcher's signal scan detects). For such an adapter, `start`
-# runs autohandle FIRST and publishes a check wake only for what remains
-# unhandled afterwards, so a fully autohandled capture never produces a second
-# announcement and a byte-identical replay produces none at all. Every other
-# adapter keeps the strict publish-before-apply order, because without a
-# declared downstream channel an applied-and-acknowledged result would otherwise
-# go silent. An unhandled result stays eligible for bounded re-announcement on
-# every reconcile in both modes, exactly as before.
-#
-# Keyed captain answers are adapter-owned through one more seam of the same kind,
-# and this runner still decides nothing about them. Some sources carry the
-# captain's answer to a captain-held task. What such an answer MEANS is owned
-# once, by bin/fm-captain-hold.sh's keyed-answer intake, and reaching it must not
-# depend on an agent remembering. So after capture, a bound source
-# has its result passed to
-# `bin/fm-procevent-<adapter>.sh answers <result-file>`, and whatever that prints
-# is piped straight into that one intake. The adapter reports only what the
-# captain chose; the intake owns every rule about what happens next. This runner
-# names no adapter, parses no result, and knows no decision rule, so a future
-# source needs nothing here beyond an `answers` command and a binding.
-#
-# Feeding is deliberately independent of handling: it never acknowledges a result
-# and never suppresses a wake. Recording the captain's answer is transcription,
-# while ACTING on it is firstmate's judgement, so the capture stays unacknowledged
-# and its `check` wake reaches the handler exactly as it would have anyway.
-#
 # Ownership is machine-wide per canonical source, because separate Firstmate
 # homes can share one underlying source store. A live owner is never displaced;
 # only a claim whose whole generation is gone is reclaimed. A runner leads its

@@ -371,7 +371,7 @@ EOF
 
 print_status_outcome_backstop_section() {  # <task-and-endpoint-snapshot>
   local snapshot=$1 task endpoint ident event event_endpoint line verb key receipt store lock ready
-  local output='' used=0 shown=0 omitted=0 bytes item_bytes=220 global_bytes=4000 rc=0
+  local output='' used=0 shown=0 omitted=0 bytes item_bytes=220 global_bytes=4000 rc=0 lock_held=0
   [ "$ACTOR" = main ] || return 0
 
   store="$STATE/branch-outcomes.jsonl"
@@ -385,6 +385,7 @@ print_status_outcome_backstop_section() {  # <task-and-endpoint-snapshot>
       printf 'STATUS OUTCOME BACKSTOP SKIPPED: branch outcome history is busy; retry on the next drain.\n'
       return 0
     fi
+    lock_held=1
     ready="$STATE/.branch-outcome-index-ready"
     if ! outcome_index_ready_ok "$ready"; then
       "$SCRIPT_DIR/fm-branch-outcome.sh" processed-init --held-lock >/dev/null 2>&1 || true
@@ -447,7 +448,7 @@ print_status_outcome_backstop_section() {  # <task-and-endpoint-snapshot>
 $snapshot
 EOF
 
-  if [ -e "$store" ] || [ -L "$store" ]; then fm_lock_release "$lock"; fi
+  if [ "$lock_held" -eq 1 ]; then fm_lock_release "$lock"; fi
   if [ "$rc" -eq 1 ]; then return 1; fi
   if [ "$rc" -eq 2 ]; then
     printf 'STATUS OUTCOME BACKSTOP SKIPPED: a bounded task outcome index could not be read safely; repair it before relying on drain recovery.\n'

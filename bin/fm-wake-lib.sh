@@ -1017,7 +1017,7 @@ fm_lock_acquire_wait_bounded() {
 
 fm_lock_release() {
   local lockdir=$1 pid current ownerdir
-  fm_current_pid_into current || return 0
+  fm_current_pid_into current || return 1
   if [ -L "$lockdir" ]; then
     ownerdir=$(fm_lock_link_owner "$lockdir" 2>/dev/null || true)
     [ -n "$ownerdir" ] || return 0
@@ -1675,24 +1675,28 @@ fm_wake_signal_seen_path() {  # <state> <file>
 }
 
 # The byte size recorded in <file>'s seen marker, or 0 when no marker exists, it
-# cannot be read, or it does not hold the supported presentation-marker format.
+# cannot be read, or it holds neither supported marker format.
 # That size is the position the watcher has already classified, independently of
 # the file signature it has already reported. A 0 means "classify the whole
 # file", which surfaces events rather than losing them.
+# The canonical marker format for every signal file, status files included, is
+# the bare "size:mtime" signature fm_wake_signal_sig writes and bin/fm-watch.sh
+# byte-compares. A status marker may also hold the v2 presentation marker, which
+# carries its own classified offset, so that format is read first when present.
 fm_wake_signal_seen_size() {  # <state> <file>
   local marker sig size
   marker=$(fm_wake_signal_seen_path "$1" "$2")
+  sig=$(cat "$marker" 2>/dev/null) || { printf '0'; return 0; }
   case "$2" in
     *.status)
-      _fm_wake_require_classify || { printf '0'; return 0; }
-      status_presentation_marker_offset "$marker" "$2"
-      ;;
-    *)
-      sig=$(cat "$marker" 2>/dev/null) || { printf '0'; return 0; }
-      case "$sig" in *:*) size=${sig%%:*} ;; *) size=0 ;; esac
-      case "$size" in ''|*[!0-9]*) printf '0' ;; *) printf '%s' "$size" ;; esac
+      if _fm_wake_require_classify && status_presentation_marker_parse "$sig"; then
+        status_presentation_marker_offset "$marker" "$2"
+        return 0
+      fi
       ;;
   esac
+  case "$sig" in *:*) size=${sig%%:*} ;; *) size=0 ;; esac
+  case "$size" in ''|*[!0-9]*) printf '0' ;; *) printf '%s' "$size" ;; esac
 }
 
 # 0 when <file>'s current signature matches its recorded reported state.

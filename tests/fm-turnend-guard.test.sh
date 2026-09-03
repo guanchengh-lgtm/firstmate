@@ -1895,6 +1895,74 @@ test_hook_claude_mode_secondmate_reblocks_like_primary() {
   pass "fm-turnend-guard --claude: secondmate home re-blocks unclaimed and allows auto-arm-claimed stops"
 }
 
+# --- Cursor adapter: the Pi-host stand-down ---------------------------------
+# bin/fm-turnend-guard-cursor.sh parks by foregrounding bin/fm-watch-arm.sh. A Pi
+# host that loaded .cursor/hooks.json through pi-cursor-sdk must NOT park, or it
+# dual-watches against fm_watch_arm_pi. A real Cursor session must keep parking
+# even when a stale PI_CODING_AGENT leaks into its environment.
+
+install_cursor_park() {
+  local dir=$1 f
+  for f in fm-turnend-guard-cursor.sh fm-cursor-lib.sh fm-session-lock-lib.sh \
+           fm-classify-lib.sh fm-lock.sh; do
+    cp "$ROOT/bin/$f" "$dir/bin/$f"
+  done
+  chmod +x "$dir/bin/fm-turnend-guard-cursor.sh" "$dir/bin/fm-lock.sh"
+  cat > "$dir/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$$" >> "$FM_HOME/state/arm-ran"
+printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+printf 'stale: fixture-win needs a look\n'
+exit 0
+SH
+  chmod +x "$dir/bin/fm-watch-arm.sh"
+  ln -s /bin/bash "$dir/fake-harness"
+}
+
+# The adapter runs as a child of a fake harness whose pid holds the home's
+# session lock, so the real ancestry path in bin/fm-session-lock-lib.sh decides
+# ownership rather than a stub.
+run_cursor_park() {  # <dir> <env-assignment>...
+  local dir=$1
+  shift
+  # shellcheck disable=SC2016 # $FM_HOME expands inside the fake harness child.
+  printf '{"session_id":"sess-cursor","loop_count":0,"hook_event_name":"stop"}' \
+    | env FM_HOME="$dir" FM_CURSOR_PARK_POLL=1 FM_CURSOR_PARK_ATTEMPTS=1 "$@" \
+      "$dir/fake-harness" -c '
+        printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+        "$FM_HOME/bin/fm-turnend-guard-cursor.sh"
+      ' 2>/dev/null
+}
+
+test_cursor_park_stands_down_on_a_pi_host() {
+  local dir out
+  dir=$(make_primary_dir "$TMP_ROOT/cursor-pi-standdown")
+  install_cursor_park "$dir"
+  : > "$dir/state/task1.meta"
+  out=$(run_cursor_park "$dir" PI_CODING_AGENT=true)
+  [ ! -e "$dir/state/arm-ran" ] \
+    || fail "a Pi host with no Cursor identity armed through the Cursor park; that dual-watches against fm_watch_arm_pi"
+  [ ! -e "$dir/state/.cursor-park-owner" ] || fail "the Pi-host stand-down still claimed the Cursor park"
+  [ -z "$out" ] || fail "the Pi-host stand-down emitted a follow-up: $out"
+  pass "fm-turnend-guard-cursor: a Pi host without Cursor identity stands down instead of parking"
+}
+
+test_cursor_park_keeps_parking_when_pi_marker_leaks() {
+  local dir out marker name
+  for marker in CURSOR_AGENT=1 CURSOR_INVOKED_AS=cursor-agent; do
+    name=${marker%%=*}
+    dir=$(make_primary_dir "$TMP_ROOT/cursor-pi-leak-$name")
+    install_cursor_park "$dir"
+    : > "$dir/state/task1.meta"
+    out=$(run_cursor_park "$dir" PI_CODING_AGENT=true "$marker")
+    [ -e "$dir/state/arm-ran" ] \
+      || fail "a leaked PI_CODING_AGENT alongside $name stopped the Cursor park from arming the watcher"
+    printf '%s' "$out" | grep -F 'followup_message' >/dev/null \
+      || fail "the Cursor park with $name set returned no wake follow-up: $out"
+  done
+  pass "fm-turnend-guard-cursor: Cursor identity keeps parking despite a leaked PI_CODING_AGENT"
+}
+
 test_predicate_healthy_no_inflight
 test_predicate_unhealthy_no_beacon
 test_predicate_unhealthy_stale_beacon
@@ -1903,6 +1971,8 @@ test_predicate_queue_pending_flag
 test_predicate_x_mode_needs_supervision
 test_predicate_source_needs_supervision
 test_hook_silent_when_no_work_in_flight
+test_cursor_park_stands_down_on_a_pi_host
+test_cursor_park_keeps_parking_when_pi_marker_leaks
 test_hook_refuses_prose_only_ready_action
 test_hook_ready_action_checks_every_ready_ticket
 test_hook_ready_action_accepts_matching_worker_owner

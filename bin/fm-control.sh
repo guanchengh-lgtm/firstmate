@@ -206,7 +206,7 @@ for control_arg in "$@"; do
       model) NEW_MODEL=$control_arg; MODEL_SET=1 ;;
       effort) NEW_EFFORT=$control_arg; EFFORT_SET=1 ;;
       note) NOTE=$control_arg; NOTE_SET=1 ;;
-      note_file)
+      note-file)
         [ -f "$control_arg" ] || die "--note-file '$control_arg' is not a readable file"
         NOTE=$(cat "$control_arg")
         NOTE_SET=1
@@ -224,7 +224,7 @@ for control_arg in "$@"; do
     --effort=*) NEW_EFFORT=${control_arg#--effort=}; EFFORT_SET=1 ;;
     --note) control_want_value=note ;;
     --note=*) NOTE=${control_arg#--note=}; NOTE_SET=1 ;;
-    --note-file) control_want_value=note_file ;;
+    --note-file) control_want_value='note-file' ;;
     --note-file=*)
       [ -f "${control_arg#--note-file=}" ] || die "--note-file '${control_arg#--note-file=}' is not a readable file"
       NOTE=$(cat "${control_arg#--note-file=}")
@@ -234,7 +234,6 @@ for control_arg in "$@"; do
   esac
 done
 if [ -n "$control_want_value" ]; then
-  [ "$control_want_value" = note_file ] && die "--note-file requires a value"
   die "--$control_want_value requires a value"
 fi
 

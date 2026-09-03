@@ -48,7 +48,7 @@ new_case() {  # <name>; sets CASE_DIR and points the gh stub at it
 run_live() {  # <output-file> [extra args]
   local out=$1
   shift
-  "$SCRIPT" --repo example/repo --pr 99 --output "$out" --interval-seconds 0 "$@" 2>&1
+  "$SCRIPT" --repo example/repo --pr 99 --output "$out" --interval-seconds 1 "$@" 2>&1
 }
 
 output_value() {  # <output-file> <key>
@@ -150,6 +150,9 @@ test_usage_errors_are_refused() {
   rc=0
   "$SCRIPT" --repo example/repo --pr 99 >/dev/null 2>&1 || rc=$?
   expect_code 2 "$rc" "a missing --output should be a usage error"
+  rc=0
+  "$SCRIPT" --repo example/repo --pr 99 --output "$TMP_ROOT/unused" --interval-seconds 0 >/dev/null 2>&1 || rc=$?
+  expect_code 2 "$rc" "a zero poll interval should be a usage error instead of a tight gh api spin"
   pass "usage errors are refused before any pull request read"
 }
 

@@ -40,7 +40,7 @@ done
 case "$REPO" in */*) ;; *) echo "error: --repo must be <owner/name>" >&2; exit 2 ;; esac
 case "$PR" in ''|*[!0-9]*) echo "error: --pr must be a number" >&2; exit 2 ;; esac
 case "$TIMEOUT" in ''|*[!0-9]*) echo "error: --timeout-seconds must be a number" >&2; exit 2 ;; esac
-case "$INTERVAL" in ''|*[!0-9]*) echo "error: --interval-seconds must be a number" >&2; exit 2 ;; esac
+case "$INTERVAL" in ''|*[!0-9]*|0) echo "error: --interval-seconds must be a positive number of seconds" >&2; exit 2 ;; esac
 [ -n "$OUT" ] || { echo "error: --output is required" >&2; exit 2; }
 
 attested_head() {  # <body>
