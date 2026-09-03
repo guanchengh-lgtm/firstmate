@@ -9,6 +9,7 @@ usage: fm-pr-attestation-live.sh --repo <owner/name> --pr <number> --output <fil
 no-mistakes pushes a new head first and edits the pull request body to attest that head second.
 The synchronize event therefore carries a frozen body that still attests the previous head, so a gate that judges the event payload fails on every pipeline fix push, and a rerun replays the same stale payload.
 This script reads the live pull request through `gh api` and polls until the body attests the live head or the timeout passes (default 180 seconds, polled every 10 seconds).
+--interval-seconds must be at least 1 second, because a zero interval spins on the GitHub API for the whole timeout.
 It writes head_sha, attested_sha, converged, and body to <file> in GITHUB_OUTPUT form and never judges the attestation itself.
 The pinned gate action judges those live values, so a push that is never re-attested still fails once the timeout passes.
 Exit 0 when the live pull request was read, 1 when every `gh api` attempt failed, 2 on a usage error.

@@ -492,6 +492,26 @@ test_relaunch_requires_a_note_for_a_ship_task() {
   pass "fm-control relaunch: a ship task refuses without the progress note its replacement needs"
 }
 
+# A value-taking flag that is followed by another flag, or ends the argument
+# list, must refuse under the spelling the operator actually typed. The parser
+# carries the flag token through both refusal paths, so neither can name an
+# invented flag the help text does not list.
+test_a_value_taking_flag_refuses_under_its_own_spelling() {
+  local dir out rc
+  dir=$(new_case flagvalue rl3b)
+  add_ship_task "$dir" rl3b claude
+  out=$(run_control "$dir" rl3b relaunch --note-file --model gpt); rc=$?
+  expect_code 1 "$rc" "a --note-file with no value should refuse"
+  assert_contains "$out" "--note-file requires a value" \
+    "the refusal must name --note-file, the flag the operator typed"
+  out=$(run_control "$dir" rl3b relaunch --note-file); rc=$?
+  expect_code 1 "$rc" "a trailing --note-file should refuse"
+  assert_contains "$out" "--note-file requires a value" \
+    "the end-of-arguments refusal must name --note-file too"
+  [ "$(cat "$dir/fake/command")" = claude ] || fail "a refused relaunch must not stop the agent"
+  pass "fm-control relaunch: a value-less --note-file refuses under the flag name the operator typed"
+}
+
 # --- 2. harness switch -------------------------------------------------------
 
 test_harness_switch_moves_the_record_and_clears_prior_wiring() {
@@ -1620,6 +1640,7 @@ test_relaunch_serializes_concurrent_durable_metadata_publication
 test_disabled_relaunch_clears_prior_trace_context
 test_relaunch_appends_the_progress_note_to_the_instructions
 test_relaunch_requires_a_note_for_a_ship_task
+test_a_value_taking_flag_refuses_under_its_own_spelling
 test_harness_switch_moves_the_record_and_clears_prior_wiring
 test_harness_switch_does_not_carry_the_old_profile_axes
 test_harness_switch_resolves_a_prefixed_recorded_harness
