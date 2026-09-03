@@ -294,10 +294,6 @@ github_read_outcome() {
     echo "error: could not read the GitHub pull request outcome after the merge attempt; PR metadata and merge poll remain recorded" >&2
     return 1
   fi
-  # Only a failed gh read falls back. A gh read that completes and reports the
-  # pull request as neither merged nor queued is a concrete outcome, not a
-  # missing one, so it keeps its own refusal. The gh-axi view cannot observe the
-  # merge queue, so it can only turn this into a proved merge or into a refusal.
   github_read_outcome_with_gh && return 0
   if github_read_outcome_with_gh_axi && [ "$FM_PR_GITHUB_MERGED" = true ]; then
     return 0

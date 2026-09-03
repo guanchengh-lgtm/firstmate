@@ -790,8 +790,6 @@ test_upstream_branch_prefix_boundary() {
 }
 
 
-# GitHub outcome read-back and merge-outcome publication, imported from U.
-
 add_gh_mocks_merge_prints() {
   local case_dir=$1 head=$2
   local msg=${3:-}

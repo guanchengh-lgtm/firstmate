@@ -10,17 +10,12 @@
 # and tells you to have the crewmate rebase. See AGENTS.md prime directives,
 # project management, and task lifecycle.
 #
-# --exact-sync lands a synthesized two-parent merge commit M (tip of fm/<id>)
-# onto <remote>/<branch> after the ExactSyncRequest guards pass. It never opens
-# a PR, never calls bin/fm-pr-merge.sh, and never passes --force or
-# --force-with-lease to git. Usage:
+# Usage:
 #   fm-merge-local.sh <task-id>
 #   fm-merge-local.sh <task-id> --exact-sync --base <40-hex B> --upstream <40-hex U> \
 #     --stage <40-hex S> --remote origin --branch main
 set -eu
 
-# FM_ROOT is the tree that contains this executed copy (F3.5). FM_HOME is the
-# caller's home and may be a different directory.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FM_HOME="${FM_HOME:-$FM_ROOT}"
@@ -48,7 +43,6 @@ fm_exact_sync_refuse_force_argv() {
   done
 }
 
-# ExactSyncRequest { task_id, --base B, --upstream U, --stage S, --remote, --branch }
 fm_exact_sync_hex_sha() {
   local LC_ALL=C
   [[ "${1-}" =~ ^[0-9a-f]{40}$ ]]

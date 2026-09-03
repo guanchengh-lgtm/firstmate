@@ -1220,9 +1220,6 @@ work_is_landed() {
   content_in_default
 }
 
-# The completion links this teardown already holds locally. A scout's
-# deliverable is its report, a local-only ship lands on local main, and every
-# other ship carries the PR recorded on its own record.
 BACKLOG_DONE_ARGS=()
 backlog_done_args() {
   local data_relative
@@ -1242,10 +1239,6 @@ backlog_done_args() {
   esac
 }
 
-# Closing the backlog item is this script's own last act on the record, not a
-# printed instruction for a later turn (bin/fm-backlog-transition-lib.sh owns the
-# invariant). This prints what already happened, so the follow-up wording stays
-# only where a human still owes the edit.
 backlog_refresh_reminder() {
   local backlog_display
   [ "$KIND" = secondmate ] && return 0
@@ -3186,9 +3179,6 @@ rm -f "$STATE/$ID.turn-ended" \
 # retired endpoint; teardown only runs after landing is confirmed, so any
 # leftover unhandled steer here is moot rather than unlanded work.
 rm -rf "$STATE/$ID.inbox"
-# The record is gone, so the backlog must not still show this task in flight
-# when teardown reports success. Still under this task's meta lock, so a steer
-# racing the same id stays serialized exactly as it was before.
 if [ "$BACKLOG_CLOSED" = 1 ]; then
   BACKLOG_CLOSE_MARKER=$(fm_backlog_close_marker_path "$STATE" "$ID") || exit 1
   if ! fm_backlog_atomic_transition close "$STATE/$ID.meta" "$BACKLOG_CLOSE_MARKER" \
@@ -3199,9 +3189,6 @@ if [ "$BACKLOG_CLOSED" = 1 ]; then
     exit 1
   fi
 elif [ "$KIND" = secondmate ] && [ ! -e "$STATE" ] && [ ! -L "$STATE" ]; then
-  # A nested remote retirement can keep its route record inside the home being
-  # removed. remove_firstmate_home above already performed that physical
-  # deletion; do not turn its confirmed absence into a false cleanup failure.
   :
 else
   if ! fm_backlog_atomic_transition remove "$STATE/$ID.meta" "task record" "$STATE"; then
@@ -3217,8 +3204,6 @@ META_LOCK_HELD=0
 if [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$MODE" != local-only ]; then
   "$FM_ROOT/bin/fm-fleet-sync.sh" "$PROJ" || true
 fi
-# A secondmate retirement may remove the home containing an overridden control
-# state directory. Do not let the side-band refresh recreate that retired home.
 if [ -d "$STATE" ]; then
   "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
 fi
