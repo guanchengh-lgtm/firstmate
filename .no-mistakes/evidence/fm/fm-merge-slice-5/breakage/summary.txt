@@ -1,0 +1,105 @@
+Manufactured breakage - one code line broken per changed test file, test run red, line restored, worktree verified clean.
+
+RED  tests/fm-captain-hold-lifecycle.test.sh
+  subject: bin/fm-captain-hold.sh:1131 (status line text captain-held -> captain-hold)
+  first failing assertion: captain-held transfer did not close the live status decisions: route	needs-decision	choose route north or route south
+  red artifact: /Users/AI/.no-mistakes/evidence/01M1KY1Z1AZKH2Y7EPK121AFSF/breakage/fm-captain-hold-lifecycle.red.log
+  restored, git status --porcelain empty before next breakage
+
+RED  tests/fm-classify-corr-token.test.sh
+  subject: bin/fm-classify-lib.sh:298 (corr-token skip branch deleted (false && continue))
+  first failing assertion: a needs-decision carrying a correlation token did not open its key:
+  red artifact: /Users/AI/.no-mistakes/evidence/01M1KY1Z1AZKH2Y7EPK121AFSF/breakage/fm-classify-corr-token.red.log
+  restored, git status --porcelain empty before next breakage
+
+RED  tests/fm-claude-stop-autoarm.test.sh
+  subject: bin/fm-claude-stop-autoarm.sh:245 (actionable pattern drops signal:)
+  first failing assertion: concurrent firings must foreground exactly one arm, saw 2
+  red artifact: /Users/AI/.no-mistakes/evidence/01M1KY1Z1AZKH2Y7EPK121AFSF/breakage/fm-claude-stop-autoarm.red.log
+  restored, git status --porcelain empty before next breakage
+
+RED  tests/fm-control-relaunch.test.sh
+  subject: bin/fm-control.sh:795 (ship/scout --note guard deleted (true))
+  first failing assertion: a ship relaunch without a note should refuse: expected exit 1, got 0
+  red artifact: /Users/AI/.no-mistakes/evidence/01M1KY1Z1AZKH2Y7EPK121AFSF/breakage/fm-control-relaunch.red.log
+  restored, git status --porcelain empty before next breakage
+
+RED  tests/fm-procevent-quota.test.sh
+  subject: bin/fm-procevent-quota.sh:120 (runway status exhausted_now -> exhausted_soon)
+  first failing assertion: default aggregate poll did not report exhaustion
+  red artifact: /Users/AI/.no-mistakes/evidence/01M1KY1Z1AZKH2Y7EPK121AFSF/breakage/fm-procevent-quota.red.log
+  restored, git status --porcelain empty before next breakage
+
+RED  tests/fm-procevent.test.sh
+  subject: bin/fm-procevent.sh:288 (adapter terminal verdict negated)
+  first failing assertion: the runner reports the adapter-driven retirement (missing: 'retired: ends-src')
+  red artifact: /Users/AI/.no-mistakes/evidence/01M1KY1Z1AZKH2Y7EPK121AFSF/breakage/fm-procevent.red.log
+  restored, git status --porcelain empty before next breakage
+
+RED  tests/fm-public-followup.test.sh
+  subject: bin/fm-public-followup-lib.sh:209 (newline collapse tr replaced by cat)
+  first failing assertion: non-ASCII outcome text was corrupted or not collapsed: 'Shipped	the café fix — 🚢
+  red artifact: /Users/AI/.no-mistakes/evidence/01M1KY1Z1AZKH2Y7EPK121AFSF/breakage/fm-public-followup.red.log
+  restored, git status --porcelain empty before next breakage
+
+RED  tests/fm-send-inbox.test.sh
+  subject: bin/fm-send.sh:782 (plain-text inbox plane selection deleted)
+  first failing assertion: the steer was not durably recorded at /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-send-inbox.6vCoey/rides/home/state/t1.inbox/001.msg
+  red artifact: /Users/AI/.no-mistakes/evidence/01M1KY1Z1AZKH2Y7EPK121AFSF/breakage/fm-send-inbox.red.log
+  restored, git status --porcelain empty before next breakage
+
+RED  tests/fm-send-remote-delivery.test.sh
+  subject: bin/fm-send.sh:842 (ssh 255 single-retry branch changed to 254)
+  first failing assertion: fm-send must retry the identical remote leg exactly once after ssh 255, got 1 attempts
+  red artifact: /Users/AI/.no-mistakes/evidence/01M1KY1Z1AZKH2Y7EPK121AFSF/breakage/fm-send-remote-delivery.red.log
+  restored, git status --porcelain empty before next breakage
+
+RED  tests/fm-send-resolve-key.test.sh
+  subject: bin/fm-wake-lib.sh:1782 (self-announce marker equality inverted)
+  first failing assertion: the answerer's own close was left to re-wake this same home
+  red artifact: /Users/AI/.no-mistakes/evidence/01M1KY1Z1AZKH2Y7EPK121AFSF/breakage/fm-send-resolve-key.red.log
+  restored, git status --porcelain empty before next breakage
+
+RED  tests/fm-turnend-guard.test.sh
+  subject: bin/fm-turnend-guard-cursor.sh:114 (PI_CODING_AGENT stand-down condition value changed)
+  first failing assertion: a Pi host with no Cursor identity armed through the Cursor park; that dual-watches against fm_watch_arm_pi
+  red artifact: /Users/AI/.no-mistakes/evidence/01M1KY1Z1AZKH2Y7EPK121AFSF/breakage/fm-turnend-guard.red.log
+  restored, git status --porcelain empty before next breakage
+
+RED  tests/fm-wake-drain-open-decisions.test.sh
+  subject: bin/fm-classify-lib.sh:352 (pre-colon key branch deleted)
+  first failing assertion: buried decision produced no OPEN DECISIONS section
+  red artifact: /Users/AI/.no-mistakes/evidence/01M1KY1Z1AZKH2Y7EPK121AFSF/breakage/fm-wake-drain-open-decisions.red.log
+  restored, git status --porcelain empty before next breakage
+
+RED  tests/fm-wake-drain-outcome-backstop.test.sh
+  subject: bin/fm-wake-drain.sh:429 (outcome suppression -ge -> -gt)
+  first failing assertion: a newer branch outcome or routine latest event was re-presented: STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+  red artifact: /Users/AI/.no-mistakes/evidence/01M1KY1Z1AZKH2Y7EPK121AFSF/breakage/fm-wake-drain-outcome-backstop.red.log
+  restored, git status --porcelain empty before next breakage
+
+RED  tests/fm-wake-drain-unread-status.test.sh
+  subject: bin/fm-classify-lib.sh:1460 (unread-surface filter inverted)
+  first failing assertion: fold advancement swallowed a post-snapshot append:
+  red artifact: /Users/AI/.no-mistakes/evidence/01M1KY1Z1AZKH2Y7EPK121AFSF/breakage/fm-wake-drain-unread-status.red.log
+  restored, git status --porcelain empty before next breakage
+
+RED  tests/fm-wake-queue.test.sh
+  subject: bin/fm-wake-lib.sh:1509 (durable queue append truncates instead of appending)
+  first failing assertion: expected final replay of 40 durable records, got 1
+  red artifact: /Users/AI/.no-mistakes/evidence/01M1KY1Z1AZKH2Y7EPK121AFSF/breakage/fm-wake-queue.red.log
+  restored, git status --porcelain empty before next breakage
+
+RED  tests/fm-watch-arm.test.sh
+  subject: bin/fm-watch-arm.sh:244 (recorded-pid comparison inverted)
+  first failing assertion: restart did not surface recovery after clearing a reused-pid lock
+  red artifact: /Users/AI/.no-mistakes/evidence/01M1KY1Z1AZKH2Y7EPK121AFSF/breakage/fm-watch-arm.red.log
+  restored, git status --porcelain empty before next breakage
+
+RED  tests/fm-pr-attestation-live.test.sh
+  subject: bin/fm-pr-attestation-live.sh:66 (attestation convergence test inverted)
+  first failing assertion: a matching attestation should need exactly one read, got 5
+  red artifact: /Users/AI/.no-mistakes/evidence/01M1KY1Z1AZKH2Y7EPK121AFSF/breakage/fm-pr-attestation-live.red.log
+  restored, git status --porcelain empty before next breakage
+
+final: git status --porcelain empty (clean worktree after all 17 restores)

@@ -1,0 +1,8 @@
+FM_TEST_BEGIN 2026-09-03T17:06:48Z tests/fm-wake-drain-outcome-backstop.test.sh family=unclassified expected_gate_skip=none
+ok - a newest keyless done, blocked, or needs-decision event with no newer branch outcome surfaces on the next main drain
+not ok - a newer branch outcome or routine latest event was re-presented: STATUS OUTCOME BACKSTOP (newest captain-facing task event has no covering branch outcome):
+covered done: already delivered completion
+FM_TEST_END 2026-09-03T17:06:51Z tests/fm-wake-drain-outcome-backstop.test.sh exit=1 duration_ms=3236 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=3324
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=3236 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-wake-drain-outcome-backstop.test.sh duration_ms=3236

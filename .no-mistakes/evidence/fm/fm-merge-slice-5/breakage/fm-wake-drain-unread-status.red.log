@@ -1,0 +1,15 @@
+FM_TEST_BEGIN 2026-09-03T17:06:51Z tests/fm-wake-drain-unread-status.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - a note: answer buried under a later routine note: is surfaced with both lines
+ok - already-presented note: lines are not re-surfaced on the next drain
+ok - a brand-new note: after presentation is surfaced without replaying handled lines
+ok - a queued status signal annotates every unread note, not only the newest
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 57814.1788455220.PFmp7C
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 57814.1788455220.PFmp7C
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 57814.1788455220.PFmp7C
+ok - a pending-reply resolution buried under a later note surfaces once and closes OPEN DECISIONS
+ok - unread status over the former byte cap preserves every line
+not ok - fold advancement swallowed a post-snapshot append: 
+FM_TEST_END 2026-09-03T17:07:05Z tests/fm-wake-drain-unread-status.test.sh exit=1 duration_ms=14180 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=14289
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=1 duration_ms=14180 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-wake-drain-unread-status.test.sh duration_ms=14180

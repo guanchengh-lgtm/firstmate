@@ -1,0 +1,15 @@
+FM_TEST_BEGIN 2026-09-03T17:06:42Z tests/fm-turnend-guard.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - fm_supervision_unhealthy: false with no state/*.meta at all
+ok - fm_supervision_unhealthy: true with in-flight task and no beacon ever
+ok - fm_supervision_unhealthy: true with in-flight task and a beacon far outside the grace window
+ok - fm_supervision_unhealthy: false with in-flight task and a fresh beacon
+ok - fm_supervision_status: FM_SUP_QUEUE_PENDING tracks state/.wake-queue
+ok - fm_supervision_needed: X-mode relay poll needs supervision
+ok - fm_supervision_unhealthy: source-only home needs supervision
+ok - fm-turnend-guard: silent no-op with nothing in flight
+ok - fm-turnend-guard-cursor: an ordinary Cursor stop parks and returns the watcher wake
+not ok - a Pi host with no Cursor identity armed through the Cursor park; that dual-watches against fm_watch_arm_pi
+FM_TEST_END 2026-09-03T17:06:47Z tests/fm-turnend-guard.test.sh exit=1 duration_ms=4702 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=4773
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=1 duration_ms=4702 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-turnend-guard.test.sh duration_ms=4702

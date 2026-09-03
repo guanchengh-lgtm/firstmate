@@ -1,0 +1,6 @@
+FM_TEST_BEGIN 2026-09-03T17:04:48Z tests/fm-classify-corr-token.test.sh family=unclassified expected_gate_skip=none
+not ok - a needs-decision carrying a correlation token did not open its key: 
+FM_TEST_END 2026-09-03T17:04:49Z tests/fm-classify-corr-token.test.sh exit=1 duration_ms=1182 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=1257
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=1182 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-classify-corr-token.test.sh duration_ms=1182

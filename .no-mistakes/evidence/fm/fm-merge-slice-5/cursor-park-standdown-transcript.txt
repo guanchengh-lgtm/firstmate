@@ -1,0 +1,24 @@
+=== 1. Ordinary Cursor stop: the hook parks, arms the watcher, and returns a wake follow-up ===
+stdout: {
+  "followup_message": "⁣FIRSTMATE_OP: v1 watcher: firstmate watcher wake - one supervision event needs a handling turn now.
+stale: fixture-win needs a look
+
+Run bin/fm-wake-drain.sh first, handle the wake, then run its exact WAKE_ACK_REQUIRED --ack-through command. Until that post-handling acknowledgement, interruption leaves the wake durable for idempotent re-handling. This stop hook owns watcher continuity: when the handling turn ends, the next needed cycle parks automatically - do NOT run bin/fm-watch-arm.sh after an ordinary wake."
+}
+exit: 0
+watcher armed: yes
+
+=== 2. Pi host (PI_CODING_AGENT=true, no Cursor identity): the hook stands down ===
+stdout: <empty>
+exit: 0
+watcher armed: no
+
+=== 3. Real Cursor session with a leaked PI_CODING_AGENT: the hook still parks ===
+stdout: {
+  "followup_message": "⁣FIRSTMATE_OP: v1 watcher: firstmate watcher wake - one supervision event needs a handling turn now.
+stale: fixture-win needs a look
+
+Run bin/fm-wake-drain.sh first, handle the wake, then run its exact WAKE_ACK_REQUIRED --ack-through command. Until that post-handling acknowledgement, interruption leaves the wake durable for idempotent re-handling. This stop hook owns watcher continuity: when the handling turn ends, the next needed cycle parks automatically - do NOT run bin/fm-watch-arm.sh after an ordinary wake."
+}
+exit: 0
+watcher armed: yes

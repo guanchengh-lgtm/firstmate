@@ -1,0 +1,14 @@
+$ # CI step: read the LIVE pull request instead of the frozen synchronize payload
+$ bin/fm-pr-attestation-live.sh --repo guanchengh-lgtm/firstmate --pr 99 --output "$GITHUB_OUTPUT" --interval-seconds 1
+live pull request guanchengh-lgtm/firstmate#99 head a72ce00a3956d947f1397cfddeb021e5ea681149 attested a72ce00a3956d947f1397cfddeb021e5ea681149 converged true after 1s
+exit=0
+
+$ cat "$GITHUB_OUTPUT"   # what the pinned signature action receives
+head_sha=a72ce00a3956d947f1397cfddeb021e5ea681149
+attested_sha=a72ce00a3956d947f1397cfddeb021e5ea681149
+converged=true
+body<<fm-pr-body-073ab6086b4b795b
+feat: harden wake ownership
+
+<!-- no-mistakes-pipeline-attestation:v1 {"head_sha": "a72ce00a3956d947f1397cfddeb021e5ea681149"} -->
+fm-pr-body-073ab6086b4b795b

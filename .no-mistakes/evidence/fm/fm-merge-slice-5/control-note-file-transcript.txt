@@ -1,0 +1,7 @@
+$ bin/fm-control.sh t1 relaunch --note-file --model gpt   # value missing; the refusal names the flag the user typed
+error: --note-file requires a value
+exit=1
+
+$ bin/fm-control.sh t1 relaunch --note-file                # trailing flag with no value
+error: --note-file requires a value
+exit=1

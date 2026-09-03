@@ -1,0 +1,23 @@
+FM_TEST_BEGIN 2026-09-03T17:07:43Z tests/fm-watch-arm.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - watch-arm: an undrained actionable wake closes the next arm for redelivery
+ok - watch-arm: an attached arm reports the wake its cycle delivered instead of a false failure
+ok - watch-arm: a delivered wake consumed by the handling turn still closes the attached arm cleanly
+ok - watch-arm: a cycle that delivered no wake of its own still fails loudly
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1KY1Z1AZKH2Y7EPK121AFSF/bin/fm-watch-arm.sh: line 622: 96200 Killed: 9               "$WATCH" > "$child_out"
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 98418.1788455298.W5GdnI
+ok - watch-arm: re-arm surfaces every queued wake and an open remote decision after downtime
+watcher: recovery state could not be persisted; retaining stale lock evidence
+ok - watch-arm: marker publication failure retains stale-lock recovery evidence
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 28336.1788455312.ObkYys
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 32650.1788455315.ypmlEi
+ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+ok - watch-arm: interrupted handling leaves its wake durable for successor re-drain
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation 59780.1788455328.EhWK1e
+ok - watch-arm: malformed recovery state is quarantined without a successor loop
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 67443.1788455332.oIsECc
+ok - watch-arm: publication after recovery handoff is surfaced
+not ok - restart did not surface recovery after clearing a reused-pid lock
+FM_TEST_END 2026-09-03T17:13:55Z tests/fm-watch-arm.test.sh exit=1 duration_ms=371972 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=372043
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=1 duration_ms=371972 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-watch-arm.test.sh duration_ms=371972

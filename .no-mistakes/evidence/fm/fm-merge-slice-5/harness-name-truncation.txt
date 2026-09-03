@@ -1,0 +1,6 @@
+=== Linux 15-char comm truncation: the fixture harness name still reads as a verified harness ===
+(procps reports the kernel exec name truncated to 15 characters; macOS reports argv[0] in full)
+  name=claude             reported-comm=claude             -> verified harness
+  name=claude             reported-comm=claude             -> verified harness
+  name=fake-cursor-claude reported-comm=fake-cursor-claude -> verified harness
+  name=fake-cursor-claude reported-comm=fake-cursor-cla    -> NOT a harness
