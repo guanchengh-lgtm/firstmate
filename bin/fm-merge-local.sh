@@ -10,6 +10,16 @@
 # and tells you to have the crewmate rebase. See AGENTS.md prime directives,
 # project management, and task lifecycle.
 #
+# --exact-sync is the second, wider authority on this script: it lands one
+# pinned upstream-merge commit M on the remote default branch (origin/main by
+# default) with no pull request. It is narrow in a different way: M is only the
+# tip of fm/<id>, every input SHA is pinned by the caller, and the landing runs
+# only after the whole gate chain in fm_exact_sync_run proves the two parents,
+# the recorded stage tree, an unchanged origin base, and green push-triggered CI
+# for exactly M. The push is plain and never forced, a re-run against an already
+# landed M is idempotent, and the landing is recorded as a sync outcome through
+# bin/fm-merge-outcome-lib.sh.
+#
 # Usage:
 #   fm-merge-local.sh <task-id>
 #   fm-merge-local.sh <task-id> --exact-sync --base <40-hex B> --upstream <40-hex U> \
