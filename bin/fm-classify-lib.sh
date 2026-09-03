@@ -1904,3 +1904,20 @@ stale_is_terminal() {  # <window> <state>
   last=$(last_status_line "$state/$(window_to_task "$win" "$state").status")
   [ -n "$last" ] && status_is_captain_relevant "$last"
 }
+
+# Print "<file>\t<task>\t<last-line>" for every state/*.status whose last line is
+# captain-relevant. This is the cheap fleet-scan both supervisors run as a
+# catch-all backstop for a captain-relevant status the per-wake path might miss.
+# No dedup is applied here: each consumer dedupes against its own seen-state (the
+# daemon against .subsuper-seen-status-*, the watcher against .seen-* signatures).
+scan_captain_relevant_statuses() {  # <state>
+  local state=$1 f last task
+  for f in "$state"/*.status; do
+    [ -e "$f" ] || continue
+    last=$(last_status_line "$f")
+    status_is_captain_relevant "$last" || continue
+    task=$(basename "$f"); task="${task%.status}"
+    printf '%s\t%s\t%s\n' "$f" "$task" "$last"
+  done
+  return 0
+}

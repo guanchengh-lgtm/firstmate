@@ -1653,19 +1653,14 @@ fm_wake_print_deduped() {
 # These helpers own wake-facing marker routing, the legacy turn-ended signature,
 # drain-time staleness checks, and guarded bookkeeping writes.
 
-fm_wake_signal_sig() {  # <file> -> reported-state signature
-  case "$1" in
-    *.status)
-      # Bare r1. S1 fm-watch.sh scan_signals TSV-embeds this string and
-      # byte-compares it to .seen-*, so a v2 marker (tabs) would split and
-      # every status file would look new.
-      _fm_wake_require_classify || return 1
-      status_observed_signature "$1"
-      ;;
-    *)
-      if [ "$_FM_UNAME" = Darwin ]; then stat -f '%z:%Fm' "$1" 2>/dev/null; else stat -c '%s:%Y' "$1" 2>/dev/null; fi
-      ;;
-  esac
+fm_wake_signal_sig() {  # <file> -> "size:mtime"
+  # Landed S1 fm-watch.sh byte-compares this value with its .seen-* marker.
+  # Keep that wire format until the watcher adopts presentation markers.
+  if [ "$_FM_UNAME" = Darwin ]; then
+    stat -f '%z:%Fm' "$1" 2>/dev/null
+  else
+    stat -c '%s:%Y' "$1" 2>/dev/null
+  fi
 }
 
 fm_wake_signal_seen_path() {  # <state> <file>
@@ -1707,15 +1702,18 @@ fm_wake_signal_seen_size() {  # <state> <file>
 # A missing marker or unreadable signature is not a match, so uncertainty reads
 # as an unreported state.
 fm_wake_signal_seen_current() {  # <state> <file>
-  local sig marker
+  local sig marker reported raw
   sig=$(fm_wake_signal_sig "$2") || return 1
   [ -n "$sig" ] || return 1
   marker=$(fm_wake_signal_seen_path "$1" "$2")
-  [ "$(cat "$marker" 2>/dev/null)" = "$sig" ] && return 0
+  raw=$(cat "$marker" 2>/dev/null) || raw=
+  [ "$raw" = "$sig" ] && return 0
   case "$2" in
     *.status)
       _fm_wake_require_classify || return 1
-      status_presentation_marker_reported_matches "$marker" "$sig"
+      reported=$(status_observed_signature "$2") || return 1
+      [ "$raw" = "$reported" ] && return 0
+      status_presentation_marker_reported_matches "$marker" "$reported"
       ;;
     *) return 1 ;;
   esac
@@ -1760,22 +1758,23 @@ fm_wake_status_mark_current() {  # <state> <status-file>
 # Returns 0 appended and self-announced, 1 appended but left for the watcher
 # (the safe direction), 2 the append itself failed.
 fm_wake_status_append_self_announced() {  # <state> <status-file> <line>
-  local state=$1 file=$2 line=$3 marker pre_sig='' pre_size='' pre_ident='' post_size post_ident post_sig
+  local state=$1 file=$2 line=$3 marker pre_sig='' pre_reported='' pre_size='' pre_ident='' post_size post_ident post_sig
   local LC_ALL=C
   _fm_wake_require_classify || return 1
   marker=$(fm_wake_signal_seen_path "$state" "$file")
   if [ -e "$file" ]; then
     pre_sig=$(fm_wake_signal_sig "$file") || pre_sig=''
+    pre_reported=$(status_observed_signature "$file") || pre_reported=''
     pre_size=$(_fm_status_file_size "$file") || pre_size=''
     pre_ident=$(_fm_open_decisions_file_ident "$file") || pre_ident=''
   fi
   printf '%s\n' "$line" >> "$file" || return 2
   [ -n "$pre_sig" ] || return 1
-  # S1 prime_status_seen writes the raw reported signature (r1:…). U's
-  # presentation parse rejects a bare r1 marker, so accept exact-signature
-  # equality first; fall back to the v2 presentation cursor when present.
+  # S1 prime_status_seen writes the raw size:mtime signature. Accept it first;
+  # fall back to the v2 presentation cursor when present.
   if [ "$(cat "$marker" 2>/dev/null)" != "$pre_sig" ]; then
-    status_presentation_marker_reported_matches "$marker" "$pre_sig" || return 1
+    [ -n "$pre_reported" ] || return 1
+    status_presentation_marker_reported_matches "$marker" "$pre_reported" || return 1
     [ "$(status_presentation_marker_offset "$marker" "$file")" = "$pre_size" ] || return 1
   fi
   post_size=$(_fm_status_file_size "$file") || return 1
@@ -1783,7 +1782,7 @@ fm_wake_status_append_self_announced() {  # <state> <status-file> <line>
   case "$pre_size$post_size" in ''|*[!0-9]*) return 1 ;; esac
   [ -n "$pre_ident" ] && [ "$post_ident" = "$pre_ident" ] || return 1
   [ "$post_size" -eq $((pre_size + ${#line} + 1)) ] || return 1
-  # Write the S1-compared r1 signature. A v2 commit here makes landed
+  # Write the S1-compared size:mtime signature. A v2 commit here makes landed
   # fm-watch.sh scan_signals treat the file as new on every cycle.
   post_sig=$(fm_wake_signal_sig "$file") || return 1
   printf '%s' "$post_sig" > "$marker" 2>/dev/null || return 1
