@@ -1,0 +1,5 @@
+/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.66VPDesCFM/f33.sh: line 58: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.66VPDesCFM/fixtures.sh: No such file or directory
+not ok - synthesized-merge-landed: teardown should treat a squash-then-reparent merge as landed: REFUSED: worktree /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-teardown-tests.pXmAkR/synthesized-merge-landed/wt has work not on any remote and not landed.
+unpushed commits:
+b3e6303 add feature
+Push the branch, land its PR, or get the captain's explicit OK to discard, then --force.: expected exit 0, got 1

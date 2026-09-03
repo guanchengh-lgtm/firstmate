@@ -1,0 +1,61 @@
+warning: You appear to have cloned an empty repository.
+ok - --force is refused before any exact-sync landing
+warning: You appear to have cloned an empty repository.
+ok - stale origin/main is refused
+warning: You appear to have cloned an empty repository.
+ok - wrong --upstream is refused
+warning: You appear to have cloned an empty repository.
+ok - tree mismatch against --stage is refused
+warning: You appear to have cloned an empty repository.
+ok - conflict markers in tree(M) are refused
+warning: You appear to have cloned an empty repository.
+ok - pr.base_branch in tree(M) is refused
+warning: You appear to have cloned an empty repository.
+ok - missing CI evidence is refused
+warning: You appear to have cloned an empty repository.
+ok - red CI evidence is refused
+warning: You appear to have cloned an empty repository.
+Switched to a new branch 'diverged'
+ok - non-fast-forward origin/main is refused
+warning: You appear to have cloned an empty repository.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+ok - happy path lands M and a second run is idempotent
+ok - foreign-tree copy sources its own guard and lease lib
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ok - ordinary local-only fast-forward is unchanged
+ok - outcome-sync records a git identity and refuses illegal fields
+ok - outcome-sync secondmate line uses remote/branch@sha
+ok - outcome-sync returns 3 when the home role is unreadable
+warning: You appear to have cloned an empty repository.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ok - matrix job name templates match the expanded CI job name
+warning: You appear to have cloned an empty repository.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ok - a Markdown setext underline is not read as a conflict marker
+ok - exact-sync request flags without --exact-sync refuse and never move main

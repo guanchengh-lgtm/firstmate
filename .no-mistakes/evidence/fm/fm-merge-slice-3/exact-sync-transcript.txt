@@ -1,0 +1,41 @@
+### pins:  B=35c529759b53e53b1e27dd8bc02699f587a66eae  U=e5aa0d62dc372824a11dff602ad6f1cf6b4272fb  S=acb1be65702a775150160d757523f718b539a6fc  M=f8167b2dcf4eb9cc41af68ce69ee8822e967d9fb
+
+$ fm-merge-local.sh task-demo --exact-sync --force --base B --upstream U --stage S
+REFUSED: exact-sync and local-only landing never take --force
+exit=1
+
+$ fm-merge-local.sh task-demo --base B --upstream U --stage S     # dropped --exact-sync
+error: --base/--upstream/--stage/--remote/--branch require --exact-sync
+exit=2
+
+$ fm-merge-local.sh task-demo --exact-sync --base <WRONG-U-as-base> --upstream U --stage S
+REFUSED: f8167b2dcf4eb9cc41af68ce69ee8822e967d9fb parents are 35c529759b53e53b1e27dd8bc02699f587a66eae e5aa0d62dc372824a11dff602ad6f1cf6b4272fb, not --base e5aa0d62dc372824a11dff602ad6f1cf6b4272fb and --upstream e5aa0d62dc372824a11dff602ad6f1cf6b4272fb
+exit=1
+
+$ fm-merge-local.sh task-demo --exact-sync --base B --upstream U --stage S --remote origin --branch main
+To /Users/AI/.no-mistakes/evidence/01M1MBM0NVCR45CFWMMWKE9W8G/demo-run/origin.git
+ 	f8167b2dcf4eb9cc41af68ce69ee8822e967d9fb:refs/heads/main	35c5297..f8167b2
+Done
+exact-sync landed f8167b2dcf4eb9cc41af68ce69ee8822e967d9fb on origin/main
+exit=0
+
+$ git -C origin.git log --oneline -1 main ; parents of main
+f8167b2 merge upstream/main into main
+main == M : yes
+parents   : 35c529759b53e53b1e27dd8bc02699f587a66eae e5aa0d62dc372824a11dff602ad6f1cf6b4272fb
+tree(main) == tree(S) : yes
+
+$ fm-merge-local.sh task-demo --exact-sync ...   # idempotent re-run
+WARNING: queued wakes pending - drain them with bin/fm-wake-drain.sh before anything else.
+exact-sync already on origin/main at f8167b2dcf4eb9cc41af68ce69ee8822e967d9fb
+exit=0
+
+### recorded sync outcome (fm-merge-outcome-lib.sh):
+--- state/.wake-queue
+1788467637	1	check	merged-task-demo-sync-origin-main-f8167b2dcf4eb9cc41af68ce69ee8822e967d9fb	check: merge landed: task-demo origin/main@f8167b2dcf4eb9cc41af68ce69ee8822e967d9fb
+--- state/task-demo.pr-poll-merge-notified (dedup identity)
+fm-pr-poll-merge-notified-v1
+git
+origin
+main
+f8167b2dcf4eb9cc41af68ce69ee8822e967d9fb
