@@ -135,7 +135,12 @@ test_unreadable_pull_request_fails() {
 }
 
 test_usage_errors_are_refused() {
-  local rc
+  local option rc
+  for option in --repo --pr --output --timeout-seconds --interval-seconds; do
+    rc=0
+    "$SCRIPT" "$option" >/dev/null 2>&1 || rc=$?
+    expect_code 2 "$rc" "$option without a value should be a usage error"
+  done
   rc=0
   "$SCRIPT" --repo example --pr 99 --output "$TMP_ROOT/unused" >/dev/null 2>&1 || rc=$?
   expect_code 2 "$rc" "a repo without an owner should be a usage error"

@@ -23,11 +23,16 @@ TIMEOUT=180
 INTERVAL=10
 while [ "$#" -gt 0 ]; do
   case "$1" in
-    --repo) REPO="${2:-}"; shift 2 ;;
-    --pr) PR="${2:-}"; shift 2 ;;
-    --output) OUT="${2:-}"; shift 2 ;;
-    --timeout-seconds) TIMEOUT="${2:-}"; shift 2 ;;
-    --interval-seconds) INTERVAL="${2:-}"; shift 2 ;;
+    --repo|--pr|--output|--timeout-seconds|--interval-seconds)
+      [ "$#" -ge 2 ] || { echo "error: $1 requires a value" >&2; exit 2; }
+      ;;
+  esac
+  case "$1" in
+    --repo) REPO=$2; shift 2 ;;
+    --pr) PR=$2; shift 2 ;;
+    --output) OUT=$2; shift 2 ;;
+    --timeout-seconds) TIMEOUT=$2; shift 2 ;;
+    --interval-seconds) INTERVAL=$2; shift 2 ;;
     *) echo "error: unknown argument: $1" >&2; exit 2 ;;
   esac
 done
