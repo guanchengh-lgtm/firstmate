@@ -136,6 +136,47 @@ SH
   chmod +x "$case_dir/fakebin/tasks-axi"
 }
 
+break_start_after_writing_worktree() {  # <case-dir>
+  local case_dir=$1 real
+  real=$(command -v tasks-axi)
+  cat > "$case_dir/fakebin/tasks-axi" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = start ]; then
+  printf '%s\n' 'worker result' > "$case_dir/wt/worker-result.txt"
+  echo 'error: "backlog is unwritable"' >&2
+  exit 1
+fi
+exec "$real" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/tasks-axi"
+}
+
+track_spawn_treehouse_returns() {  # <case-dir>
+  local case_dir=$1
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+[ "\${1:-}" != return ] || : > "$case_dir/treehouse-returned"
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+}
+
+break_spawn_endpoint_retirement() {  # <case-dir> <id>
+  local case_dir=$1 id=$2
+  cat > "$case_dir/fakebin/tmux" <<SH
+#!/usr/bin/env bash
+case "\$*" in *"#{pane_current_path}"*) printf '%s\n' "\${FM_FAKE_PANE_PATH:-}"; exit 0 ;; esac
+case "\${1:-}" in
+  display-message) printf 'firstmate\n'; exit 0 ;;
+  list-windows) [ ! -e "$case_dir/endpoint-created" ] || printf '%s\n' "fm-$id"; exit 0 ;;
+  new-window) : > "$case_dir/endpoint-created"; printf '@1\n'; exit 0 ;;
+  kill-window) exit 1 ;;
+esac
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/tmux"
+}
+
 interrupt_spawn_during_start() {  # <case-dir> <before|after>
   local case_dir=$1 timing=$2 real
   real=$(command -v tasks-axi)
@@ -821,9 +862,52 @@ test_dispatch_leaves_no_record_when_the_transition_fails() {
     "a failed backlog transition left an orphaned record behind"
   assert_absent "$(home_of "$case_dir")/state/$id.busy-state" \
     "a failed backlog transition left the task's armed busy generation behind"
+  assert_absent "$(home_of "$case_dir")/state/home-summary.json" \
+    "a failed backlog transition published provisional endpoint summary data"
   [ "$(row_state "$case_dir" "$id")" = queued ] \
     || fail "a failed dispatch left the backlog item in $(row_state "$case_dir" "$id")"
   pass "a failed backlog transition fails the dispatch loudly and leaves no record"
+}
+
+test_dispatch_preserves_local_work_before_returning_the_lease() {
+  local case_dir id out rc=0
+  id=atomic-dispatch-worker-work-b7
+  case_dir=$(make_home dispatch-worker-work "$id")
+  add_item "$case_dir" "$id"
+  break_start_after_writing_worktree "$case_dir"
+  track_spawn_treehouse_returns "$case_dir"
+
+  out=$(run_ship_spawn "$case_dir" "$id") || rc=$?
+  [ "$rc" -ne 0 ] || fail "spawn succeeded after its dispatch transition failed"
+  assert_grep 'worker result' "$case_dir/wt/worker-result.txt" \
+    "failed dispatch discarded work created after launch"
+  assert_absent "$case_dir/treehouse-returned" \
+    "failed dispatch force-returned a worktree containing worker changes"
+  assert_absent "$(home_of "$case_dir")/state/$id.meta" \
+    "failed dispatch retained metadata after confirmed endpoint retirement"
+  pass "dispatch failure preserves worker changes instead of force-returning their lease"
+}
+
+test_dispatch_keeps_ownership_when_endpoint_retirement_fails() {
+  local case_dir id out rc=0
+  id=atomic-dispatch-retirement-fails-b7
+  case_dir=$(make_home dispatch-retirement-fails "$id")
+  add_item "$case_dir" "$id"
+  break_verb "$case_dir" start
+  break_spawn_endpoint_retirement "$case_dir" "$id"
+  track_spawn_treehouse_returns "$case_dir"
+
+  out=$(run_ship_spawn "$case_dir" "$id") || rc=$?
+  [ "$rc" -ne 0 ] || fail "spawn succeeded after transition and endpoint retirement failed"
+  assert_contains "$out" "after retirement, not missing" \
+    "failed endpoint retirement did not explain retained ownership"
+  assert_present "$(home_of "$case_dir")/state/$id.meta" \
+    "failed endpoint retirement removed the standard task owner"
+  assert_present "$(home_of "$case_dir")/state/$id.busy-state" \
+    "failed endpoint retirement removed the owned busy generation"
+  assert_absent "$case_dir/treehouse-returned" \
+    "failed endpoint retirement returned the owned worktree"
+  pass "dispatch failure keeps ownership until endpoint retirement is confirmed"
 }
 
 test_dispatch_reports_an_incomplete_record_rollback() {

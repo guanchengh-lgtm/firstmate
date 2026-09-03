@@ -891,6 +891,7 @@ SPAWN_META_LOCK_HELD=0
 SPAWN_META_PUBLISH_STARTED=0
 SPAWN_FRESH_COMMIT_PENDING=0
 SPAWN_FRESH_BUSY_PENDING=0
+SPAWN_ABORT_ENDPOINT_RETIRED=0
 SPAWN_TASK_SET_LOCK=
 SPAWN_TASK_SET_LOCK_HELD=0
 RELAUNCH_REPLACEMENT_PENDING=0
@@ -901,6 +902,8 @@ RELAUNCH_REPLACEMENT_WT=
 VERIFIER_HANDOFF_ABORT_ENDPOINT=0
 VERIFIER_HANDOFF_ABORT_BACKEND=
 VERIFIER_HANDOFF_ABORT_TARGET=
+VERIFIER_HANDOFF_ORIGINAL_META=
+VERIFIER_HANDOFF_ORIGINAL_META_SET=0
 CONFIG_INHERIT_LOCK=
 CONFIG_INHERIT_LOCK_HELD=0
 
@@ -942,14 +945,107 @@ spawn_arm_created_endpoint() {  # <backend> <target>
   fi
 }
 
-spawn_fresh_commit_rollback() {
-  if fm_backlog_atomic_transition rollback "$STATE/$ID.meta" \
-      "$FM_ROOT/bin/fm-busy-event.sh" "$STATE" "$ID" "${BUSY_GEN:-}"; then
-    SPAWN_FRESH_COMMIT_PENDING=0
-    SPAWN_FRESH_BUSY_PENDING=0
-    return 0
+spawn_retire_pending_endpoint() {
+  local backend target endpoint_state
+  [ "$SPAWN_ABORT_ENDPOINT_RETIRED" = 0 ] || return 0
+  if [ "$HERDR_PROJECTION_ABORT_CLEANUP" = 1 ]; then
+    if [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" != 1 ] \
+       && ! spawn_herdr_presentation_order_lock_acquire "$HERDR_PROJECTION_ABORT_SESSION"; then
+      FM_BACKLOG_TRANSITION_ERROR="fresh Herdr endpoint retirement lock is unavailable"
+      return 1
+    fi
+    if [ "$HERDR_PROJECTION_ABORT_RECLAIM" = 1 ]; then
+      fm_backend_herdr_projection_abort_reclaim \
+        "$HERDR_PROJECTION_ABORT_SESSION" \
+        "$HERDR_PROJECTION_ABORT_JOURNAL" "$ID" \
+        "$HERDR_PROJECTION_ABORT_OLD_TAB" \
+        "$HERDR_PROJECTION_ABORT_OLD_PANE" \
+        "$HERDR_PROJECTION_ABORT_TASK_TAB" \
+        "$HERDR_PROJECTION_ABORT_TASK_PANE" || {
+          FM_BACKLOG_TRANSITION_ERROR="fresh Herdr endpoint could not be retired"
+          return 1
+        }
+    else
+      fm_backend_herdr_projection_cleanup_exact \
+        "$HERDR_PROJECTION_ABORT_SESSION" \
+        "$HERDR_PROJECTION_ABORT_TASK_PANE" \
+        "$HERDR_PROJECTION_ABORT_SEEDED_PANE"
+    fi
+    backend=herdr
+    target="$HERDR_PROJECTION_ABORT_SESSION:$HERDR_PROJECTION_ABORT_TASK_PANE"
+  elif [ "$VERIFIER_HANDOFF_ABORT_ENDPOINT" = 1 ]; then
+    backend=$VERIFIER_HANDOFF_ABORT_BACKEND
+    target=$VERIFIER_HANDOFF_ABORT_TARGET
+    fm_backend_kill "$backend" "$target" >/dev/null 2>&1 || {
+      FM_BACKLOG_TRANSITION_ERROR="fresh verifier endpoint could not be retired"
+      return 1
+    }
+  elif [ "$FRESH_ABORT_ENDPOINT" = 1 ]; then
+    backend=$FRESH_ABORT_BACKEND
+    target=$FRESH_ABORT_TARGET
+    fm_backend_kill "$backend" "$target" >/dev/null 2>&1 || {
+      FM_BACKLOG_TRANSITION_ERROR="fresh endpoint could not be retired"
+      return 1
+    }
+  elif [ "$ORCA_ABORT_CLEANUP" = 1 ] && [ -n "${ORCA_TERMINAL:-}" ]; then
+    backend=orca
+    target=$ORCA_TERMINAL
+    fm_backend_kill "$backend" "$target" >/dev/null 2>&1 || {
+      FM_BACKLOG_TRANSITION_ERROR="fresh Orca endpoint could not be retired"
+      return 1
+    }
+  else
+    FM_BACKLOG_TRANSITION_ERROR="fresh endpoint has no retirement owner"
+    return 1
   fi
-  return 1
+  endpoint_state=$(fm_backend_agent_state "$backend" "$target") \
+    || endpoint_state=unreadable
+  if [ "$endpoint_state" != missing ]; then
+    FM_BACKLOG_TRANSITION_ERROR="fresh $backend endpoint reads '$endpoint_state' after retirement, not missing"
+    return 1
+  fi
+  SPAWN_ABORT_ENDPOINT_RETIRED=1
+  VERIFIER_HANDOFF_ABORT_ENDPOINT=0
+  FRESH_ABORT_ENDPOINT=0
+  HERDR_PROJECTION_ABORT_CLEANUP=0
+  HERDR_PROJECTION_ABORT_RECLAIM=0
+  return 0
+}
+
+spawn_restore_verifier_builder_record() {
+  local staged
+  [ "$VERIFIER_HANDOFF_ORIGINAL_META_SET" = 1 ] || return 1
+  staged="$STATE/.$ID.meta.builder-restore.${BASHPID:-$$}"
+  if ! printf '%s\n' "$VERIFIER_HANDOFF_ORIGINAL_META" > "$staged" \
+     || ! fm_backlog_atomic_transition publish \
+       "$staged" "$STATE/$ID.meta" "builder task record" "$STATE"; then
+    [ -n "$FM_BACKLOG_TRANSITION_ERROR" ] \
+      || FM_BACKLOG_TRANSITION_ERROR="builder task record could not be restored"
+    rm -f "$staged" 2>/dev/null || true
+    return 1
+  fi
+  VERIFIER_HANDOFF_ORIGINAL_META=
+  VERIFIER_HANDOFF_ORIGINAL_META_SET=0
+}
+
+spawn_fresh_commit_rollback() {
+  spawn_retire_pending_endpoint || return 1
+  if [ "$VERIFIER_HANDOFF" -eq 1 ] \
+     && [ "$VERIFIER_HANDOFF_ORIGINAL_META_SET" = 1 ]; then
+    if [ -n "${BUSY_GEN:-}" ]; then
+      "$FM_ROOT/bin/fm-busy-event.sh" retire "$STATE" "$ID" \
+        --gen "$BUSY_GEN" >/dev/null 2>&1 || return 1
+      RELAUNCH_REPLACEMENT_BUSY_GEN=
+    fi
+    spawn_restore_verifier_builder_record || return 1
+  else
+    fm_backlog_atomic_transition rollback "$STATE/$ID.meta" \
+      "$FM_ROOT/bin/fm-busy-event.sh" "$STATE" "$ID" "${BUSY_GEN:-}" \
+      || return 1
+  fi
+  SPAWN_FRESH_COMMIT_PENDING=0
+  SPAWN_FRESH_BUSY_PENDING=0
+  return 0
 }
 
 spawn_fresh_busy_rollback() {
@@ -959,6 +1055,16 @@ spawn_fresh_busy_rollback() {
       --gen "$BUSY_GEN" >/dev/null 2>&1 || return 1
   fi
   SPAWN_FRESH_BUSY_PENDING=0
+}
+
+spawn_worktree_safe_to_return() {
+  local worktree=$1 status unpushed
+  status=$(git -C "$worktree" -c core.quotePath=false \
+    status --porcelain --ignore-submodules=none 2>/dev/null) || return 1
+  [ -z "$status" ] || return 1
+  unpushed=$(git -C "$worktree" log --format=%H --max-count=1 \
+    HEAD --not --remotes -- 2>/dev/null) || return 1
+  [ -z "$unpushed" ]
 }
 
 spawn_preserve_complete_fresh_record() {
@@ -997,6 +1103,15 @@ spawn_abort_cleanup() {
   if [ "$SPAWN_FRESH_COMMIT_PENDING" = 1 ]; then
     if ! spawn_fresh_commit_rollback; then
       status=1
+      SPAWN_FRESH_BUSY_PENDING=0
+      RELAUNCH_REPLACEMENT_PENDING=0
+      VERIFIER_HANDOFF_ABORT_ENDPOINT=0
+      FRESH_ABORT_ENDPOINT=0
+      FRESH_ABORT_WORKTREE=
+      FRESH_ABORT_PROJECT=
+      HERDR_PROJECTION_ABORT_CLEANUP=0
+      HERDR_PROJECTION_ABORT_RECLAIM=0
+      ORCA_ABORT_CLEANUP=0
     fi
   else
     spawn_preserve_complete_fresh_record || true
@@ -1034,9 +1149,13 @@ spawn_abort_cleanup() {
     fm_backend_kill "$FRESH_ABORT_BACKEND" "$FRESH_ABORT_TARGET" 2>/dev/null || true
   fi
   if [ -n "$FRESH_ABORT_WORKTREE" ]; then
-    if ! (cd "$FRESH_ABORT_PROJECT" \
-      && treehouse return --force "$FRESH_ABORT_WORKTREE") >/dev/null 2>&1; then
-      echo "warning: could not return aborted spawn worktree $FRESH_ABORT_WORKTREE" >&2
+    if spawn_worktree_safe_to_return "$FRESH_ABORT_WORKTREE"; then
+      if ! (cd "$FRESH_ABORT_PROJECT" \
+        && treehouse return --force "$FRESH_ABORT_WORKTREE") >/dev/null 2>&1; then
+        echo "warning: could not return aborted spawn worktree $FRESH_ABORT_WORKTREE" >&2
+      fi
+    else
+      echo "warning: preserving aborted spawn worktree $FRESH_ABORT_WORKTREE because it is not proven free of local work" >&2
     fi
     FRESH_ABORT_WORKTREE=
     FRESH_ABORT_PROJECT=
@@ -2655,6 +2774,8 @@ preserve_verifier_handoff_meta() {
 if [ "$RELAUNCH" -eq 0 ] && [ "$KIND" = ship ] && [ "$ROLE" = verifier ]; then
   VERIFIER_HANDOFF_META="$STATE/$ID.meta"
   verifier_handoff_preflight "$VERIFIER_HANDOFF_META" || exit 1
+  VERIFIER_HANDOFF_ORIGINAL_META=$(cat "$VERIFIER_HANDOFF_META") || exit 1
+  VERIFIER_HANDOFF_ORIGINAL_META_SET=1
   assert_task_surface_marker "$SURFACE" "$SURFACE_SET" "builder metadata" || exit 1
 fi
 
@@ -3620,6 +3741,8 @@ if [ "$RELAUNCH" -eq 0 ]; then
       HERDR_PROJECTION_ABORT_CLEANUP=0
       HERDR_PROJECTION_ABORT_RECLAIM=0
       RELAUNCH_REPLACEMENT_PENDING=0
+      VERIFIER_HANDOFF_ORIGINAL_META=
+      VERIFIER_HANDOFF_ORIGINAL_META_SET=0
     else
       spawn_disarm_fresh_resources
       ORCA_ABORT_CLEANUP=0
@@ -3793,7 +3916,6 @@ if [ "$HARNESS" = kimi ]; then
     exit 1
   fi
 fi
-"$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
 if [ "$KIND" = secondmate ] && [ "${FM_SKIP_SECONDMATE_INHERIT:-0}" != 1 ]; then
   if ! fm_config_reread_discard_pending "$PROJ_ABS" "$ID" "$FM_HOME"; then
     if fm_config_reread_quarantine_pending "$PROJ_ABS" "$ID" "$FM_HOME"; then
@@ -3830,7 +3952,11 @@ if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
   SPAWN_BACKLOG_COMMIT_ERROR=$FM_BACKLOG_TRANSITION_ERROR
   if [ "$SPAWN_FRESH_COMMIT_PENDING" = 1 ]; then
     if spawn_fresh_commit_rollback; then
-      echo "error: task $ID's backlog item could not be moved to In flight ($SPAWN_BACKLOG_COMMIT_ERROR); its provisional task and busy records were removed, and its fresh resources will be retired" >&2
+      if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+        echo "error: task $ID's backlog item could not be moved to In flight ($SPAWN_BACKLOG_COMMIT_ERROR); its verifier endpoint and busy state were retired, and its builder record was restored" >&2
+      else
+        echo "error: task $ID's backlog item could not be moved to In flight ($SPAWN_BACKLOG_COMMIT_ERROR); its provisional task and busy records were removed, and its fresh resources will be retired" >&2
+      fi
     else
       SPAWN_BACKLOG_ROLLBACK_ERROR=$FM_BACKLOG_TRANSITION_ERROR
       echo "error: task $ID's backlog item could not be moved to In flight ($SPAWN_BACKLOG_COMMIT_ERROR), and failed-dispatch cleanup is incomplete ($SPAWN_BACKLOG_ROLLBACK_ERROR)" >&2
@@ -3849,6 +3975,8 @@ if [ "$SPAWN_FRESH_COMMIT_PENDING" = 1 ]; then
   if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
     VERIFIER_HANDOFF_ABORT_ENDPOINT=0
     RELAUNCH_REPLACEMENT_PENDING=0
+    VERIFIER_HANDOFF_ORIGINAL_META=
+    VERIFIER_HANDOFF_ORIGINAL_META_SET=0
   else
     spawn_disarm_fresh_resources
   fi
@@ -3867,6 +3995,7 @@ if [ -n "$SPAWN_DEFERRED_SIGNAL" ]; then
   echo "error: spawn of $ID was interrupted after launch delivery began; its paired task record and In-flight backlog state were preserved" >&2
   exit "$SPAWN_DEFERRED_SIGNAL_STATUS"
 fi
+"$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
 
 SPAWN_DELIVERY=
 if [ -n "$MODE" ]; then

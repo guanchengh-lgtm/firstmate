@@ -1910,6 +1910,45 @@ test_verifier_handoff_prepublication_failure_retires_replacement_state() {
   pass "fm-spawn: verifier handoff publication failure retires replacement state"
 }
 
+test_verifier_handoff_dispatch_failure_restores_builder_record() {
+  local rec id out status meta meta_before real_tasks backlog
+  id=profile-verifier-dispatch-failure-z61
+  rec=$(make_spawn_case profile-verifier-dispatch-failure claude "$id")
+  read_case_record "$rec"
+  prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  command -v tasks-axi >/dev/null 2>&1 || {
+    pass "fm-spawn: verifier rollback test skipped without tasks-axi"
+    return
+  }
+  backlog="$HOME_DIR/data/backlog.md"
+  printf '%s\n' '# Backlog' '' '## In flight' '' '## Queued' '' '## Done' > "$backlog"
+  tasks-axi add "$id" "item for $id" --kind ship --file "$backlog" >/dev/null
+  real_tasks=$(command -v tasks-axi)
+  cat > "$FAKEBIN_DIR/tasks-axi" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = start ]; then
+  echo 'error: "backlog is unwritable"' >&2
+  exit 1
+fi
+exec "$real_tasks" "\$@"
+SH
+  chmod +x "$FAKEBIN_DIR/tasks-axi"
+  meta="$HOME_DIR/state/$id.meta"
+  meta_before=$(cat "$meta")
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  [ "$status" -ne 0 ] || fail "verifier handoff succeeded after dispatch failed"
+  [ "$(cat "$meta")" = "$meta_before" ] \
+    || fail "verifier dispatch rollback did not restore the builder record"
+  assert_absent "$HOME_DIR/state/$id.busy-state" \
+    "verifier dispatch rollback retained the replacement busy state"
+  assert_absent "$WT_DIR/.claude/settings.local.json" \
+    "verifier dispatch rollback retained replacement harness wiring"
+  pass "fm-spawn: verifier dispatch rollback restores the builder record"
+}
+
 test_fresh_prepublication_failure_preserves_standard_record() {
   local rec id out status meta real_mv tmuxlog treehouse_log fail_once
   id=profile-fresh-prepublish-failure-z48b
@@ -2486,6 +2525,7 @@ test_verifier_handoff_refuses_unreadable_worktree_ownership
 test_verifier_handoff_adoption_failure_retires_new_endpoint
 test_verifier_handoff_requires_confirmed_endpoint_retirement
 test_verifier_handoff_prepublication_failure_retires_replacement_state
+test_verifier_handoff_dispatch_failure_restores_builder_record
 test_fresh_prepublication_failure_preserves_standard_record
 test_fresh_persistent_publication_failure_removes_hidden_record
 test_home_summary_refresh_follows_launch_submission
