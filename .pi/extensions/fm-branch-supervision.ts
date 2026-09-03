@@ -1200,18 +1200,11 @@ ${context.command}
         if (!actingAsOwner(acceptedGeneration)) throw new Error("supervision session no longer owns the fleet lock");
         const heartbeat = /^heartbeat($|:)/.test(message);
         const scope = scopeForUnreadWake(state, heartbeat);
-        // A newly-arrived main-owned (check-kind) row never bounces this
-        // whole recheck back to main - scopeForUnreadWake excludes it from
-        // eligibleSeqs rather than vetoing the scan, in a heartbeat review as
-        // in every other, so it stays queued for main while whatever else is
-        // eligible right now still reaches the branch. A genuinely empty
-        // queue, or a queue that simply has nothing (or nothing further)
-        // eligible for the branch right now, is an ordinary quiet no-op - not
-        // a fault, so it is never reported back to main. Only a scan
-        // classified as corrupted still falls back to main.
-        if (scope.status === "empty" || scope.status === "main-only") return;
-        if (scope.status === "corrupted") {
-          throw new Error("the unread wake queue could not be read safely");
+        // An already-drained queue is an ordinary quiet no-op. A newly-arrived
+        // main-owned row or an unsafe row returns the accepted wake to main.
+        if (scope.status === "empty") return;
+        if (scope.status === "main-only" || scope.status === "corrupted") {
+          throw new Error("the unread wake queue could not be handled wholly by the branch");
         }
         const grant = writeEligibleRowsSnapshot(
           state,

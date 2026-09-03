@@ -288,6 +288,10 @@ test_outcome_sequence_conflicts_fail_closed() {
   status=$?
   [ "$status" -ne 0 ] || fail "unread skipped over a conflicting middle sequence"
   assert_contains "$out" "malformed or non-sequential" "sequence-conflict read refusal lost its diagnostic"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-branch-outcome.sh" startup-replay 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "startup replay skipped over a conflicting middle sequence"
+  assert_contains "$out" "malformed or non-sequential" "sequence-conflict replay refusal lost its diagnostic"
   out=$(FM_HOME="$home" "$ROOT/bin/fm-branch-outcome.sh" append \
     --task task-4 --verdict routine --summary 'must remain unrecorded' 2>&1)
   status=$?
@@ -345,7 +349,7 @@ test_outcome_non_jsonl_layout_fails_closed() {
 }
 
 test_outcome_processed_marker_is_sequence_bound() {
-  local home marker out status
+  local home marker out status failbin real_mktemp
   home="$TMP_ROOT/store-processed-home"
   mkdir -p "$home/state"
   marker="$home/state/.branch-outcomes-processed"
@@ -396,6 +400,27 @@ test_outcome_processed_marker_is_sequence_bound() {
     '{"seq":3,'*) ;;
     *) fail "the newly read captain row was not the only unprocessed row: $out" ;;
   esac
+
+  # A failed durable marker write must fail the acknowledgement and keep the
+  # same captain outcome open for another processing turn.
+  failbin="$TMP_ROOT/failing-mktemp-bin"
+  mkdir -p "$failbin"
+  real_mktemp=$(command -v mktemp)
+  cat > "$failbin/mktemp" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  *.branch-outcomes-processed.*) exit 1 ;;
+esac
+exec "${REAL_MKTEMP:?}" "$@"
+SH
+  chmod +x "$failbin/mktemp"
+  out=$(PATH="$failbin:$PATH" REAL_MKTEMP="$real_mktemp" FM_HOME="$home" \
+    "$ROOT/bin/fm-branch-outcome.sh" mark-processed --through 3 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "mark-processed reported success after its durable write failed"
+  [ "$(cat "$marker")" = 2 ] || fail "failed marker write changed the processed sequence"
+  assert_contains "$(FM_HOME="$home" "$ROOT/bin/fm-branch-outcome.sh" unprocessed)" '"seq":3' \
+    "failed marker write hid the unprocessed captain outcome"
 
   # processed-init leaves a present marker alone and fails closed on a
   # malformed one instead of skipping an outcome.

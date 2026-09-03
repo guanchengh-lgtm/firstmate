@@ -692,20 +692,20 @@ for (let i = 0; i < 250 && offers.length === 0; i += 1) {
 for (let i = 0; i < 25 && !prompt; i += 1) {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
-if (offers.length !== 1 || offers[0].heartbeat !== true || offers[0].eligible !== true) {
-  throw new Error(`a co-present check row made the heartbeat offer ineligible: ${JSON.stringify(offers)}`);
+if (offers.length !== 1 || offers[0].heartbeat !== true || offers[0].eligible !== false) {
+  throw new Error(`a mixed heartbeat queue was not deferred to main: ${JSON.stringify(offers)}`);
 }
-if (prompt) {
-  throw new Error(`a co-present check row rode the heartbeat into main: ${prompt}`);
+if (!prompt.includes("FIRSTMATE WATCHER WAKE: heartbeat")) {
+  throw new Error(`the mixed heartbeat queue did not reach main: ${prompt}`);
 }
 writeFileSync(process.env.FM_STOP_FILE, "stop\n");
 process.exit(0);
 EOF
   )
   status=$?
-  expect_code 0 "$status" "a heartbeat must not ride a co-present check row into main: $out"
+  expect_code 0 "$status" "a mixed heartbeat queue must stay wholly on main: $out"
   [ -z "$out" ] || fail "Pi mixed heartbeat-queue test printed output: $out"
-  pass "a co-present check row neither vetoes nor rides a heartbeat into main"
+  pass "a co-present main-only row defers the whole heartbeat queue to main"
 }
 
 # Every check the main session alone can act on stays on main, even when an

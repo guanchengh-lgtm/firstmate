@@ -30,8 +30,7 @@ export interface UnreadWakeScope {
 const EMPTY_SCOPE: UnreadWakeScope = { status: "empty", eligible: false, projects: [], eligibleSeqs: [] };
 const CORRUPTED_SCOPE: UnreadWakeScope = { status: "corrupted", eligible: false, projects: [], eligibleSeqs: [] };
 
-// Main-only rows stay queued for main and never veto branch-owned rows.
-// Corrupted or unresolvable rows make the whole scan fail closed.
+// A main-only, corrupted, or unresolvable row sends the whole queue to main.
 export function scopeForUnreadWake(state: string, heartbeat: boolean): UnreadWakeScope {
   let queue = "";
   try {
@@ -73,10 +72,7 @@ export function scopeForUnreadWake(state: string, heartbeat: boolean): UnreadWak
       continue;
     }
     if (kind === "check") {
-      // Always main-owned, in every mode: excluded from what the branch may
-      // claim, never a reason to reject the rest of the queue and never a
-      // reason to send an otherwise-eligible heartbeat review to main.
-      continue;
+      return { status: "main-only", eligible: false, projects: [], eligibleSeqs: [] };
     }
     let project = "";
     if (kind === "signal") {
@@ -94,27 +90,16 @@ export function scopeForUnreadWake(state: string, heartbeat: boolean): UnreadWak
     eligibleSeqs.push(seq);
   }
   const eligible = eligibleSeqs.length > 0;
-  // Reached only after every row passed classification without a veto. A scan
-  // that ends up ineligible simply found nothing the branch may claim - a
-  // queue of purely main-only content, not a fault. (Before check rows stopped
-  // vetoing a heartbeat, this point was unreachable for a heartbeat with an
-  // empty eligible set, so reading eligibility off the claim set rather than
-  // off the heartbeat flag changes no pre-existing outcome and keeps a
-  // heartbeat from being offered with nothing to hand over.)
-  return { status: eligible ? "safe" : "main-only", eligible, projects: [...projects], eligibleSeqs };
+  return { status: eligible ? "safe" : "corrupted", eligible, projects: [...projects], eligibleSeqs };
 }
 
-// The exact state-relative filename bin/fm-wake-drain.sh reads for a
-// FM_SUPERVISION_ACTOR=branch drain or ack (its header is the single owner of
-// the consume-side contract). Written atomically, immediately before every
-// branch prompt, by writeEligibleRowsSnapshot below.
+// The branch-side claim record written before each prompt. Queue consumption
+// remains whole-queue, so callers publish this only after full-queue approval.
 export const BRANCH_ELIGIBLE_ROWS_FILE = ".branch-eligible-rows";
 
-// Atomically publish the exact row set a branch turn may drain and
-// acknowledge. One sequence number per line - an opaque handoff, never
-// reclassified by the consumer. A main-owned result means the competing main
-// turn won the queue-lock claim and already owns presentation; error means no
-// actor acquired the requested rows.
+// Atomically publish the approved queue sequence set. A main-owned result
+// means the competing main turn won the claim; error means no actor acquired
+// the requested rows.
 export type EligibleRowsSnapshotResult = "published" | "main-owned" | "error";
 
 function runGrantScript(state: string, grantScript: string, args: readonly string[]): number | null {

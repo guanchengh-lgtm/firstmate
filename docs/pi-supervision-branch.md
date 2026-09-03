@@ -7,8 +7,8 @@ This document stays the owner and the contract.
 
 Fleet supervision on the Pi primary harness runs on a second, persistent conversation - the supervision branch - inside the same `pi` process as the captain's chat.
 Supervision is default-on: once a Pi primary session owns this home's fleet lock, the branch handles eligible task-local rows from ordinary actionable wakes plus heartbeat scans that the cheap bash-level scan flags as possibly captain-relevant, then merges each outcome back into the captain conversation's transcript.
-Ordinary main-only rows remain on main even when eligible task-local rows share their queue.
-An unresolvable row makes the scan unsafe and returns the whole wake to main, and every watcher-failure alarm also stays on main.
+Any main-only or unresolvable row returns the whole unread queue to main.
+Every watcher-failure alarm also stays on main.
 Captain-relevant branch outcomes persist as exact, sequence-keyed visible transcript entries and then open one sequence-keyed processing turn on main, which stays open until main acknowledges that sequence.
 The design source is the captain-approved forked-supervision architecture board, a captain-private fleet record (a self-contained HTML explainer with the measured cache and judgment evidence); this document records the shape it landed as, and the delivering PR cites the board artifact itself.
 
@@ -16,15 +16,14 @@ The supervision branch itself is Pi-only by construction:
 
 - The branch lives in `.pi/extensions/fm-branch-supervision.ts`, which only a Pi primary ever loads; no other harness gains branch supervision behavior.
 - The bash-side additions (leases, the outcome store, session-start recovery) are inert in a home with no branch state: no lease files exist, no actor variable is set, every guard passes silently, and no new state appears (`tests/fm-branch-supervision.test.sh` holds this).
-  A home on any harness that already has an outcome store still receives the shared drain compatibility recovery described in [Lost-wake outcome backstop](#lost-wake-outcome-backstop).
 - It does not change which harness is primary and never moves a home to Pi.
 
 ## Components and their owners
 
-- Wake dispatch: `.pi/extensions/fm-primary-pi-watch.ts` stays the dispatcher; `.pi/extensions/lib/fm-branch-dispatch.ts` owns the offer handshake and row eligibility, while [`watcher-continuity.md`](watcher-continuity.md#per-actor-acknowledgement) owns the per-actor consume contract.
-  A successful row grant transfers ownership of exactly the currently branch-eligible rows to the branch; a check-kind triggering close (merge-confirmation polls, Relay mentions, credential/auth failures, and every other legitimately main-only class) is never offered even when other rows are eligible, no acceptor (extension absent, away mode, branch broken) keeps today's wake-to-main path for that close, and watcher-failure alarms always go to main because only main can repair the watcher cycle.
-  A fleet-wide heartbeat keeps its own all-or-nothing rule (see "Heartbeat routing" below): it takes every branch-ownable unread row or none of them.
-  A co-present main-owned check row no longer defers that review to main, because it is not fleet context the branch is missing and main is woken for it on its own triggering close.
+- Wake dispatch: `.pi/extensions/fm-primary-pi-watch.ts` stays the dispatcher, and `.pi/extensions/lib/fm-branch-dispatch.ts` owns the offer handshake and row eligibility.
+  A queue is offered only when every row is branch-eligible.
+  A check-kind row returns the whole queue to main, and no acceptor keeps today's wake-to-main path.
+  Watcher-failure alarms always go to main because only main can repair the watcher cycle.
 - The branch itself: `.pi/extensions/fm-branch-supervision.ts` creates and reopens the persistent branch session, serializes wakes, mirrors dialog, and merges outcomes.
   It checks the current extension generation and `state/.lock` ownership before each guarded branch side effect so replacement or lock loss cannot let an old continuation mutate the new session.
   Every accepted path that cannot reach a working branch rejects its settlement to the watcher, which retains delivery ownership and routes the wake through its consumption-acknowledged main path; a broken branch declines later offers so they take that path directly.
@@ -40,31 +39,18 @@ The supervision branch itself is Pi-only by construction:
   `FM_BRANCH_CONTEXT_BUDGET_TOKENS` can override that threshold for an operator or focused test but cannot cross the reserve.
 - Branch model and effort selection: the same extension registers `/supervision-model`, which picks the branch's model and then its reasoning effort, and applies both at the branch-session creation boundary; [configuration.md](configuration.md#pi-supervision-branch-model-and-effort-configsupervision-branch-model-configsupervision-branch-effort) owns the operator-facing schema and behavior.
 - Branch system prompt: `bin/fm-branch-prompt.sh`; its header owns the byte-stable-prefix contract (no timestamps, no fleet snapshot, no per-wake content).
-- Outcome store: `bin/fm-branch-outcome.sh`; its header owns the append-only format, read cursor, and bounded per-task status-coverage indexes.
+- Outcome store: `bin/fm-branch-outcome.sh`; its header owns the append-only format and read cursor.
   Outcomes are written to the store before delivery to Pi.
   A captain row advances the cursor only after its matching visible session entry exists, while locked session-start replay stops before the first captain row so it cannot acknowledge that outcome through prose alone.
 - Consistency: `bin/fm-lease-lib.sh` owns the per-task lease contract, the main-only role partition, and the deliberate CONFUSED-AGENT-GRADE threat model these guards target (captain-decided; adversarial-grade separation is out of scope and tracked as follow-up design work); `bin/fm-lease.sh` is the command surface.
   The guards are wired into `fm-send.sh`, `fm-control.sh`, and `fm-teardown.sh` (overlap, lease-checked, with claim serialization retained through the mutation) and `fm-pr-merge.sh`, `fm-merge-local.sh`, and `fm-spawn.sh` (main-owned, branch refused; a relaunch through `fm-control` stays branch-legal recovery).
 - Autonomy: supervision is default-on for every task once a Pi primary session owns the fleet lock (docs/configuration.md "Pi supervision branch"); no captain grant file is required.
-  A fleet-wide heartbeat is separately eligible only when every non-check row in the unread queue is a heartbeat row or a resolvable task-local row (see "Heartbeat routing" below); every other fleet-wide or unresolvable wake, and every watcher-failure alarm, stays on main.
-  The branch recomputes eligibility immediately before prompting the branch to drain and publishes the exact eligible row set to `state/.branch-eligible-rows` through `writeEligibleRowsSnapshot`.
-  A newly-arrived main-owned row observed at that recheck no longer defers the whole queue to main: it is excluded from the eligible set, so whatever else is currently eligible still reaches the branch, and the main-owned row stays queued for main's own later drain.
-  [`watcher-continuity.md`](watcher-continuity.md#per-actor-acknowledgement) owns the consume-side guarantee that neither actor can present or acknowledge the other's claim.
-  Heartbeat keeps its own all-or-nothing recheck over the rows it can claim: it takes every branch-ownable unread row or none of them, and an unresolvable task-local row still defers the whole review to main.
+  A fleet-wide heartbeat is eligible only when every unread row is a heartbeat row or a resolvable task-local row (see "Heartbeat routing" below).
+  Every other fleet-wide, main-only, or unresolvable wake stays on main.
+  The branch recomputes full-queue eligibility immediately before prompting the branch to drain.
+  A newly-arrived main-only row observed at that recheck returns the whole queue to main.
   A producer can still append a row in the instant between that final check and drain startup; this accepted residual follows the confused-agent-grade boundary above rather than claiming adversarial queue isolation.
   Away mode and a broken branch between its bounded recovery probes keep today's wake-to-main behavior.
-
-## Lost-wake outcome backstop
-
-Every main-actor wake drain checks each task's newest non-blank status event against the latest supervision-branch outcome that causally covers that task's status log.
-When that event is terminal or otherwise captain-facing and remains uncovered, the drain prints it once in `STATUS OUTCOME BACKSTOP`, even if the original queue row was already acknowledged; routine events stay silent, and valid open decisions remain owned by `OPEN DECISIONS`.
-The one-shot backstop cursor is independent from signal annotation, so a delayed signal can still present its status context without repeating the recovered event.
-The drain reads one fixed-size per-task outcome index instead of scanning append-only outcome history and inspects at most the final 64 KiB of each status log.
-Status provenance added to new outcome rows distinguishes covered and genuinely later events even within one timestamp second.
-Legacy outcomes predate that causal position, so equal-second migration cannot prove order and deliberately favors surfacing a plausibly later event; this can rarely duplicate an already handled legacy event.
-A pathological latest status line that crosses the 64 KiB window is unclassifiable and remains silent rather than risking presentation of routine content; this is an accepted limit, not a status-line size contract.
-A missing or invalid outcome-index ready marker is rebuilt from the authoritative outcome rows by `processed-init` under the outcome lock on the next main drain, on every harness.
-Only a genuine store fault keeps that backstop skipped.
 
 ## How the branch knows what the captain said
 
@@ -99,12 +85,10 @@ Main can read the durable outcome store on demand through its `fm_branch_outcome
 ## Heartbeat routing
 
 The cheap bash-level heartbeat scan absorbs a genuinely no-op pass before it reaches Pi, unchanged from before.
-Only a scan already flagged as possibly captain-relevant emits the bare `heartbeat` wake; `.pi/extensions/fm-primary-pi-watch.ts` flags that offer `heartbeat: true`, and the branch accepts it without a project only when every non-check row observed in the unread-queue eligibility check is either heartbeat-kind or a resolvable task-local signal or stale event.
-
-A heartbeat is never vetoed or ridden into main by a co-present check row.
-A check row is permanently main-owned in every mode: it is excluded from what the branch may claim and left queued for main, which is woken for it on that check's own watcher cycle, so nothing starves by being left behind.
-Deferring the fleet review to main merely because some unrelated merge poll or Relay mention happened to be sitting unread put a routine review in the captain's chat for a reason that had nothing to do with the fleet, and that coupling is gone.
-What all-or-nothing still guarantees is unchanged: the branch takes every branch-ownable unread row or none of them, and an unresolvable task-local row, an unknown row kind, or an unreadable queue still defers the whole review to main.
+Only a scan already flagged as possibly captain-relevant emits the bare `heartbeat` wake.
+`.pi/extensions/fm-primary-pi-watch.ts` flags that offer `heartbeat: true`.
+The branch accepts it only when every unread row is a heartbeat row or a resolvable task-local signal or stale event.
+A main-only row, an unresolvable task-local row, an unknown row kind, or an unreadable queue defers the whole review to main.
 The branch runs its normal operating procedure for the wake (`bin/fm-branch-prompt.sh` "Handling a wake") and performs the deeper fleet review that main previously performed.
 A review that found literally nothing worth reporting uses verdict `routine`, `task=fleet`, and `silent=true` so it has no rendered note, while a fleet-wide routine action omits `silent` and keeps its rendered sailboat note.
 Only a captain-worthy finding reports verdict `captain` and appends a visible captain outcome entry.
@@ -126,8 +110,7 @@ What is new is only the attended path: outside away mode, the branch absorbs the
 
 Portable regressions: `tests/fm-pi-branch-extension.test.sh` covers dispatch, requested-versus-unsolicited delivery, exact visible entry content, no unkeyed model turn, the sequence-keyed processing request and its acknowledgement, re-presentation after an empty reply and after an unrelated prior answer, the triggered-then-next-turn pacing, session-start re-presentation, routine outcomes staying turn-free, the processed-marker migration, idle and busy main state, incident-shaped compaction and unrelated-assistant context, cold-start post-lock recovery, crash-before-cursor reload recovery, repeated-reload idempotency, mirroring, report-required completion, report-before-error exact-once handling, context-budget rotation and under-budget reuse, the three-unreported-wake breaker, provider cooldown probes, exponential backoff, cache key, persistence, and model and effort selection.
 `tests/fm-branch-supervision.test.sh` covers prompt stability, store append-only behavior, the captain cursor barrier, the processed marker's sequence bounds, leases, guards, and non-branch-home invariance.
-`tests/fm-wake-drain-outcome-backstop.test.sh` covers keyless resurfacing, causal suppression, same-second ordering, one-shot presentation, first-drain index self-healing under the outcome lock, store-fault fail-closed behavior, bounded history cost and output, and the oversized-line limit.
-The branch-offer, heartbeat-offer, heartbeat-not-ridden-by-a-check, and main-only-check-class tests remain in `tests/fm-pi-watch-extension.test.sh`, the recovery test remains in `tests/fm-session-start.test.sh`, and the per-actor consume regression remains in `tests/fm-wake-queue.test.sh`.
+The branch-offer, heartbeat-offer, mixed-queue fallback, and main-only-check-class tests remain in `tests/fm-pi-watch-extension.test.sh`, and the recovery test remains in `tests/fm-session-start.test.sh`.
 Live guard: `FM_PI_BRANCH_LIVE_E2E=1 tests/fm-pi-branch-live-e2e.test.sh` exercises the real installed Pi SDK's immediate active-transcript appendEntry rendering, persistence, custom-entry model exclusion, branch-session surfaces, and watcher-owned fallback after rejected branch settlement.
 Record dated current results in [docs/verification/runtime-backends.md](verification/runtime-backends.md).
 The strict typecheck in `tests/fm-pi-primary-types.test.sh` pins the extension against the installed Pi package.

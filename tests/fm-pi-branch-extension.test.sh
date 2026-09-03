@@ -1567,7 +1567,7 @@ EOF
   pass "branch default-on eligibility (task-scoped, heartbeat, afk) binds and a broken branch rejects to watcher fallback"
 }
 
-test_branch_predrain_recheck_keeps_a_heartbeat_a_co_present_check_arrives_under() {
+test_branch_predrain_recheck_defers_a_heartbeat_when_a_main_only_row_arrives() {
   local repo home out status
   repo="$TMP_ROOT/predrain-recheck-root"
   home="$TMP_ROOT/predrain-recheck-home"
@@ -1578,29 +1578,21 @@ test_branch_predrain_recheck_keeps_a_heartbeat_a_co_present_check_arrives_under(
 const prelude = process.env.DRIVER_PRELUDE;
 await eval(`(async () => { ${prelude}; globalThis.__t = { dispatch, fire, home, mainUserMessages }; })()`);
 const { dispatch, fire, home, mainUserMessages } = globalThis.__t;
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 
 fire("session_start", {});
-let releasePrompt;
-globalThis.__fmPromptGate = new Promise((resolve) => { releasePrompt = resolve; });
 const offer = dispatch("heartbeat", [], true, true);
 if (!offer.accepted) throw new Error("eligible heartbeat offer was not accepted");
 // A main-only notice arrives between offer acceptance and the branch's own
-// drain. It must not carry the fleet review into the captain's chat.
+// drain. The whole queue must return to the watcher's main path.
 appendFileSync(`${home}/state/.wake-queue`, "2\t2\tcheck\tx-inbox\tcheck: pending x mention\n");
-for (let i = 0; i < 250 && !globalThis.__fmPromptStarted && mainUserMessages.length === 0; i += 1) {
-  await new Promise((resolve) => setTimeout(resolve, 10));
+const failure = await offer.settlement.then(() => null, (error) => error);
+if (!(failure instanceof Error) || !failure.message.includes("could not be handled wholly by the branch")) {
+  throw new Error(`mixed heartbeat queue did not reject to main: ${String(failure)}`);
 }
-if (mainUserMessages.length !== 0) {
-  throw new Error(`a co-present check row rode the heartbeat into main: ${JSON.stringify(mainUserMessages)}`);
-}
-if (!globalThis.__fmPromptStarted) {
-  throw new Error("the branch was never prompted even though the heartbeat stayed eligible");
-}
-const snapshot = readFileSync(`${home}/state/.branch-eligible-rows`, "utf8").trim().split("\n");
-if (!snapshot.includes("1")) throw new Error(`eligible-row snapshot omitted the heartbeat row: ${snapshot}`);
-if (snapshot.includes("2")) throw new Error(`eligible-row snapshot granted the main-owned row: ${snapshot}`);
-releasePrompt();
+if (globalThis.__fmPromptStarted) throw new Error("the branch was prompted for a mixed heartbeat queue");
+if (existsSync(`${home}/state/.branch-eligible-rows`)) throw new Error("the rejected mixed queue retained a row grant");
+if (mainUserMessages.length !== 0) throw new Error("the branch bypassed watcher-owned fallback delivery");
 const queue = readFileSync(`${home}/state/.wake-queue`, "utf8");
 if (!queue.includes("\theartbeat\t") || !queue.includes("\tcheck\t")) {
   throw new Error(`the pre-drain recheck mutated the queued set: ${queue}`);
@@ -1609,17 +1601,13 @@ process.exit(0);
 EOF
   status=$?
   out=$(cat "$TMP_ROOT/node-output")
-  expect_code 0 "$status" "a co-present check row must not carry a heartbeat review into main: $out"
-  pass "a heartbeat review survives a check row arriving before its drain"
+  expect_code 0 "$status" "a mixed heartbeat queue must reject to watcher delivery: $out"
+  pass "a main-only row arriving before drain defers the whole heartbeat queue"
 }
 
-# The non-heartbeat half of the same recheck: a check-kind row that arrives
-# after a signal/stale offer is accepted must stay main-owned WITHOUT bouncing
-# the branch's own eligible row back to main
-# (docs/watcher-continuity.md "Per-actor acknowledgement"). A check row is
-# main-owned in every mode, so the heartbeat case proven above and this one
-# resolve the same way.
-test_branch_predrain_recheck_excludes_new_main_owned_row_without_deferring_eligible_work() {
+# The non-heartbeat half of the same recheck also returns the whole mixed queue
+# to main before the branch prompt starts.
+test_branch_predrain_recheck_defers_task_work_when_a_main_only_row_arrives() {
   local repo home out status
   repo="$TMP_ROOT/predrain-partial-root"
   home="$TMP_ROOT/predrain-partial-home"
@@ -1633,46 +1621,29 @@ const { dispatch, fire, home, mainUserMessages } = globalThis.__t;
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 
 fire("session_start", {});
-let releasePrompt;
-globalThis.__fmPromptGate = new Promise((resolve) => { releasePrompt = resolve; });
 const offer = dispatch("signal: task-local wake");
 if (!offer.accepted) throw new Error("eligible task-local offer was not accepted");
 // A main-only notice arrives while main is still finishing its own earlier
 // turn - unacked, still sitting in the queue - between offer acceptance and
 // the branch's own drain.
 appendFileSync(`${home}/state/.wake-queue`, "2\t2\tcheck\tx-inbox\tcheck: pending x mention\n");
-for (let i = 0; i < 250 && !globalThis.__fmPromptStarted && mainUserMessages.length === 0; i += 1) {
-  await new Promise((resolve) => setTimeout(resolve, 10));
+const failure = await offer.settlement.then(() => null, (error) => error);
+if (!(failure instanceof Error) || !failure.message.includes("could not be handled wholly by the branch")) {
+  throw new Error(`mixed task queue did not reject to main: ${String(failure)}`);
 }
-if (mainUserMessages.length !== 0) {
-  throw new Error(`a co-present main-owned row bounced the whole mixed queue to main: ${JSON.stringify(mainUserMessages)}`);
-}
-if (!globalThis.__fmPromptStarted) {
-  throw new Error("the branch was never prompted even though its own row stayed eligible");
-}
-const snapshot = readFileSync(`${home}/state/.branch-eligible-rows`, "utf8").trim().split("\n");
-if (!snapshot.includes("1")) throw new Error(`eligible-row snapshot omitted the task-local row: ${snapshot}`);
-if (snapshot.includes("2")) throw new Error(`eligible-row snapshot granted the main-owned row: ${snapshot}`);
+if (globalThis.__fmPromptStarted) throw new Error("the branch was prompted for a mixed task queue");
+if (existsSync(`${home}/state/.branch-eligible-rows`)) throw new Error("the rejected mixed queue retained a row grant");
+if (mainUserMessages.length !== 0) throw new Error("the branch bypassed watcher-owned fallback delivery");
 const queue = readFileSync(`${home}/state/.wake-queue`, "utf8");
 if (!queue.includes("\tcheck\tx-inbox\t")) {
   throw new Error(`the main-owned row must remain queued for main, untouched: ${queue}`);
-}
-releasePrompt();
-for (let i = 0; i < 250 && (globalThis.__fmPrompts ?? []).length === 0; i += 1) {
-  await new Promise((resolve) => setTimeout(resolve, 10));
-}
-for (let i = 0; i < 250 && existsSync(`${home}/state/.branch-eligible-rows`); i += 1) {
-  await new Promise((resolve) => setTimeout(resolve, 10));
-}
-if (existsSync(`${home}/state/.branch-eligible-rows`)) {
-  throw new Error("settled branch prompt retained its row grant");
 }
 process.exit(0);
 EOF
   status=$?
   out=$(cat "$TMP_ROOT/node-output")
-  expect_code 0 "$status" "pre-drain eligibility re-check must exclude only the new main-owned row: $out"
-  pass "pre-drain eligibility re-check excludes a newly main-owned row without deferring eligible work"
+  expect_code 0 "$status" "pre-drain eligibility re-check must defer the whole mixed queue: $out"
+  pass "pre-drain eligibility re-check returns mixed task work to main"
 }
 
 test_settled_branch_prompt_releases_unacknowledged_grant() {
@@ -3522,11 +3493,8 @@ EOF
 }
 
 # Direct unit coverage of fm-branch-dispatch.ts's classification, independent
-# of the Pi SDK stub: every legitimately main-only class (docs/pi-supervision-
-# branch.md) stays excluded from eligibleSeqs no matter its check-kind key,
-# a mixed queue keeps its task-local rows eligible without those main-only
-# rows vetoing the scan, and the eligible-row snapshot writer names exactly
-# the eligible set.
+# of the Pi SDK stub: every main-only row defers the whole queue, while a wholly
+# eligible queue publishes its complete row snapshot.
 test_branch_dispatch_classifies_main_only_rows_and_writes_the_eligible_snapshot() {
   local repo home out status
   repo="$TMP_ROOT/dispatch-classify-root"
@@ -3582,8 +3550,8 @@ if (truncated.status !== "corrupted" || truncated.eligible || truncated.eligible
   throw new Error(`a four-field queue row was not classified as corruption: ${JSON.stringify(truncated)}`);
 }
 
-// A mixed queue: the main-only row (seq 1) never vetoes the task-local rows
-// (seq 2, 3) - the reproduction from the task.
+// A mixed queue returns every row to main because the shared drain consumes
+// and acknowledges the queue as one unit.
 writeFileSync(
   `${state}/.wake-queue`,
   [
@@ -3593,24 +3561,30 @@ writeFileSync(
   ].join("\n"),
 );
 const mixed = scopeForUnreadWake(state, false);
-if (mixed.status !== "safe" || !mixed.eligible) {
-  throw new Error(`mixed queue with eligible task-local rows must stay eligible: ${JSON.stringify(mixed)}`);
-}
-if (mixed.eligibleSeqs.slice().sort().join(",") !== "2,3") {
-  throw new Error(`eligibleSeqs must name exactly the task-local rows: ${JSON.stringify(mixed)}`);
-}
-if (!mixed.projects.includes(project)) {
-  throw new Error(`eligible project context lost: ${JSON.stringify(mixed.projects)}`);
+if (mixed.status !== "main-only" || mixed.eligible || mixed.eligibleSeqs.length !== 0) {
+  throw new Error(`mixed queue was not deferred wholly to main: ${JSON.stringify(mixed)}`);
 }
 
+writeFileSync(
+  `${state}/.wake-queue`,
+  [
+    "1\t1\tsignal\ttask-a.status\tsignal: task-a.status",
+    "1\t2\tstale\tfm-window\tstale: fm-window",
+  ].join("\n"),
+);
+const eligible = scopeForUnreadWake(state, false);
+if (eligible.status !== "safe" || !eligible.eligible || eligible.eligibleSeqs.join(",") !== "1,2") {
+  throw new Error(`a wholly eligible queue was refused: ${JSON.stringify(eligible)}`);
+}
+if (!eligible.projects.includes(project)) throw new Error(`eligible project context lost: ${JSON.stringify(eligible.projects)}`);
 if (!activateEligibleRowsOwner(state, process.env.GRANT, process.pid, "fixture")) {
   throw new Error("branch owner activation failed");
 }
-if (writeEligibleRowsSnapshot(state, mixed.eligibleSeqs, process.env.GRANT, "fixture") !== "published") {
+if (writeEligibleRowsSnapshot(state, eligible.eligibleSeqs, process.env.GRANT, "fixture") !== "published") {
   throw new Error("snapshot write reported failure");
 }
 const snapshot = readFileSync(`${state}/${BRANCH_ELIGIBLE_ROWS_FILE}`, "utf8").trim().split("\n");
-if (snapshot.join(",") !== "2,3") throw new Error(`snapshot did not name exactly the eligible rows: ${snapshot}`);
+if (snapshot.join(",") !== "1,2") throw new Error(`snapshot did not name the complete eligible queue: ${snapshot}`);
 
 // An empty eligible set is refused rather than clearing the snapshot to
 // nothing - a caller must never overwrite a live snapshot with an empty one.
@@ -3618,15 +3592,12 @@ if (writeEligibleRowsSnapshot(state, [], process.env.GRANT, "fixture") !== "erro
   throw new Error("an empty eligible set must not be written");
 }
 if (!releaseEligibleRowsSnapshot(state, process.env.GRANT, "fixture")) throw new Error("snapshot release failed");
-writeFileSync(`${state}/.main-eligible-rows`, "2\n");
-if (writeEligibleRowsSnapshot(state, ["2"], process.env.GRANT, "fixture") !== "main-owned") {
+writeFileSync(`${state}/.main-eligible-rows`, "1\n");
+if (writeEligibleRowsSnapshot(state, ["1"], process.env.GRANT, "fixture") !== "main-owned") {
   throw new Error("a row already claimed by main was not reported as main-owned");
 }
 
-// A heartbeat is not vetoed or ridden into main by a co-present check row.
-// The check row is permanently main-owned in every mode, so it is excluded
-// from the claim rather than deferring a fleet review that has nothing to do
-// with it - the captain's reproduction.
+// A heartbeat with a co-present main-only row also defers as one queue.
 writeFileSync(
   `${state}/.wake-queue`,
   [
@@ -3636,11 +3607,8 @@ writeFileSync(
   ].join("\n"),
 );
 const heartbeatMixed = scopeForUnreadWake(state, true);
-if (heartbeatMixed.status !== "safe" || !heartbeatMixed.eligible) {
-  throw new Error(`a co-present check row rode a heartbeat into main: ${JSON.stringify(heartbeatMixed)}`);
-}
-if (heartbeatMixed.eligibleSeqs.slice().sort().join(",") !== "2,3") {
-  throw new Error(`a heartbeat claim must cover every branch-ownable row and no check row: ${JSON.stringify(heartbeatMixed)}`);
+if (heartbeatMixed.status !== "main-only" || heartbeatMixed.eligible || heartbeatMixed.eligibleSeqs.length !== 0) {
+  throw new Error(`a mixed heartbeat queue was not deferred wholly to main: ${JSON.stringify(heartbeatMixed)}`);
 }
 
 // All-or-nothing is unchanged in what it actually guarantees: a heartbeat
@@ -3683,8 +3651,8 @@ process.exit(0);
 EOF
   status=$?
   out=$(cat "$TMP_ROOT/node-output")
-  expect_code 0 "$status" "main-only classification and eligible-row snapshot contract must hold: $out"
-  pass "scopeForUnreadWake excludes every main-only class without vetoing eligible task-local rows, and writes the eligible snapshot"
+  expect_code 0 "$status" "whole-queue classification and eligible-row snapshot contract must hold: $out"
+  pass "scopeForUnreadWake defers mixed queues and snapshots wholly eligible queues"
 }
 
 # The model picker's bounded scrolling and its search ranking are Pi's own
@@ -3927,8 +3895,8 @@ test_captain_outcome_processing_turn_is_sequence_keyed_and_re_presented
 test_branch_dispatch_classifies_main_only_rows_and_writes_the_eligible_snapshot
 test_branch_cache_key_is_per_home_stable
 test_branch_default_on_heartbeat_afk_and_fallback
-test_branch_predrain_recheck_keeps_a_heartbeat_a_co_present_check_arrives_under
-test_branch_predrain_recheck_excludes_new_main_owned_row_without_deferring_eligible_work
+test_branch_predrain_recheck_defers_a_heartbeat_when_a_main_only_row_arrives
+test_branch_predrain_recheck_defers_task_work_when_a_main_only_row_arrives
 test_settled_branch_prompt_releases_unacknowledged_grant
 test_branch_report_is_the_completion_handshake
 test_branch_context_budget_rotation
