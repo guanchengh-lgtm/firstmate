@@ -353,6 +353,23 @@ test_outcome_processed_marker_is_sequence_bound() {
   home="$TMP_ROOT/store-processed-home"
   mkdir -p "$home/state"
   marker="$home/state/.branch-outcomes-processed"
+  failbin="$TMP_ROOT/failing-mktemp-bin"
+  mkdir -p "$failbin"
+  real_mktemp=$(command -v mktemp)
+  cat > "$failbin/mktemp" <<'SH'
+#!/usr/bin/env bash
+case "${FM_TEST_MKTEMP_MODE:-}:${1:-}" in
+  cursor:*.branch-outcomes-cursor.*)
+    path=$("${REAL_MKTEMP:?}" "$@") || exit 1
+    chmod 0400 "$path" || exit 1
+    printf '%s\n' "$path"
+    exit 0
+    ;;
+  processed:*.branch-outcomes-processed.*) exit 1 ;;
+esac
+exec "${REAL_MKTEMP:?}" "$@"
+SH
+  chmod +x "$failbin/mktemp"
 
   FM_HOME="$home" "$ROOT/bin/fm-branch-outcome.sh" append \
     --task task-1 --verdict routine --summary 'routine first' >/dev/null || fail "routine append failed"
@@ -393,6 +410,14 @@ test_outcome_processed_marker_is_sequence_bound() {
   assert_contains "$out" "already processed" "already-processed refusal lost its diagnostic"
   [ "$(cat "$marker")" = 2 ] || fail "refused backwards acknowledgement moved the processed marker"
 
+  out=$(PATH="$failbin:$PATH" REAL_MKTEMP="$real_mktemp" FM_TEST_MKTEMP_MODE=cursor FM_HOME="$home" \
+    "$ROOT/bin/fm-branch-outcome.sh" mark-read --through 3 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "mark-read reported success after its cursor write failed"
+  [ "$(cat "$home/state/.branch-outcomes-cursor")" = 2 ] || fail "failed cursor write changed the read sequence"
+  [ -z "$(find "$home/state" -name '.branch-outcomes-cursor.*' -print -quit)" ] \
+    || fail "failed cursor write left its temporary file"
+
   # Reading the next captain row reopens exactly that row for processing.
   FM_HOME="$home" "$ROOT/bin/fm-branch-outcome.sh" mark-read --through 3 || fail "second mark-read failed"
   out=$(FM_HOME="$home" "$ROOT/bin/fm-branch-outcome.sh" unprocessed) || fail "second unprocessed failed"
@@ -403,18 +428,7 @@ test_outcome_processed_marker_is_sequence_bound() {
 
   # A failed durable marker write must fail the acknowledgement and keep the
   # same captain outcome open for another processing turn.
-  failbin="$TMP_ROOT/failing-mktemp-bin"
-  mkdir -p "$failbin"
-  real_mktemp=$(command -v mktemp)
-  cat > "$failbin/mktemp" <<'SH'
-#!/usr/bin/env bash
-case "${1:-}" in
-  *.branch-outcomes-processed.*) exit 1 ;;
-esac
-exec "${REAL_MKTEMP:?}" "$@"
-SH
-  chmod +x "$failbin/mktemp"
-  out=$(PATH="$failbin:$PATH" REAL_MKTEMP="$real_mktemp" FM_HOME="$home" \
+  out=$(PATH="$failbin:$PATH" REAL_MKTEMP="$real_mktemp" FM_TEST_MKTEMP_MODE=processed FM_HOME="$home" \
     "$ROOT/bin/fm-branch-outcome.sh" mark-processed --through 3 2>&1)
   status=$?
   [ "$status" -ne 0 ] || fail "mark-processed reported success after its durable write failed"

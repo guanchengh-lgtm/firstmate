@@ -60,9 +60,9 @@
 #     through <seq>; the target itself must be a currently unprocessed captain
 #     row at or below the read cursor.
 #   fm-branch-outcome.sh processed-init [--held-lock]
-#     Rebuild the bounded per-task outcome indexes, then create the processed
-#     marker at the current read cursor when it does not exist yet; validate a
-#     present marker without changing it. --held-lock is only for a descendant
+#     Create the processed marker at the current read cursor when it does not
+#     exist yet; validate a present marker without changing it. --held-lock is
+#     only for a descendant
 #     of the process holding $STATE/.branch-outcomes.lock (fm-wake-drain.sh may
 #     run its redirected presentation body in a subshell on Bash 3.2); it skips
 #     the nested acquire so drain's bounded lock wait remains the deadline.
@@ -218,9 +218,9 @@ advance_cursor() { # <seq>
     return 1
   fi
   [ "$through" -gt "$cursor" ] || return 0
-  tmp=$(mktemp "$STATE/.branch-outcomes-cursor.XXXXXX")
-  printf '%s\n' "$through" > "$tmp"
-  mv -f -- "$tmp" "$CURSOR"
+  tmp=$(mktemp "$STATE/.branch-outcomes-cursor.XXXXXX") || return 1
+  printf '%s\n' "$through" > "$tmp" || { rm -f -- "$tmp"; return 1; }
+  mv -f -- "$tmp" "$CURSOR" || { rm -f -- "$tmp"; return 1; }
 }
 
 write_processed() { # <seq>
