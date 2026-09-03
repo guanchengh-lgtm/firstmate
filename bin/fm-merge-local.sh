@@ -17,8 +17,8 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FM_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-FM_HOME="${FM_HOME:-$FM_ROOT}"
+FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
 "$FM_ROOT/bin/fm-guard.sh" || true
 # Role partition: landing local-only work is MAIN-owned; the Pi supervision
@@ -59,19 +59,6 @@ fm_exact_sync_require_request() {
   fm_exact_sync_hex_sha "$SYNC_STAGE" || { echo "error: --stage must be a 40-hex SHA, not a branch name" >&2; exit 2; }
   fm_exact_sync_git_token "$SYNC_REMOTE" || { echo "error: --remote must be a simple remote name" >&2; exit 2; }
   fm_exact_sync_git_token "$SYNC_BRANCH" || { echo "error: --branch must be a simple branch name" >&2; exit 2; }
-}
-
-fm_exact_sync_require_stage_not_ref() {
-  case "$SYNC_STAGE" in
-    HEAD|refs/*|*/*)
-      echo "error: --stage must be a 40-hex SHA, not a branch name" >&2
-      exit 2
-      ;;
-  esac
-  fm_exact_sync_hex_sha "$SYNC_STAGE" || {
-    echo "error: --stage must be a 40-hex SHA, not a branch name" >&2
-    exit 2
-  }
 }
 
 fm_exact_sync_require_merge_parents() {
@@ -378,7 +365,6 @@ fm_exact_sync_run() {
   # shellcheck source=bin/fm-merge-outcome-lib.sh
   . "$SCRIPT_DIR/fm-merge-outcome-lib.sh"
   fm_exact_sync_require_request
-  fm_exact_sync_require_stage_not_ref
   SYNC_M=$(git -C "$PROJ" rev-parse --verify "$TASK_BRANCH^{commit}")
   fm_exact_sync_require_merge_parents || exit 1
   fm_exact_sync_require_tree_match || exit 1
@@ -413,7 +399,9 @@ SYNC_BASE=
 SYNC_UPSTREAM=
 SYNC_STAGE=
 SYNC_REMOTE=origin
+SYNC_REMOTE_SET=0
 SYNC_BRANCH=main
+SYNC_BRANCH_SET=0
 SYNC_M=
 SYNC_ORIGIN_TIP=
 SYNC_SKIP_PUSH=0
@@ -440,12 +428,16 @@ while [ "$#" -gt 0 ]; do
       ;;
     --remote)
       [ "$#" -ge 2 ] || { echo "$USAGE" >&2; exit 2; }
+      [ "$SYNC_REMOTE_SET" = 0 ] || { echo "error: duplicate --remote" >&2; exit 2; }
       SYNC_REMOTE=$2
+      SYNC_REMOTE_SET=1
       shift
       ;;
     --branch)
       [ "$#" -ge 2 ] || { echo "$USAGE" >&2; exit 2; }
+      [ "$SYNC_BRANCH_SET" = 0 ] || { echo "error: duplicate --branch" >&2; exit 2; }
       SYNC_BRANCH=$2
+      SYNC_BRANCH_SET=1
       shift
       ;;
     *)
@@ -455,6 +447,13 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+
+if [ "$EXACT_SYNC" = 0 ] \
+  && { [ -n "$SYNC_BASE" ] || [ -n "$SYNC_UPSTREAM" ] || [ -n "$SYNC_STAGE" ] \
+    || [ "$SYNC_REMOTE_SET" = 1 ] || [ "$SYNC_BRANCH_SET" = 1 ]; }; then
+  echo "error: --base/--upstream/--stage/--remote/--branch require --exact-sync" >&2
+  exit 2
+fi
 
 META="$STATE/$ID.meta"
 [ -f "$META" ] || { echo "error: no meta for task $ID at $META" >&2; exit 1; }
