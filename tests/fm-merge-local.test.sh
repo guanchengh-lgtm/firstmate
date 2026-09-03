@@ -571,6 +571,80 @@ YAML
   pass "matrix job name templates match the expanded CI job name"
 }
 
+test_setext_underline_is_not_a_conflict_marker() {
+  local rec case_dir proj home fakebin base upstream stage merge_sha out under_tree under_m
+  rec=$(make_sync_case setext-underline)
+  IFS='|' read -r case_dir proj home fakebin base upstream stage merge_sha <<EOF
+$rec
+EOF
+  git clone -q "$proj" "$case_dir/_su"
+  printf '%s\n' 'Title' '==========' 'body' > "$case_dir/_su/NOTES.md"
+  git -C "$case_dir/_su" add NOTES.md
+  git -C "$case_dir/_su" -c user.email=t@t -c user.name=t commit -q -m setext
+  under_tree=$(git -C "$case_dir/_su" rev-parse 'HEAD^{tree}')
+  under_m=$(git -C "$case_dir/_su" commit-tree "$under_tree" -p "$base" -p "$upstream" -m setext-m)
+  git -C "$proj" fetch -q "$case_dir/_su" "+$under_m:refs/heads/fm/task-x1"
+  rm -rf "$case_dir/_su"
+  add_gh_ci_ok "$fakebin" "$under_m"
+  out=$(run_exact_sync "$home" "$fakebin" task-x1 --exact-sync \
+    --base "$base" --upstream "$upstream" --stage "$under_m") \
+    || fail "setext-underline: landing was refused for a Markdown underline: $out"
+  assert_contains "$out" "exact-sync landed $under_m" "setext-underline: success line missing"
+  pass "a Markdown setext underline is not read as a conflict marker"
+}
+
+test_sync_flags_without_exact_sync_refuse() {
+  local case_dir proj home before after out rc
+  case_dir="$TMP_ROOT/flags-without-exact-sync"
+  home="$case_dir/home"
+  proj="$case_dir/project"
+  mkdir -p "$home/state" "$proj"
+  git -C "$proj" init -q -b main
+  printf '# %s\n' project > "$proj/README.md"
+  git -C "$proj" add README.md
+  git -C "$proj" -c user.email=t@t -c user.name=t commit -q -m initial
+  git -C "$proj" checkout -q -b fm/task-x1
+  git -C "$proj" -c user.email=t@t -c user.name=t commit -q --allow-empty -m work
+  git -C "$proj" checkout -q main
+  fm_write_meta "$home/state/task-x1.meta" \
+    "window=firstmate:fm-task-x1" \
+    "endpoint_task_id=task-x1" \
+    "worktree=$proj" \
+    "project=$proj" \
+    "kind=ship" \
+    "mode=local-only"
+  before=$(git -C "$proj" rev-parse main)
+
+  set +e
+  out=$(FM_HOME="$home" "$MERGE_LOCAL" task-x1 \
+    --base 1111111111111111111111111111111111111111 \
+    --upstream 2222222222222222222222222222222222222222 \
+    --stage 3333333333333333333333333333333333333333 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "flags-without-exact-sync: expected exit 2, got $rc: $out"
+  assert_contains "$out" "require --exact-sync" \
+    "flags-without-exact-sync: refusal lost its wording"
+
+  set +e
+  out=$(FM_HOME="$home" "$MERGE_LOCAL" task-x1 --base '' 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "flags-without-exact-sync: empty --base gave exit $rc: $out"
+  assert_contains "$out" "require --exact-sync" \
+    "flags-without-exact-sync: empty value bypassed the gate"
+
+  set +e
+  out=$(FM_HOME="$home" "$MERGE_LOCAL" task-x1 --remote origin 2>&1)
+  rc=$?
+  set -e
+  [ "$rc" -eq 2 ] || fail "flags-without-exact-sync: --remote gave exit $rc: $out"
+
+  after=$(git -C "$proj" rev-parse main)
+  [ "$after" = "$before" ] || fail "flags-without-exact-sync: main moved without --exact-sync"
+  pass "exact-sync request flags without --exact-sync refuse and never move main"
+}
+
 test_force_is_refused
 test_stale_base_refuses
 test_wrong_upstream_refuses
@@ -587,3 +661,5 @@ test_outcome_sync_records_git_identity
 test_outcome_sync_secondmate_line
 test_outcome_sync_unreadable_role
 test_matrix_job_name_prefix_matches
+test_setext_underline_is_not_a_conflict_marker
+test_sync_flags_without_exact_sync_refuse

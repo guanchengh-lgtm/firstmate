@@ -106,7 +106,8 @@ fm_exact_sync_require_tree_match() {
 
 fm_exact_sync_require_no_conflict_markers() {
   local rc=0
-  git -C "$PROJ" grep -I -E -e '^(<<<<<<<|=======|>>>>>>>)' "$SYNC_M" -- >/dev/null 2>&1 || rc=$?
+  git -C "$PROJ" grep -I -E -e '^<<<<<<< ' -e '^\|\|\|\|\|\|\| ' -e '^={7}$' \
+    -e '^>>>>>>> ' "$SYNC_M" -- >/dev/null 2>&1 || rc=$?
   if [ "$rc" -eq 0 ]; then
     echo "REFUSED: tree($SYNC_M) still contains conflict markers" >&2
     return 1
