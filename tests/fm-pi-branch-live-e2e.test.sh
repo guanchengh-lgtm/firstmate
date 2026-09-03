@@ -242,7 +242,7 @@ cat > "$erroragentdir/models.json" <<'JSON'
       "api": "openai-completions",
       "apiKey": "fm-live-placeholder",
       "models": [
-        { "id": "fm-live-error-model", "name": "fm live error", "contextWindow": 8192, "maxTokens": 512 }
+        { "id": "fm-live-error-model", "name": "fm live error", "contextWindow": 81920, "maxTokens": 512 }
       ]
     }
   }

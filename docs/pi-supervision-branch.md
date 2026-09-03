@@ -7,7 +7,7 @@ This document stays the owner and the contract.
 
 Fleet supervision on the Pi primary harness runs on a second, persistent conversation - the supervision branch - inside the same `pi` process as the captain's chat.
 Supervision is default-on: once a Pi primary session owns this home's fleet lock, the branch handles eligible task-local rows from ordinary actionable wakes plus heartbeat scans that the cheap bash-level scan flags as possibly captain-relevant, then merges each outcome back into the captain conversation's transcript.
-Any main-only or unresolvable row returns the whole unread queue to main.
+Any main-only or unresolvable row present during an eligibility check returns the whole unread queue to main.
 Every watcher-failure alarm also stays on main.
 Captain-relevant branch outcomes persist as exact, sequence-keyed visible transcript entries and then open one sequence-keyed processing turn on main, which stays open until main acknowledges that sequence.
 The design source is the captain-approved forked-supervision architecture board, a captain-private fleet record (a self-contained HTML explainer with the measured cache and judgment evidence); this document records the shape it landed as, and the delivering PR cites the board artifact itself.
@@ -21,7 +21,7 @@ The supervision branch itself is Pi-only by construction:
 ## Components and their owners
 
 - Wake dispatch: `.pi/extensions/fm-primary-pi-watch.ts` stays the dispatcher, and `.pi/extensions/lib/fm-branch-dispatch.ts` owns the offer handshake and row eligibility.
-  A queue is offered only when every row is branch-eligible.
+  A queue is offered only when every row present during its eligibility check is branch-eligible.
   A check-kind row returns the whole queue to main, and no acceptor keeps today's wake-to-main path.
   Watcher-failure alarms always go to main because only main can repair the watcher cycle.
 - The branch itself: `.pi/extensions/fm-branch-supervision.ts` creates and reopens the persistent branch session, serializes wakes, mirrors dialog, and merges outcomes.
@@ -49,7 +49,9 @@ The supervision branch itself is Pi-only by construction:
   Every other fleet-wide, main-only, or unresolvable wake stays on main.
   The branch recomputes full-queue eligibility immediately before prompting the branch to drain.
   A newly-arrived main-only row observed at that recheck returns the whole queue to main.
-  A producer can still append a row in the instant between that final check and drain startup; this accepted residual follows the confused-agent-grade boundary above rather than claiming adversarial queue isolation.
+  A producer can still append a row between that final check and drain startup.
+  The shared whole-queue drain can then present and acknowledge that row as branch work.
+  This accepted residual follows the confused-agent-grade boundary above rather than claiming adversarial queue isolation.
   Away mode and a broken branch between its bounded recovery probes keep today's wake-to-main behavior.
 
 ## How the branch knows what the captain said
