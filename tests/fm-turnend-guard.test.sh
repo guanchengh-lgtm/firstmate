@@ -1916,14 +1916,17 @@ printf 'stale: fixture-win needs a look\n'
 exit 0
 SH
   chmod +x "$dir/bin/fm-watch-arm.sh"
-  ln -s /bin/bash "$dir/fake-cursor-claude"
+  mkdir -p "$dir/fake-harness"
+  ln -s /bin/bash "$dir/fake-harness/claude"
 }
 
 # The adapter runs as a child of a fake harness whose pid holds the home's
 # session lock, so the real ancestry path in bin/fm-session-lock-lib.sh decides
-# ownership rather than a stub. The name must carry verified-harness identity or
-# the adapter never reaches the park: it would take the lock-recovery branch and
-# exit before arming, which would make the stand-down assertions vacuous.
+# ownership rather than a stub. The basename must carry verified-harness identity
+# on BOTH platforms or the adapter never reaches the park: it would take the
+# lock-recovery branch and exit before arming, making the stand-down assertions
+# vacuous. Linux reports the kernel exec name truncated to 15 characters, so the
+# name is the bare harness word rather than a longer prefixed one.
 run_cursor_park() {  # <dir> <env-assignment>...
   local dir=$1
   shift
@@ -1931,7 +1934,7 @@ run_cursor_park() {  # <dir> <env-assignment>...
   printf '{"session_id":"sess-cursor","loop_count":0,"hook_event_name":"stop"}' \
     | env -u PI_CODING_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
         FM_HOME="$dir" FM_CURSOR_PARK_POLL=1 FM_CURSOR_PARK_ATTEMPTS=1 "$@" \
-      "$dir/fake-cursor-claude" -c '
+      "$dir/fake-harness/claude" -c '
         printf "%s\n" "$$" > "$FM_HOME/state/.lock"
         printf "%s\n" "$$" > "$FM_HOME/state/fixture-harness-pid"
         "$FM_HOME/bin/fm-turnend-guard-cursor.sh"
