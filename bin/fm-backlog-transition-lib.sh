@@ -4,8 +4,8 @@
 # (this library reads that one's backend gate and never sources it itself, so a
 # caller that already sourced it keeps its memoised compatibility verdict).
 #
-# This library validates backlog rows before dispatch and provides the backlog
-# transitions used by the lifecycle owners that opt into them.
+# This library validates backlog rows before dispatch and provides guarded
+# publish, dispatch, rollback, and close transitions for lifecycle owners.
 #
 # SCOPE. fm_backlog_transition_applies is the single gate. It excludes
 # secondmates (persistent agents are never backlog items, AGENTS.md section 10),
@@ -30,8 +30,12 @@
 # replay would reject. The validator pins the data path to this home's configured
 # root before any recovery mutation, then re-runs exactly that close.
 # `tasks-axi done` on an already-closed task backfills links
-# without moving the close date, so replay is idempotent. Spawn needs no marker:
-# it only reads the row before dispatch.
+# without moving the close date, so replay is idempotent.
+#
+# DISPATCH. The dispatch helper keeps an eligible In flight row unchanged or
+# starts an eligible Queued row after it validates the task record. The rollback
+# helper removes provisional task and busy records. Callers own launch timing and
+# physical resource cleanup.
 
 # Set by fm_backlog_transition_applies for a return-1 exemption.
 # shellcheck disable=SC2034 # Output global, read by the sourcing caller.

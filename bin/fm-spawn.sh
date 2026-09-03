@@ -230,17 +230,24 @@
 # resolver because `cursor` is not the CLI name. A cursor SECONDMATE instead runs
 # the tracked project-scope .cursor/hooks.json in its own home, whose stop-hook
 # park owns that home's supervision (docs/supervision-protocols/cursor.md).
-# A ship or scout dispatch REFUSES up front, before any
-# endpoint, worktree, or record exists, unless the home's backlog has an
-# unheld, unblocked Queued or In flight item for the id.
+# A ship or scout dispatch REFUSES up front, before creating a new endpoint or
+# local copy, unless the home's backlog has an unheld, unblocked Queued or In
+# flight item for the id.
 # This check is skipped entirely for --secondmate spawns (persistent agents are not work
 # items), on a config/backlog-backend=manual home, and in a home that keeps no
 # data/backlog.md. An automatic-backend home with a backlog but no compatible
 # tasks-axi refuses before creating any lifecycle state.
+# After launch submission and any required Kimi delivery confirmation, a Queued
+# item moves to In flight before spawn reports success. If that transition fails,
+# a fresh launch attempts to retire its new endpoint and roll back provisional
+# task and busy records. It returns a worktree only when it is clean and its HEAD
+# is reachable from a remote; a successful verifier rollback restores the original
+# builder record.
 # On success prints: spawned <id> harness=<name> kind=<ship|scout|secondmate> [mode=<mode> yolo=<on|off> role=<builder|verifier>] window=<backend-target> worktree=<path>
-# A ship task records the explicit mode/yolo it was passed; a secondmate spawn records
-# mode=secondmate, yolo=off, home=, and projects=; a scout records neither, and both the
-# success line and state/<id>.meta omit them.
+# A ship task records the explicit mode, yolo, role, and optional surface it was
+# passed. A secondmate spawn records mode=secondmate, yolo=off, home=, and
+# projects=. A scout records none of those delivery fields, and both its success
+# line and state/<id>.meta omit them.
 # Every fresh spawn or relaunch records a new spawn_gen= incarnation token so durable
 # consumers can distinguish a replacement worker that reuses the same task id.
 # When the home session's frozen trace-context decision is enabled (see

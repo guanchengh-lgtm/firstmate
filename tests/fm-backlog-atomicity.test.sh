@@ -700,8 +700,8 @@ test_dispatch_refuses_a_symlinked_backlog_without_crossing_homes() {
   pass "dispatch refuses symlinked backlogs without crossing homes"
 }
 
-test_automatic_backend_refuses_incompatible_tasks_axi_before_mutation() {
-  local spawn_case teardown_case id out rc=0
+test_automatic_dispatch_refuses_incompatible_tasks_axi_before_mutation() {
+  local spawn_case id out rc=0
   id=atomic-incompatible-tasks-axi-b2
   spawn_case=$(make_home incompatible-tasks-axi-spawn "$id")
   add_item "$spawn_case" "$id"
@@ -716,7 +716,12 @@ test_automatic_backend_refuses_incompatible_tasks_axi_before_mutation() {
   rm -f "$spawn_case/fakebin/tasks-axi"
   [ "$(row_state "$spawn_case" "$id")" = queued ] \
     || fail "automatic spawn changed the row without transition tooling"
+  pass "automatic dispatch refuses mutation without compatible tasks-axi"
+}
 
+test_automatic_teardown_refuses_incompatible_tasks_axi_before_mutation() {
+  local teardown_case id out rc=0
+  id=atomic-incompatible-tasks-axi-b2
   teardown_case=$(make_home incompatible-tasks-axi-teardown)
   add_item "$teardown_case" "$id"
   start_item "$teardown_case" "$id"
@@ -732,7 +737,7 @@ test_automatic_backend_refuses_incompatible_tasks_axi_before_mutation() {
   rm -f "$teardown_case/fakebin/tasks-axi"
   [ "$(row_state "$teardown_case" "$id")" = in_flight ] \
     || fail "automatic teardown changed the row without transition tooling"
-  pass "automatic homes refuse lifecycle mutation without compatible tasks-axi"
+  pass "automatic teardown refuses mutation without compatible tasks-axi"
 }
 
 test_dispatch_refuses_an_unresolvable_data_directory() {
@@ -2308,8 +2313,31 @@ test_a_persistent_secondmate_is_never_a_backlog_item() {
   pass "dispatching a persistent secondmate needs no backlog item"
 }
 
-# This slice runs the S1 bootstrap recovery contract.
-# The S2 dispatch and S3 completion cases run after their owners land.
+# This slice runs the S1 bootstrap recovery contract and the S2 dispatch contract.
+# The S3 completion cases run after their owner lands.
+test_dispatch_moves_the_item_in_flight_in_the_same_run
+test_dispatch_refuses_a_pending_authoritative_close
+test_dispatch_refuses_a_held_row_before_creating_resources
+test_dispatch_refuses_a_blocked_row_before_creating_resources
+test_dispatch_refuses_a_held_in_flight_row_before_relaunch
+test_dispatch_reads_the_row_from_the_backlog_root
+test_dispatch_refuses_a_symlinked_backlog_without_crossing_homes
+test_automatic_dispatch_refuses_incompatible_tasks_axi_before_mutation
+test_dispatch_refuses_an_id_this_home_has_no_item_for
+test_dispatch_reports_a_backlog_read_failure
+test_dispatch_refuses_a_closed_item
+test_dispatch_refuses_to_commit_without_a_published_record
+test_dispatch_leaves_no_record_when_the_transition_fails
+test_dispatch_preserves_local_work_before_returning_the_lease
+test_dispatch_keeps_ownership_when_endpoint_retirement_fails
+test_dispatch_reports_an_incomplete_record_rollback
+test_dispatch_reports_an_incomplete_busy_rollback
+test_dispatch_rolls_back_before_a_failed_launch_delivery
+test_dispatch_defers_interruption_across_backlog_commit
+test_dispatch_interruption_during_kimi_readiness_fails_before_commit
+test_dispatch_does_not_resurrect_a_row_closed_after_preflight
+test_dispatch_fails_when_its_row_vanishes_after_preflight
+test_a_persistent_secondmate_is_never_a_backlog_item
 test_recovery_retries_when_a_close_marker_cannot_be_removed
 test_recovery_reports_an_owned_row_read_failure
 test_recovery_marks_an_owned_record_in_flight
