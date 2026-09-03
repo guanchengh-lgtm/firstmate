@@ -864,6 +864,11 @@ BACKEND=
 ORCA_ABORT_CLEANUP=0
 ORCA_WORKTREE_ID=
 ORCA_TERMINAL=
+FRESH_ABORT_ENDPOINT=0
+FRESH_ABORT_BACKEND=
+FRESH_ABORT_TARGET=
+FRESH_ABORT_WORKTREE=
+FRESH_ABORT_PROJECT=
 HERDR_PROJECTION_ABORT_CLEANUP=0
 HERDR_PROJECTION_ABORT_SESSION=
 HERDR_PROJECTION_ABORT_TASK_TAB=
@@ -914,6 +919,14 @@ parse_orca_worktree_result() {
   fi
 }
 
+spawn_disarm_fresh_resources() {
+  FRESH_ABORT_ENDPOINT=0
+  FRESH_ABORT_BACKEND=
+  FRESH_ABORT_TARGET=
+  FRESH_ABORT_WORKTREE=
+  FRESH_ABORT_PROJECT=
+}
+
 spawn_preserve_complete_fresh_record() {
   local staged=${SPAWN_META_TMP:-} binding harness kind spawn_gen
   case "$staged" in "${STATE:-}/.${ID:-}.meta.spawn."*) ;; *) return 1 ;; esac
@@ -930,6 +943,7 @@ spawn_preserve_complete_fresh_record() {
   fi
   echo "warning: failed spawn preserved the standard task record for $ID" >&2
   SPAWN_META_TMP=
+  spawn_disarm_fresh_resources
   ORCA_ABORT_CLEANUP=0
   HERDR_PROJECTION_ABORT_CLEANUP=0
   HERDR_PROJECTION_ABORT_RECLAIM=0
@@ -970,6 +984,18 @@ spawn_abort_cleanup() {
       fm_backend_kill "$VERIFIER_HANDOFF_ABORT_BACKEND" \
         "$VERIFIER_HANDOFF_ABORT_TARGET" 2>/dev/null || true
     fi
+  fi
+  if [ "$FRESH_ABORT_ENDPOINT" = 1 ]; then
+    FRESH_ABORT_ENDPOINT=0
+    fm_backend_kill "$FRESH_ABORT_BACKEND" "$FRESH_ABORT_TARGET" 2>/dev/null || true
+  fi
+  if [ -n "$FRESH_ABORT_WORKTREE" ]; then
+    if ! (cd "$FRESH_ABORT_PROJECT" \
+      && treehouse return --force "$FRESH_ABORT_WORKTREE") >/dev/null 2>&1; then
+      echo "warning: could not return aborted spawn worktree $FRESH_ABORT_WORKTREE" >&2
+    fi
+    FRESH_ABORT_WORKTREE=
+    FRESH_ABORT_PROJECT=
   fi
   if [ "$HERDR_PROJECTION_ABORT_CLEANUP" = 1 ] \
      && [ "$HERDR_PRESENTATION_ORDER_LOCK_HELD" != 1 ]; then
@@ -2863,6 +2889,13 @@ EOF
     T="$ORCA_TERMINAL"
     ;;
 esac
+if [ "$RELAUNCH" -eq 0 ] && [ "$VERIFIER_HANDOFF" -eq 0 ] && [ "$BACKEND" != orca ]; then
+  if [ "$BACKEND" != herdr ] || [ "$HERDR_PROJECTED" -ne 1 ]; then
+    FRESH_ABORT_ENDPOINT=1
+    FRESH_ABORT_BACKEND=$BACKEND
+    FRESH_ABORT_TARGET=$T
+  fi
+fi
 fi
 if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
   VERIFIER_HANDOFF_ABORT_ENDPOINT=1
@@ -3062,6 +3095,8 @@ elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   fi
 
   validate_spawn_worktree "treehouse get" "$T"
+  FRESH_ABORT_WORKTREE=$WT
+  FRESH_ABORT_PROJECT=$PROJ_ABS
 fi
 if [ "$RELAUNCH" -eq 0 ] && [ "$VERIFIER_HANDOFF" -eq 0 ] && [ "$KIND" != secondmate ]; then
   freshen_spawn_worktree_base "$WT" || exit 1
@@ -3537,6 +3572,7 @@ if [ "$RELAUNCH" -eq 0 ]; then
     HERDR_PROJECTION_ABORT_RECLAIM=0
     RELAUNCH_REPLACEMENT_PENDING=0
   else
+    spawn_disarm_fresh_resources
     ORCA_ABORT_CLEANUP=0
     HERDR_PROJECTION_ABORT_CLEANUP=0
     HERDR_PROJECTION_ABORT_RECLAIM=0

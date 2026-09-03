@@ -1952,15 +1952,18 @@ test_fresh_prepublication_failure_preserves_standard_record() {
 }
 
 test_fresh_persistent_publication_failure_removes_hidden_record() {
-  local rec id out status meta real_mv
+  local rec id out status meta real_mv treehouse_log tmuxlog
   id=profile-fresh-persistent-publish-failure-z48c
   rec=$(make_spawn_case profile-fresh-persistent-publish-failure claude "$id")
   read_case_record "$rec"
   meta="$HOME_DIR/state/$id.meta"
   real_mv=$(command -v mv)
   make_spawn_mv_failure_stub "$FAKEBIN_DIR"
+  treehouse_log="$HOME_DIR/state/.fake-treehouse.log"
+  : > "$treehouse_log"
 
   out=$(FM_REAL_MV="$real_mv" FM_FAKE_META_PUBLISH_MV_FAIL="$meta" \
+    FM_FAKE_TREEHOUSE_LOG="$treehouse_log" \
     run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
       "$id" "$PROJ_DIR")
   status=$?
@@ -1972,7 +1975,14 @@ test_fresh_persistent_publication_failure_removes_hidden_record() {
     "persistent publication failure lacked its record diagnostic"
   assert_contains "$out" "could not preserve the standard task record for $id" \
     "persistent publication failure did not report the failed retry"
-  pass "fm-spawn: persistent publication failure removes its hidden record"
+  [ "$(cat "$HOME_DIR/state/.fake-endpoint-state")" = missing ] \
+    || fail "persistent publication failure left its endpoint running"
+  tmuxlog="$HOME_DIR/state/.fake-tmux.log"
+  [ "$(grep -c '^kill-window ' "$tmuxlog" || true)" -eq 1 ] \
+    || fail "persistent publication failure did not retire exactly one endpoint"
+  [ "$(grep -Fxc "return --force $WT_DIR" "$treehouse_log" || true)" -eq 1 ] \
+    || fail "persistent publication failure did not return its leased worktree"
+  pass "fm-spawn: persistent publication failure retires unowned resources"
 }
 
 test_home_summary_refresh_follows_launch_submission() {
