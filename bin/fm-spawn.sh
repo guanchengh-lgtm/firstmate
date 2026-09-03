@@ -317,10 +317,6 @@ fi
 . "$SCRIPT_DIR/fm-ff-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-fm_backlog_directory_present "$STATE" "state directory" || {
-  echo "error: spawn refused: $FM_BACKLOG_TRANSITION_ERROR" >&2
-  exit 1
-}
 # shellcheck source=bin/fm-secondmate-nudge-lib.sh
 . "$SCRIPT_DIR/fm-secondmate-nudge-lib.sh"
 # shellcheck source=bin/fm-config-inherit-lib.sh
@@ -1195,7 +1191,11 @@ spawn_abort_cleanup() {
       fm_backend_kill orca "$ORCA_TERMINAL" 2>/dev/null || true
     fi
     if [ -n "${ORCA_WORKTREE_ID:-}" ]; then
-      fm_backend_remove_worktree orca "$ORCA_WORKTREE_ID" 2>/dev/null || true
+      if [ -n "${WT:-}" ] && spawn_worktree_safe_to_return "$WT"; then
+        fm_backend_remove_worktree orca "$ORCA_WORKTREE_ID" 2>/dev/null || true
+      else
+        echo "warning: preserving aborted Orca worktree $ORCA_WORKTREE_ID because it is not proven free of local work" >&2
+      fi
     fi
   fi
   if [ "$SPAWN_TASK_LOCK_HELD" = 1 ]; then
