@@ -105,7 +105,12 @@ test_pre_colon_key_wins_and_bare_lines_still_use_default() {
   fi
   grep -F 'task-grammar needs-decision: legacy unkeyed choice' "$out" >/dev/null \
     || fail "a bare needs-decision line no longer folded to the default key: $(cat "$out")"
-  if grep -F 'invalid keyed choice' "$out" >/dev/null; then
+  if awk '
+    /^OPEN DECISIONS / { p=1; next }
+    p && /^(STATUS OUTCOME|UNREAD STATUS|RECORD DIVERGENCE|WAKE_ACK)/ { exit 1 }
+    p && /invalid keyed choice/ { exit 0 }
+    END { exit 1 }
+  ' "$out"; then
     fail "an invalid post-colon key slug entered the open-decision set: $(cat "$out")"
   fi
 
@@ -172,7 +177,7 @@ test_no_open_decisions_prints_nothing() {
   state="$dir/state"
   out="$dir/drain.out"
   printf 'working: on it\n' > "$state/task4.status"
-  printf 'done: shipped clean\n' > "$state/task5.status"
+  printf 'resolved: shipped clean\n' > "$state/task5.status"
 
   FM_STATE_OVERRIDE="$state" "$DRAIN" > "$out" || fail "drain failed with no open decisions"
 

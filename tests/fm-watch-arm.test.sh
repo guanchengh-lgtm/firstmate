@@ -95,11 +95,12 @@ write_remote_delta() {  # <result-path> <status-line>
 }
 
 status_signature() {  # <status-path>
-  if [ "$(uname)" = Darwin ]; then
-    stat -f '%z:%Fm' "$1"
-  else
-    stat -c '%s:%Y' "$1"
-  fi
+  # Landed S1 scan_signals byte-compares this to .seen-*. Must be the
+  # production signature (r1), not a v2 presentation record.
+  bash -c '
+    . "$1"
+    fm_wake_signal_sig "$2"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$1"
 }
 
 wait_for_file_text() {  # <file> <fixed-text>
@@ -634,6 +635,92 @@ test_restart_preserves_recovery_across_reused_pid_lock() {
   pass "watch-arm: restart publishes recovery before clearing a reused-pid watcher lock"
 }
 
+test_restart_does_not_clear_a_concurrent_replacement_lock() {
+  local dir home state fakebin seed arm replacement i marker release owner rc identity ready seed_release
+  dir=$(make_case restart-replacement-race)
+  home="$dir/home"
+  state="$dir/state"
+  fakebin="$dir/fakebin"
+  marker="$dir/restart-waiting"
+  release="$dir/restart-release"
+  ready="$dir/seed-ready"
+  seed_release="$dir/seed-release"
+  mkdir -p "$home/data"
+
+  FM_SEED_READY="$ready" FM_SEED_RELEASE="$seed_release" /bin/bash -c '
+    stop_seed() {
+      while [ ! -e "$FM_SEED_RELEASE" ]; do /bin/sleep 0.01; done
+      exit 0
+    }
+    trap stop_seed TERM
+    printf "ready\n" > "$FM_SEED_READY"
+    while :; do /bin/sleep 0.1; done
+  ' > "$dir/seed.out" &
+  seed=$!
+  wait_for_file_text "$ready" "ready" || fail "seed lock holder did not start"
+  owner="$state/.watch.lock.owner.seed"
+  mkdir -p "$owner"
+  identity=$(FM_STATE_OVERRIDE="$state" bash -c '. "$1"; fm_pid_identity "$2"' \
+    _ "$ROOT/bin/fm-wake-lib.sh" "$seed") \
+    || fail "could not identify the seed lock holder"
+  printf '%s\n' "$seed" > "$owner/pid"
+  printf '%s\n' "$home" > "$owner/fm-home"
+  printf '%s\n' "$WATCH" > "$owner/watcher-path"
+  printf '%s\n' "$identity" > "$owner/pid-identity"
+  ln -s "$owner" "$state/.watch.lock"
+  touch "$state/.last-watcher-beat"
+
+  cat > "$fakebin/sleep" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = 0.1 ] && [ -n "${FM_RESTART_WAIT_MARKER:-}" ]; then
+  printf 'waiting\n' > "$FM_RESTART_WAIT_MARKER"
+  while [ ! -e "$FM_RESTART_WAIT_RELEASE" ]; do /bin/sleep 0.01; done
+fi
+exec /bin/sleep "$@"
+SH
+  chmod +x "$fakebin/sleep"
+
+  PATH="$fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    FM_RESTART_WAIT_MARKER="$marker" FM_RESTART_WAIT_RELEASE="$release" \
+    FM_POLL=1 FM_SIGNAL_GRACE=0 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$WATCH_ARM" --restart > "$dir/arm.out" &
+  arm=$!
+  wait_for_file_text "$marker" "waiting" || {
+    kill -KILL "$seed" "$arm" 2>/dev/null || true
+    fail "restart did not enter its old-owner wait"
+  }
+
+  FM_STATE_OVERRIDE="$state" bash -c '. "$1"; fm_lock_remove_path "$2"' \
+    _ "$ROOT/bin/fm-wake-lib.sh" "$state/.watch.lock" \
+    || fail "could not stage the concurrent watcher replacement"
+  PATH="$fakebin:$PATH" FM_HOME="$home" FM_STATE_OVERRIDE="$state" \
+    FM_POLL=5 FM_SIGNAL_GRACE=1 FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 \
+    "$WATCH" > "$dir/replacement.out" &
+  replacement=$!
+  i=0
+  while [ "$i" -lt 60 ]; do
+    owner=$(cat "$state/.watch.lock/pid" 2>/dev/null || true)
+    [ "$owner" = "$replacement" ] && [ -e "$state/.last-watcher-beat" ] && break
+    /bin/sleep 0.1
+    i=$((i + 1))
+  done
+  [ "$owner" = "$replacement" ] || fail "concurrent replacement did not take the watcher lock"
+
+  : > "$seed_release"
+  wait "$seed" 2>/dev/null || true
+  : > "$release"
+  wait_for_file_text "$dir/arm.out" "watcher: attached pid=$replacement" \
+    || fail "restart did not attach to the concurrent replacement: $(cat "$dir/arm.out")"
+  [ "$(cat "$state/.watch.lock/pid" 2>/dev/null || true)" = "$replacement" ] \
+    || fail "restart removed the concurrent replacement's live lock"
+
+  printf 'done: replacement race fixture finished\n' > "$state/replacement.status"
+  wait_for_exit "$replacement" 120 || fail "replacement watcher did not surface its wake"
+  wait_for_exit "$arm" 120; rc=$?
+  expect_code 0 "$rc" "restart attached to the concurrent replacement"
+  pass "watch-arm: restart preserves a concurrent replacement lock"
+}
+
 test_markerless_legacy_queue_is_recovered_on_arm() {
   local dir home state fakebin row
   dir=$(make_case markerless-legacy-arm)
@@ -837,6 +924,7 @@ test_interrupted_handling_is_redrained_on_rearm
 test_malformed_marker_is_quarantined_once
 test_recovery_consumption_serializes_queue_publication
 test_restart_preserves_recovery_across_reused_pid_lock
+test_restart_does_not_clear_a_concurrent_replacement_lock
 test_markerless_legacy_queue_is_recovered_on_arm
 test_handling_window_close_keeps_the_acknowledgement_valid
 test_moved_generation_acknowledgement_is_self_healing

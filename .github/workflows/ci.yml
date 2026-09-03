@@ -145,7 +145,7 @@ jobs:
       # Every shard reports so one failure never hides another shard's result.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -358,7 +358,7 @@ jobs:
   macos-stock-bash:
     name: Stock macOS Bash snapshot compatibility
     runs-on: macos-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
       - name: Run snapshot consumers with stock Bash
@@ -409,8 +409,41 @@ jobs:
           wake_output=$(/bin/bash tests/fm-wake-queue.test.sh)
           printf '%s\n' "$wake_output"
           wake_count=$(printf '%s\n' "$wake_output" | grep -c '^ok - ')
-          [ "$wake_count" -eq 23 ] || {
-            echo "::error::expected 23 wake-queue tests, got $wake_count"
+          [ "$wake_count" -eq 32 ] || {
+            echo "::error::expected 32 wake-queue tests, got $wake_count"
+            exit 1
+          }
+
+          watcher_lock_output=$(/bin/bash tests/fm-watcher-lock.test.sh)
+          printf '%s\n' "$watcher_lock_output"
+          watcher_lock_count=$(printf '%s\n' "$watcher_lock_output" | grep -c '^ok - ')
+          [ "$watcher_lock_count" -ge 1 ] || {
+            echo "::error::expected watcher-lock tests under stock Bash 3.2, got $watcher_lock_count"
+            exit 1
+          }
+
+          watch_arm_output=$(/bin/bash tests/fm-watch-arm.test.sh)
+          printf '%s\n' "$watch_arm_output"
+          watch_arm_count=$(printf '%s\n' "$watch_arm_output" | grep -c '^ok - ')
+          [ "$watch_arm_count" -ge 1 ] || {
+            echo "::error::expected watch-arm tests under stock Bash 3.2, got $watch_arm_count"
+            exit 1
+          }
+
+          command -v npm >/dev/null || { echo "::error::npm is required to install tasks-axi"; exit 1; }
+          npm install -g tasks-axi@0.2.5 >/dev/null
+          PATH="$(npm prefix -g)/bin:$PATH"
+          export PATH
+          command -v tasks-axi >/dev/null || { echo "::error::tasks-axi is required for the public-followup bash 3.2 register regression"; exit 1; }
+
+          # The full public-followup suite is not a stock-bash snapshot; run only
+          # the empty-lock register regression under real /bin/bash 3.2.
+          pf_output=$(FM_TEST_ONLY=test_first_register_succeeds_with_empty_lock_list_under_bash32 \
+            /bin/bash tests/fm-public-followup.test.sh)
+          printf '%s\n' "$pf_output"
+          pf_count=$(printf '%s\n' "$pf_output" | grep -c '^ok - ')
+          [ "$pf_count" -eq 1 ] || {
+            echo "::error::expected 1 public-followup bash 3.2 register regression, got $pf_count"
             exit 1
           }
 

@@ -50,8 +50,8 @@ The supervision branch itself is Pi-only by construction:
   The branch recomputes full-queue eligibility immediately before prompting the branch to drain.
   A newly-arrived main-only row observed at that recheck returns the whole queue to main.
   A producer can still append a row between that final check and drain startup.
-  The shared whole-queue drain can then present and acknowledge that row as branch work.
-  This accepted residual follows the confused-agent-grade boundary above rather than claiming adversarial queue isolation.
+  The branch drain consumes only its granted sequence set, so a later row stays available to main and cannot be acknowledged as branch work.
+  [`watcher-continuity.md`](watcher-continuity.md#per-actor-acknowledgement) owns the per-actor acknowledgement contract.
   Away mode and a broken branch between its bounded recovery probes keep today's wake-to-main behavior.
 
 ## How the branch knows what the captain said
