@@ -86,7 +86,7 @@ case "${1:-}" in
         'export GOTMPDIR='*)
           if [ -n "${FM_FAKE_TRACE_PREPARE:-}" ]; then
             : > "$FM_FAKE_TRACE_PREPARE"
-            while [ ! -e "$FM_FAKE_META_WRITER_READY" ]; do /bin/sleep 0.01; done
+            while [ ! -e "$FM_FAKE_META_WRITER_WAITING" ]; do /bin/sleep 0.01; done
           fi
           ;;
         'export TRACEPARENT='*)
@@ -117,6 +117,7 @@ SH
   chmod +x "$fb/tmux"
   cat > "$fb/sleep" <<'SH'
 #!/usr/bin/env bash
+[ -z "${FM_FAKE_LOCK_WAIT:-}" ] || : > "$FM_FAKE_LOCK_WAIT"
 exit 0
 SH
   chmod +x "$fb/sleep"
@@ -171,7 +172,7 @@ run_control() {  # <case-dir> <args...>
     FM_REAL_MV="${FM_REAL_MV:-}" FM_FAKE_COMPLETE_JOURNAL_MV_FAIL="${FM_FAKE_COMPLETE_JOURNAL_MV_FAIL:-}" \
     FM_FAKE_META_PUBLISH_MV_FAIL="${FM_FAKE_META_PUBLISH_MV_FAIL:-}" \
     FM_FAKE_TRACE_PREPARE="${FM_FAKE_TRACE_PREPARE:-}" \
-    FM_FAKE_META_WRITER_READY="${FM_FAKE_META_WRITER_READY:-}" \
+    FM_FAKE_META_WRITER_WAITING="${FM_FAKE_META_WRITER_WAITING:-}" \
     FM_FAKE_TRACE_EXPORTED="${FM_FAKE_TRACE_EXPORTED:-}" \
     "$CONTROL" "$@" 2>&1
 }
@@ -217,18 +218,6 @@ if [ -n "${FM_FAKE_META_PUBLISH_MV_FAIL:-}" ]; then
   for path in "$@"; do
     [ "$path" != "$FM_FAKE_META_PUBLISH_MV_FAIL" ] || exit 1
   done
-fi
-source_path=
-target_path=
-for path in "$@"; do
-  source_path=$target_path
-  target_path=$path
-done
-if [ -n "${FM_FAKE_META_WRITER_TARGET:-}" ] \
-   && [ "$target_path" = "$FM_FAKE_META_WRITER_TARGET" ] \
-   && grep -q '^x_request=' "$source_path" 2>/dev/null; then
-  : > "$FM_FAKE_META_WRITER_READY"
-  while [ ! -e "$FM_FAKE_META_WRITER_RELEASE" ]; do /bin/sleep 0.01; done
 fi
 exec "$FM_REAL_MV" "$@"
 SH
@@ -334,19 +323,16 @@ test_relaunch_preserves_durable_task_metadata() {
 }
 
 test_relaunch_serializes_concurrent_durable_metadata_publication() {
-  local dir control_pid link_pid rc i=0 traceparent prepare ready exported release
+  local dir control_pid link_pid rc i=0 traceparent prepare waiting exported
   dir=$(new_case metadata-race rl28)
   add_ship_task "$dir" rl28 claude
   printf '%s\n' "$$" > "$dir/home/state/.lock"
   printf '%s on\n' "$$" > "$dir/home/state/.trace-context-effective"
-  make_mv_failure_stub "$dir"
   prepare="$dir/trace-prepare"
-  ready="$dir/meta-writer-ready"
+  waiting="$dir/meta-writer-waiting"
   exported="$dir/trace-exported"
-  release="$dir/meta-writer-release"
-  FM_REAL_MV=$(command -v mv) \
-    FM_FAKE_TRACE_PREPARE="$prepare" \
-    FM_FAKE_META_WRITER_READY="$ready" \
+  FM_FAKE_TRACE_PREPARE="$prepare" \
+    FM_FAKE_META_WRITER_WAITING="$waiting" \
     FM_FAKE_TRACE_EXPORTED="$exported" \
     run_control "$dir" rl28 relaunch --note "continue after publication" > "$dir/control.out" &
   control_pid=$!
@@ -360,30 +346,25 @@ test_relaunch_serializes_concurrent_durable_metadata_publication() {
     fail "relaunch did not reach trace delivery"
   }
   env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" \
-    FM_REAL_MV="$(command -v mv)" \
-    FM_FAKE_META_WRITER_TARGET="$dir/home/state/rl28.meta" \
-    FM_FAKE_META_WRITER_READY="$ready" \
-    FM_FAKE_META_WRITER_RELEASE="$release" \
+    FM_FAKE_LOCK_WAIT="$waiting" \
     "$X_LINK" rl28 request-28 --carry-count 1 --carry-ts 1700000000 \
       --carry-platform x --carry-max 280 > "$dir/link.out" 2>&1 &
   link_pid=$!
   i=0
-  while { [ ! -e "$ready" ] || [ ! -e "$exported" ]; } && [ "$i" -lt 200 ]; do
+  while { [ ! -e "$waiting" ] || [ ! -e "$exported" ]; } && [ "$i" -lt 200 ]; do
     /bin/sleep 0.01
     i=$((i + 1))
   done
-  [ -e "$ready" ] && [ -e "$exported" ] || {
-    : > "$release"
+  [ -e "$waiting" ] && [ -e "$exported" ] || {
     kill "$link_pid" "$control_pid" 2>/dev/null || true
     wait "$link_pid" 2>/dev/null || true
     wait "$control_pid" 2>/dev/null || true
-    fail "trace publication did not overlap the concurrent metadata writer"
+    fail "the concurrent metadata writer did not wait through trace delivery"
   }
-  : > "$release"
-  wait "$link_pid"; rc=$?
-  expect_code 0 "$rc" "concurrent X metadata publication should serialize"$'\n'"$(cat "$dir/link.out")"
   wait "$control_pid"; rc=$?
   expect_code 0 "$rc" "relaunch should complete after serialized metadata publication"$'\n'"$(cat "$dir/control.out")"
+  wait "$link_pid"; rc=$?
+  expect_code 0 "$rc" "concurrent X metadata publication should serialize"$'\n'"$(cat "$dir/link.out")"
   [ "$(meta_field "$dir" rl28 x_request)" = request-28 ] \
     || fail "relaunch erased metadata published concurrently through the X interface"
   [ "$(meta_field "$dir" rl28 x_followups)" = 1 ] \
