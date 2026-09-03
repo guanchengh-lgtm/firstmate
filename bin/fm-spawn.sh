@@ -889,6 +889,7 @@ SPAWN_META_TMP=
 SPAWN_META_LOCK=
 SPAWN_META_LOCK_HELD=0
 SPAWN_META_PUBLISH_STARTED=0
+SPAWN_FRESH_COMMIT_PENDING=0
 SPAWN_TASK_SET_LOCK=
 SPAWN_TASK_SET_LOCK_HELD=0
 RELAUNCH_REPLACEMENT_PENDING=0
@@ -940,6 +941,15 @@ spawn_arm_created_endpoint() {  # <backend> <target>
   fi
 }
 
+spawn_fresh_commit_rollback() {
+  if fm_backlog_atomic_transition rollback "$STATE/$ID.meta" \
+      "$FM_ROOT/bin/fm-busy-event.sh" "$STATE" "$ID" "${BUSY_GEN:-}"; then
+    SPAWN_FRESH_COMMIT_PENDING=0
+    return 0
+  fi
+  return 1
+}
+
 spawn_preserve_complete_fresh_record() {
   local staged=${SPAWN_META_TMP:-} binding harness kind spawn_gen
   case "$staged" in "${STATE:-}/.${ID:-}.meta.spawn."*) ;; *) return 1 ;; esac
@@ -972,7 +982,13 @@ spawn_abort_cleanup() {
      && [ ! -L "$SPAWN_META_TMP" ]; then
     RELAUNCH_REPLACEMENT_PENDING=0
   fi
-  spawn_preserve_complete_fresh_record || true
+  if [ "$SPAWN_FRESH_COMMIT_PENDING" = 1 ]; then
+    if ! spawn_fresh_commit_rollback; then
+      status=1
+    fi
+  else
+    spawn_preserve_complete_fresh_record || true
+  fi
   if [ "$RELAUNCH_REPLACEMENT_PENDING" = 1 ]; then
     RELAUNCH_REPLACEMENT_PENDING=0
     if ! clear_relaunch_harness_wiring \
@@ -2354,6 +2370,9 @@ else
     exit 1
   fi
 fi
+if [ "$RELAUNCH" -eq 0 ] && [ -n "$BACKLOG_ROW_STATE" ]; then
+  SPAWN_FRESH_COMMIT_PENDING=1
+fi
 
 if [ "$SPAWN_META_LOCK_HELD" != 1 ]; then
   SPAWN_META_LOCK=$(fm_meta_lock_path "$STATE/$ID.meta") || exit 1
@@ -3575,16 +3594,18 @@ if [ "$RELAUNCH" -eq 0 ]; then
     exit 1
   fi
   SPAWN_META_TMP=
-  if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
-    VERIFIER_HANDOFF_ABORT_ENDPOINT=0
-    HERDR_PROJECTION_ABORT_CLEANUP=0
-    HERDR_PROJECTION_ABORT_RECLAIM=0
-    RELAUNCH_REPLACEMENT_PENDING=0
-  else
-    spawn_disarm_fresh_resources
-    ORCA_ABORT_CLEANUP=0
-    HERDR_PROJECTION_ABORT_CLEANUP=0
-    HERDR_PROJECTION_ABORT_RECLAIM=0
+  if [ "$SPAWN_FRESH_COMMIT_PENDING" != 1 ]; then
+    if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+      VERIFIER_HANDOFF_ABORT_ENDPOINT=0
+      HERDR_PROJECTION_ABORT_CLEANUP=0
+      HERDR_PROJECTION_ABORT_RECLAIM=0
+      RELAUNCH_REPLACEMENT_PENDING=0
+    else
+      spawn_disarm_fresh_resources
+      ORCA_ABORT_CLEANUP=0
+      HERDR_PROJECTION_ABORT_CLEANUP=0
+      HERDR_PROJECTION_ABORT_RECLAIM=0
+    fi
   fi
 fi
 
@@ -3605,7 +3626,9 @@ if [ "$SPAWN_TASK_SET_LOCK_HELD" = 1 ]; then
   SPAWN_TASK_SET_LOCK_HELD=0
   fm_lock_release "$SPAWN_TASK_SET_LOCK"
 fi
-[ "$BACKEND" = orca ] && ORCA_ABORT_CLEANUP=0
+if [ "$SPAWN_FRESH_COMMIT_PENDING" != 1 ] && [ "$BACKEND" = orca ]; then
+  ORCA_ABORT_CLEANUP=0
+fi
 
 sq_brief=$(shell_quote "$BRIEF")
 sq_turnend=$(shell_quote "$TURNEND")
@@ -3723,7 +3746,6 @@ sleep 0.3
 spawn_send_literal "$T" "$LAUNCH"
 sleep 0.3
 if [ "${HERDR_PROJECTED:-0}" -eq 1 ]; then
-  HERDR_PROJECTION_ABORT_CLEANUP=0
   spawn_herdr_presentation_order_lock_release
 fi
 spawn_send_key "$T" Enter
@@ -3785,11 +3807,33 @@ if [ -n "$BACKLOG_ROW_STATE" ]; then
   fi
 fi
 if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
-  echo "error: task $ID's backlog item could not be moved to In flight ($FM_BACKLOG_TRANSITION_ERROR); its standard task record remains so the endpoint and local copy stay owned - run tasks-axi start $(shell_quote "$ID") --file $(shell_quote "$DATA/backlog.md") after fixing the backlog" >&2
+  SPAWN_BACKLOG_COMMIT_ERROR=$FM_BACKLOG_TRANSITION_ERROR
+  if [ "$SPAWN_FRESH_COMMIT_PENDING" = 1 ]; then
+    if spawn_fresh_commit_rollback; then
+      echo "error: task $ID's backlog item could not be moved to In flight ($SPAWN_BACKLOG_COMMIT_ERROR); its provisional task and busy records were removed, and its fresh resources will be retired" >&2
+    else
+      SPAWN_BACKLOG_ROLLBACK_ERROR=$FM_BACKLOG_TRANSITION_ERROR
+      echo "error: task $ID's backlog item could not be moved to In flight ($SPAWN_BACKLOG_COMMIT_ERROR), and failed-dispatch cleanup is incomplete ($SPAWN_BACKLOG_ROLLBACK_ERROR)" >&2
+    fi
+  else
+    echo "error: task $ID was republished but its backlog item could not be moved to In flight ($SPAWN_BACKLOG_COMMIT_ERROR); fix the backlog and re-run the launch" >&2
+  fi
 fi
 trap - HUP INT TERM
 if [ "$SPAWN_BACKLOG_COMMIT_STATUS" -ne 0 ]; then
   exit "$SPAWN_BACKLOG_COMMIT_STATUS"
+fi
+if [ "$SPAWN_FRESH_COMMIT_PENDING" = 1 ]; then
+  SPAWN_FRESH_COMMIT_PENDING=0
+  if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
+    VERIFIER_HANDOFF_ABORT_ENDPOINT=0
+    RELAUNCH_REPLACEMENT_PENDING=0
+  else
+    spawn_disarm_fresh_resources
+  fi
+  ORCA_ABORT_CLEANUP=0
+  HERDR_PROJECTION_ABORT_CLEANUP=0
+  HERDR_PROJECTION_ABORT_RECLAIM=0
 fi
 fm_lock_release "$SPAWN_META_LOCK"
 SPAWN_META_LOCK_HELD=0
