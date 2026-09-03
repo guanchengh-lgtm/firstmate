@@ -220,9 +220,16 @@ for arg in "$@"; do
   esac
 done
 case "$source_path" in
-  *.meta.handoff.*)
+  *.meta.handoff.*|*.meta.spawn.*)
     if [ -n "${FM_FAKE_META_PUBLISH_MV_FAIL:-}" ] \
        && [ "$target_path" = "$FM_FAKE_META_PUBLISH_MV_FAIL" ]; then
+      if [ -n "${FM_FAKE_META_PUBLISH_MV_FAIL_ONCE:-}" ]; then
+        if [ ! -e "$FM_FAKE_META_PUBLISH_MV_FAIL_ONCE" ]; then
+          : > "$FM_FAKE_META_PUBLISH_MV_FAIL_ONCE"
+          exit 1
+        fi
+        exec "$FM_REAL_MV" "$@"
+      fi
       exit 1
     fi
     ;;
@@ -382,6 +389,54 @@ assert_verifier_handoff_refusal_preserved() {  # <out> <status> <expected> <meta
 # tests are about profile resolution, so they pass a fixed valid one.
 run_ship_spawn() {
   run_spawn "$@" --mode no-mistakes --yolo off --role builder
+}
+
+test_help_reports_complete_dispatch_contract() {
+  local out status
+  out=$("$SPAWN" --help 2>&1)
+  status=$?
+  expect_code 0 "$status" "fm-spawn --help should succeed"
+  assert_contains "$out" \
+    "spawns require an explicit harness, --model, and --effort" \
+    "fm-spawn help omitted required dispatch profile axes"
+  assert_contains "$out" \
+    "--backend/--mode/--yolo/--role" \
+    "fm-spawn help omitted the shared batch role"
+  pass "fm-spawn: help reports the complete dispatch contract"
+}
+
+test_ship_spawn_refuses_missing_role_and_invalid_direct_pr_surface() {
+  local rec id out status
+  id=profile-role-surface-neg-z0
+  rec=$(make_spawn_case profile-role-surface-neg claude "$id")
+  read_case_record "$rec"
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --mode no-mistakes --yolo off)
+  status=$?
+  [ "$status" -ne 0 ] || fail "ship spawn without --role should exit non-zero"
+  assert_contains "$out" "ship spawns require --role" "missing --role did not refuse closed"
+  [ ! -s "$LAUNCH_LOG" ] || fail "missing --role published a launch command"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "missing --role published task metadata"
+
+  : > "$LAUNCH_LOG"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --mode direct-PR --yolo off --role builder)
+  status=$?
+  [ "$status" -ne 0 ] || fail "direct-PR spawn without --surface should exit non-zero"
+  assert_contains "$out" "requires --surface internal-only" "omitted surface did not fail closed"
+  [ ! -s "$LAUNCH_LOG" ] || fail "omitted surface published a launch command"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "omitted surface published task metadata"
+
+  : > "$LAUNCH_LOG"
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --mode direct-PR --yolo off --role builder --surface product)
+  status=$?
+  [ "$status" -ne 0 ] || fail "product + direct-PR spawn should exit non-zero"
+  assert_contains "$out" "refused for product work" "product + direct-PR did not name the refused surface"
+  [ ! -s "$LAUNCH_LOG" ] || fail "product + direct-PR published a launch command"
+  [ ! -e "$HOME_DIR/state/$id.meta" ] || fail "product + direct-PR published task metadata"
+  pass "ship spawn refuses a missing --role and an invalid direct-PR surface"
 }
 
 read_case_record() {
@@ -1398,7 +1453,7 @@ test_active_dispatch_profile_does_not_block_secondmate_launch() {
 }
 
 test_role_verifier_encodes_verifier_brief() {
-  local rec id out status launch expected meta head_before head_after branch tmuxlog
+  local rec id out status launch expected meta head_before head_after branch tmuxlog gen
   id=profile-role-verifier-z14
   rec=$(make_spawn_case profile-role-verifier claude "$id")
   read_case_record "$rec"
@@ -1422,6 +1477,14 @@ test_role_verifier_encodes_verifier_brief() {
     "verifier spawn lost the external request link"
   assert_contains "$out" "role=verifier" "spawned line did not report role=verifier"
   assert_grep "worktree=$WT_DIR" "$meta" "verifier spawn did not retain builder worktree"
+  assert_present "$HOME_DIR/state/$id.busy-gen" \
+    "verifier handoff EXIT trap retired the replacement busy generation"
+  assert_present "$WT_DIR/.claude/settings.local.json" \
+    "verifier handoff EXIT trap stripped replacement harness wiring"
+  gen=$(sed -n 's/^busy_gen=//p' "$meta")
+  [ -n "$gen" ] || fail "verifier metadata missing replacement busy_gen"
+  [ "$(cat "$HOME_DIR/state/$id.busy-gen")" = "$gen" ] \
+    || fail "verifier busy-gen file does not match published meta"
   head_after=$(git -C "$WT_DIR" rev-parse HEAD)
   [ "$head_after" = "$head_before" ] || fail "verifier spawn changed builder HEAD"
   branch=$(git -C "$WT_DIR" symbolic-ref --quiet --short HEAD)
@@ -1847,6 +1910,169 @@ test_verifier_handoff_prepublication_failure_retires_replacement_state() {
   pass "fm-spawn: verifier handoff publication failure retires replacement state"
 }
 
+test_verifier_handoff_dispatch_failure_restores_builder_record() {
+  local rec id out status meta meta_before real_tasks backlog
+  id=profile-verifier-dispatch-failure-z61
+  rec=$(make_spawn_case profile-verifier-dispatch-failure claude "$id")
+  read_case_record "$rec"
+  prepare_verifier_handoff "$HOME_DIR" "$PROJ_DIR" "$WT_DIR" "$id"
+  command -v tasks-axi >/dev/null 2>&1 || {
+    pass "fm-spawn: verifier rollback test skipped without tasks-axi"
+    return
+  }
+  backlog="$HOME_DIR/data/backlog.md"
+  printf '%s\n' '# Backlog' '' '## In flight' '' '## Queued' '' '## Done' > "$backlog"
+  tasks-axi add "$id" "item for $id" --kind ship --file "$backlog" >/dev/null
+  real_tasks=$(command -v tasks-axi)
+  cat > "$FAKEBIN_DIR/tasks-axi" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = start ]; then
+  echo 'error: "backlog is unwritable"' >&2
+  exit 1
+fi
+exec "$real_tasks" "\$@"
+SH
+  chmod +x "$FAKEBIN_DIR/tasks-axi"
+  meta="$HOME_DIR/state/$id.meta"
+  meta_before=$(cat "$meta")
+
+  out=$(run_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" "$id" "$PROJ_DIR" \
+    --mode no-mistakes --yolo off --role verifier)
+  status=$?
+  [ "$status" -ne 0 ] || fail "verifier handoff succeeded after dispatch failed"
+  [ "$(cat "$meta")" = "$meta_before" ] \
+    || fail "verifier dispatch rollback did not restore the builder record"
+  assert_absent "$HOME_DIR/state/$id.busy-state" \
+    "verifier dispatch rollback retained the replacement busy state"
+  assert_absent "$WT_DIR/.claude/settings.local.json" \
+    "verifier dispatch rollback retained replacement harness wiring"
+  pass "fm-spawn: verifier dispatch rollback restores the builder record"
+}
+
+test_fresh_prepublication_failure_preserves_standard_record() {
+  local rec id out status meta real_mv tmuxlog treehouse_log fail_once
+  id=profile-fresh-prepublish-failure-z48b
+  rec=$(make_spawn_case profile-fresh-prepublish-failure claude "$id")
+  read_case_record "$rec"
+  meta="$HOME_DIR/state/$id.meta"
+  real_mv=$(command -v mv)
+  make_spawn_mv_failure_stub "$FAKEBIN_DIR"
+  treehouse_log="$HOME_DIR/state/.fake-treehouse.log"
+  fail_once="$HOME_DIR/state/.fake-meta-publish-failed"
+  : > "$treehouse_log"
+
+  out=$(FM_REAL_MV="$real_mv" FM_FAKE_META_PUBLISH_MV_FAIL="$meta" \
+    FM_FAKE_META_PUBLISH_MV_FAIL_ONCE="$fail_once" \
+    FM_FAKE_TREEHOUSE_LOG="$treehouse_log" \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+      "$id" "$PROJ_DIR")
+  status=$?
+  [ "$status" -ne 0 ] || fail "fresh spawn accepted failed metadata publication"
+  assert_present "$meta" "fresh publication failure lost its complete standard task record"
+  assert_grep "endpoint_task_id=$id" "$meta" "preserved task record lacks its endpoint binding"
+  assert_grep "worktree=$WT_DIR" "$meta" "preserved task record lacks its worktree"
+  assert_grep "project=$PROJ_DIR" "$meta" "preserved task record lacks its project"
+  assert_grep "harness=claude" "$meta" "preserved task record lacks its harness"
+  assert_grep "kind=ship" "$meta" "preserved task record lacks its task kind"
+  [ -z "$(find "$HOME_DIR/state" -maxdepth 1 -name ".$id.meta.spawn-recovery.*" -print -quit)" ] \
+    || fail "fresh publication failure created a nonstandard recovery record"
+  [ "$(cat "$HOME_DIR/state/.fake-endpoint-state")" = new ] \
+    || fail "fresh publication failure did not preserve its owned endpoint"
+  tmuxlog="$HOME_DIR/state/.fake-tmux.log"
+  assert_no_grep '^kill-window ' "$tmuxlog" \
+    "fresh publication failure tried to retire an unverified endpoint"
+  assert_no_grep "return --force $WT_DIR" "$treehouse_log" \
+    "fresh publication failure returned an owned local copy"
+  assert_contains "$out" "task record for $id could not be published" \
+    "fresh publication failure lacked its record diagnostic"
+  assert_contains "$out" "preserved the standard task record for $id" \
+    "fresh publication failure did not report its durable standard record"
+  pass "fm-spawn: fresh publication failure preserves a standard endpoint record"
+}
+
+test_fresh_persistent_publication_failure_removes_hidden_record() {
+  local rec id out status meta real_mv treehouse_log tmuxlog
+  id=profile-fresh-persistent-publish-failure-z48c
+  rec=$(make_spawn_case profile-fresh-persistent-publish-failure claude "$id")
+  read_case_record "$rec"
+  meta="$HOME_DIR/state/$id.meta"
+  real_mv=$(command -v mv)
+  make_spawn_mv_failure_stub "$FAKEBIN_DIR"
+  treehouse_log="$HOME_DIR/state/.fake-treehouse.log"
+  : > "$treehouse_log"
+
+  out=$(FM_REAL_MV="$real_mv" FM_FAKE_META_PUBLISH_MV_FAIL="$meta" \
+    FM_FAKE_TREEHOUSE_LOG="$treehouse_log" \
+    run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+      "$id" "$PROJ_DIR")
+  status=$?
+  [ "$status" -ne 0 ] || fail "fresh spawn accepted persistent metadata publication failure"
+  assert_absent "$meta" "persistent publication failure published task metadata"
+  [ -z "$(find "$HOME_DIR/state" -maxdepth 1 -name ".$id.meta.spawn.*" -print -quit)" ] \
+    || fail "persistent publication failure retained a hidden task record"
+  assert_contains "$out" "task record for $id could not be published" \
+    "persistent publication failure lacked its record diagnostic"
+  assert_contains "$out" "could not preserve the standard task record for $id" \
+    "persistent publication failure did not report the failed retry"
+  [ "$(cat "$HOME_DIR/state/.fake-endpoint-state")" = missing ] \
+    || fail "persistent publication failure left its endpoint running"
+  tmuxlog="$HOME_DIR/state/.fake-tmux.log"
+  [ "$(grep -c '^kill-window ' "$tmuxlog" || true)" -eq 1 ] \
+    || fail "persistent publication failure did not retire exactly one endpoint"
+  [ "$(grep -Fxc "return --force $WT_DIR" "$treehouse_log" || true)" -eq 1 ] \
+    || fail "persistent publication failure did not return its leased worktree"
+  pass "fm-spawn: persistent publication failure retires unowned resources"
+}
+
+test_home_summary_refresh_follows_launch_submission() {
+  local rec id lock ready release spawn_out lock_pid spawn_pid
+  local status attempt saw_launch
+  id=profile-summary-after-launch-z48d
+  rec=$(make_spawn_case profile-summary-after-launch claude "$id")
+  read_case_record "$rec"
+  lock="$HOME_DIR/state/.home-summary-refresh.lock"
+  ready="$HOME_DIR/state/.summary-lock-ready"
+  release="$HOME_DIR/state/.summary-lock-release"
+  spawn_out="$HOME_DIR/state/.spawn-output"
+
+  FM_HOME="$HOME_DIR" STATE="$HOME_DIR/state" bash -c '
+    . "$1"
+    fm_lock_acquire_wait "$2"
+    : > "$3"
+    while [ ! -e "$4" ]; do sleep 0.05; done
+    fm_lock_release "$2"
+  ' _ "$ROOT/bin/fm-wake-lib.sh" "$lock" "$ready" "$release" &
+  lock_pid=$!
+  attempt=0
+  while [ ! -e "$ready" ] && [ "$attempt" -lt 100 ]; do
+    sleep 0.05
+    attempt=$((attempt + 1))
+  done
+  [ -e "$ready" ] || fail "home summary test could not hold the refresh lock"
+
+  run_ship_spawn "$HOME_DIR" "$WT_DIR" "$FAKEBIN_DIR" "$LAUNCH_LOG" \
+    "$id" "$PROJ_DIR" > "$spawn_out" 2>&1 &
+  spawn_pid=$!
+  attempt=0
+  saw_launch=0
+  while [ "$attempt" -lt 100 ]; do
+    if [ -s "$LAUNCH_LOG" ]; then
+      saw_launch=1
+      break
+    fi
+    sleep 0.05
+    attempt=$((attempt + 1))
+  done
+  : > "$release"
+  wait "$lock_pid"
+  wait "$spawn_pid"
+  status=$?
+  expect_code 0 "$status" "spawn should finish after the home summary lock is released"
+  [ "$saw_launch" -eq 1 ] \
+    || fail "home summary refresh blocked launch submission"
+  pass "fm-spawn: home summary refresh follows launch submission"
+}
+
 test_verifier_handoff_teardown_returns_single_worktree() {
   local rec id out status treehouse_log tmuxlog return_count
   id=profile-verifier-teardown-z43
@@ -2250,6 +2476,8 @@ test_role_verifier_enforces_explicit_ov() {
   pass "fm-spawn: verifier ships enforce explicit OV worker and skill rules"
 }
 
+test_help_reports_complete_dispatch_contract
+test_ship_spawn_refuses_missing_role_and_invalid_direct_pr_surface
 test_no_profile_keeps_claude_profile_defaults
 test_non_cursor_launch_clears_inherited_cursor_markers
 test_relative_home_overrides_launch_with_absolute_cross_process_paths
@@ -2297,6 +2525,10 @@ test_verifier_handoff_refuses_unreadable_worktree_ownership
 test_verifier_handoff_adoption_failure_retires_new_endpoint
 test_verifier_handoff_requires_confirmed_endpoint_retirement
 test_verifier_handoff_prepublication_failure_retires_replacement_state
+test_verifier_handoff_dispatch_failure_restores_builder_record
+test_fresh_prepublication_failure_preserves_standard_record
+test_fresh_persistent_publication_failure_removes_hidden_record
+test_home_summary_refresh_follows_launch_submission
 test_verifier_handoff_teardown_returns_single_worktree
 test_verifier_handoff_refuses_live_or_unverified_endpoint
 test_verifier_handoff_allows_backend_change
