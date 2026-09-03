@@ -1,0 +1,14 @@
+### Real consumer: fm_exact_sync_require_no_pr_base_branch (bin/fm-merge-local.sh:131)
+
+$ nm-gate-harness.sh <repo> cb66281  # parent stage tip, BEFORE this change
+REFUSED: tree(cb662811285cbf0d790e1f786ab2439a5ec619fd) .no-mistakes.yaml still has pr.base_branch
+GATE REFUSED (exit 1) for cb662811285cbf0d790e1f786ab2439a5ec619fd
+rc=1
+
+$ nm-gate-harness.sh <repo> cfe7b92  # branch tip, AFTER this change
+GATE PASS: exact-sync accepts cfe7b9256efc0340e035a8fea132b9daea125870 (.no-mistakes.yaml has no pr.base_branch route)
+rc=0
+
+$ nm-gate-harness.sh <repo> fe3c227  # pinned origin/main B
+GATE PASS: exact-sync accepts fe3c227662e074b3ae4319116b69b9bafca60df3 (.no-mistakes.yaml has no pr.base_branch route)
+rc=0

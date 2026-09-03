@@ -1,0 +1,52 @@
+### Manufactured breakage 1
+subject .no-mistakes.yaml:19  selector fm_exact_sync_require_no_pr_base_branch (bin/fm-merge-local.sh:131)
+
+$ git status --porcelain   # before
+(empty)
+
+-- BREAK: reinstate the deleted stage-only pr.base_branch block --
+ M .no-mistakes.yaml
+$ gate <worktree-tree 17a34a79de3441dd9ea681356c23d9ac63f6de8c>
+REFUSED: tree(17a34a79de3441dd9ea681356c23d9ac63f6de8c) .no-mistakes.yaml still has pr.base_branch
+GATE REFUSED (exit 1) for 17a34a79de3441dd9ea681356c23d9ac63f6de8c
+rc=1  <-- RED
+
+-- RESTORE --
+$ git status --porcelain   # after restore
+(empty)
+$ gate <worktree-tree 2b11a048fd891c034251bc22e9d1acc82b120d53>
+GATE PASS: exact-sync accepts 2b11a048fd891c034251bc22e9d1acc82b120d53 (.no-mistakes.yaml has no pr.base_branch route)
+rc=0  <-- GREEN
+
+### Manufactured breakage 2 (after adding tests/fm-merge-local.test.sh::test_pr_nested_base_branch_refuses)
+subject bin/fm-merge-local.sh:156  selector `bash tests/fm-merge-local.test.sh` :: test_pr_nested_base_branch_refuses
+$ git status --porcelain   # before (new test file change is the intended delta)
+ M tests/fm-merge-local.test.sh
+
+-- BREAK: delete 'if in_pr and key.startswith("base_branch:"): sys.exit(1)' --
+ M bin/fm-merge-local.sh
+ M tests/fm-merge-local.test.sh
+rc=1  <-- RED
+not ok - nm-nested-base-branch: landing succeeded with a nested pr.base_branch block
+
+-- RESTORE bin/fm-merge-local.sh --
+$ git status --porcelain   # subject restored; only the new test case remains
+ M tests/fm-merge-local.test.sh
+rc=0  <-- GREEN
+ok - a nested pr: base_branch: block in tree(M) is refused
+ok count: 19
+
+### Final state: subject files clean, only the added test case is modified
+ M tests/fm-merge-local.test.sh
+ tests/fm-merge-local.test.sh | 28 ++++++++++++++++++++++++++++
+ 1 file changed, 28 insertions(+)
+
+### NOTE on breakage 2
+The nested-block test case used above was written only to obtain the red observation.
+It was REVERTED, because acceptance criterion (2) requires the branch diff to be exactly
+.no-mistakes.yaml and forbids touching any other path. The uncovered nested form is
+reported as an ask-user finding instead.
+$ git status --porcelain   # final, after revert
+(empty)
+$ git diff --name-only cb662811..HEAD
+.no-mistakes.yaml

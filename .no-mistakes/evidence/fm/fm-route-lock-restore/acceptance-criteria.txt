@@ -1,0 +1,59 @@
+=== Acceptance criteria at branch tip fm/fm-route-lock-restore (HEAD=cfe7b9256efc0340e035a8fea132b9daea125870) ===
+
+--- origin pin: origin/main must be fe3c2276... ---
+$ git fetch origin && git rev-parse origin/main
+fe3c227662e074b3ae4319116b69b9bafca60df3
+PASS origin/main is pinned B
+
+--- parent must be exactly cb662811... (stage tip after PR #100) ---
+$ git rev-parse HEAD^
+cb662811285cbf0d790e1f786ab2439a5ec619fd
+PASS single parent is the stage tip
+$ git rev-list --parents -n1 HEAD | wc -w   # 2 => exactly one parent
+       2
+
+--- (1) diff vs B for .no-mistakes.yaml is empty ---
+$ git diff --exit-code fe3c2276... -- .no-mistakes.yaml
+PASS (no output, exit 0)
+
+--- (2) diff name-only cb662811..HEAD ---
+.no-mistakes.yaml
+
+--- (3) surviving base_branch hits in HEAD:.no-mistakes.yaml ---
+12:# Honor pr.base_branch from a pushed branch so slice PRs can target
+15:# read only from the trusted default-branch copy. Leave pr.base_branch
+count: 2 (both lines are the allow_repo_commands comment; identical on B)
+$ diff <(git show HEAD:.no-mistakes.yaml | grep -n base_branch) <(git show fe3c227:.no-mistakes.yaml | grep -n base_branch)
+PASS identical to B
+
+--- exact deletion: only the 5-line stage-only block ---
+diff --git a/.no-mistakes.yaml b/.no-mistakes.yaml
+index feb085f..0a238d7 100644
+--- a/.no-mistakes.yaml
++++ b/.no-mistakes.yaml
+@@ -17,11 +17,6 @@ disable_project_settings: true
+ # stays trusted-only regardless of this opt-in.
+ allow_repo_commands: true
+ 
+-# Stage-only: slice PRs target this review branch. Slice 5 removes the key
+-# before synthesis. Do not set pr.base_branch on main.
+-pr:
+-  base_branch: fm/merge-upstream-2-stage
+-
+ # Trusted documentation placement policy for the Document step.
+ # The audience inventory and coding guideline own the detail; keep this as a
+ # pointer so gate instructions cannot become a second prose policy.
+
+--- (4) ci.yml triggers ---
+$ git diff --stat cb662811..HEAD -- .github/workflows/ci.yml   # untouched by this commit
+(no output = identical)
+
+$ real consumer: fm_exact_sync_require_ci_push_branch (bin/fm-merge-local.sh:165) against HEAD
+GATE PASS: ci.yml push triggers accepted for HEAD
+rc=0
+
+$ semantic parse of on: triggers in HEAD:.github/workflows/ci.yml
+on.push.branches = ['main', 'fm/merge-upstream-2']  -> PASS
+on.pull_request.branches = ['main', 'fm/merge-upstream-2-stage']  -> PASS
+
+--- (5) bin/fm-lint.sh: not run here; linting is owned by the pipeline lint phase ---
