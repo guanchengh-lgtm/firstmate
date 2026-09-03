@@ -1681,8 +1681,9 @@ fm_wake_signal_seen_path() {  # <state> <file>
 # file", which surfaces events rather than losing them.
 # The canonical marker format for every signal file, status files included, is
 # the bare "size:mtime" signature fm_wake_signal_sig writes and bin/fm-watch.sh
-# byte-compares. A status marker may also hold the v2 presentation marker, which
-# carries its own classified offset, so that format is read first when present.
+# byte-compares. That signature is a REPORTED state, so for a status file only
+# the v2 presentation marker carries a classified position; the bare form there
+# reads as 0.
 fm_wake_signal_seen_size() {  # <state> <file>
   local marker sig size
   marker=$(fm_wake_signal_seen_path "$1" "$2")
@@ -1691,8 +1692,10 @@ fm_wake_signal_seen_size() {  # <state> <file>
     *.status)
       if _fm_wake_require_classify && status_presentation_marker_parse "$sig"; then
         status_presentation_marker_offset "$marker" "$2"
-        return 0
+      else
+        printf '0'
       fi
+      return 0
       ;;
   esac
   case "$sig" in *:*) size=${sig%%:*} ;; *) size=0 ;; esac

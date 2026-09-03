@@ -1916,30 +1916,61 @@ printf 'stale: fixture-win needs a look\n'
 exit 0
 SH
   chmod +x "$dir/bin/fm-watch-arm.sh"
-  ln -s /bin/bash "$dir/fake-harness"
+  ln -s /bin/bash "$dir/fake-cursor-claude"
 }
 
 # The adapter runs as a child of a fake harness whose pid holds the home's
 # session lock, so the real ancestry path in bin/fm-session-lock-lib.sh decides
-# ownership rather than a stub.
+# ownership rather than a stub. The name must carry verified-harness identity or
+# the adapter never reaches the park: it would take the lock-recovery branch and
+# exit before arming, which would make the stand-down assertions vacuous.
 run_cursor_park() {  # <dir> <env-assignment>...
   local dir=$1
   shift
   # shellcheck disable=SC2016 # $FM_HOME expands inside the fake harness child.
   printf '{"session_id":"sess-cursor","loop_count":0,"hook_event_name":"stop"}' \
-    | env FM_HOME="$dir" FM_CURSOR_PARK_POLL=1 FM_CURSOR_PARK_ATTEMPTS=1 "$@" \
-      "$dir/fake-harness" -c '
+    | env -u PI_CODING_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
+        FM_HOME="$dir" FM_CURSOR_PARK_POLL=1 FM_CURSOR_PARK_ATTEMPTS=1 "$@" \
+      "$dir/fake-cursor-claude" -c '
         printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+        printf "%s\n" "$$" > "$FM_HOME/state/fixture-harness-pid"
         "$FM_HOME/bin/fm-turnend-guard-cursor.sh"
       ' 2>/dev/null
 }
 
-test_cursor_park_stands_down_on_a_pi_host() {
+# The park must have run under the fixture's own harness pid. bin/fm-lock.sh can
+# rewrite state/.lock when the fixture harness is not recognized, which would
+# silently move the whole scenario onto the real host session.
+assert_fixture_owns_session_lock() {  # <dir>
+  local dir=$1
+  [ "$(cat "$dir/state/.lock" 2>/dev/null)" = "$(cat "$dir/state/fixture-harness-pid" 2>/dev/null)" ] \
+    || fail "the fixture harness did not keep the session lock; the Cursor park did not run on this fixture"
+}
+
+# The positive control comes first: the very same fixture, with no Pi marker at
+# all, must park and arm. Without it the stand-down assertions below could pass
+# for any reason that stops the adapter early.
+test_cursor_park_arms_without_a_pi_marker() {
   local dir out
+  dir=$(make_primary_dir "$TMP_ROOT/cursor-park-baseline")
+  install_cursor_park "$dir"
+  : > "$dir/state/task1.meta"
+  out=$(run_cursor_park "$dir")
+  assert_fixture_owns_session_lock "$dir"
+  [ -e "$dir/state/arm-ran" ] || fail "the Cursor park never armed the watcher on a plain Cursor stop"
+  printf '%s' "$out" | grep -F 'followup_message' >/dev/null \
+    || fail "the Cursor park returned no wake follow-up: $out"
+  pass "fm-turnend-guard-cursor: an ordinary Cursor stop parks and returns the watcher wake"
+}
+
+test_cursor_park_stands_down_on_a_pi_host() {
+  local dir out status
   dir=$(make_primary_dir "$TMP_ROOT/cursor-pi-standdown")
   install_cursor_park "$dir"
   : > "$dir/state/task1.meta"
-  out=$(run_cursor_park "$dir" PI_CODING_AGENT=true)
+  out=$(run_cursor_park "$dir" PI_CODING_AGENT=true); status=$?
+  assert_fixture_owns_session_lock "$dir"
+  expect_code 0 "$status" "the Pi-host stand-down must exit 0"
   [ ! -e "$dir/state/arm-ran" ] \
     || fail "a Pi host with no Cursor identity armed through the Cursor park; that dual-watches against fm_watch_arm_pi"
   [ ! -e "$dir/state/.cursor-park-owner" ] || fail "the Pi-host stand-down still claimed the Cursor park"
@@ -1955,6 +1986,7 @@ test_cursor_park_keeps_parking_when_pi_marker_leaks() {
     install_cursor_park "$dir"
     : > "$dir/state/task1.meta"
     out=$(run_cursor_park "$dir" PI_CODING_AGENT=true "$marker")
+    assert_fixture_owns_session_lock "$dir"
     [ -e "$dir/state/arm-ran" ] \
       || fail "a leaked PI_CODING_AGENT alongside $name stopped the Cursor park from arming the watcher"
     printf '%s' "$out" | grep -F 'followup_message' >/dev/null \
@@ -1971,6 +2003,7 @@ test_predicate_queue_pending_flag
 test_predicate_x_mode_needs_supervision
 test_predicate_source_needs_supervision
 test_hook_silent_when_no_work_in_flight
+test_cursor_park_arms_without_a_pi_marker
 test_cursor_park_stands_down_on_a_pi_host
 test_cursor_park_keeps_parking_when_pi_marker_leaks
 test_hook_refuses_prose_only_ready_action

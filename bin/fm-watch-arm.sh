@@ -233,7 +233,7 @@ clear_stale_recorded_watcher_lock() {  # <expected-pid>
   steal="$WATCH_LOCK.steal"
   fm_lock_acquire_wait "$steal" || return 1
   if [ ! -e "$WATCH_LOCK" ] && [ ! -L "$WATCH_LOCK" ]; then
-    fm_lock_release "$steal"
+    fm_lock_release "$steal" || return 1
     return 0
   fi
   owner=
@@ -242,28 +242,28 @@ clear_stale_recorded_watcher_lock() {  # <expected-pid>
   fi
   current_pid=$(cat "$WATCH_LOCK/pid" 2>/dev/null || true)
   if [ "$current_pid" != "$expected_pid" ]; then
-    fm_lock_release "$steal"
+    fm_lock_release "$steal" || return 1
     return 0
   fi
   if fm_pid_alive "$current_pid"; then
     if fm_watcher_lock_matches_pid "$STATE" "$WATCH" "$current_pid" "$FM_HOME"; then
-      fm_lock_release "$steal"
+      fm_lock_release "$steal" || return 1
       return 0
     fi
     lock_home=$(cat "$WATCH_LOCK/fm-home" 2>/dev/null || true)
     lock_path=$(cat "$WATCH_LOCK/watcher-path" 2>/dev/null || true)
     lock_identity=$(cat "$WATCH_LOCK/pid-identity" 2>/dev/null || true)
     if [ "$lock_home" != "$FM_HOME" ] || [ "$lock_path" != "$WATCH" ] || [ -z "$lock_identity" ]; then
-      fm_lock_release "$steal"
+      fm_lock_release "$steal" || return 1
       return 0
     fi
   elif ! fm_lock_recheck_stale_owner "$WATCH_LOCK" "$owner" "$current_pid"; then
-    fm_lock_release "$steal"
+    fm_lock_release "$steal" || return 1
     return 0
   fi
   fm_recovery_transition "$STATE/.watcher-down" clear-stale-lock "$WATCH_LOCK" downtime
   rc=$?
-  fm_lock_release "$steal"
+  fm_lock_release "$steal" || return 1
   return "$rc"
 }
 
