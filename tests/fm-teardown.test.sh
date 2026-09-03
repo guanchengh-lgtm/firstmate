@@ -54,6 +54,8 @@ set -u
 
 # shellcheck source=tests/lib.sh disable=SC1091
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=tests/fixtures.sh disable=SC1091
+. "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 fm_git_identity fmtest fmtest@example.invalid
 
 TEARDOWN="$ROOT/bin/fm-teardown.sh"
@@ -216,7 +218,8 @@ write_meta() {
     "worktree=$case_dir/wt" \
     "project=$case_dir/project" \
     "kind=$kind" \
-    "mode=$mode"
+    "mode=$mode" \
+    "spawn_gen=teardown-test-task-x1"
   [ -z "$role" ] || printf '%s\n' "role=$role" >> "$case_dir/state/task-x1.meta"
 }
 
@@ -283,7 +286,7 @@ SH
 case "\${1:-} \${2:-}" in
   "pr view")
     case " \$* " in
-      *"state,headRefOid"*) printf '%s\t%s\n' 'MERGED' '$head' ; exit 0 ;;
+      *"state,headRefOid,url"*) printf '%s\t%s\t%s\n' 'MERGED' '$head' 'https://github.com/example/repo/pull/7' ; exit 0 ;;
       *"headRefOid"*) printf '%s\n' '$head' ; exit 0 ;;
     esac
     ;;
@@ -552,12 +555,35 @@ SH
 # Run teardown with PATH mocking. Args: case_dir [extra args...]
 run_teardown() {
   local case_dir=$1; shift
+  # FM_DATA_OVERRIDE is pinned to the case dir because teardown closes this
+  # home's backlog item itself; without it $DATA would resolve to the real
+  # repo's own home and a test could mutate live records.
   FM_ROOT_OVERRIDE="$ROOT" \
   FM_DATA_OVERRIDE="$case_dir/data" \
   FM_STATE_OVERRIDE="$case_dir/state" \
+  FM_DATA_OVERRIDE="$case_dir/data" \
   FM_CONFIG_OVERRIDE="$case_dir/config" \
   PATH="$case_dir/fakebin:${FM_TEARDOWN_TEST_PATH:-$PATH}" \
     "$TEARDOWN" task-x1 "$@"
+}
+
+# Seed a real backlog carrying task-x1 as In flight, so a teardown in this case
+# has a row to close. Uses the real tasks-axi (the fixture's default fakebin has
+# no tasks-axi stub, so PATH resolves the installed one).
+seed_backlog_in_flight() {
+  local case_dir=$1 kind=${2:-ship}
+  mkdir -p "$case_dir/data"
+  printf '%s\n' '# Backlog' '' '## In flight' '' '## Queued' '' '## Done' \
+    > "$case_dir/data/backlog.md"
+  tasks-axi add task-x1 "teardown fixture task" --kind "$kind" \
+    --file "$case_dir/data/backlog.md" >/dev/null
+  tasks-axi start task-x1 --file "$case_dir/data/backlog.md" >/dev/null
+}
+
+backlog_row_state() {
+  local case_dir=$1
+  tasks-axi show task-x1 --file "$case_dir/data/backlog.md" 2>/dev/null |
+    sed -n 's/^  state: *//p' | head -1
 }
 
 # Build the teardown test's executable search path without lsof, regardless of
@@ -587,42 +613,92 @@ test_local_only_fork_remote_allows() {
 
   expect_code 0 "$rc" "fork-allow: teardown should succeed when HEAD is on a fork remote"
   ! grep -q REFUSED "$case_dir/stderr" || fail "fork-allow: teardown printed a REFUSED line"
-  pass "local-only worktree with HEAD on a fork remote is torn down (fix holds)"
+  jq -e --arg id task-x1 '
+    .schema == "fm-secondmate-home-summary.v1"
+    and all(.endpoints[]; .id != $id)
+  ' "$case_dir/state/home-summary.json" >/dev/null \
+    || fail "successful task teardown did not publish the task's removal from the home summary ledger"
+  pass "local-only worktree with HEAD on a fork remote is torn down and the home summary is refreshed"
 }
 
-test_teardown_prompts_tasks_axi_done_when_compatible() {
+test_teardown_closes_the_backlog_item_itself() {
   local case_dir out
-  case_dir=$(make_case tasks-axi-reminder)
+  case_dir=$(make_case tasks-axi-close)
   write_meta "$case_dir" no-mistakes ship
   printf '%s\n' 'pr=https://github.com/example/repo/pull/7' >> "$case_dir/state/task-x1.meta"
-  add_compatible_tasks_axi "$case_dir"
+  seed_backlog_in_flight "$case_dir"
 
-  out=$(run_teardown "$case_dir") || fail "teardown failed with compatible tasks-axi"
-  printf '%s\n' "$out" | grep -F 'tasks-axi done task-x1 --pr https://github.com/example/repo/pull/7' >/dev/null \
-    || fail "teardown did not prompt tasks-axi done: $out"
+  out=$(run_teardown "$case_dir") || fail "teardown failed with a real backlog"
+  [ "$(backlog_row_state "$case_dir")" = "done" ] \
+    || fail "teardown returned success while its backlog item was still open: $(backlog_row_state "$case_dir")"
+  assert_grep 'https://github.com/example/repo/pull/7' "$case_dir/data/backlog.md" \
+    "closed backlog item did not record the task's PR"
+  assert_absent "$case_dir/state/task-x1.backlog-close" \
+    "a landed close left its pending-close record behind"
   printf '%s\n' "$out" | grep -F 'tasks-axi ready' >/dev/null \
-    || fail "teardown did not prompt tasks-axi ready: $out"
+    || fail "teardown dropped the dependency-cleared follow-up: $out"
   printf '%s\n' "$out" | grep -F 'check date gates' >/dev/null \
     || fail "teardown did not preserve date-gate check: $out"
-  printf '%s\n' "$out" | grep -F 'keep Done to the 10 most recent' >/dev/null \
-    && fail "teardown kept manual Done pruning in compatible tasks-axi prompt: $out"
-  pass "teardown prompts tasks-axi backlog refresh when compatible"
+  printf '%s\n' "$out" | grep -F 'Run tasks-axi done' >/dev/null \
+    && fail "teardown still asked a later turn to close the item it already closed: $out"
+  pass "teardown closes its own backlog item before reporting success"
 }
 
-test_teardown_manual_backend_prompts_hand_edit_even_when_tasks_axi_present() {
-  local case_dir out
+test_spawn_then_teardown_closes_backlog_atomically() {
+  local case_dir home proj wt fakebin id out row_state
+  id=task-x1
+  case_dir="$TMP_ROOT/spawn-teardown-close"
+  home="$case_dir/home"
+  proj="$case_dir/project"
+  wt="$case_dir/wt"
+  fakebin=$(make_spawn_fakebin "$case_dir/fake" gh-axi gh)
+  fm_test_spawn_home "$home" claude
+  fm_test_spawn_brief "$home" "$id"
+  printf '%s\n' builder > "$home/data/$id/role"
+  printf '%s\n' local-only > "$home/data/$id/mode"
+  fm_git_worktree "$proj" "$wt" "fm/$id"
+  printf '%s\n' '# Backlog' '' '## In flight' '' '## Queued' '' '## Done' \
+    > "$home/data/backlog.md"
+  tasks-axi add "$id" "spawn teardown close" --kind ship --file "$home/data/backlog.md" >/dev/null
+
+  out=$(fm_test_run_spawn "$home" "$wt" "$fakebin" \
+    "$id" "$proj" --mode local-only --yolo off --role builder) \
+    || fail "spawn-teardown-close: spawn failed: $out"
+  [ -f "$home/state/$id.meta" ] || fail "spawn-teardown-close: spawn left no task record"
+
+  wt=$(grep '^worktree=' "$home/state/$id.meta" | tail -1 | cut -d= -f2-)
+  git -C "$wt" push -q origin "HEAD:refs/heads/fm/$id" \
+    || fail "spawn-teardown-close: could not push the spawned branch so teardown can see it on a remote"
+
+  out=$(FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$home" \
+    FM_STATE_OVERRIDE="$home/state" FM_DATA_OVERRIDE="$home/data" \
+    FM_CONFIG_OVERRIDE="$home/config" PATH="$fakebin:$PATH" \
+    "$TEARDOWN" "$id") || fail "spawn-teardown-close: teardown failed: $out"
+  row_state=$(tasks-axi show "$id" --file "$home/data/backlog.md" 2>/dev/null |
+    sed -n 's/^  state: *//p' | head -1)
+  [ "$row_state" = "done" ] \
+    || fail "spawn-teardown-close: spawn then teardown left the backlog row as ${row_state:-missing}"
+  printf '%s\n' "$out" | grep -F 'Run tasks-axi done' >/dev/null \
+    && fail "spawn-teardown-close: teardown still asked a later turn to close the item: $out"
+  assert_absent "$home/state/$id.meta" "spawn-teardown-close: teardown left the task record"
+  pass "spawn then teardown closes the backlog row atomically"
+}
+
+test_teardown_manual_backend_leaves_the_backlog_to_the_operator() {
+  local case_dir out backlog_path
   case_dir=$(make_case tasks-axi-manual-optout)
   write_meta "$case_dir" no-mistakes ship
   printf '%s\n' 'pr=https://github.com/example/repo/pull/7' >> "$case_dir/state/task-x1.meta"
   printf '%s\n' manual > "$case_dir/config/backlog-backend"
-  add_compatible_tasks_axi "$case_dir"
+  seed_backlog_in_flight "$case_dir"
 
   out=$(run_teardown "$case_dir") || fail "teardown failed with manual backlog backend"
-  printf '%s\n' "$out" | grep -F 'Update data/backlog.md - move task-x1 to Done' >/dev/null \
+  [ "$(backlog_row_state "$case_dir")" = in_flight ] \
+    || fail "manual backlog backend was mutated by teardown anyway"
+  backlog_path=$(cd "$case_dir/data" && pwd -P)/backlog.md
+  printf '%s\n' "$out" | grep -F "Update $backlog_path - move task-x1 to Done" >/dev/null \
     || fail "teardown did not prompt manual backlog update under opt-out: $out"
-  printf '%s\n' "$out" | grep -F 'tasks-axi done' >/dev/null \
-    && fail "teardown prompted tasks-axi despite manual backend opt-out: $out"
-  pass "teardown honors config/backlog-backend=manual even when tasks-axi is compatible"
+  pass "teardown honors config/backlog-backend=manual and still finishes cleanly"
 }
 
 test_local_only_truly_unpushed_refuses() {
@@ -788,6 +864,7 @@ test_no_pr_recorded_discovers_merged_pr_by_branch_allows() {
   pr_head=$(commit_tree_from_wt_head "$case_dir" "$local_head" "no-mistakes auto-fix")
   land_on_origin_main "$case_dir" feature.txt hello
   add_gh_pr_merged_for_head "$case_dir" "$pr_head"
+  seed_backlog_in_flight "$case_dir"
   # No append_pr_meta_* call: state/task-x1.meta has no pr= or pr_head= line.
 
   ! grep -qE '^(pr|pr_head)=' "$case_dir/state/task-x1.meta" \
@@ -800,6 +877,8 @@ test_no_pr_recorded_discovers_merged_pr_by_branch_allows() {
 
   expect_code 0 "$rc" "no-pr-branch-discovery: teardown should succeed by discovering the merged PR from the branch name"
   ! grep -q REFUSED "$case_dir/stderr" || fail "no-pr-branch-discovery: teardown printed a REFUSED line"
+  assert_grep 'https://github.com/example/repo/pull/7' "$case_dir/data/backlog.md" \
+    "no-pr-branch-discovery: resolved PR URL was not recorded on completion"
   pass "teardown discovers a merged PR by branch name and tears down when no pr= was ever recorded"
 }
 
@@ -921,6 +1000,29 @@ test_content_in_default_fallback_allows() {
   expect_code 0 "$rc" "content-landed: teardown should succeed when content is already in the default branch"
   ! grep -q REFUSED "$case_dir/stderr" || fail "content-landed: teardown printed a REFUSED line"
   pass "worktree whose content already landed in the default branch is torn down (content fallback)"
+}
+
+test_synthesized_merge_on_main_lands_squashed_review_branch() {
+  local case_dir rc base side merge_sha task_tree
+  case_dir=$(make_case synthesized-merge-landed)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit_file "$case_dir" feature.txt hello "add feature"
+  task_tree=$(git -C "$case_dir/wt" rev-parse "HEAD^{tree}")
+  base=$(git -C "$case_dir/project" rev-parse origin/main)
+  side=$(git -C "$case_dir/project" commit-tree "$(git -C "$case_dir/project" rev-parse "$base^{tree}")" -p "$base" -m "upstream side")
+  merge_sha=$(git -C "$case_dir/project" commit-tree "$task_tree" -p "$base" -p "$side" -m "synthesized merge")
+  git -C "$case_dir/project" push -q origin "$merge_sha":refs/heads/main
+
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 0 "$rc" \
+    "synthesized-merge-landed: teardown should treat a squash-then-reparent merge as landed: $(cat "$case_dir/stderr")"
+  ! grep -q REFUSED "$case_dir/stderr" \
+    || fail "synthesized-merge-landed: teardown printed a REFUSED line"
+  pass "branch squashed into a review tree then re-parented as a synthesized merge on main is landed"
 }
 
 test_content_fallback_refreshes_stale_origin_ref() {
@@ -2993,8 +3095,9 @@ test_local_only_fork_remote_allows
 test_help_documents_force_validation_truth_skip
 test_invalid_ship_role_refuses
 test_scout_teardown_uses_report_and_captain_hold_gates
-test_teardown_prompts_tasks_axi_done_when_compatible
-test_teardown_manual_backend_prompts_hand_edit_even_when_tasks_axi_present
+test_teardown_closes_the_backlog_item_itself
+test_spawn_then_teardown_closes_backlog_atomically
+test_teardown_manual_backend_leaves_the_backlog_to_the_operator
 test_local_only_truly_unpushed_refuses
 test_local_only_merged_to_local_main_allows
 test_no_mistakes_origin_remote_allows
@@ -3021,6 +3124,7 @@ test_merged_pr_with_later_local_commit_refuses
 test_pr_check_does_not_refresh_stale_pr_head
 test_pr_check_records_remote_head_when_local_lags
 test_content_in_default_fallback_allows
+test_synthesized_merge_on_main_lands_squashed_review_branch
 test_content_fallback_refreshes_stale_origin_ref
 test_dirty_worktree_refuses
 test_gh_error_and_content_absent_refuses

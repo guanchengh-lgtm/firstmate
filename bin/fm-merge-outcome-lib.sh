@@ -23,8 +23,9 @@
 # is committed, so a failed commit stays eligible for at-least-once retry and
 # may rarely duplicate rather than leave a merge silent.
 #
-# Sourced by bin/fm-pr-merge.sh, bin/fm-watch.sh, and tests. No side effects on
-# source beyond its sourced libraries.
+# Sourced by bin/fm-pr-merge.sh, bin/fm-watch.sh, the --exact-sync path of
+# bin/fm-merge-local.sh, and tests. No side effects on source beyond its
+# sourced libraries.
 
 _FM_MERGE_OUTCOME_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=bin/fm-pr-lib.sh
@@ -128,6 +129,77 @@ fm_merge_outcome_report() {  # <home> <state> <task-id> <pr-url> <origin>
   if [ "$status" -eq 0 ] && { [ "$origin" = poll ] || [ -z "$destination" ]; }; then
     fm_wake_append check "merged-$id-$FM_PR_URL" \
       "check: merge landed: $id $FM_PR_URL" || status=1
+  fi
+  if [ "$status" -eq 0 ]; then
+    fm_pr_poll_merge_mark_notified "$state" "$id" \
+      "$provider" "$host" "$path" "$number" || status=1
+  fi
+  fm_lock_release "$lock"
+  return "$status"
+}
+
+# fm_merge_outcome_report_sync <home> <state> <task-id> <remote> <branch> <sha> <origin>
+#
+# Same publication as fm_merge_outcome_report for a no-PR exact-sync landing.
+# Identity is ExactSyncIdentity { provider=git, host=<remote>, path=<branch>,
+# number=<sha> }, never a forged pull-request URL.
+# <origin> is self|poll. Returns the same codes as fm_merge_outcome_report.
+fm_merge_outcome_report_sync() {  # <home> <state> <task-id> <remote> <branch> <sha> <origin>
+  local home=$1 state=$2 id=$3 remote=$4 branch=$5 sha=$6 origin=$7
+  local self='' self_rc=0 destination='' line lock status=0
+  local provider host path number
+  local LC_ALL=C
+  # shellcheck disable=SC2034 # Sourced wake helpers consume these scoped globals.
+  local STATE FM_WAKE_QUEUE FM_WAKE_QUEUE_LOCK
+  FM_MERGE_OUTCOME_ALREADY_RECORDED=false
+  case "$origin" in self|poll) ;; *) return 2 ;; esac
+  fm_pr_task_id_valid "$id" || return 2
+  [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || return 2
+  [[ "$remote" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || return 2
+  case "$remote" in */*) return 2 ;; esac
+  [[ "$branch" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || return 2
+  case "$branch" in */*) return 2 ;; esac
+  [ -d "$state" ] && [ ! -L "$state" ] || return 1
+  provider=git
+  host=$remote
+  path=$branch
+  number=$sha
+
+  if self=$(fm_merge_outcome_home_id "$home"); then
+    fm_secondmate_parent_record_parse "$home/.fm-secondmate-parent" || return 3
+    case "$FM_SECONDMATE_PARENT_ROUTE" in
+      local)
+        [ -n "$FM_SECONDMATE_PARENT_HOME" ] || return 3
+        destination="$FM_SECONDMATE_PARENT_HOME/state/$self.status"
+        ;;
+      remote) destination="$state/parent-replies.status" ;;
+      *) return 3 ;;
+    esac
+    line="done [key=merged-$id]: merged $id $remote/$branch@$sha"
+  else
+    self_rc=$?
+    [ "$self_rc" -eq 1 ] || return 3
+  fi
+
+  STATE=$state
+  # shellcheck source=bin/fm-wake-lib.sh
+  . "$_FM_MERGE_OUTCOME_LIB_DIR/fm-wake-lib.sh"
+  lock="$state/$id.pr-poll-merge-notified.lock"
+  fm_lock_acquire_wait "$lock" || return 1
+  if fm_pr_poll_merge_already_notified "$state" "$id" \
+    "$provider" "$host" "$path" "$number"; then
+    # shellcheck disable=SC2034 # Public result consumed by sourcing callers.
+    FM_MERGE_OUTCOME_ALREADY_RECORDED=true
+    fm_lock_release "$lock"
+    return 0
+  fi
+
+  if [ -n "$destination" ]; then
+    fm_merge_outcome_append_once "$destination" "$line" || status=1
+  fi
+  if [ "$status" -eq 0 ] && { [ "$origin" = poll ] || [ -z "$destination" ]; }; then
+    fm_wake_append check "merged-$id-sync-$remote-$branch-$sha" \
+      "check: merge landed: $id $remote/$branch@$sha" || status=1
   fi
   if [ "$status" -eq 0 ]; then
     fm_pr_poll_merge_mark_notified "$state" "$id" \
