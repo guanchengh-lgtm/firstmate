@@ -338,6 +338,12 @@ case "\${1:-} \${2:-}" in
   "pr merge")
     exit 0
     ;;
+  "api graphql")
+    # The fake merge above succeeds, so the post-merge outcome read-back must
+    # see the pull request landed on its base branch.
+    printf 'state=MERGED\nmerged=true\nqueued=false\nbase=main\n'
+    exit 0
+    ;;
 esac
 exit 0
 SH
