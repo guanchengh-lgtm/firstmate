@@ -1,0 +1,221 @@
+ok - overlapping remote home provisioning serializes through publication and rollback
+ok - remote seed rollback preserves serialized competing routes
+ok - unknown readiness preserves its route and brief for reconciliation
+ok - remote seeding checks, repairs, and re-checks readiness, then stops on a remaining gap
+ok - remote seeding proceeds once the repair closes every gap
+ok - remote seeding provisions a supplied origin without touching the primary project tree
+ok - remote provisioning re-validates a supplied origin at the receiving host
+ok - seeding carries bitbucket, self-hosted, and scp-like origins through to the remote clone
+ok - remote seed registers the route and provisions the whole home and project clone on that host
+ok - remote inheritance rejects incomplete and superseded payload generations
+ok - mixed local and remote routes validate without migration
+ok - remote spawn launches on the remote-local backend and records a host-qualified route
+ok - failed parent publication preserves a reused remote endpoint for reconciliation
+ok - legacy and mismatched remote endpoints fail closed before backend access
+ok - non-herdr remote endpoints are refused without changing either route
+ok - remote spawn serializes inheritance through launch publication
+ok - marked send and routed reply complete through the existing parent correlation owner
+ok - partial remote inheritance retains reread intent through bootstrap convergence
+ok - config push and bootstrap serialize remote inheritance convergence
+WARNING: watcher still down (same stale episode; last beat: 210s ago, grace 300s) - full banner already printed this episode.
+ok - remote inherited config retains and retries a failed live reread nudge
+secondmate projection:
+{
+  "registry": {
+    "present": true,
+    "available": true,
+    "reason": null,
+    "provenance": "registered-table",
+    "path": "/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-remote-secondmate-e2e.h4qmSb/parent/data/secondmates.md",
+    "freshness": {
+      "status": "fresh",
+      "observed_at": "2026-09-03T02:25:27Z"
+    },
+    "records": [
+      {
+        "id": "ios",
+        "home": "/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-remote-secondmate-e2e.h4qmSb/remote-home",
+        "host": "remote-mac",
+        "root": "/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-remote-secondmate-e2e.h4qmSb/remote-root",
+        "remote": true,
+        "registered": true,
+        "registry_error": null
+      },
+      {
+        "id": "local",
+        "home": "/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-remote-secondmate-e2e.h4qmSb/local-home",
+        "host": null,
+        "root": null,
+        "remote": false,
+        "registered": true,
+        "registry_error": null
+      }
+    ],
+    "input_truncated": false,
+    "records_truncated": false,
+    "complete": true,
+    "reasons": [],
+    "lines_in_window": 2,
+    "records_in_window": 2
+  },
+  "records": [
+    {
+      "id": "ios",
+      "home": "/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-remote-secondmate-e2e.h4qmSb/remote-home",
+      "host": "remote-mac",
+      "remote": true,
+      "registered": true,
+      "spawn_gen": null,
+      "current": {
+        "state": "unknown",
+        "reason": "structured home ledger collection timed out and no valid cached copy is available"
+      },
+      "invalidity": null,
+      "reconcile_inventory": null,
+      "provenance": {
+        "selected": "parent-event-fallback",
+        "structured_home": "/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-remote-secondmate-e2e.h4qmSb/remote-home",
+        "parent_event_role": "fallback-only-not-current"
+      },
+      "freshness": {
+        "status": "historical-event",
+        "observed_at": "2026-09-03T02:25:27Z",
+        "age_seconds": 9
+      },
+      "active_children": [],
+      "decisions_open": [],
+      "holds": [],
+      "queued": [],
+      "landed": [],
+      "endpoints": [],
+      "counts": {
+        "active_children": 0,
+        "decisions_open": 0,
+        "holds": 0,
+        "queued": 0,
+        "landed": 0,
+        "endpoints": 0
+      },
+      "omitted": [],
+      "parent_event": {
+        "raw": "done [corr=7c9302dd8c4d486c]: concurrent inherited data re-read",
+        "note": "concurrent inherited data re-read",
+        "age_seconds": 9,
+        "open_activities": [],
+        "open_decisions": [],
+        "activity_scan": {
+          "records": [],
+          "available": true,
+          "input_truncated": false,
+          "retained_truncated": false,
+          "reasons": [],
+          "lines_in_window": 6,
+          "records_in_window": 0
+        }
+      },
+      "terminal_evidence": {
+        "provenance": "remote-direct-report-terminal",
+        "trust": "untrusted-supplement",
+        "captured": false,
+        "observed_at": "2026-09-03T02:25:27Z",
+        "freshness": "not-collected",
+        "reason": "remote terminal evidence is not collected by the primary",
+        "lines": 0,
+        "bytes": 0,
+        "event_note_seen": false,
+        "contradiction": false
+      },
+      "contradiction": false
+    },
+    {
+      "id": "local",
+      "home": "/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-remote-secondmate-e2e.h4qmSb/local-home",
+      "host": null,
+      "remote": false,
+      "registered": true,
+      "spawn_gen": null,
+      "current": {
+        "state": "no_active_work",
+        "reason": null
+      },
+      "invalidity": {
+        "kind": null,
+        "ids": []
+      },
+      "reconcile_inventory": {
+        "kind": null,
+        "ids": []
+      },
+      "provenance": {
+        "selected": "structured-home",
+        "structured_home": "/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-remote-secondmate-e2e.h4qmSb/local-home",
+        "summary_source": "local-ledger",
+        "summary_valid": true,
+        "trust": "complete",
+        "parent_event_role": "historical-only"
+      },
+      "freshness": {
+        "status": "fresh",
+        "observed_at": "2026-09-03T02:25:22Z",
+        "age_seconds": 5
+      },
+      "active_children": [],
+      "decisions_open": [],
+      "holds": [],
+      "queued": [],
+      "landed": [],
+      "endpoints": [],
+      "counts": {
+        "active_children": 0,
+        "decisions_open": 0,
+        "holds": 0,
+        "queued": 0,
+        "landed": 0,
+        "endpoints": 0
+      },
+      "omitted": [],
+      "parent_event": {
+        "raw": "",
+        "note": "",
+        "age_seconds": null,
+        "open_activities": [],
+        "open_decisions": [],
+        "activity_scan": {
+          "records": [],
+          "available": true,
+          "input_truncated": false,
+          "retained_truncated": false,
+          "reasons": [],
+          "lines_in_window": 0,
+          "records_in_window": 0
+        },
+        "reconciliation": {
+          "provenance": "parent-status-keyed-fold",
+          "trust": "untrusted-supplement",
+          "activities": [],
+          "decisions": [],
+          "contradiction": false,
+          "inconclusive": false
+        }
+      },
+      "terminal_evidence": {
+        "provenance": "parent-direct-report-terminal",
+        "trust": "untrusted-supplement",
+        "captured": false,
+        "observed_at": "2026-09-03T02:25:27Z",
+        "freshness": "not-collected",
+        "reason": "no useful contradiction check",
+        "lines": 0,
+        "bytes": 0,
+        "event_note_seen": false,
+        "contradiction": false
+      },
+      "contradiction": false
+    }
+  ],
+  "total_registered": 2,
+  "total": 2,
+  "shown": 2,
+  "truncated": 0
+}
+not ok - fleet snapshot did not select the remote structured-home projection

@@ -1,0 +1,31 @@
+ok - session start retries a close whose marker could not be removed
+ok - session start reports owned backlog rows it cannot read
+ok - session start marks an item In flight when this home already owns a worker for it
+ok - session start rejects internal worker-record symlinks
+ok - session start rejects symlinked worker records
+ok - session start finishes a close an interrupted cleanup recorded but never landed
+ok - recovery backfills recorded links onto already Done items
+ok - session start preserves a pending close across a transient backlog read failure
+ok - recovery preserves incomplete-cleanup evidence across a failed replay
+ok - session start finishes a close for the matching meta incarnation
+ok - recovery preserves closes for ambiguous task incarnations
+ok - recovery preserves both records when meta removal fails
+ok - recovery preserves closes beside symlinked metadata
+ok - recovery binds close-marker identity to its locked filename
+ok - recovery rejects close markers targeting another home's data
+ok - recovery validates an unterminated final marker field
+ok - recovery rejects lexical traversal before resolving marker data
+ok - recovery rejects marker control bytes before parsing
+ok - recovery rejects malformed PR URL values
+ok - a retained pending close is never started by reconciliation
+ok - recovery rejects close-marker arguments outside its protocol
+ok - recovery reports and rejects dangling symlink close markers
+ok - session start drops a close recorded for an older meta incarnation
+ok - session start rejects an unversioned close marker
+ok - bootstrap rechecks worker-record containment after locking
+ok - lifecycle files reject ancestor symlinks outside home roots
+ok - same-home state overrides remain supported
+ok - bootstrap refuses symlinked state before reconciliation
+ok - bootstrap stops when backlog data disappears before reconciliation
+ok - bootstrap preserves secondmate, manual, and absent-backlog exemptions
+ok - session start leaves a captain-held item where the captain put it

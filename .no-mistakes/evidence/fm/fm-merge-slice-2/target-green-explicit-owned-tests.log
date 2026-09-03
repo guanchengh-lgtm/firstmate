@@ -1,0 +1,42 @@
+## tests/fm-busy-adapter-wiring.test.sh
+ok - pi extension reports agent_start busy, settles idle only via ctx.isIdle(), and keeps turn_end a notification
+ok - pi extension awaits agent_settled before the next agent_start without a test delay
+ok - pi extension events from a superseded incarnation are rejected as stale
+ok - kimi and grok install no unverified semantic wiring and classify through their own gates
+ok - opencode plugin classifies from session.status, scoped to the latched worker session
+ok - claude hooks open on UserPromptSubmit and close on Stop, StopFailure, and SessionEnd
+ok - claude hook events from a superseded incarnation are rejected without breaking the hook
+ok - codex classifies unknown until a semantic source is verified, never idle or footer-matched
+all fm-busy-adapter-wiring tests passed
+## tests/fm-grok-harness.test.sh
+ok - grok global hook requires a firstmate registry token
+ok - grok teardown removes pointer and token state
+ok - fm-lock recognizes grok harness processes
+## tests/fm-cursor-primary.test.sh
+ok - fm-turnend-guard: Cursor payload is inert without --cursor and blocks with it
+ok - fm-turnend-guard: a non-Cursor payload keeps blocking
+ok - fm-claude-stop-autoarm: inert on a Cursor-delivered payload
+ok - fm-sessionstart-run: inert on a Cursor payload, unchanged otherwise
+ok - fm-arm-pretool-check: Cursor duplicate allows, --cursor denies in Cursor's own shape
+ok - fm-cd-pretool-check: Cursor duplicate allows, --cursor denies in Cursor's own shape
+ok - cursor park: silent no-op when no supervision is needed
+ok - cursor park: an actionable close is delivered as one watcher-kind follow-up
+ok - cursor park: matching ancestry survives a startup lease
+ok - cursor park: always exits 0, even when supervision is genuinely down
+ok - cursor park: the repair nag is bounded and then goes quiet
+ok - cursor park: a repair nag is emitted only after its budget persists
+ok - cursor park: a delivered wake resets the bounded repair budget
+ok - cursor park: the loop_count ceiling warns exactly once, then stops the loop
+ok - cursor park: an older park stands down after a newer stop claim
+ok - cursor park: the newest stop exclusively owns a concurrent commit
+ok - cursor park: a superseded park cannot consume repair budget
+ok - cursor park: inert while away mode is active
+ok - cursor park: an away-mode transition wins before follow-up commit
+ok - cursor park: inert when this session does not hold the home lock
+ok - cursor park: session takeover stops polling without output or state mutation
+ok - cursor park: inert inside a child crewmate worktree
+ok - cursor park: malformed payloads fail open without arming
+ok - fm-sessionstart-cursor: sessionStart injects context
+ok - fm-sessionstart-cursor: silent inside a child crewmate worktree
+ok - cursor registration: covers every primary event with a bounded stop loop
+ok - cursor bounds nest: firstmate's default ceiling stops the loop before Cursor's loop_limit does

@@ -1,0 +1,41 @@
+$ bin/fm-spawn.sh evidence-dispatch-closure <project> --mode no-mistakes --yolo off --role builder
+spawned evidence-dispatch-closure harness=claude kind=ship mode=no-mistakes yolo=off role=builder window=firstmate:fm-evidence-dispatch-closure worktree=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-backlog-atomicity.OoYNbq/evidence-dispatch/wt
+exit=0
+
+$ tasks-axi show evidence-dispatch-closure --file <home>/data/backlog.md
+task:
+  id: evidence-dispatch-closure
+  title: item for evidence-dispatch-closure
+  state: in_flight
+  blocked: no
+  blocked_by: none
+  held: no
+  hold_reason: "-"
+  hold_kind: "-"
+  hold_until: "-"
+  kind: ship
+  repo: "-"
+  priority: "-"
+  created: 2026-09-03
+  closed: "-"
+  deps: none
+  links: none
+  body: ""
+
+$ selected standard task record fields
+window=firstmate:fm-evidence-dispatch-closure
+worktree=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-backlog-atomicity.OoYNbq/evidence-dispatch/wt
+kind=ship
+mode=no-mistakes
+role=builder
+spawn_gen=s1788402541.65944.27929
+
+$ jq endpoint view <home>/state/home-summary.json
+{
+  "id": "evidence-dispatch-closure",
+  "kind": null,
+  "state": "working",
+  "backend": null,
+  "target": null,
+  "worktree": null
+}
