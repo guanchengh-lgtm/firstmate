@@ -43,6 +43,18 @@ fm_exact_sync_refuse_force_argv() {
   done
 }
 
+# Record that an exact-sync request flag was passed, whatever value it carried,
+# and refuse a repeat of the same flag.
+fm_exact_sync_mark_flag() {  # <flag>
+  case " $SYNC_SEEN " in
+    *" $1 "*)
+      echo "error: duplicate $1" >&2
+      exit 2
+      ;;
+  esac
+  SYNC_SEEN="$SYNC_SEEN $1"
+}
+
 fm_exact_sync_hex_sha() {
   local LC_ALL=C
   [[ "${1-}" =~ ^[0-9a-f]{40}$ ]]
@@ -93,8 +105,14 @@ fm_exact_sync_require_tree_match() {
 }
 
 fm_exact_sync_require_no_conflict_markers() {
-  if git -C "$PROJ" grep -I -E -e '^(<<<<<<<|=======|>>>>>>>)' "$SYNC_M" -- >/dev/null 2>&1; then
+  local rc=0
+  git -C "$PROJ" grep -I -E -e '^(<<<<<<<|=======|>>>>>>>)' "$SYNC_M" -- >/dev/null 2>&1 || rc=$?
+  if [ "$rc" -eq 0 ]; then
     echo "REFUSED: tree($SYNC_M) still contains conflict markers" >&2
+    return 1
+  fi
+  if [ "$rc" -ge 2 ]; then
+    echo "REFUSED: exact-sync could not search tree($SYNC_M) for conflict markers" >&2
     return 1
   fi
 }
@@ -399,9 +417,8 @@ SYNC_BASE=
 SYNC_UPSTREAM=
 SYNC_STAGE=
 SYNC_REMOTE=origin
-SYNC_REMOTE_SET=0
 SYNC_BRANCH=main
-SYNC_BRANCH_SET=0
+SYNC_SEEN=
 SYNC_M=
 SYNC_ORIGIN_TIP=
 SYNC_SKIP_PUSH=0
@@ -410,34 +427,32 @@ while [ "$#" -gt 0 ]; do
     --exact-sync) EXACT_SYNC=1 ;;
     --base)
       [ "$#" -ge 2 ] || { echo "$USAGE" >&2; exit 2; }
-      [ -z "$SYNC_BASE" ] || { echo "error: duplicate --base" >&2; exit 2; }
+      fm_exact_sync_mark_flag --base
       SYNC_BASE=$2
       shift
       ;;
     --upstream)
       [ "$#" -ge 2 ] || { echo "$USAGE" >&2; exit 2; }
-      [ -z "$SYNC_UPSTREAM" ] || { echo "error: duplicate --upstream" >&2; exit 2; }
+      fm_exact_sync_mark_flag --upstream
       SYNC_UPSTREAM=$2
       shift
       ;;
     --stage)
       [ "$#" -ge 2 ] || { echo "$USAGE" >&2; exit 2; }
-      [ -z "$SYNC_STAGE" ] || { echo "error: duplicate --stage" >&2; exit 2; }
+      fm_exact_sync_mark_flag --stage
       SYNC_STAGE=$2
       shift
       ;;
     --remote)
       [ "$#" -ge 2 ] || { echo "$USAGE" >&2; exit 2; }
-      [ "$SYNC_REMOTE_SET" = 0 ] || { echo "error: duplicate --remote" >&2; exit 2; }
+      fm_exact_sync_mark_flag --remote
       SYNC_REMOTE=$2
-      SYNC_REMOTE_SET=1
       shift
       ;;
     --branch)
       [ "$#" -ge 2 ] || { echo "$USAGE" >&2; exit 2; }
-      [ "$SYNC_BRANCH_SET" = 0 ] || { echo "error: duplicate --branch" >&2; exit 2; }
+      fm_exact_sync_mark_flag --branch
       SYNC_BRANCH=$2
-      SYNC_BRANCH_SET=1
       shift
       ;;
     *)
@@ -448,9 +463,7 @@ while [ "$#" -gt 0 ]; do
   shift
 done
 
-if [ "$EXACT_SYNC" = 0 ] \
-  && { [ -n "$SYNC_BASE" ] || [ -n "$SYNC_UPSTREAM" ] || [ -n "$SYNC_STAGE" ] \
-    || [ "$SYNC_REMOTE_SET" = 1 ] || [ "$SYNC_BRANCH_SET" = 1 ]; }; then
+if [ "$EXACT_SYNC" = 0 ] && [ -n "$SYNC_SEEN" ]; then
   echo "error: --base/--upstream/--stage/--remote/--branch require --exact-sync" >&2
   exit 2
 fi
