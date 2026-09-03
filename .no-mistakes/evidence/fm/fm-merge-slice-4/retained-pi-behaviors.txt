@@ -1,0 +1,4 @@
+ok - a settled branch turn without a durable outcome falls back and releases its grant for main replay
+ok - a durable report is the branch wake completion handshake
+ok - branch context budget rotates before exhaustion and preserves under-budget reuse
+ok - third consecutive unreported wake stops the branch loop

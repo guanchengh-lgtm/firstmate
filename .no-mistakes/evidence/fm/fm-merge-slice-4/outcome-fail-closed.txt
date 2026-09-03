@@ -1,0 +1,5 @@
+ok - malformed and ahead-of-store cursor state fail closed before any outcome can be skipped
+ok - cursor advancement refuses to legitimize an ahead processed marker
+ok - middle sequence conflicts fail closed for every store read and append
+ok - outcome stores require terminated single-line JSON records
+ok - the processed marker is sequence-bound, never ahead of the read cursor, never backwards, and migrates delivered history once

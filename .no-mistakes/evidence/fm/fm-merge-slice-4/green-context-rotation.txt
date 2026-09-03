@@ -1,0 +1,1 @@
+ok - branch context budget rotates before exhaustion and preserves under-budget reuse

@@ -1,0 +1,9 @@
+not ok - three consecutive unreported wakes must stop the branch until session replacement, while reports reset the streak: file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M1JZHEE1QQ31SE66TRD201K1/tests/[eval1]:35
+  throw new Error("branch accepted a fourth wake after three consecutive unreported turns");
+        ^
+
+Error: branch accepted a fourth wake after three consecutive unreported turns
+    at file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M1JZHEE1QQ31SE66TRD201K1/tests/[eval1]:35:9
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+
+Node.js v25.8.2: expected exit 0, got 1

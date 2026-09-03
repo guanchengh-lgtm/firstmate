@@ -1,0 +1,1 @@
+ok - a co-present main-only row defers the whole heartbeat queue to main

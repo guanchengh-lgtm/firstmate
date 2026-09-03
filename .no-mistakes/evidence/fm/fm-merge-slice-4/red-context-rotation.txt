@@ -1,0 +1,15 @@
+not ok - the branch must reuse an under-budget session and rotate an over-budget session without rewriting history: node:fs:2398
+    return binding.writeFileUtf8(
+                   ^
+
+Error: ENOENT: no such file or directory, open ''
+    at writeFileSync (node:fs:2398:20)
+    at file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M1JZHEE1QQ31SE66TRD201K1/tests/[eval1]:26:1
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5) {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: ''
+}
+
+Node.js v25.8.2: expected exit 0, got 1

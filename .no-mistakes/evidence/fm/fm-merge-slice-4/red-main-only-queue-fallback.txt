@@ -1,0 +1,8 @@
+not ok - a mixed heartbeat queue must stay wholly on main: file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M1JZHEE1QQ31SE66TRD201K1/tests/[eval1]:49
+  throw new Error(`a mixed heartbeat queue was not deferred to main: ${JSON.stringify(offers)}`);
+        ^
+
+Error: a mixed heartbeat queue was not deferred to main: [{"message":"heartbeat","heartbeat":true,"eligible":true}]
+    at file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M1JZHEE1QQ31SE66TRD201K1/tests/[eval1]:49:9
+
+Node.js v25.8.2: expected exit 0, got 1

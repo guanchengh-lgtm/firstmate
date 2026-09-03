@@ -1,0 +1,2 @@
+not ok - unread did not return exactly the records above the cursor: {"seq":1,"epoch":1788421046,"task":"task-1","wake":"signal: working","verdict":"routine","summary":"worker healthy, \"quoted\" text kept","silent":false}
+{"seq":2,"epoch":1788421046,"task":"task-2","wake":"","verdict":"captain","summary":"PR https://example.com/pr/2 checks green","silent":false}

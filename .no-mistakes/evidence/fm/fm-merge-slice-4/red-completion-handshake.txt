@@ -1,0 +1,9 @@
+not ok - a durable report must complete the wake even when the provider records a later error: file:///private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-pi-branch-extension.XmlWbe/report-handshake-root/.pi/extensions/fm-branch-supervision.ts:1260
+          throw new Error(detail);
+                ^
+
+Error: supervision branch provider failed after construction: late provider error
+    at file:///private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-pi-branch-extension.XmlWbe/report-handshake-root/.pi/extensions/fm-branch-supervision.ts:1260:17
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+
+Node.js v25.8.2: expected exit 0, got 1

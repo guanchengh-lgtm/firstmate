@@ -1,0 +1,1 @@
+ok - outcome store is append-only and refuses sequence reuse after a torn tail

@@ -1,0 +1,9 @@
+not ok - Pi calm renderer and lifecycle contract failed: file:///private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-calm-pi-extension.QiZoUU/renderer/[eval1]:96
+  throw new Error(`unexpected wrapped built-ins: ${names.join(",")}`);
+        ^
+
+Error: unexpected wrapped built-ins: 
+    at file:///private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-calm-pi-extension.QiZoUU/renderer/[eval1]:96:9
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+
+Node.js v25.8.2
