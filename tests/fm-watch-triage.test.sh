@@ -33,6 +33,8 @@ find_nounset_empty_array_bash() {
     [ -x "$candidate" ] || continue
     case "$seen" in *":$candidate:"*) continue ;; esac
     seen="$seen$candidate:"
+    # The candidate shell must expand the empty-array probe.
+    # shellcheck disable=SC2016
     if ! "$candidate" -uc 'empty=(); printf "%s\n" "${empty[@]}"' >/dev/null 2>&1; then
       printf '%s\n' "$candidate"
       return 0
