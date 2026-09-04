@@ -820,6 +820,41 @@ test_turn_ended_churning_pane_absorbed() {
   pass "a bare turn-end from a pane that churned since the previous poll is absorbed"
 }
 
+# The steady state of a sustained absorb: every churned window ALREADY holds an
+# in-bound .churn-since- marker, so the absorb has no new marker to open. The
+# original deferral start must survive, or continued churn would restart the
+# bound forever and the window could never expire into a surfaced wake.
+test_turn_ended_churn_keeps_an_existing_in_bound_deadline() {
+  local dir state fakebin out capture_file window key opened pid
+  dir=$(make_case turn-ended-churn-existing-deadline); state="$dir/state"; fakebin="$dir/fakebin"
+  out="$dir/watch.out"; capture_file="$dir/pane.txt"
+  window="test:fm-codexer"
+  : > "$state/codexer.turn-ended"
+  printf 'window=%s\nkind=ship\nharness=codex\n' "$window" > "$state/codexer.meta"
+  printf 'apply_patch: writing bin/thing.sh' > "$capture_file"
+  key=$(printf '%s' "$window" | tr ':/.' '___')
+  printf '%s' "$(hash_text 'reading the brief')" > "$state/.hash-$key"
+  printf '0\n' > "$state/.count-$key"
+  # An earlier poll already opened this window's deferral, well inside the bound.
+  opened=$(( $(date +%s) - 5 ))
+  printf '%s' "$opened" > "$state/.churn-since-$key"
+  export FM_FAKE_CREW_STATE='state: unknown · source: pane · harness state unavailable (unknown codex-unverified)'
+  PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
+    FM_CONFIG_OVERRIDE="$(churn_config "$dir")" \
+    FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=3 FM_SIGNAL_GRACE=1 \
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+  pid=$!
+  wait_for_absorbed "$state" "$pid" "absorbed benign signal:" \
+    || { reap "$pid"; fail "a churning turn-end with an existing in-bound deadline was not absorbed (the watcher exited): $(cat "$out")"; }
+  [ ! -s "$out" ] || fail "an absorbed churning-pane turn-end printed a wake reason: $(cat "$out")"
+  [ ! -s "$state/.wake-queue" ] || fail "an absorbed churning-pane turn-end enqueued a durable wake record"
+  [ "$(cat "$state/.churn-since-$key")" = "$opened" ] \
+    || { reap "$pid"; fail "the absorb restarted an already-open deferral window instead of keeping its start"; }
+  reap "$pid"
+  unset FM_FAKE_CREW_STATE
+  pass "a churning turn-end whose windows all hold in-bound deadlines absorbs and keeps each start"
+}
+
 test_turn_ended_churn_resets_prior_stale_classification() {
   local dir state fakebin out capture_file window key old_hash active_hash pid i
   dir=$(make_case turn-ended-churn-resets-stale); state="$dir/state"; fakebin="$dir/fakebin"
@@ -3818,6 +3853,7 @@ test_provably_working_signal_absorbed
 test_turn_ended_provably_working_absorbed
 test_turn_ended_not_working_surfaced
 test_turn_ended_churning_pane_absorbed
+test_turn_ended_churn_keeps_an_existing_in_bound_deadline
 test_turn_ended_churn_resets_prior_stale_classification
 test_turn_ended_churn_resets_wedge_state_before_stale_poll
 test_turn_ended_still_pane_surfaced
