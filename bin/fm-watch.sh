@@ -1631,6 +1631,7 @@ while :; do
             triage_log "absorbed duplicate merged PR poll result for $id"
             continue
           fi
+          wake "$reason"
         fi
         fm_wake_append check "$c" "$reason" || exit 1
         touch "$STATE/.last-check"
