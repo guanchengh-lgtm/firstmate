@@ -266,7 +266,7 @@ test_attached_arm_still_fails_on_a_wake_it_did_not_deliver() {
 }
 
 test_rearm_resurfaces_durable_queue_and_remote_open_decision() {
-  local dir home state fakebin result armout drainout status watcher_pid sequence generation decision_recovery_arm decision_successor
+  local dir home state fakebin result armout drainout status watcher_pid sequence generation decision_recovery_arm decision_successor i
   dir=$(make_case rearm-resurface)
   home="$dir/home"
   state="$dir/state"
@@ -310,16 +310,21 @@ test_rearm_resurfaces_durable_queue_and_remote_open_decision() {
   append_wake "$state" check startup-network 'check: startup-network'
 
   start_rearm_arm "$home" "$state" "$fakebin" "$armout"
-  sleep 0.25
-  if is_live_non_zombie "$ARM_PID"; then
-    # End the fixture through an ordinary actionable status transition so this
-    # failing pre-fix path leaves no child behind.
+  i=0
+  while [ "$i" -lt 100 ]; do
+    is_live_non_zombie "$ARM_PID" || break
+    [ -e "$state/.watcher-down" ] && break
+    sleep 0.1
+    i=$((i + 1))
+  done
+  if is_live_non_zombie "$ARM_PID" && [ ! -e "$state/.watcher-down" ]; then
     printf 'done: fixture cleanup\n' > "$state/cleanup.status"
     wait_for_exit "$ARM_PID" 80 || true
     fail "re-arm stayed live instead of surfacing durable wakes and the still-open remote decision"
   fi
-  wait "$ARM_PID"
+  wait_for_exit "$ARM_PID" 80
   status=$?
+  [ "$status" -ne 124 ] || fail "re-arm did not exit after the durable recovery observable"
   expect_code 0 "$status" "re-arm re-surface wake must close successfully"
   grep -F 'check: rearm-resurface' "$armout" >/dev/null \
     || fail "re-arm did not report the durable recovery wake: $(cat "$armout")"

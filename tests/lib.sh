@@ -41,6 +41,11 @@ export FM_GATE_REFUSE_BYPASS=1
 # strips this to verify real refusal.
 export FM_VALIDATION_TRUTH_BYPASS=1
 
+# Drop host harness identity at fixture load so portable wording never follows
+# the runner. A case that asserts one harness's wording must pin that harness
+# on its own command.
+unset CURSOR_AGENT CURSOR_INVOKED_AS CLAUDECODE PI_CODING_AGENT GROK_AGENT
+
 # Resolve the repo root from this library's own location. Consumed by sourcing
 # test files, not by this library, so it reads as "unused" here.
 # shellcheck disable=SC2034

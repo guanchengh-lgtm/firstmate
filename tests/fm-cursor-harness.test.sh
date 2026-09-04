@@ -198,6 +198,10 @@ test_cursor_marker_outranks_inherited_claudecode() {
 
 test_harness_ancestry_rejects_cursor_named_node_script() {
   command -v node >/dev/null 2>&1 || return 0
+  if [ "$("$HARNESS")" = cursor ]; then
+    printf 'skip - test process already resolves to cursor by ancestry; a cursor-named node child cannot prove a negative identity on this host\n'
+    return 0
+  fi
   local helper="$TMP_ROOT/cursor-agent-helper.js" out
   cat > "$helper" <<'JS'
 const { spawnSync } = require('child_process');
