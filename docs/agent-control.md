@@ -23,6 +23,7 @@ The failure repeated across harnesses and homes, and the workaround (remember to
   These were previously carried only in the [`harness-adapters`](../.agents/skills/harness-adapters/SKILL.md) skill's per-adapter tables, which now point here.
   The pure classifiers (`fm_control_message_verb`, `fm_control_key_verb`) expose those mechanics without side effects so the data plane can refuse before any send effect.
   `bin/fm-send.sh` consumes them and refuses recorded-task lifecycle text and keys, printing the sanctioned `bin/fm-control.sh <id> interrupt|exit` path.
+  `bin/fm-send.sh`'s `--key` path reads the composer-clear table from this owner too, rather than keeping a second copy of it.
 - **Per-backend capability**: which named keys a runtime backend can deliver, and whether it has a recovery-grade agent-state classifier able to prove an agent stopped.
 
 A recorded `harness=` is not always an exact adapter name: a task launched from a raw command records that command's basename instead.

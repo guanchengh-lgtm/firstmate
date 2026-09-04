@@ -6,16 +6,22 @@
 #
 # Why running beats nudging: bin/fm-sessionstart-nudge.sh can only ASK the agent
 # to take the helm, and an agent can defer that, including when a first-command
-# skill has its own read-only path. When the harness injects hook stdout into
-# model context, running the digest here removes that discretion - the helm is
-# taken before the model's first turn, whatever the first turn is.
+# skill has its own read-only path. When the native adapter injects this
+# command's stdout into model context, running the digest here removes that
+# discretion - the helm is taken before the model's first turn, whatever the
+# first turn is.
 #
-# Usage: fm-sessionstart-run.sh [--source <source>]
+# Usage: fm-sessionstart-run.sh [--source <source>] [--pi-prerequisite]
 #   --source  The harness's own session-open source. When omitted, the source is
 #             read from a Claude/Codex-shaped JSON hook payload on stdin
 #             (the `source` field). An unreadable or unrecognized source is
 #             treated as `startup`, because taking the helm redundantly is
 #             cheap and idempotent while not taking it is the whole bug.
+#   --pi-prerequisite
+#             Internal Pi extension mode. An intentional gate/scope stand-down
+#             exits 3 so provider preflight can distinguish it from an eligible
+#             native attempt that settled without output. Every ordinary hook
+#             invocation retains the always-zero compatibility contract below.
 #
 # In-place session replacement (Claude /clear, /new, or an interactive /resume)
 # keeps this OS process and only issues a NEW session id, so the recorded
@@ -37,12 +43,14 @@
 #                           silent) and a plain instruction is enough when a new
 #                           process resumed an old session (the nudge fires).
 #
-# Every path exits 0, exactly like the nudge wrapper: a Claude SessionStart
-# exit 2 blocks session initialization, so a failed session start must reach the
-# agent as digest text it can act on, never as a refusal to open the session.
-# A lock another live session holds and a truncated digest are reported inside
-# the digest, while broken GitHub auth arrives through the deferred network
-# result inline or as a wake, for exactly that reason.
+# Every ordinary transport path exits 0, exactly like the nudge wrapper: a
+# Claude SessionStart exit 2 blocks session initialization, so a failed session
+# start must reach the agent as digest text it can act on, never as a refusal to
+# open the session. The internal Pi prerequisite's silent exit 3 never reaches a
+# harness hook; it only distinguishes intentional ineligibility before provider
+# preflight. A lock another live session holds and a truncated digest are
+# reported inside the digest, while broken GitHub auth arrives through the
+# deferred network result inline or as a wake, for exactly that reason.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -66,6 +74,7 @@ PAYLOAD_EVENT=
 PAYLOAD_SESSION_ID=
 PAYLOAD_DELIVERED=0
 PAYLOAD_VALID=0
+PI_PREREQUISITE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --source)
@@ -76,15 +85,24 @@ while [ $# -gt 0 ]; do
       if [ $# -ge 2 ]; then shift 2; else shift; fi
       ;;
     --source=*) SOURCE_EXPLICIT=1; SOURCE=${1#--source=}; shift ;;
+    --pi-prerequisite) PI_PREREQUISITE=1; shift ;;
     *) shift ;;
   esac
 done
 
+stand_down() {
+  if [ "$PI_PREREQUISITE" = 1 ]; then
+    exit 3
+  fi
+  exit 0
+}
+
 # The same two eligibility owners the nudge wrapper uses, so a no-mistakes gate
 # agent and an unmarked task worktree can never run a session start for a home
-# they do not own.
-fm_is_gate_agent "$FM_ROOT" && exit 0
-fm_primary_scope_matches "$FM_ROOT" "$STATE" || exit 0
+# they do not own. Pi's preflight-only status preserves that intentional silence
+# without mistaking it for a failed eligible attempt that needs the manual nudge.
+fm_is_gate_agent "$FM_ROOT" && stand_down
+fm_primary_scope_matches "$FM_ROOT" "$STATE" || stand_down
 
 # Print JSON string field <key> from payload <payload>, or nothing.
 # Splitting on the quote character finds the FIRST occurrence of the key and its
@@ -206,6 +224,13 @@ if [ "$SOURCE_EXPLICIT" -eq 0 ] && [ "$PAYLOAD_DELIVERED" -eq 1 ] \
       fi
       ;;
   esac
+  SOURCE=$(printf '%s' "$PAYLOAD" | awk '
+    BEGIN { RS = "\"" }
+    seen == 2 { print; exit }
+    seen == 1 && $0 ~ /^[[:space:]]*:[[:space:]]*$/ { seen = 2; next }
+    seen == 1 { seen = 0 }
+    $0 == "source" { seen = 1 }
+  ')
 fi
 
 case "$SOURCE" in

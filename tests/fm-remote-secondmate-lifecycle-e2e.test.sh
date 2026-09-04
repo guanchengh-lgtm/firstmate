@@ -223,6 +223,15 @@ case "${FM_FAKE_SSH_MODE:-normal}:$command_name:$command_rel" in
     printf 'harness=codex\n'
     exit 0
     ;;
+  publish-fail:fm-remote-secondmate-control.sh:*)
+    [ "$_command_action" = launch ] || exit 93
+    output=$("$FM_FAKE_REMOTE_ENTRYPOINT" "$@")
+    status=$?
+    rm -f -- "$FM_HOME/state/ios.meta"
+    mkdir "$FM_HOME/state/ios.meta"
+    printf '%s\n' "$output"
+    exit "$status"
+    ;;
   provision-block-fail:fm-remote-home-provision.sh:*)
     touch "$FM_FAKE_SEED_ENTERED"
     while [ ! -f "$FM_FAKE_SEED_RELEASE" ]; do sleep 0.02; done
@@ -734,6 +743,23 @@ publish_healthy_watcher_identity "$PARENT/state" "$PARENT" "$ROOT/bin/fm-watch.s
 pass "remote spawn launches on the remote-local backend and records a host-qualified route"
 
 remote_route_meta="$REMOTE_HOME/state/parent-route/ios.meta"
+cp "$PARENT/state/ios.meta" "$TMP_ROOT/ios-parent-before-publish-failure.meta"
+remote_target_before=$(sed -n 's/^window=//p' "$remote_route_meta")
+rm -f -- "$PARENT/state/ios.meta"
+publish_failure_status=0
+publish_failure_out=$(FM_FAKE_SSH_MODE=publish-fail remote_env "$ROOT/bin/fm-spawn.sh" ios --secondmate 2>&1) \
+  || publish_failure_status=$?
+[ "$publish_failure_status" -ne 0 ] || fail "remote spawn accepted a failed parent metadata publication"
+assert_contains "$publish_failure_out" "host-local metadata were preserved for manual reconciliation" \
+  "failed parent publication did not explain the preserved remote ownership"
+[ -d "$PARENT/state/ios.meta" ] || fail "the publication-failure fixture did not block the parent record"
+assert_present "$remote_route_meta" "failed parent publication retired the reused remote endpoint metadata"
+[ "$(sed -n 's/^window=//p' "$remote_route_meta")" = "$remote_target_before" ] \
+  || fail "failed parent publication replaced the reused remote endpoint"
+rmdir "$PARENT/state/ios.meta"
+cp "$TMP_ROOT/ios-parent-before-publish-failure.meta" "$PARENT/state/ios.meta"
+pass "failed parent publication preserves a reused remote endpoint for reconciliation"
+
 cp "$remote_route_meta" "$TMP_ROOT/remote-ios-before-default-session.meta"
 legacy_pane=$(sed -n 's/^herdr_pane_id=//p' "$remote_route_meta")
 awk -v pane="$legacy_pane" '
@@ -1024,15 +1050,20 @@ resolve_ios_pending() {
 }
 resolve_ios_pending
 
-# Structured fleet state comes from each home's own snapshot. The remote host is
-# explicit, and the local route remains alongside it.
+# Structured fleet state comes from each home's published ledger. The remote
+# host is explicit, and the local route remains alongside it.
+FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$LOCAL_HOME" \
+  "$ROOT/bin/fm-home-summary-refresh.sh" >/dev/null \
+  || fail "local fixture did not publish its home ledger"
+remote_env "$ROOT/bin/fm-on.sh" ios fm-home-summary-refresh.sh >/dev/null \
+  || fail "remote fixture did not publish its home ledger"
 SNAPSHOT=$(remote_env "$ROOT/bin/fm-fleet-snapshot.sh" --json)
 if ! printf '%s' "$SNAPSHOT" | jq -e '.secondmate_current.records | any(.id == "ios" and .remote == true and .host == "remote-mac" and .provenance.selected == "structured-home")' >/dev/null; then
   printf 'secondmate projection:\n%s\n' "$(printf '%s' "$SNAPSHOT" | jq '.secondmate_current')" >&2
   fail "fleet snapshot did not select the remote structured-home projection"
 fi
-printf '%s' "$SNAPSHOT" | jq -e '.tasks[] | select(.id == "ios") | .paths.home.present == true' >/dev/null \
-  || fail "remote structured observation did not prove the remote home present"
+printf '%s' "$SNAPSHOT" | jq -e '.tasks[] | select(.id == "ios") | .paths.home.present == null and .endpoint.agent_alive == "unknown"' >/dev/null \
+  || fail "the fleet snapshot performed or invented a remote endpoint-liveness probe"
 printf '%s' "$SNAPSHOT" | jq -e '.secondmate_current.records | any(.id == "local" and .remote == false)' >/dev/null \
   || fail "fleet snapshot lost the existing local secondmate route"
 pass "fleet snapshot projects mixed local and remote structured state"
@@ -1126,7 +1157,11 @@ mv -f "$TMP_ROOT/remote-ios-before-liveness-legacy.meta" "$remote_route_meta"
 rm -f "$TMUX_STATE"
 pass "startup reports alive legacy backends without changing their routes"
 
-# Host loss maps to unknown/unavailable and never creates a local replacement.
+# Host loss never creates a local replacement. Remove both the published ledger
+# and its parent-side cache so the structured-home read degrades explicitly;
+# endpoint liveness remains the startup supervisor's concern.
+rm -f -- "$REMOTE_HOME/state/home-summary.json"
+rm -rf -- "$PARENT/state/secondmate-summary-cache"
 launches_before=$(grep -c '^tab create' "$HERDR_LOG" || true)
 rm -rf -- "$PARENT/state/.watch.lock"
 rm -f -- "$PARENT/state/.last-watcher-beat"
@@ -1134,16 +1169,18 @@ BOOT_UNAVAILABLE=$(FM_FAKE_SSH_MODE=unreachable remote_env "$ROOT/bin/fm-bootstr
 assert_contains "$BOOT_UNAVAILABLE" 'SECONDMATE_LIVENESS: secondmate ios: skipped: remote host unavailable or endpoint state unknown' \
   "bootstrap did not preserve an unreachable remote endpoint as unknown"
 UNAVAILABLE=$(FM_FAKE_SSH_MODE=unreachable remote_env "$ROOT/bin/fm-fleet-snapshot.sh" --json)
-printf '%s' "$UNAVAILABLE" | jq -e '.secondmate_current.records | any(.id == "ios" and .current.state == "unknown")' >/dev/null \
-  || fail "unreachable remote host was not projected unknown"
-printf '%s' "$UNAVAILABLE" | jq -e '.tasks[] | select(.id == "ios") | .paths.home.present == null' >/dev/null \
-  || fail "unreachable remote home presence was not projected unknown"
+printf '%s' "$UNAVAILABLE" | jq -e '.secondmate_current.records | any(.id == "ios"
+  and .current.state == "unknown" and .provenance.selected != "structured-home"
+  and (.current.reason | test("home ledger.*(timed out|missing|unreadable|invalid)")))' >/dev/null \
+  || fail "unreachable no-ledger remote home did not degrade to explicit unknown state"
+printf '%s' "$UNAVAILABLE" | jq -e '.tasks[] | select(.id == "ios") | .paths.home.present == null and .endpoint.agent_alive == "unknown"' >/dev/null \
+  || fail "unreachable remote endpoint liveness was not left to supervision"
 rm -f "$PARENT/state/.wake-queue"
 launches_after=$(grep -c '^tab create' "$HERDR_LOG" || true)
 [ "$launches_before" -eq "$launches_after" ] || fail "unreachable projection attempted a replacement launch"
 assert_present "$PARENT/state/ios.meta" "unreachable readiness removed the parent route metadata"
 assert_grep '- ios ' "$PARENT/data/secondmates.md" "unreachable readiness removed the registry route"
-pass "unreachable remote state remains unknown with no local respawn or failover"
+pass "unreachable no-ledger remote state remains explicit with no local respawn or failover"
 
 # Retirement delegates its safety check to the remote home. An in-flight child
 # record refuses cleanup and preserves both machines' durable routes.

@@ -1122,6 +1122,7 @@ EOF
     fm_lock_release "$CAPTAIN_META_LOCK"
     CAPTAIN_META_LOCK_HELD=0
 
+
     if [ -n "$keys" ]; then
       while IFS=$'\t' read -r key _verb _summary; do
         [ -n "$key" ] || continue

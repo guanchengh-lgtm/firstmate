@@ -521,7 +521,7 @@ remote_deliver_outbox() { # <secondmate-id> <outbox-path>
   mv -f -- "$counter_tmp" "$counter" \
     || { rm -f -- "$snapshot" "$counter_tmp"; return 1; }
   remote_rel="state/handoff/$id.outbox.md"
-  if ! "$SCRIPT_DIR/fm-on.sh" "$id" fm-remote-file.sh put "$remote_rel" 1048576 \
+  if ! "$SCRIPT_DIR/fm-on.sh" --stdin "$id" fm-remote-file.sh put "$remote_rel" 1048576 \
     "$bytes" "$hash" "$generation" < "$snapshot"; then
     rm -f -- "$snapshot"
     echo "error: handoff transfer to $id was unavailable or completion is unknown; outbox preserved at $outbox" >&2
@@ -664,6 +664,7 @@ remote_handoff() { # <secondmate-id> <keys...>
   remote_deliver_outbox "$id" "$outbox" || return 1
   echo "handed off ${#requested[@]} item(s) to remote secondmate $id: ${requested[*]-}"
   [ "${#already[@]}" -eq 0 ] || echo "  already staged (recovered): ${already[*]-}"
+  warn_stale_public_commitments "$id" "${requested[@]}"
 }
 
 with_remote_route_locks() { # <secondmate-id> <function> <args...>

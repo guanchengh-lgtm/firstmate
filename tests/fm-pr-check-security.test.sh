@@ -43,86 +43,14 @@ file_mode() {
   fi
 }
 
-state_snapshot() {
-  local state=$1 file
-  (
-    cd "$state" || exit 1
-    find . \( -type f -o -type l \) -print | LC_ALL=C sort | while IFS= read -r file; do
-      if [ -L "$file" ]; then
-        printf 'link %s %s\n' "$file" "$(readlink "$file")"
-      else
-        printf 'file %s %s ' "$file" "$(file_mode "$file")"
-        shasum -a 256 "$file" | awk '{print $1}'
-      fi
-    done
-  )
-}
-
-make_case() {
-  local name=$1 dir fakebin fake_root
-  dir="$TMP_ROOT/$name"
-  fakebin="$dir/fakebin"
-  fake_root="$dir/root"
-  mkdir -p "$dir/home/state" "$dir/home/data" "$dir/home/config" "$dir/wt" "$fakebin" "$fake_root/bin"
-  cat > "$fake_root/bin/fm-guard.sh" <<'SH'
-#!/usr/bin/env bash
-printf 'guard\n' >> "$FM_TEST_GUARD_LOG"
-SH
-  chmod +x "$fake_root/bin/fm-guard.sh"
-  cat > "$fakebin/gh" <<'SH'
-#!/usr/bin/env bash
-printf '%s\n' "$*" >> "$FM_TEST_GH_LOG"
-case " $* " in
-  *"statusCheckRollup"*)
-    printf '%s %s\n' "${FM_TEST_GH_HEAD:-0123456789abcdef0123456789abcdef01234567}" \
-      "${FM_TEST_GH_ROLLUP_VERDICT:-EMPTY}"
-    ;;
-  *" headRefOid "*) printf '%s\n' "${FM_TEST_GH_HEAD:-0123456789abcdef0123456789abcdef01234567}" ;;
-  *" state "*)
-    [ "${FM_TEST_GH_FAIL:-0}" = 0 ] || exit 1
-    [ "${FM_TEST_GH_SLEEP:-0}" = 0 ] || sleep "$FM_TEST_GH_SLEEP"
-    printf '%s\n' "${FM_TEST_GH_STATE:-OPEN}"
-    ;;
-esac
-SH
-  cat > "$fakebin/gh-axi" <<'SH'
-#!/usr/bin/env bash
-printf '%s\n' "$*" >> "$FM_TEST_GH_AXI_LOG"
-exit "${FM_TEST_GH_AXI_RC:-0}"
-SH
-  # Plain glab, reproducing the real CLI's contract: its field output on stdout
-  # and exit 0 on success, and a non-zero exit with no stdout on any failure.
-  cat > "$fakebin/glab" <<'SH'
-#!/usr/bin/env bash
-printf '%s\n' "$*" >> "$FM_TEST_GLAB_LOG"
-[ "${FM_TEST_GLAB_FAIL:-0}" = 0 ] || exit 1
-[ "${FM_TEST_GLAB_SLEEP:-0}" = 0 ] || sleep "$FM_TEST_GLAB_SLEEP"
-printf 'title:\tfixture merge request\nstate:\t%s\nauthor:\tsomeone\n' "${FM_TEST_GLAB_STATE:-opened}"
-SH
-  chmod +x "$fakebin/gh" "$fakebin/gh-axi" "$fakebin/glab"
-  : > "$dir/gh.log"
-  : > "$dir/gh-axi.log"
-  : > "$dir/glab.log"
-  : > "$dir/guard.log"
-  printf '%s\n' "$dir"
-}
-
-write_task_meta() {
-  local dir=$1 id=${2:-task-a}
-  fm_write_meta "$dir/home/state/$id.meta" \
-    "window=firstmate:fm-$id" \
-    "endpoint_task_id=$id" \
-    "worktree=$dir/wt" \
-    "project=$dir/project" \
-    "kind=ship" \
-    "mode=no-mistakes"
-}
-
-write_poll_meta() {
-  local state=$1 id=$2 url=$3
-  fm_write_meta "$state/$id.meta" \
-    "window=fm-$id" \
-    "pr=$url"
+process_is_live_non_zombie() {
+  local pid=$1 stat
+  kill -0 "$pid" 2>/dev/null || return 1
+  stat=$(ps -p "$pid" -o stat= 2>/dev/null || true)
+  case "$stat" in
+    Z*) return 1 ;;
+  esac
+  return 0
 }
 
 LINK_KIND=
@@ -173,6 +101,118 @@ assert_private_symlink_unchanged() {
       ;;
   esac
 }
+
+state_snapshot() {
+  local state=$1 file
+  (
+    cd "$state" || exit 1
+    find . \( -type f -o -type l \) -print | LC_ALL=C sort | while IFS= read -r file; do
+      if [ -L "$file" ]; then
+        printf 'link %s %s\n' "$file" "$(readlink "$file")"
+      else
+        printf 'file %s %s ' "$file" "$(file_mode "$file")"
+        shasum -a 256 "$file" | awk '{print $1}'
+      fi
+    done
+  )
+}
+
+make_case() {
+  local name=$1 dir fakebin fake_root
+  dir="$TMP_ROOT/$name"
+  fakebin="$dir/fakebin"
+  fake_root="$dir/root"
+  mkdir -p "$dir/home/state" "$dir/home/data" "$dir/home/config" "$dir/wt" "$fakebin" "$fake_root/bin"
+  cat > "$fake_root/bin/fm-guard.sh" <<'SH'
+#!/usr/bin/env bash
+printf 'guard\n' >> "$FM_TEST_GUARD_LOG"
+SH
+  chmod +x "$fake_root/bin/fm-guard.sh"
+  cat > "$fakebin/gh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_TEST_GH_LOG"
+case "${1:-} ${2:-}" in
+  "pr merge") exit 0 ;;
+  "pr view")
+    case " $* " in
+      *statusCheckRollup*)
+        printf '%s %s\n' "${FM_TEST_GH_HEAD:-0123456789abcdef0123456789abcdef01234567}" \
+          "${FM_TEST_GH_ROLLUP_VERDICT:-EMPTY}"
+        exit 0
+        ;;
+      *" headRefOid "*)
+        printf '%s\n' "${FM_TEST_GH_HEAD:-0123456789abcdef0123456789abcdef01234567}"
+        exit 0
+        ;;
+    esac
+    ;;
+  "api graphql")
+    printf '%s\n' \
+      'state=MERGED' \
+      'merged=true' \
+      'queued=false' \
+      'base=main'
+    exit 0
+    ;;
+esac
+case " $* " in
+  *" state "*)
+    [ "${FM_TEST_GH_FAIL:-0}" = 0 ] || exit 1
+    [ "${FM_TEST_GH_SLEEP:-0}" = 0 ] || sleep "$FM_TEST_GH_SLEEP"
+    printf '%s\n' "${FM_TEST_GH_STATE:-OPEN}"
+    ;;
+esac
+SH
+  cat > "$fakebin/gh-axi" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_TEST_GH_AXI_LOG"
+case "${1:-} ${2:-}" in
+  "pr merge")
+    echo "error: gh-axi must not receive pr merge" >&2
+    exit 1
+    ;;
+  "pr view")
+    [ "$#" -eq 5 ] && [ "${4:-}" = --repo ] || exit 2
+    printf 'pull_request:\n  number: %s\n  state: %s\n' "$3" "${FM_TEST_GH_MERGE_STATE:-merged}"
+    ;;
+esac
+exit "${FM_TEST_GH_AXI_RC:-0}"
+SH
+  # Plain glab, reproducing the real CLI's contract: its field output on stdout
+  # and exit 0 on success, and a non-zero exit with no stdout on any failure.
+  cat > "$fakebin/glab" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_TEST_GLAB_LOG"
+[ "${FM_TEST_GLAB_FAIL:-0}" = 0 ] || exit 1
+[ "${FM_TEST_GLAB_SLEEP:-0}" = 0 ] || sleep "$FM_TEST_GLAB_SLEEP"
+printf 'title:\tfixture merge request\nstate:\t%s\nauthor:\tsomeone\n' "${FM_TEST_GLAB_STATE:-opened}"
+SH
+  chmod +x "$fakebin/gh" "$fakebin/gh-axi" "$fakebin/glab"
+  : > "$dir/gh.log"
+  : > "$dir/gh-axi.log"
+  : > "$dir/glab.log"
+  : > "$dir/guard.log"
+  printf '%s\n' "$dir"
+}
+
+write_task_meta() {
+  local dir=$1 id=${2:-task-a}
+  fm_write_meta "$dir/home/state/$id.meta" \
+    "window=firstmate:fm-$id" \
+    "endpoint_task_id=$id" \
+    "worktree=$dir/wt" \
+    "project=$dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes"
+}
+
+write_poll_meta() {
+  local state=$1 id=$2 url=$3
+  fm_write_meta "$state/$id.meta" \
+    "window=fm-$id" \
+    "pr=$url"
+}
+
 
 run_check_entry() {
   local dir=$1
@@ -497,12 +537,18 @@ test_valid_recording_and_merge_derivation() {
   if grep -q 'pr merge' "$dir/gh-axi.log" 2>/dev/null; then
     fail "merge wrapper used gh-axi (pin dropped): $(cat "$dir/gh-axi.log")"
   fi
+  assert_grep 'https://github.com/my-org/repo_name.with-dots/pull/37' "$dir/home/state/.wake-queue" \
+    "a merge this home performed left no durable outcome"
+  ack_watcher_cycle "$dir/home/state" || fail "merge outcome acknowledgement failed"
+  add_stop_custom_check "$dir"
   set +e
   FM_TEST_GH_STATE=MERGED run_watcher_bounded "$dir/home" "$dir/fakebin" > "$dir/merged-watch.out" 2> "$dir/merged-watch.err"
   rc=$?
   set -e
   [ "$rc" -eq 0 ] || fail "guarded merge poll retirement failed: $(cat "$dir/merged-watch.err")"
   assert_poll_absent "$dir/home/state" task-a
+  assert_no_grep "merged-task-a" "$dir/home/state/.wake-queue" \
+    "the drained self-merge outcome was republished by its poll"
   grep -qxF 'pr=https://github.com/my-org/repo_name.with-dots/pull/37' "$dir/home/state/task-a.meta" \
     || fail "guarded merge retirement removed pr metadata"
   grep -qxF "pr_head=$expected" "$dir/home/state/task-a.meta" \
@@ -1163,11 +1209,11 @@ SH
     child_pid=$(cat "$child_pid_file")
     kill -TERM "$watcher_pid" 2>/dev/null || fail "could not stop $backend watcher"
     i=0
-    while kill -0 "$watcher_pid" 2>/dev/null && [ "$i" -lt 150 ]; do
+    while process_is_live_non_zombie "$watcher_pid" && [ "$i" -lt 150 ]; do
       sleep 0.02
       i=$((i + 1))
     done
-    if kill -0 "$watcher_pid" 2>/dev/null; then
+    if process_is_live_non_zombie "$watcher_pid"; then
       kill -KILL "$watcher_pid" 2>/dev/null || true
       wait "$watcher_pid" 2>/dev/null || true
       kill -KILL "$child_pid" 2>/dev/null || true
@@ -1177,7 +1223,7 @@ SH
     wait "$watcher_pid" || rc=$?
     [ "$rc" -ne 0 ] || fail "$backend signaled watcher exited successfully"
     alive=0
-    kill -0 "$child_pid" 2>/dev/null && alive=1
+    process_is_live_non_zombie "$child_pid" && alive=1
     [ "$alive" -eq 0 ] || kill -KILL "$child_pid" 2>/dev/null || true
     wait "$child_pid" 2>/dev/null || true
     [ "$alive" -eq 0 ] || fail "$backend watcher left a returned check descendant alive"
@@ -1523,7 +1569,7 @@ test_persistent_secondmate_retirement_is_poll_only() {
 }
 
 test_retirement_crash_recovery() {
-  local dir state rc raw_count drain_count historical_poll
+  local dir state rc poll_count canonical_count drain_count historical_poll
 
   dir=$(make_case retirement-after-queue)
   state="$dir/home/state"
@@ -1543,11 +1589,13 @@ test_retirement_crash_recovery() {
   set -e
   [ "$rc" -eq 0 ] || fail "post-queue retry watcher failed: $(cat "$dir/watch.err")"
   assert_poll_absent "$state" task-a
-  raw_count=$(grep -c $'\tcheck\t.*task-a.check.sh\t' "$state/.wake-queue")
-  [ "$raw_count" -eq 1 ] || fail "post-queue retry did not publish exactly one new terminal row"
+  poll_count=$(grep -c $'\tcheck\t.*task-a.check.sh\t' "$state/.wake-queue" || true)
+  [ "$poll_count" -eq 0 ] || fail "post-queue retry republished the retired poll-key row"
+  canonical_count=$(grep -cF $'\tcheck\tmerged-task-a-https://github.com/o/r/pull/3\tcheck: merge landed: task-a https://github.com/o/r/pull/3' "$state/.wake-queue")
+  [ "$canonical_count" -eq 1 ] || fail "post-queue retry did not leave exactly one canonical merge row"
   FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-wake-drain.sh" > "$dir/drain.out" 2>/dev/null
-  drain_count=$(grep -c $'\tcheck\t.*task-a.check.sh\t' "$dir/drain.out")
-  [ "$drain_count" -eq 1 ] || fail "same-key crash retry rows did not deduplicate at drain"
+  drain_count=$(grep -cF $'\tcheck\tmerged-task-a-https://github.com/o/r/pull/3\tcheck: merge landed: task-a https://github.com/o/r/pull/3' "$dir/drain.out")
+  [ "$drain_count" -eq 1 ] || fail "drain did not present exactly one canonical merge row"
 
   dir=$(make_case retirement-after-receipt)
   state="$dir/home/state"

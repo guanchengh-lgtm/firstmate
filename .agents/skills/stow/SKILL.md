@@ -264,6 +264,10 @@ Report the outcome in plain captain-facing language with all of these facts:
 - each durable finding filed outside memory and its authoritative owner;
 - every unresolved exception, including a primary-owned shared-file constraint in a secondmate home;
 - whether the session is safe to reset, only when all durable findings are captured, the post-pass result is within budget with no exception, and the open lock-file pick check below exits 0.
+- each archived entry's reason, each autonomous offload's live destination and actual relief, and, when a pinned candidate was proposed, the `proposed-offload` section with every candidate's fields;
+- every unresolved exception, including a primary-owned shared-file constraint in a secondmate home, and every concrete captain decision opened for an over-budget result;
+- each open record this pass filed or corrected, and each one it deliberately left alone with the judgment it is waiting on;
+- whether the session is safe to reset, only when all durable findings are captured, every open record this session held is filed or explicitly left with its reason, and the post-pass result is within budget with no exception or pending budget decision.
 
 State what reset-safe means in the same breath as the claim: nothing this session knew has been lost.
 It is never a claim that the home's durable records are correct, because this pass checks no record the session did not name.

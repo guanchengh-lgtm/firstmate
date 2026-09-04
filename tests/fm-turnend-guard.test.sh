@@ -18,6 +18,9 @@ set -u
 
 TMP_ROOT=$(fm_test_tmproot fm-turnend-guard)
 fm_git_identity fmtest fmtest@example.invalid
+# Pin Claude for repair-line assertions. Cursor workers export CURSOR_AGENT=1
+# and fm-harness.sh prefers that marker over CLAUDECODE.
+unset CURSOR_AGENT CURSOR_INVOKED_AS
 
 REQUIRED_REASON='watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn'
 
@@ -1484,6 +1487,7 @@ test_hook_claude_mode_blocks_on_pid_reused_arming_claim() {
   printf '%s\n' "$identity" > "$dir/state/.claude-autoarm.lock/pid-identity"
   printf 'epoch=464 owner_pid=%s outcome=arming updated_at=1\n' "$pid" > "$dir/state/.claude-autoarm-epoch"
   touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
+  : > "$dir/state/.last-watcher-beat"
   out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
   kill "$pid" 2>/dev/null || true
   wait "$pid" 2>/dev/null || true
@@ -1491,6 +1495,77 @@ test_hook_claude_mode_blocks_on_pid_reused_arming_claim() {
   assert_contains "$out" "TURN WOULD END BLIND" "reused-pid claim block must carry the blind-turn banner"
   assert_contains "$out" "2 task(s) in flight" "reused-pid claim block must name the unsupervised work"
   pass "fm-turnend-guard --claude: a claim whose pid was reused stops counting as recovery even while its entry reads arming"
+}
+
+# The legacy stuck-arming shape (the 2026-08-26 flap): a live identity-matched
+# lock-holding owner frozen at arming past grace with a beacon just as stale
+# must not count as recovery under way.
+test_hook_claude_mode_blocks_on_stuck_arming_claim() {
+  local dir out status pid identity
+  dir=$(make_primary_dir "$TMP_ROOT/hook-claude-stuck-arming-claim")
+  : > "$dir/state/task1.meta"
+  : > "$dir/state/task2.meta"
+  sleep 60 &
+  pid=$!
+  record_autoarm_owner "$dir" "$pid"
+  identity=$(fm_test_pid_identity "$pid") || fail "could not compute a claim pid-identity"
+  printf '%s\n' "$identity" > "$dir/state/.claude-autoarm.lock/pid-identity"
+  printf 'epoch=464 owner_pid=%s outcome=arming updated_at=1\n' "$pid" > "$dir/state/.claude-autoarm-epoch"
+  touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
+  touch -t 202001010000 "$dir/state/.last-watcher-beat"
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  expect_code 2 "$status" "a live owner stuck arming past grace with a stale beacon must not pass for recovery under way"
+  assert_contains "$out" "TURN WOULD END BLIND" "stuck-arming claim block must carry the blind-turn banner"
+  assert_contains "$out" "2 task(s) in flight" "stuck-arming claim block must name the unsupervised work"
+  pass "fm-turnend-guard --claude: a hung owner frozen at arming with no watcher beat no longer allows a blind stop"
+}
+
+# The generation model's ownership proof: a live open ledger claim (two-line
+# entry, identity-matched owner, watcher still beating) owns recovery with no
+# lock held at all.
+test_hook_claude_mode_allows_on_open_generation_claim() {
+  local dir out status pid identity
+  dir=$(make_primary_dir "$TMP_ROOT/hook-claude-open-generation")
+  : > "$dir/state/task1.meta"
+  sleep 60 &
+  pid=$!
+  identity=$(fm_test_pid_identity "$pid") || fail "could not compute a claim pid-identity"
+  printf 'epoch=464 owner_pid=%s outcome=arming updated_at=1\n%s\n' "$pid" "$identity" \
+    > "$dir/state/.claude-autoarm-epoch"
+  touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
+  : > "$dir/state/.last-watcher-beat"
+  [ ! -e "$dir/state/.claude-autoarm.lock" ] || fail "this case must start with no owner lock at all"
+  out=$(run_hook_claude "$dir" false); status=$?
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  expect_code 0 "$status" "--claude mode must allow when a live open generation claim owns recovery"
+  [ -z "$out" ] || fail "open-generation-claim allow produced output: $out"
+  pass "fm-turnend-guard --claude: a live open generation claim owns recovery with no lock held"
+}
+
+# The same claim gone stuck (entry and beacon both past grace) stops counting
+# as recovery even though its owner is alive and identity-matched.
+test_hook_claude_mode_blocks_on_stuck_generation_claim() {
+  local dir out status pid identity
+  dir=$(make_primary_dir "$TMP_ROOT/hook-claude-stuck-generation")
+  : > "$dir/state/task1.meta"
+  : > "$dir/state/task2.meta"
+  sleep 60 &
+  pid=$!
+  identity=$(fm_test_pid_identity "$pid") || fail "could not compute a claim pid-identity"
+  printf 'epoch=464 owner_pid=%s outcome=arming updated_at=1\n%s\n' "$pid" "$identity" \
+    > "$dir/state/.claude-autoarm-epoch"
+  touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
+  touch -t 202001010000 "$dir/state/.last-watcher-beat"
+  out=$(FM_CLAUDE_AUTOARM_SYNC_WAIT_MS=200 run_hook_claude "$dir" true); status=$?
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  expect_code 2 "$status" "a stuck generation claim must not pass for recovery under way"
+  assert_contains "$out" "TURN WOULD END BLIND" "stuck-generation-claim block must carry the blind-turn banner"
+  assert_contains "$out" "2 task(s) in flight" "stuck-generation-claim block must name the unsupervised work"
+  pass "fm-turnend-guard --claude: a stuck generation claim no longer allows a blind stop"
 }
 
 # The same abandoned claim on the terminal path: stepping aside for it allowed the
@@ -1820,6 +1895,109 @@ test_hook_claude_mode_secondmate_reblocks_like_primary() {
   pass "fm-turnend-guard --claude: secondmate home re-blocks unclaimed and allows auto-arm-claimed stops"
 }
 
+# --- Cursor adapter: the Pi-host stand-down ---------------------------------
+# bin/fm-turnend-guard-cursor.sh parks by foregrounding bin/fm-watch-arm.sh. A Pi
+# host that loaded .cursor/hooks.json through pi-cursor-sdk must NOT park, or it
+# dual-watches against fm_watch_arm_pi. A real Cursor session must keep parking
+# even when a stale PI_CODING_AGENT leaks into its environment.
+
+install_cursor_park() {
+  local dir=$1 f
+  for f in fm-turnend-guard-cursor.sh fm-cursor-lib.sh fm-session-lock-lib.sh \
+           fm-classify-lib.sh fm-lock.sh; do
+    cp "$ROOT/bin/$f" "$dir/bin/$f"
+  done
+  chmod +x "$dir/bin/fm-turnend-guard-cursor.sh" "$dir/bin/fm-lock.sh"
+  cat > "$dir/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$$" >> "$FM_HOME/state/arm-ran"
+printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+printf 'stale: fixture-win needs a look\n'
+exit 0
+SH
+  chmod +x "$dir/bin/fm-watch-arm.sh"
+  mkdir -p "$dir/fake-harness"
+  ln -s /bin/bash "$dir/fake-harness/claude"
+}
+
+# The adapter runs as a child of a fake harness whose pid holds the home's
+# session lock, so the real ancestry path in bin/fm-session-lock-lib.sh decides
+# ownership rather than a stub. The basename must carry verified-harness identity
+# on BOTH platforms or the adapter never reaches the park: it would take the
+# lock-recovery branch and exit before arming, making the stand-down assertions
+# vacuous. Linux reports the kernel exec name truncated to 15 characters, so the
+# name is the bare harness word rather than a longer prefixed one.
+run_cursor_park() {  # <dir> <env-assignment>...
+  local dir=$1
+  shift
+  # shellcheck disable=SC2016 # $FM_HOME expands inside the fake harness child.
+  printf '{"session_id":"sess-cursor","loop_count":0,"hook_event_name":"stop"}' \
+    | env -u PI_CODING_AGENT -u CURSOR_AGENT -u CURSOR_INVOKED_AS \
+        FM_HOME="$dir" FM_CURSOR_PARK_POLL=1 FM_CURSOR_PARK_ATTEMPTS=1 "$@" \
+      "$dir/fake-harness/claude" -c '
+        printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+        printf "%s\n" "$$" > "$FM_HOME/state/fixture-harness-pid"
+        "$FM_HOME/bin/fm-turnend-guard-cursor.sh"
+      ' 2>/dev/null
+}
+
+# The park must have run under the fixture's own harness pid. bin/fm-lock.sh can
+# rewrite state/.lock when the fixture harness is not recognized, which would
+# silently move the whole scenario onto the real host session.
+assert_fixture_owns_session_lock() {  # <dir>
+  local dir=$1
+  [ "$(cat "$dir/state/.lock" 2>/dev/null)" = "$(cat "$dir/state/fixture-harness-pid" 2>/dev/null)" ] \
+    || fail "the fixture harness did not keep the session lock; the Cursor park did not run on this fixture"
+}
+
+# The positive control comes first: the very same fixture, with no Pi marker at
+# all, must park and arm. Without it the stand-down assertions below could pass
+# for any reason that stops the adapter early.
+test_cursor_park_arms_without_a_pi_marker() {
+  local dir out
+  dir=$(make_primary_dir "$TMP_ROOT/cursor-park-baseline")
+  install_cursor_park "$dir"
+  : > "$dir/state/task1.meta"
+  out=$(run_cursor_park "$dir")
+  assert_fixture_owns_session_lock "$dir"
+  [ -e "$dir/state/arm-ran" ] || fail "the Cursor park never armed the watcher on a plain Cursor stop"
+  printf '%s' "$out" | grep -F 'followup_message' >/dev/null \
+    || fail "the Cursor park returned no wake follow-up: $out"
+  pass "fm-turnend-guard-cursor: an ordinary Cursor stop parks and returns the watcher wake"
+}
+
+test_cursor_park_stands_down_on_a_pi_host() {
+  local dir out status
+  dir=$(make_primary_dir "$TMP_ROOT/cursor-pi-standdown")
+  install_cursor_park "$dir"
+  : > "$dir/state/task1.meta"
+  out=$(run_cursor_park "$dir" PI_CODING_AGENT=true); status=$?
+  assert_fixture_owns_session_lock "$dir"
+  expect_code 0 "$status" "the Pi-host stand-down must exit 0"
+  [ ! -e "$dir/state/arm-ran" ] \
+    || fail "a Pi host with no Cursor identity armed through the Cursor park; that dual-watches against fm_watch_arm_pi"
+  [ ! -e "$dir/state/.cursor-park-owner" ] || fail "the Pi-host stand-down still claimed the Cursor park"
+  [ -z "$out" ] || fail "the Pi-host stand-down emitted a follow-up: $out"
+  pass "fm-turnend-guard-cursor: a Pi host without Cursor identity stands down instead of parking"
+}
+
+test_cursor_park_keeps_parking_when_pi_marker_leaks() {
+  local dir out marker name
+  for marker in CURSOR_AGENT=1 CURSOR_INVOKED_AS=cursor-agent; do
+    name=${marker%%=*}
+    dir=$(make_primary_dir "$TMP_ROOT/cursor-pi-leak-$name")
+    install_cursor_park "$dir"
+    : > "$dir/state/task1.meta"
+    out=$(run_cursor_park "$dir" PI_CODING_AGENT=true "$marker")
+    assert_fixture_owns_session_lock "$dir"
+    [ -e "$dir/state/arm-ran" ] \
+      || fail "a leaked PI_CODING_AGENT alongside $name stopped the Cursor park from arming the watcher"
+    printf '%s' "$out" | grep -F 'followup_message' >/dev/null \
+      || fail "the Cursor park with $name set returned no wake follow-up: $out"
+  done
+  pass "fm-turnend-guard-cursor: Cursor identity keeps parking despite a leaked PI_CODING_AGENT"
+}
+
 test_predicate_healthy_no_inflight
 test_predicate_unhealthy_no_beacon
 test_predicate_unhealthy_stale_beacon
@@ -1828,6 +2006,9 @@ test_predicate_queue_pending_flag
 test_predicate_x_mode_needs_supervision
 test_predicate_source_needs_supervision
 test_hook_silent_when_no_work_in_flight
+test_cursor_park_arms_without_a_pi_marker
+test_cursor_park_stands_down_on_a_pi_host
+test_cursor_park_keeps_parking_when_pi_marker_leaks
 test_hook_refuses_prose_only_ready_action
 test_hook_ready_action_checks_every_ready_ticket
 test_hook_ready_action_accepts_matching_worker_owner
@@ -1879,6 +2060,9 @@ test_hook_claude_mode_terminal_boundary_excludes_starting_owner
 test_hook_claude_mode_allows_on_fresh_rewake_epoch
 test_hook_claude_mode_blocks_on_abandoned_autoarm_claim
 test_hook_claude_mode_blocks_on_pid_reused_arming_claim
+test_hook_claude_mode_blocks_on_stuck_arming_claim
+test_hook_claude_mode_allows_on_open_generation_claim
+test_hook_claude_mode_blocks_on_stuck_generation_claim
 test_hook_claude_mode_terminal_fail_open_clears_abandoned_claim
 test_hook_claude_mode_preserves_fresh_failed_progression
 test_hook_claude_mode_integrated_monotonic_fail_open
