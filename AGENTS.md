@@ -176,7 +176,7 @@ That skill owns context isolation, pipeline custody, captain decisions, status i
 
 Run `bin/fm-pr-check.sh` when a ship PR is ready; its help owns the ready signals and the merge-poll arming. <!-- why: script:bin/fm-pr-check.sh--help -->
 Under `full-pr-url-2026-09-01`, every PR mention gives the captain the full `https://...` URL before shorthand, a concise outcome, and applicable no-mistakes risk. <!-- why: lock:full-pr-url-2026-09-01 -->
-Bind `state/<id>.check.sh` with `bin/fm-check-register.sh`; retire only via `bin/fm-check-unregister.sh` <id> or teardown, never a hand `rm`. <!-- why: script:bin/fm-check-register.sh--help -->
+Bind `state/<id>.check.sh` with `bin/fm-check-register.sh`; retire only via `bin/fm-check-unregister.sh` `<id>` or teardown, never a hand `rm`. <!-- why: script:bin/fm-check-register.sh--help -->
 
 A teardown refusal for uncommitted or unlanded work is a stop-and-investigate result, never an obstacle to bypass.
 After successful teardown, record completion, retain only the configured recent Done history, and re-evaluate queued work whose blockers and time gates have cleared.
