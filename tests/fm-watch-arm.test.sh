@@ -312,12 +312,13 @@ test_rearm_resurfaces_durable_queue_and_remote_open_decision() {
   start_rearm_arm "$home" "$state" "$fakebin" "$armout"
   i=0
   while [ "$i" -lt 100 ]; do
+    grep -F 'check: rearm-resurface' "$armout" >/dev/null 2>&1 && break
     is_live_non_zombie "$ARM_PID" || break
-    [ -e "$state/.watcher-down" ] && break
     sleep 0.1
     i=$((i + 1))
   done
-  if is_live_non_zombie "$ARM_PID" && [ ! -e "$state/.watcher-down" ]; then
+  if is_live_non_zombie "$ARM_PID" \
+    && ! grep -F 'check: rearm-resurface' "$armout" >/dev/null 2>&1; then
     printf 'done: fixture cleanup\n' > "$state/cleanup.status"
     wait_for_exit "$ARM_PID" 80 || true
     fail "re-arm stayed live instead of surfacing durable wakes and the still-open remote decision"

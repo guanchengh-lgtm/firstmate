@@ -27,6 +27,20 @@ DRAIN="$ROOT/bin/fm-wake-drain.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-watch-triage-tests)
 
+find_nounset_empty_array_bash() {
+  local candidate seen=:
+  for candidate in /bin/bash "$(command -v bash 2>/dev/null || true)"; do
+    [ -x "$candidate" ] || continue
+    case "$seen" in *":$candidate:"*) continue ;; esac
+    seen="$seen$candidate:"
+    if ! "$candidate" -uc 'empty=(); printf "%s\n" "${empty[@]}"' >/dev/null 2>&1; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 ack_stopped_cycle() {  # <state>
   local state=$1 err sequence generation
   err="$state/.test-cycle-drain.err"
@@ -825,7 +839,11 @@ test_turn_ended_churning_pane_absorbed() {
 # original deferral start must survive, or continued churn would restart the
 # bound forever and the window could never expire into a surfaced wake.
 test_turn_ended_churn_keeps_an_existing_in_bound_deadline() {
-  local dir state fakebin out capture_file window key opened pid
+  local dir state fakebin out capture_file window key opened pid nounset_bash
+  if ! nounset_bash=$(find_nounset_empty_array_bash); then
+    echo "skip: no available bash errors on empty array expansion under set -u"
+    return 0
+  fi
   dir=$(make_case turn-ended-churn-existing-deadline); state="$dir/state"; fakebin="$dir/fakebin"
   out="$dir/watch.out"; capture_file="$dir/pane.txt"
   window="test:fm-codexer"
@@ -842,7 +860,7 @@ test_turn_ended_churn_keeps_an_existing_in_bound_deadline() {
   PATH="$fakebin:$PATH" FM_FAKE_TMUX_WINDOW="$window" FM_FAKE_TMUX_CAPTURE="$capture_file" \
     FM_CONFIG_OVERRIDE="$(churn_config "$dir")" \
     FM_STATE_OVERRIDE="$state" FM_CREW_STATE_BIN="$fakebin/fm-crew-state.sh" FM_POLL=3 FM_SIGNAL_GRACE=1 \
-    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$WATCH" > "$out" &
+    FM_CHECK_INTERVAL=999999 FM_HEARTBEAT=999999 "$nounset_bash" "$WATCH" > "$out" &
   pid=$!
   wait_for_absorbed "$state" "$pid" "absorbed benign signal:" \
     || { reap "$pid"; fail "a churning turn-end with an existing in-bound deadline was not absorbed (the watcher exited): $(cat "$out")"; }
