@@ -1569,7 +1569,7 @@ test_persistent_secondmate_retirement_is_poll_only() {
 }
 
 test_retirement_crash_recovery() {
-  local dir state rc raw_count drain_count historical_poll
+  local dir state rc poll_count canonical_count drain_count historical_poll
 
   dir=$(make_case retirement-after-queue)
   state="$dir/home/state"
@@ -1589,11 +1589,13 @@ test_retirement_crash_recovery() {
   set -e
   [ "$rc" -eq 0 ] || fail "post-queue retry watcher failed: $(cat "$dir/watch.err")"
   assert_poll_absent "$state" task-a
-  raw_count=$(grep -c $'\tcheck\t.*task-a.check.sh\t' "$state/.wake-queue")
-  [ "$raw_count" -eq 1 ] || fail "post-queue retry did not publish exactly one new terminal row"
+  poll_count=$(grep -c $'\tcheck\t.*task-a.check.sh\t' "$state/.wake-queue" || true)
+  [ "$poll_count" -eq 0 ] || fail "post-queue retry republished the retired poll-key row"
+  canonical_count=$(grep -cF $'\tcheck\tmerged-task-a-https://github.com/o/r/pull/3\tcheck: merge landed: task-a https://github.com/o/r/pull/3' "$state/.wake-queue")
+  [ "$canonical_count" -eq 1 ] || fail "post-queue retry did not leave exactly one canonical merge row"
   FM_HOME="$dir/home" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-wake-drain.sh" > "$dir/drain.out" 2>/dev/null
-  drain_count=$(grep -c $'\tcheck\t.*task-a.check.sh\t' "$dir/drain.out")
-  [ "$drain_count" -eq 1 ] || fail "same-key crash retry rows did not deduplicate at drain"
+  drain_count=$(grep -cF $'\tcheck\tmerged-task-a-https://github.com/o/r/pull/3\tcheck: merge landed: task-a https://github.com/o/r/pull/3' "$dir/drain.out")
+  [ "$drain_count" -eq 1 ] || fail "drain did not present exactly one canonical merge row"
 
   dir=$(make_case retirement-after-receipt)
   state="$dir/home/state"
