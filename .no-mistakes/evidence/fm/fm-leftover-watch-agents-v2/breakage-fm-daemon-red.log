@@ -1,0 +1,7 @@
+ok - fm-afk-start.sh fails before daemon startup when the afk flag cannot be written
+ok - fm-afk-start.sh ignores stale pidfile-only live pids
+ok - fm-afk-start.sh reclaims stale daemon locks whose live pid identity no longer matches
+ok - supervise daemon state root is scoped by FM_HOME
+ok - routine signal self-handles
+not ok - captain verb did not escalate (done: PR https://x/y/pull/1): self|signal already escalated (catch-all scan): t.status: done: PR https://x/y/pull/1
+manufactured_breakage_exit=1

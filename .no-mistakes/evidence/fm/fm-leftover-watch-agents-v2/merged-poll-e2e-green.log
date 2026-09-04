@@ -1,0 +1,9 @@
+FM_TEST_BEGIN 2026-09-04T22:02:30Z tests/fm-pr-check-security.test.sh family=pr-forge expected_gate_skip=none
+ok - raw-byte parser accepts canonical URLs and rejects the complete adversarial matrix
+ok - GitLab merge requests are followed on any instance and never wake falsely
+ok - validated merged polls notify once and retire before the next watcher cycle
+ok - merged poll retirement preserves every persistent secondmate lifecycle artifact
+FM_TEST_END 2026-09-04T22:02:52Z tests/fm-pr-check-security.test.sh exit=1 duration_ms=21895 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=21969
+FM_TEST_SUMMARY_FAMILY family=pr-forge count=1 duration_ms=21895 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-pr-check-security.test.sh duration_ms=21895

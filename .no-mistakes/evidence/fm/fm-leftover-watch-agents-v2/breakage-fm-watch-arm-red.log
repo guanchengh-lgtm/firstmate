@@ -1,0 +1,7 @@
+ok - watch-arm: an undrained actionable wake closes the next arm for redelivery
+ok - watch-arm: an attached arm reports the wake its cycle delivered instead of a false failure
+ok - watch-arm: a delivered wake consumed by the handling turn still closes the attached arm cleanly
+ok - watch-arm: a cycle that delivered no wake of its own still fails loudly
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1Q1NND4XN6NQRQGHDN9VK0K/bin/fm-watch-arm.sh: line 622: 25640 Killed: 9               "$WATCH" > "$child_out"
+not ok - re-arm stayed live instead of surfacing durable wakes and the still-open remote decision
+manufactured_breakage_exit=1

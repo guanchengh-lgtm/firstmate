@@ -1,0 +1,5 @@
+14061:+ pass 'validated merged polls notify once and retire before the next watcher cycle'
+14062:+ printf 'ok - %s\n' 'validated merged polls notify once and retire before the next watcher cycle'
+14063:ok - validated merged polls notify once and retire before the next watcher cycle
+16151:+ raw_count=0
+16164:debug_exit=1

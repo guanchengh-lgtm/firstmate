@@ -1,0 +1,232 @@
+FM_TEST_BEGIN 2026-09-04T21:55:36Z tests/fm-cursor-harness.test.sh family=unclassified expected_gate_skip=none
+ok - fm_cursor_process_matches: cursor's real shapes identify; real node/agent lookalikes do not
+ok - fm_cursor_process_matches: name and install-tree signals each carry a verdict alone
+ok - fm_cursor_verify_executable: the legacy alias is accepted only with cursor evidence
+ok - fm_cursor_resolve_binary: prints the stable launcher, not the versioned target
+ok - tmux liveness: a cursor pane is agent; an unrelated node/agent is other, never dead
+ok - fm-harness.sh: cursor's marker outranks an inherited CLAUDECODE
+ok - fm-harness.sh: cursor-like node script names do not establish ancestry identity
+ok - cursor transcript fold: role:user opens a turn, turn_ended closes it, aborts included
+ok - cursor transcript fold: malformed closes cannot settle through either parser
+ok - cursor transcript fold: partial appends never make an active turn idle
+ok - cursor transcript fold: an unresolvable binding is unknown, never idle
+ok - cursor transcript binding: exact recorded workspacePath only, never a prefix or rebuilt slug
+ok - cursor transcript fold: a prior conversation is excluded so a relaunch folds its own turn
+FM_TEST_END 2026-09-04T21:55:38Z tests/fm-cursor-harness.test.sh exit=0 duration_ms=1724 gate_skip=false
+FM_TEST_BEGIN 2026-09-04T21:55:38Z tests/fm-sessionstart-nudge.test.sh family=session-bootstrap expected_gate_skip=none
+ok - fm-sessionstart-nudge: a genuine primary gets one explicitly marked instruction line
+ok - fm-sessionstart-nudge: NO_MISTAKES_GATE is silent
+ok - fm-sessionstart-nudge: .no-mistakes gate common-dir is silent
+ok - fm-sessionstart-nudge: an unmarked linked task worktree is silent
+ok - fm-sessionstart-nudge: a marked linked secondmate home is a primary
+ok - fm-sessionstart-nudge: a checkout without state is silent
+ok - fm-sessionstart-nudge: a lock holder in process ancestry is already run
+ok - OpenCode session.created delivers the exact wrapper nudge once per session
+ok - run wrapper: startup runs the full digest and never also nudges
+ok - run wrapper: clear and compact re-emit the digest without repeating startup sweeps
+ok - run wrapper forwards only stale-cache rebuild sources to immutable-baseline instruction refresh
+ok - run wrapper refreshes a compact even when startup completion is unproven
+ok - run wrapper: clear falls back to full startup when completion is unproven
+ok - run wrapper: clear accepts completion only from the current harness
+ok - run wrapper: resume delegates to the nudge instead of re-running the digest
+ok - run wrapper: a native clear payload reclaims its own session lock and re-emits
+ok - run wrapper: a native resume payload repairs the sidecar and the nudge stays silent
+ok - run wrapper: only a validated native replacement in its own client process may replace the sidecar
+ok - run wrapper: loose source routing still works without python3
+ok - run wrapper: a nested clear or resume cannot reclaim the primary session lock
+ok - run wrapper: the hook payload's source field drives routing with no explicit argument
+ok - run wrapper: an unrecognized or absent source takes the helm rather than skipping it
+ok - run wrapper: ordinary ineligible opens stay silent-zero and Pi preflight gets an explicit silent stand-down
+ok - run wrapper: a session start that cannot take the lock still opens the session and says so
+FM_TEST_END 2026-09-04T21:56:42Z tests/fm-sessionstart-nudge.test.sh exit=0 duration_ms=64699 gate_skip=false
+FM_TEST_BEGIN 2026-09-04T21:56:42Z tests/fm-watch-arm.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - watch-arm: an undrained actionable wake closes the next arm for redelivery
+ok - watch-arm: an attached arm reports the wake its cycle delivered instead of a false failure
+ok - watch-arm: a delivered wake consumed by the handling turn still closes the attached arm cleanly
+ok - watch-arm: a cycle that delivered no wake of its own still fails loudly
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1Q1NND4XN6NQRQGHDN9VK0K/bin/fm-watch-arm.sh: line 622: 49743 Killed: 9               "$WATCH" > "$child_out"
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 51384.1788559038.esIrGv
+ok - watch-arm: re-arm surfaces every queued wake and an open remote decision after downtime
+watcher: recovery state could not be persisted; retaining stale lock evidence
+ok - watch-arm: marker publication failure retains stale-lock recovery evidence
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 2 --recovery-generation 89172.1788559052.HL3atR
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 3 --recovery-generation 95413.1788559055.lxFzm9
+ok - watch-arm: a wake queued after handling drain is recovered once at successor arm
+ok - watch-arm: interrupted handling leaves its wake durable for successor re-drain
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 0 --recovery-generation 26138.1788559067.uxYJ51
+ok - watch-arm: malformed recovery state is quarantined without a successor loop
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 36690.1788559071.v4nYos
+ok - watch-arm: publication after recovery handoff is surfaced
+ok - watch-arm: restart publishes recovery before clearing a reused-pid watcher lock
+ok - watch-arm: restart preserves a concurrent replacement lock
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 7 --recovery-generation 85261.1788559094.23HQ1q
+ok - watch-arm: markerless legacy queues are adopted and recovered
+ok - watch-arm: a watcher close during handling keeps the printed acknowledgement valid
+ok - watch-arm: a moved recovery generation consumes handled rows and names its remedy
+ok - watch-arm: downtime marker publication does not follow symlinks
+FM_TEST_END 2026-09-04T21:58:35Z tests/fm-watch-arm.test.sh exit=0 duration_ms=112630 gate_skip=false
+FM_TEST_BEGIN 2026-09-04T21:58:35Z tests/fm-watcher-lock.test.sh family=watcher-wake-lock expected_gate_skip=none
+ok - simultaneous watcher starts leave exactly one live process
+ok - fm_pid_identity real ps fallback is locale-invariant
+ok - fm_pid_identity is locale-invariant across LC_ALL/LC_TIME
+ok - /proc process identity ignores simulated btime changes
+ok - /proc process identity detects pid reuse
+ok - MSYS /proc process identity regression skipped on non-Windows host
+ok - killed watcher stale lock is reclaimed
+tests/fm-watcher-lock.test.sh: line 1060: 34929 Killed: 9               FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    fm_lock_remove_path() {
+      if [ "$1" = "$STATE/.watch.lock" ]; then
+        kill -KILL "${BASHPID:-$$}"
+      fi
+      return 1
+    }
+    fm_lock_try_acquire "$2"
+  ' _ "$LIB" "$lockdir" > /dev/null 2>&1
+ok - stale watcher reclaim publishes durable recovery evidence before clear
+ok - live watcher lock with stale heartbeat is actionable
+ok - guard banner leads when down with pending wakes (repair-after-drain) and stays silent when live and fresh
+ok - concurrent fm_lock_try_acquire yields exactly one winner
+ok - dead-pid stale lock is reclaimed by a single acquirer
+ok - concurrent stale-lock steal yields exactly one winner
+ok - live steal mutex is not reclaimed
+ok - live-held lock is not stolen
+ok - empty mid-acquire lock keeps a minimum grace
+ok - late original claimant cannot claim a recreated lock
+ok - paused mid-acquire claimant backs off to active stealer
+ok - watch restart preserves recovery without signaling a reused pid
+ok - watch restart attaches to a verified healthy peer and later surfaces a successor gap
+ok - watcher self-evicts when the lock pid no longer names it
+ok - arm turns clean self-eviction without a successor into a typed failure
+ok - arm attaches to a live fresh watcher and fails loudly when that cycle has no successor
+ok - attached arm signals record a classified lifecycle entry
+ok - arm starts cleanly and resurfaces recovery after a dead-pid lock
+ok - arm cleans child watcher and temp output on HUP
+WAKE_ACK_REQUIRED: after handling completes run bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 49644.1788559170.wohwfZ
+ok - arm propagates an immediate watcher wake before confirmation
+ok - arm attaches to a peer watcher after child stands down and surfaces a missing successor
+watcher: lock held by live pid 73337 but heartbeat is stale for 841903183s (>300s); inspect or stop that watcher before re-arming.
+ok - arm reports FAILED and exits non-zero when no fresh watcher can be confirmed
+ok - cycle-exit ledger links a verified successor and remains size-capped
+ok - SIGSTOP distinguishes live PID from stale beacon and termination records the exit class
+FM_TEST_END 2026-09-04T22:00:14Z tests/fm-watcher-lock.test.sh exit=0 duration_ms=99156 gate_skip=false
+FM_TEST_BEGIN 2026-09-04T22:00:14Z tests/fm-x-mode.test.sh family=pr-forge expected_gate_skip=none
+ok - fm-x-poll is a hard no-op without a token (inert default)
+ok - fm-x-poll treats an explicitly empty env token as configured
+ok - fm-x-poll stays silent on HTTP 204 (the common case)
+ok - fm-x-poll lets an explicitly empty relay env override .env
+ok - fm-x-poll surfaces auth/config errors once and clears on recovery
+ok - fm-x-poll diagnostic markers use private guarded publication
+ok - fm-x-poll stashes the question and prints the compact marker
+ok - fm-x-poll wakes once per durable request offer across inbox cleanup
+ok - fm-x-poll retains offer claim diagnostics until recovery
+ok - fm-x-poll preserves in_reply_to conversation context in the inbox
+ok - fm-x-poll preserves inbound attachment URLs for the responder
+ok - fm-x-poll reports inbox commit failures without emitting a mention wake
+ok - fm-x-poll publishes inbox records only through private guarded artifacts
+ok - fm-x-poll requires a non-empty question before waking
+ok - fm-x-poll rejects an unsafe request_id (path-traversal guard)
+ok - fm-x-reply posts a request-bound answer and echoes only the request_id
+ok - fm-x-reply accepts the reply via --text-file and stdin (safe, unexpanded)
+ok - fm-x-reply exits non-zero on a non-2xx relay response
+ok - fm-x-reply cleans up auth header temp files on interrupted posts
+ok - fm-x-reply rejects missing arguments with a usage error
+ok - fm-x-reply --help makes image support discoverable
+ok - fm-x-reply rejects whitespace-only reply text
+ok - fm-x-reply dry-run records the would-be reply and never posts
+ok - fm-x-reply dry-run works without a token
+ok - fm-x-reply honors FMX_DRY_RUN from .env
+ok - fm-x-reply lets an explicitly empty dry-run env override .env
+ok - fm-x-reply dry-run fails when it cannot record the preview
+ok - fm-x-reply dry-run publishes outbox records only through private guarded artifacts
+ok - fmx_split_thread: word-boundary, fence-aware, within-limit, numbered, lossless, capped
+ok - fm-x-reply keeps a concise reply as a single unnumbered tweet
+ok - fm-x-reply auto-splits a long reply into a numbered thread (texts[])
+ok - fm-x-reply uses the Discord inbox platform budget instead of the X tweet budget
+ok - fm-x-reply keeps numeric X requests on the X tweet budget
+ok - fm-x-reply prefers an explicit relay-provided reply limit
+ok - fm-x-reply rejects unsafe inbox context artifacts
+ok - fm-x-reply clamps a below-floor max to 50 characters
+ok - fm-x-reply posts a thread payload (texts[]) to the relay
+ok - fm-x-reply --image posts an image object on answer
+ok - fm-x-reply streams large image payloads outside curl argv
+ok - fm-x-reply dry-run records compact image metadata for threaded replies
+ok - fm-x-reply cleans image and payload temp files
+ok - fm-x-reply --image rejects missing and unsupported image paths clearly
+ok - fm-x-reply --followup posts to /connector/followup with the same request-bound body
+ok - fm-x-reply maps a followup_unavailable follow-up 409 to exit 9
+ok - fm-x-reply maps every follow-up 409 to exit 9 even without the marker
+ok - fm-x-reply treats answer-endpoint 409 as a generic failure
+ok - fm-x-reply --followup --image posts an image object
+ok - fm-x-reply --followup is accepted in any position and leaves the answer path default
+ok - fm-x-reply --followup dry-run marks the endpoint without changing the answer path
+ok - fm-x-reply --followup auto-splits a long follow-up into a marked thread
+ok - fm-x-reply followup dry-run keeps endpoint marker and compact image metadata
+ok - fm-x-poll records the durable per-request reply context from the relay payload
+ok - context registry publishes records only through private guarded artifacts
+ok - context registry reads only private single-link artifacts
+ok - private artifact publisher is compatible with the system bash path
+ok - context registry retention is bounded to the seven-day follow-up window
+ok - context registry rewrites preserve the first-seen timestamp
+ok - context retention starts only when a live initial answer succeeds
+ok - a delayed Discord follow-up stays one message after inbox cleanup via the durable registry
+ok - an X follow-up over 280 still splits correctly after inbox cleanup
+ok - every unresolved follow-up is refused before posting
+ok - a partial registry platform combines with the relay's authoritative budget
+ok - concurrent requests each recover their own platform/budget with no cross-overwrite
+ok - fm-x-dismiss clears the durable per-request context (a dismissed mention gets no follow-up)
+ok - fm-x-dismiss posts a request-bound dismiss and echoes only the request_id
+ok - fm-x-dismiss dry-run records the would-be body and never posts
+ok - fm-x-dismiss dry-run works without a token
+ok - fm-x-dismiss dry-run publishes outbox records only through private guarded artifacts
+ok - fm-x-dismiss exits non-zero on a non-2xx relay response
+ok - fm-x-dismiss exits non-zero on a transport failure
+ok - fm-x-dismiss rejects an unsafe request_id (path-traversal guard)
+ok - fm-x-dismiss rejects missing or extra arguments with a usage error
+ok - fm-x-link records and refreshes the X-request link without disturbing meta
+ok - fm-x-link records Discord platform context so follow-ups keep the Discord budget
+ok - fm-x-link resolves the platform by request_id so a post-cleanup link keeps the Discord budget
+ok - fm-x-link warns loudly and the follow-up is held (not wrongly split) when the platform is unknown
+ok - fm-x-link paired carry flags preserve a prior task's follow-up binding onto a successor
+ok - fm-x-link recovery relink preserves Discord platform context after inbox drain
+ok - fm-x-link rejects malformed or unpaired carry flags
+ok - meta rewrites are independent of TMPDIR
+ok - x-lib meta helpers refuse a symlinked task record and leave its target untouched
+ok - fm-x-link rejects unsafe ids, missing meta, and missing arguments
+ok - fm-x-link keeps the plain missing-task error when no second mate is registered
+ok - fm-x-link refuses a second-mate-routed task and points at the promised-final path
+ok - fm-x-link points an unlocatable task at the promised-final path when second mates exist
+ok - fm-x-followup --check reports postable / not-linked correctly
+ok - fm-x-followup --check prunes a link past the 7-day window
+ok - fm-x-followup --check prunes a link that already reached the follow-up cap
+ok - fm-x-followup posts a follow-up, increments the counter, and keeps the link under the cap
+ok - fm-x-followup --final clears the link after one post regardless of the remaining count
+ok - fm-x-followup clears the link once the third follow-up reaches the cap
+ok - fm-x-followup --image forwards the attachment through fm-x-reply --followup
+ok - fm-x-followup keeps the link and counter when the post fails
+ok - fm-x-followup tombstones the link when a post-success counter write fails
+ok - fm-x-followup treats a relay cap/window rejection as an already-exhausted link, not a retry
+ok - fm-x-followup skips silently and clears the link past the 7-day window
+ok - fm-x-followup is a no-op for a task with no X link
+ok - fm-x-followup dry-run records the follow-up and increments the counter, keeping the link
+ok - fm-x-followup dry-run --final clears the link just as a live post would
+ok - fm-x-followup rejects malformed invocations
+ok - bootstrap activates X mode from an .env token, idempotently
+ok - bootstrap ignores CDPATH when writing absolute FM_HOME into the durable X-mode poll shim
+ok - bootstrap reports missing X-mode dependencies before arming
+ok - bootstrap does not report X mode on when activation artifacts cannot be written
+ok - bootstrap rejects linked X artifacts without touching their targets
+ok - bootstrap is inert without a non-empty .env token (non-X users unaffected)
+ok - bootstrap cleans up X artifacts on opt-out and is silent once off
+ok - bootstrap reports failed X artifact cleanup on opt-out
+FM_TEST_END 2026-09-04T22:01:18Z tests/fm-x-mode.test.sh exit=0 duration_ms=63738 gate_skip=false
+FM_TEST_SUMMARY total=5 failed=0 skipped_gate=0 duration_ms=342210
+FM_TEST_SUMMARY_FAMILY family=pr-forge count=1 duration_ms=63738 failed=0
+FM_TEST_SUMMARY_FAMILY family=session-bootstrap count=1 duration_ms=64699 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=1724 failed=0
+FM_TEST_SUMMARY_FAMILY family=watcher-wake-lock count=2 duration_ms=211786 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-watch-arm.test.sh duration_ms=112630
+FM_TEST_SLOWEST rank=2 script=tests/fm-watcher-lock.test.sh duration_ms=99156
+FM_TEST_SLOWEST rank=3 script=tests/fm-sessionstart-nudge.test.sh duration_ms=64699
+FM_TEST_SLOWEST rank=4 script=tests/fm-x-mode.test.sh duration_ms=63738
+FM_TEST_SLOWEST rank=5 script=tests/fm-cursor-harness.test.sh duration_ms=1724

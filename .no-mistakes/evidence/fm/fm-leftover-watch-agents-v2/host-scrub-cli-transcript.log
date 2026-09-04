@@ -1,0 +1,2 @@
+after_fixture CURSOR_AGENT=unset CURSOR_INVOKED_AS=unset CLAUDECODE=unset PI_CODING_AGENT=unset GROK_AGENT=unset
+detected_harness=codex

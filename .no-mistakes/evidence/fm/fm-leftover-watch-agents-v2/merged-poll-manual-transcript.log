@@ -1,0 +1,10 @@
+RECOVERY WAKE
+check: rearm-resurface
+MERGE WAKE
+check: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-pr-check-security.v7cvTe/manual-merged-poll-recovery/home/state/task-a.check.sh: merged
+QUEUE AFTER RETRY
+1788560826	2	check	merged-task-a-https://github.com/o/r/pull/3	check: merge landed: task-a https://github.com/o/r/pull/3
+POLL ARTIFACTS AFTER RETIREMENT
+none
+DRAIN OUTPUT
+1788560826	2	check	merged-task-a-https://github.com/o/r/pull/3	check: merge landed: task-a https://github.com/o/r/pull/3
