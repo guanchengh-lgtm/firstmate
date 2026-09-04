@@ -119,8 +119,8 @@ Classify the deliverable:
 If established evidence already answers an informational question, relay it without a design-only scout; a defect, gap, or complaint the captain names about firstmate or a project is implementation intent, so dispatch the ship without asking, and ask one concise question only when two readings would lead to materially different work, never asking whether to start and never dispatching speculative design work in place of that question.
 Load `diagnostic-reasoning` before scoping a reported bug and before acting on a diagnostic report.
 
-Pass mode to the brief, mode and `yolo` to spawn/promotion; no guess. <!-- why: script:bin/fm-brief.sh--help -->
-A ship spawn also requires explicit `--role` (`builder` at first dispatch; `verifier` only for the no-mistakes second context) and refuses an omitted role rather than defaulting it; script headers own the role/mode marker gate.
+Pass mode to `bin/fm-brief.sh`, mode and `yolo` to spawn/promotion; no guess. <!-- why: script:bin/fm-brief.sh--help -->
+A ship spawn requires `--role` and refuses an omitted role; `bin/fm-spawn.sh` headers own the role/mode marker gate. <!-- why: script:bin/fm-spawn.sh--help -->
 A current explicit captain instruction wins; otherwise the project's registry entry is the captain's standing posture, and dropping below its rigor needs a reason you can state.
 Every `direct-PR` ship requires an explicit task-level surface classification of `internal-only`.
 A registry delivery posture never classifies a task or implies `internal-only`.
@@ -139,7 +139,7 @@ Write the task-specific brief under section 11 before spawning.
 
 Spawn only through `bin/fm-spawn.sh` after the profile and backend checks in section 4.
 The spawn must resolve a genuine isolated task worktree distinct from the primary checkout; a failed isolation assertion stops the task.
-Handle trust via `harness-adapters`; the spawn moves to In flight or refuses if no item. <!-- why: script:bin/fm-spawn.sh--help -->
+Confirm the worker processes the brief and handle trust via `harness-adapters`; `bin/fm-spawn.sh` moves to In flight or refuses if no item. <!-- why: script:bin/fm-spawn.sh--help -->
 A persistent secondmate is recorded in the secondmate registry and runtime state, never as a backlog work item.
 
 Load `worker-control` before steering, resolving a worker decision, interrupting, exiting, relaunching, or retrying an unconfirmed remote send.
@@ -174,7 +174,7 @@ That skill owns context isolation, pipeline custody, captain decisions, status i
 
 ### PR ready, landing, and teardown
 
-Run `bin/fm-pr-check.sh` when a ship PR is ready; its help owns the ready signals and the merge-poll arming. <!-- why: script:bin/fm-pr-check.sh--help -->
+Run `bin/fm-pr-check.sh` when a ship PR is ready; its help owns the ready signals and merge-poll arming. <!-- why: script:bin/fm-pr-check.sh--help -->
 Under `full-pr-url-2026-09-01`, every PR mention gives the captain the full `https://...` URL before shorthand, a concise outcome, and applicable no-mistakes risk. <!-- why: lock:full-pr-url-2026-09-01 -->
 Bind `state/<id>.check.sh` with `bin/fm-check-register.sh`; retire via `bin/fm-check-unregister.sh` `<id>` or teardown, never hand `rm`. <!-- why: script:bin/fm-check-register.sh--help -->
 
@@ -189,7 +189,7 @@ A completed scout must leave a self-contained report before its scratch worktree
 A report may recommend implementation but does not authorize it.
 Before treating the investigation or any visual review as complete, load `captain-hold-lifecycle`; teardown enforces that shared completion gate.
 When a scout's deliverable is a visual artifact the captain will iterate on, prefer keeping that scout alive to host its own Lavish loop rather than tearing it down and mediating from firstmate, so the scout keeps its investigation context and the captain iterates in one continuous session.
-When implementation is separately authorized, use `bin/fm-promote.sh` to promote the existing scout instead of creating a duplicate task. <!-- why: script:bin/fm-promote.sh--help -->
+`bin/fm-promote.sh` promotes the existing scout, never a duplicate task. <!-- why: script:bin/fm-promote.sh--help -->
 
 ## 8. Supervision protocol
 
@@ -197,7 +197,7 @@ When implementation is separately authorized, use `bin/fm-promote.sh` to promote
 Whenever work, Relay, or a registered process-event source requires supervision, keep exactly one live cycle using that emitted block; never substitute another harness's wait shape, use shell `&`, create a duplicate cycle, or end a turn blind.
 
 At the start of every wake-handling turn, drain the durable wake queue before inspection or action; session start is the only exception because its digest already presented it.
-Handle every record plus `OPEN DECISIONS`, `UNREAD STATUS`, `STATUS OUTCOME BACKSTOP` even with no row, then `captain-hold-lifecycle` for `RECORD DIVERGENCE` and ack. <!-- why: script:bin/fm-wake-drain.sh--help -->
+Handle every record plus `OPEN DECISIONS`, `UNREAD STATUS`, `STATUS OUTCOME BACKSTOP` even with no row, then `captain-hold-lifecycle` for `RECORD DIVERGENCE` and run `bin/fm-wake-drain.sh`'s exact printed generation-bound acknowledgement. <!-- why: script:bin/fm-wake-drain.sh--help -->
 Status lines are events, not current truth; use `bin/fm-crew-state.sh` before action when current state matters.
 Leave a `paused:` worker alone for its bounded external wait; `blocked:` means firstmate action is needed.
 A handled captain inbox note is acknowledged with `bin/fm-inbox.sh drain --ack <id>` or stays counted as waiting.
