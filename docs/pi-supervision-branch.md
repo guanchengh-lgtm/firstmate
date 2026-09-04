@@ -84,6 +84,15 @@ A no-change heartbeat outcome explicitly reported with `task=fleet` and `silent=
 The branch prompt owns the verdict criteria, including its unconditional explicit-request rule; unsolicited routine outcomes remain routine sailboat notes, unchanged fleet reviews remain silent, and doubt escalates.
 Main can read the durable outcome store on demand through its `fm_branch_outcomes` tool.
 
+## Status outcome backstop
+
+The main actor's wake drain recovers the newest captain-facing task status when no newer task-matching branch outcome covers it, even when no queue row remains.
+It prints that event under `STATUS OUTCOME BACKSTOP`, while a covered event or a routine latest event stays silent.
+The branch actor never presents or advances this main-only backstop.
+A successful presentation advances only its independent outcome-backstop offset, so later signal annotations and decision folds keep their own cursors.
+Unsafe outcome history or an unsafe task index prints a bounded `STATUS OUTCOME BACKSTOP SKIPPED` repair notice and advances no backstop offset.
+The drain rebuilds absent bounded task indexes from safe append-only outcome history before deciding coverage, and [`tests/fm-wake-drain-outcome-backstop.test.sh`](../tests/fm-wake-drain-outcome-backstop.test.sh) pins the recovery, isolation, fail-closed, and output-bound contracts.
+
 ## Heartbeat routing
 
 The cheap bash-level heartbeat scan absorbs a genuinely no-op pass before it reaches Pi, unchanged from before.
