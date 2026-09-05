@@ -675,6 +675,13 @@ fm_git_cleanup_meta_refs_from_state() {
     [ "$count" = 1 ] || return 1
     wt=$(sed -n 's/^worktree=//p' "$meta") || return 1
     case "$wt" in ''|*$'\n'*|*$'\r'*|*$'\t'*) return 1 ;; esac
+    count=$(grep -c '^kind=' "$meta" 2>/dev/null) || return 1
+    [ "$count" = 1 ] || return 1
+    kind=$(sed -n 's/^kind=//p' "$meta") || return 1
+    case "$kind" in ship|scout|secondmate) ;; *) return 1 ;; esac
+    id=${meta##*/}
+    id=${id%.meta}
+    case "$id" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
     abs=$(fm_git_cleanup_abs_dir "$wt" 2>/dev/null) || return 1
     FM_GIT_CLEANUP_META_PATHS=$FM_GIT_CLEANUP_META_PATHS$'\n'$abs
     if [ -d "$wt" ]; then
@@ -683,10 +690,6 @@ fm_git_cleanup_meta_refs_from_state() {
         FM_GIT_CLEANUP_META_BRANCHES=$FM_GIT_CLEANUP_META_BRANCHES$'\n'$branch
       fi
     fi
-    id=${meta##*/}
-    id=${id%.meta}
-    kind=$(sed -n 's/^kind=//p' "$meta") || return 1
-    case "$id" in ''|*[!A-Za-z0-9._-]*) return 1 ;; esac
     case "$kind" in ship|scout)
       FM_GIT_CLEANUP_META_BRANCHES=$FM_GIT_CLEANUP_META_BRANCHES$'\n'"fm/$id"
       ;;

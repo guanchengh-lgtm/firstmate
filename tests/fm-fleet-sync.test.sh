@@ -750,6 +750,39 @@ test_gone_branch_with_live_metadata_is_retained() {
   pass "live task metadata protects a [gone] branch"
 }
 
+test_malformed_kind_metadata_defers_gone_branch_cleanup() {
+  local malformed home clone work branch meta
+  for malformed in missing duplicate; do
+    home=$(new_home)
+    clone=$(build_pair "$home" "gonekind-$malformed")
+    work="$home/work-gonekind-$malformed"
+    branch="fm/$malformed-kind"
+    meta="$home/state/$malformed-kind.meta"
+    make_gone_branch "$clone" "$work" "$branch" 0
+    if [ "$malformed" = missing ]; then
+      fm_write_meta "$meta" \
+        "window=firstmate:$malformed-kind" \
+        "worktree=$clone" \
+        "project=$clone"
+    else
+      fm_write_meta "$meta" \
+        "window=firstmate:$malformed-kind" \
+        "worktree=$clone" \
+        "project=$clone" \
+        "kind=ship" \
+        "kind=scout"
+    fi
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-fleet-sync.sh" "$clone" \
+      > "$home/out-gonekind" 2> "$home/err-gonekind" || true
+    git -C "$clone" rev-parse --verify "$branch" >/dev/null \
+      || fail "gone-kind-$malformed: malformed metadata allowed branch deletion"
+    grep -q 'skipped branch prune: ownership inventory or publication lock unavailable' \
+      "$home/err-gonekind" \
+      || fail "gone-kind-$malformed: malformed metadata did not defer cleanup"
+  done
+  pass "missing and duplicate task kinds defer [gone] branch cleanup"
+}
+
 test_valid_custom_default_retains_gone_branch() {
   local home clone work
   home=$(new_home)
@@ -894,6 +927,7 @@ test_symlinked_clone_still_syncs
 test_gone_unique_branch_survives_fleet_sync
 test_gone_landed_squash_branch_is_pruned
 test_gone_branch_with_live_metadata_is_retained
+test_malformed_kind_metadata_defers_gone_branch_cleanup
 test_valid_custom_default_retains_gone_branch
 test_unknown_custom_default_retains_gone_branch
 test_worktree_list_failure_retains_gone_branches
