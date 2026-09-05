@@ -220,19 +220,10 @@ prune_gone_branches() {
   fi
   current=$(git -C "$PROJ" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
   mode=${FLEET_SYNC_MODE:-no-mistakes}
-  if ! fm_git_cleanup_prepare_keep_set "$FM_HOME" "$FM_HOME/data"; then
+  if ! fm_git_cleanup_prepare_keep_set "$FM_HOME" "$FM_HOME/data" "$PROJ"; then
     echo "$label: skipped branch prune: ownership inventory or publication lock unavailable" >&2
     return 0
   fi
-  FM_GIT_CLEANUP_DEFAULT_REPO=
-  FM_GIT_CLEANUP_DEFAULT_NAME=
-  FM_GIT_CLEANUP_DEFAULT_REF=
-  if ! fm_git_cleanup_prepare_default "$PROJ" "$mode"; then
-    fm_git_cleanup_release_taskset_locks
-    echo "$label: skipped branch prune: default branch proof unavailable" >&2
-    return 0
-  fi
-
   while IFS= read -r refline; do
     branch=${refline%% *}
     track=${refline#* }
@@ -342,6 +333,14 @@ sync_project() {
       reason="$reason: $(first_line "$FETCH_OUTPUT")"
     fi
     echo "$label: skipped: $reason"
+    return 0
+  fi
+
+  FM_GIT_CLEANUP_DEFAULT_REPO=
+  FM_GIT_CLEANUP_DEFAULT_NAME=
+  FM_GIT_CLEANUP_DEFAULT_REF=
+  if ! fm_git_cleanup_prepare_fetched_default "$PROJ" "$mode"; then
+    echo "$label: skipped: cannot determine default branch"
     return 0
   fi
 

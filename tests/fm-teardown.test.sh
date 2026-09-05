@@ -580,8 +580,9 @@ seed_backlog_in_flight() {
 }
 
 seed_done_task() {
-  local case_dir=$1 id=$2 kind=${3:-ship}
+  local case_dir=$1 id=$2 kind=${3:-ship} repo=${4:-project}
   tasks-axi add "$id" "retired teardown fixture" --kind "$kind" \
+    --repo "$repo" \
     --file "$case_dir/data/backlog.md" >/dev/null
   tasks-axi done "$id" --file "$case_dir/data/backlog.md" >/dev/null
 }
@@ -3363,7 +3364,7 @@ test_leftover_contended_lock_defers() {
   pass "a contended publication lock defers leftover cleanup without reopening the task"
 }
 
-test_leftover_real_treehouse_retired_lease() {
+test_leftover_real_treehouse_unrecorded_lease() {
   local case_dir rc root slot json lease_id holder real_th
   real_th=$(command -v treehouse) || {
     pass "real treehouse is not installed; A4 isolated-provider case skipped"
@@ -3395,9 +3396,9 @@ SH
   rc=$?
   set -e
   expect_code 0 "$rc" "leftover-th-lease: teardown should succeed"
-  [ ! -d "$slot" ] || fail "leftover-th-lease: proved retired lease slot remained"
+  [ -d "$slot" ] || fail "leftover-th-lease: unrecorded lease slot was removed"
   [ -d "$case_dir/wt" ] || fail "leftover-th-lease: returned task slot was removed"
-  pass "a proved retired exact treehouse lease can return and destroy"
+  pass "a completed holder cannot prove an unrecorded lease identity"
 }
 
 test_leftover_private_ref_is_retained() {
@@ -3469,11 +3470,7 @@ test_leftover_provider_failure_retains_copy() {
   cat > "$case_dir/fakebin/treehouse" <<SH
 #!/usr/bin/env bash
 if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then exit 0; fi
-if [ "\${1:-}" = status ]; then
-  printf '%s\n' '[{"path":"$orphan","status":"clean","lease_id":"","lease_holder":""}]'
-  exit 0
-fi
-if [ "\${1:-}" = destroy ]; then exit 9; fi
+if [ "\${1:-}" = status ]; then exit 9; fi
 exit 1
 SH
   chmod +x "$case_dir/fakebin/treehouse"
@@ -3524,16 +3521,16 @@ SH
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
   expect_code 0 "$rc" "leftover-lease-race: teardown should succeed"
   [ -d "$orphan" ] || fail "leftover-lease-race: reacquired copy was removed"
-  grep -q '^returned$' "$case_dir/provider.log" \
-    || fail "leftover-lease-race: conditional return did not run"
-  ! grep -q '^destroyed$' "$case_dir/provider.log" \
-    || fail "leftover-lease-race: replacement lease reached destroy"
-  pass "lease reacquisition between return and destroy retains the replacement"
+  [ ! -e "$case_dir/provider.log" ] \
+    || fail "leftover-lease-race: an unrecorded lease reached a provider mutation"
+  pass "an unrecorded reused holder cannot authorize a lease mutation"
 }
 
 test_leftover_known_done_ship_branch_is_removed() {
   local case_dir rc
   case_dir=$(prepare_landed_ship leftover-done-branch)
+  mkdir -p "$case_dir/projects"
+  ln -s "$case_dir/project" "$case_dir/projects/project"
   seed_done_task "$case_dir" old-ship ship
   git -C "$case_dir/project" branch fm/old-ship main
   rc=0
@@ -3542,6 +3539,190 @@ test_leftover_known_done_ship_branch_is_removed() {
   git -C "$case_dir/project" show-ref --verify --quiet refs/heads/fm/old-ship \
     && fail "leftover-done-branch: known landed ship branch remained"
   pass "done task evidence attributes a landed ship branch for cleanup"
+}
+
+test_leftover_done_ship_evidence_is_repo_bound() {
+  local case_dir rc other
+  case_dir=$(prepare_landed_ship leftover-done-repo-bound)
+  mkdir -p "$case_dir/projects"
+  other="$case_dir/other-project"
+  git init -q -b main "$other"
+  git -C "$other" -c user.email=t@t -c user.name=t commit -q --allow-empty -m baseline
+  ln -s "$other" "$case_dir/projects/other"
+  seed_done_task "$case_dir" shared-id ship other
+  git -C "$case_dir/project" branch fm/shared-id main
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-done-repo-bound: teardown should succeed"
+  git -C "$case_dir/project" show-ref --verify --quiet refs/heads/fm/shared-id \
+    || fail "leftover-done-repo-bound: another repository authorized branch deletion"
+  pass "completed ship evidence applies only to its exact repository"
+}
+
+test_leftover_registered_home_without_state_defers() {
+  local case_dir rc foreign
+  case_dir=$(prepare_landed_ship leftover-home-no-state)
+  add_clean_sibling "$case_dir" wt-resolver
+  foreign="$case_dir/foreign-home"
+  mkdir -p "$foreign"
+  printf '%s\n' "- foreign-mate - missing state fixture (home: $foreign; scope: test; projects: project; added 2026-09-05)" \
+    > "$case_dir/data/secondmates.md"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-home-no-state: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-home-no-state: cleanup ignored unknown home state"
+  grep -q 'deferred extra pass' "$case_dir/stdout" \
+    || fail "leftover-home-no-state: no ownership deferral was reported"
+  pass "a registered home without readable state defers cleanup"
+}
+
+test_leftover_active_pool_and_unknown_states_are_retained() {
+  local case_dir rc available unknown
+  case_dir=$(prepare_landed_ship leftover-provider-states)
+  available="$case_dir/provider-available"
+  unknown="$case_dir/provider-maintenance"
+  git -C "$case_dir/project" worktree add -q -b fm/provider-available "$available" main
+  git -C "$case_dir/project" worktree add -q -b fm/provider-maintenance "$unknown" main
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then exit 0; fi
+if [ "\${1:-}" = status ]; then
+  printf '%s\n' '[{"path":"$available","status":"available","lease_id":"","lease_holder":""},{"path":"$unknown","status":"maintenance","lease_id":"","lease_holder":""}]'
+  exit 0
+fi
+if [ "\${1:-}" = destroy ] || [ "\${1:-}" = return ]; then
+  printf '%s\n' "\$*" >> "$case_dir/provider.log"
+  exit 0
+fi
+exit 1
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-provider-states: teardown should succeed"
+  [ -d "$available" ] || fail "leftover-provider-states: an active pool slot was removed"
+  [ -d "$unknown" ] || fail "leftover-provider-states: an unknown provider state was removed"
+  [ ! -e "$case_dir/provider.log" ] || fail "leftover-provider-states: a retained slot reached mutation"
+  grep -q "retained $available (idle-pool-slot)" "$case_dir/stdout" \
+    || fail "leftover-provider-states: no active pool retain reason"
+  grep -q "retained $unknown (unknown-lease)" "$case_dir/stdout" \
+    || fail "leftover-provider-states: no unknown state retain reason"
+  pass "active pool slots and unknown provider states stay retained"
+}
+
+test_leftover_missing_admin_private_ref_and_operation_block_prune() {
+  local case_dir rc private_path operation_path private_admin private_head merge_head
+  case_dir=$(prepare_landed_ship leftover-missing-admin)
+  private_path=$(mktemp -d /tmp/fm-teardown-private.XXXXXX)
+  operation_path=$(mktemp -d /tmp/fm-teardown-operation.XXXXXX)
+  git -C "$case_dir/project" worktree add -q -b tmp-private "$private_path" main
+  printf 'private\n' > "$private_path/private.txt"
+  git -C "$private_path" add private.txt
+  git -C "$private_path" -c user.email=t@t -c user.name=t commit -q -m private
+  private_head=$(git -C "$private_path" rev-parse HEAD)
+  git -C "$private_path" reset -q --hard main
+  git -C "$private_path" update-ref refs/worktree/private "$private_head"
+  private_admin=$(git -C "$private_path" rev-parse --absolute-git-dir)
+  git -C "$case_dir/project" worktree add -q -b tmp-operation "$operation_path" main
+  merge_head=$(git -C "$operation_path" rev-parse --git-path MERGE_HEAD)
+  git -C "$operation_path" rev-parse HEAD > "$merge_head"
+  rm -rf "$private_path" "$operation_path"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-missing-admin: teardown should succeed"
+  [ -d "$private_admin" ] || fail "leftover-missing-admin: private-ref registration was pruned"
+  [ -e "$merge_head" ] || fail "leftover-missing-admin: operation registration was pruned"
+  grep -q 'unique-unpublished' "$case_dir/stdout" \
+    || fail "leftover-missing-admin: no private-ref retain reason"
+  grep -q 'operation-in-progress' "$case_dir/stdout" \
+    || fail "leftover-missing-admin: no operation retain reason"
+  git --git-dir="$private_admin" update-ref -d refs/worktree/private
+  rm -f "$merge_head"
+  git -C "$case_dir/project" worktree prune --expire now
+  pass "missing administrative private refs and operation state block pruning"
+}
+
+test_cleanup_branch_mutation_races_and_git_failures() {
+  local case_dir repo old_tip new_tip reason ref_count checkout_count
+  case_dir=$(prepare_landed_ship leftover-branch-races)
+  repo="$case_dir/project"
+  old_tip=$(git -C "$repo" rev-parse main)
+  new_tip=$(printf 'race\n' | git -C "$repo" commit-tree "main^{tree}" -p main)
+  git -C "$repo" branch race-ref "$old_tip"
+  ref_count="$case_dir/ref-count"
+  reason=$(
+    . "$ROOT/bin/fm-git-cleanup-lib.sh"
+    FM_GIT_CLEANUP_DEFAULT_REPO=$repo
+    FM_GIT_CLEANUP_DEFAULT_NAME=main
+    FM_GIT_CLEANUP_DEFAULT_REF=refs/remotes/origin/main
+    FM_GIT_CLEANUP_META_BRANCHES=
+    git() {
+      if [ "${1:-}" = -C ] && [ "${3:-}" = rev-parse ] \
+         && [ "${5:-}" = refs/heads/race-ref ]; then
+        calls=0
+        [ ! -f "$ref_count" ] || calls=$(<"$ref_count")
+        calls=$((calls + 1))
+        printf '%s\n' "$calls" > "$ref_count"
+        if [ "$calls" = 2 ]; then
+          command git -C "$repo" update-ref refs/heads/race-ref "$new_tip"
+        fi
+      fi
+      command git "$@"
+    }
+    fm_git_cleanup_delete_branch "$repo" race-ref "$old_tip" no-mistakes "" 0
+  ) || true
+  [ "$reason" = tip-changed ] || fail "leftover-branch-races: ref change returned $reason"
+  git -C "$repo" show-ref --verify --quiet refs/heads/race-ref \
+    || fail "leftover-branch-races: changed ref was deleted"
+
+  git -C "$repo" branch race-checkout "$old_tip"
+  checkout_count="$case_dir/checkout-count"
+  reason=$(
+    . "$ROOT/bin/fm-git-cleanup-lib.sh"
+    FM_GIT_CLEANUP_DEFAULT_REPO=$repo
+    FM_GIT_CLEANUP_DEFAULT_NAME=main
+    FM_GIT_CLEANUP_DEFAULT_REF=refs/remotes/origin/main
+    FM_GIT_CLEANUP_META_BRANCHES=
+    git() {
+      if [ "${1:-}" = -C ] && [ "${3:-}" = -c ] && [ "${5:-}" = worktree ]; then
+        calls=0
+        [ ! -f "$checkout_count" ] || calls=$(<"$checkout_count")
+        calls=$((calls + 1))
+        printf '%s\n' "$calls" > "$checkout_count"
+        command git "$@"
+        if [ "$calls" = 3 ]; then
+          printf '\nworktree /simulated\nHEAD %s\nbranch refs/heads/race-checkout\n\n' "$old_tip"
+        fi
+        return
+      fi
+      command git "$@"
+    }
+    fm_git_cleanup_delete_branch "$repo" race-checkout "$old_tip" no-mistakes "" 0
+  ) || true
+  [ "$reason" = checked-out ] || fail "leftover-branch-races: checkout change returned $reason"
+  git -C "$repo" show-ref --verify --quiet refs/heads/race-checkout \
+    || fail "leftover-branch-races: newly checked-out branch was deleted"
+
+  git -C "$repo" branch race-failure "$old_tip"
+  reason=$(
+    . "$ROOT/bin/fm-git-cleanup-lib.sh"
+    FM_GIT_CLEANUP_DEFAULT_REPO=$repo
+    FM_GIT_CLEANUP_DEFAULT_NAME=main
+    FM_GIT_CLEANUP_DEFAULT_REF=refs/remotes/origin/main
+    FM_GIT_CLEANUP_META_BRANCHES=
+    git() {
+      if [ "${1:-}" = -C ] && [ "${3:-}" = branch ] \
+         && { [ "${4:-}" = -d ] || [ "${4:-}" = -D ]; }; then
+        return 1
+      fi
+      command git "$@"
+    }
+    fm_git_cleanup_delete_branch "$repo" race-failure "$old_tip" no-mistakes "" 0
+  ) || true
+  [ "$reason" = delete-failed ] || fail "leftover-branch-races: Git failure returned $reason"
+  git -C "$repo" show-ref --verify --quiet refs/heads/race-failure \
+    || fail "leftover-branch-races: failed Git deletion removed the branch"
+  pass "ref changes, checkout changes, and Git failures retain branches"
 }
 
 test_leftover_unknown_lease_is_retained() {
@@ -3675,7 +3856,7 @@ test_leftover_live_cwd_and_host_under_sibling
 test_leftover_submodule_dirt_is_retained
 test_leftover_rerun_is_idempotent
 test_leftover_contended_lock_defers
-test_leftover_real_treehouse_retired_lease
+test_leftover_real_treehouse_unrecorded_lease
 test_leftover_unknown_lease_is_retained
 test_leftover_then_sync_retains_unique_gone_branch
 test_leftover_private_ref_is_retained
@@ -3685,3 +3866,8 @@ test_leftover_empty_worktree_metadata_defers
 test_leftover_provider_failure_retains_copy
 test_leftover_lease_reacquisition_retains_copy
 test_leftover_known_done_ship_branch_is_removed
+test_leftover_done_ship_evidence_is_repo_bound
+test_leftover_registered_home_without_state_defers
+test_leftover_active_pool_and_unknown_states_are_retained
+test_leftover_missing_admin_private_ref_and_operation_block_prune
+test_cleanup_branch_mutation_races_and_git_failures

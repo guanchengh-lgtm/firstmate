@@ -3073,7 +3073,7 @@ META_LOCK_HELD=0
 # Runs only after recorded-copy cleanup and task closure. Failure is a warning.
 if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   fm_git_cleanup_leftover_pass \
-    "$PROJ" "$(dirname "$STATE")" "$STATE" "$DATA" \
+    "$PROJ" "$(dirname "$STATE")" "$DATA" \
     "${WT:-}" "${TASK_CLEANUP_BRANCH:-}" "${TASK_CLEANUP_TIP:-}" \
     "$MODE" "$KIND" "${FORCE:-}" "${PR_URL:-}" "${BACKEND:-}" "$FM_ROOT" \
     || true

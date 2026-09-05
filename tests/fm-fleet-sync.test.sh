@@ -44,7 +44,7 @@ HOME_N=0
 new_home() {
   HOME_N=$((HOME_N + 1))
   local h="$TMP_ROOT/home-$HOME_N"
-  mkdir -p "$h/projects"
+  mkdir -p "$h/projects" "$h/state"
   printf '%s\n' "$h"
 }
 
@@ -750,21 +750,43 @@ test_gone_branch_with_live_metadata_is_retained() {
   pass "live task metadata protects a [gone] branch"
 }
 
-test_unknown_custom_default_retains_gone_branch() {
+test_valid_custom_default_retains_gone_branch() {
   local home clone work
   home=$(new_home)
   clone=$(build_pair "$home" gonecustom)
   work="$home/work-gonecustom"
-  make_gone_branch "$clone" "$work" custom 0
+  git -C "$work" checkout -q -b custom
+  git -C "$work" push -q -u origin custom
+  git -C "$clone" fetch -q origin
+  git -C "$clone" branch -q custom origin/custom
   git --git-dir="$home/remotes/gonecustom.git" symbolic-ref HEAD refs/heads/custom
   git -C "$clone" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/custom
+  git -C "$clone" config branch.custom.remote origin
+  git -C "$clone" config branch.custom.merge refs/heads/deleted-custom
   FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-fleet-sync.sh" "$clone" \
     > "$home/out-gonecustom" 2> "$home/err-gonecustom" || true
   git -C "$clone" rev-parse --verify custom >/dev/null \
-    || fail "gone-custom: unknown custom default branch was deleted"
-  grep -q 'default branch proof unavailable' "$home/err-gonecustom" \
-    || fail "gone-custom: no unknown default retain reason"
-  pass "a failed default lookup retains a custom [gone] branch"
+    || fail "gone-custom: valid custom default branch was deleted"
+  grep -q 'retained custom (default-branch)' "$home/err-gonecustom" \
+    || fail "gone-custom: no default retain reason"
+  pass "a valid non-main default remains protected while its ref exists"
+}
+
+test_unknown_custom_default_retains_gone_branch() {
+  local home clone work
+  home=$(new_home)
+  clone=$(build_pair "$home" gonecustomunknown)
+  work="$home/work-gonecustomunknown"
+  make_gone_branch "$clone" "$work" custom 0
+  git --git-dir="$home/remotes/gonecustomunknown.git" symbolic-ref HEAD refs/heads/custom
+  git -C "$clone" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/custom
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-fleet-sync.sh" "$clone" \
+    > "$home/out-gonecustomunknown" 2> "$home/err-gonecustomunknown" || true
+  git -C "$clone" rev-parse --verify custom >/dev/null \
+    || fail "gone-custom-unknown: failed default lookup deleted the branch"
+  grep -q 'cannot determine default branch' "$home/out-gonecustomunknown" \
+    || fail "gone-custom-unknown: no unknown default result"
+  pass "a failed default lookup retains a custom branch"
 }
 
 test_worktree_list_failure_retains_gone_branches() {
@@ -843,5 +865,6 @@ test_symlinked_clone_still_syncs
 test_gone_unique_branch_survives_fleet_sync
 test_gone_landed_squash_branch_is_pruned
 test_gone_branch_with_live_metadata_is_retained
+test_valid_custom_default_retains_gone_branch
 test_unknown_custom_default_retains_gone_branch
 test_worktree_list_failure_retains_gone_branches
