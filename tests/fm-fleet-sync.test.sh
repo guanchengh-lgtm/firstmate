@@ -673,6 +673,89 @@ test_symlinked_clone_still_syncs() {
   pass "the clone-root guard accepts a symlinked clone directory"
 }
 
+make_gone_branch() {
+  local clone=$1 work=$2 name=$3 unique=$4
+  git -C "$work" checkout -q -b "$name"
+  if [ "$unique" = 1 ]; then
+    commit_file "$work" "$name.txt" unique "$name unique"
+  fi
+  git -C "$work" push -q -u origin "$name"
+  git -C "$clone" fetch -q origin
+  git -C "$clone" branch -q "$name" "origin/$name"
+  git -C "$work" checkout -q main
+  git -C "$work" push -q origin --delete "$name"
+  git -C "$clone" fetch -q --prune origin
+}
+
+test_gone_unique_branch_survives_fleet_sync() {
+  local home clone work
+  home=$(new_home)
+  clone=$(build_pair "$home" goneuniq)
+  work="$home/work-goneuniq"
+  make_gone_branch "$clone" "$work" leftover-unique 1
+  git -C "$clone" rev-parse --verify leftover-unique >/dev/null \
+    || fail "gone-unique: setup lost the local branch"
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-fleet-sync.sh" "$clone" \
+    > "$home/out-goneuniq" 2> "$home/err-goneuniq" || true
+  git -C "$clone" rev-parse --verify leftover-unique >/dev/null \
+    || fail "gone-unique: unique [gone] branch was deleted"
+  grep -q 'retained leftover-unique' "$home/err-goneuniq" \
+    || fail "gone-unique: no retain reason"
+  pass "a [gone] branch with unique unpublished work survives fleet sync"
+}
+
+test_gone_landed_squash_branch_is_pruned() {
+  local home clone work
+  home=$(new_home)
+  clone=$(build_pair "$home" goneland)
+  work="$home/work-goneland"
+  git -C "$work" checkout -q -b leftover-landed
+  commit_file "$work" land.txt yes land
+  git -C "$work" push -q -u origin leftover-landed
+  git -C "$work" checkout -q main
+  git -C "$work" merge -q --squash leftover-landed
+  git -C "$work" commit -qm squash-land
+  git -C "$work" push -q origin main
+  git -C "$clone" fetch -q origin
+  git -C "$clone" branch -q leftover-landed origin/leftover-landed
+  git -C "$work" push -q origin --delete leftover-landed
+  git -C "$clone" fetch -q --prune origin
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-fleet-sync.sh" "$clone" \
+    > "$home/out-goneland" 2> "$home/err-goneland" || true
+  git -C "$clone" rev-parse --verify leftover-landed >/dev/null \
+    && fail "gone-landed: landed squash [gone] branch remained"
+  grep -q 'pruned leftover-landed' "$home/out-goneland" \
+    || fail "gone-landed: no prune note"
+  pass "a [gone] branch whose content is in the default branch is pruned"
+}
+
+test_worktree_list_failure_retains_gone_branches() {
+  local home clone work fakebin
+  home=$(new_home)
+  clone=$(build_pair "$home" goneblind)
+  work="$home/work-goneblind"
+  make_gone_branch "$clone" "$work" leftover-blind 0
+  real_git=$(command -v git)
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/git" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do
+  if [ "\$a" = worktree ]; then
+    echo "fatal: worktree list failed" >&2
+    exit 128
+  fi
+done
+exec "$real_git" "\$@"
+SH
+  chmod +x "$fakebin/git"
+  PATH="$fakebin:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-fleet-sync.sh" "$clone" \
+    > "$home/out-goneblind" 2> "$home/err-goneblind" || true
+  git -C "$clone" rev-parse --verify leftover-blind >/dev/null \
+    || fail "gone-blind: worktree-list failure deleted a branch"
+  pass "a worktree-list failure cannot become an empty protection set"
+}
+
 test_non_signature_fetch_failure_is_not_retried() {
   local home fakebin clone out err
   home=$(new_home)
@@ -719,3 +802,6 @@ test_non_signature_fetch_failure_is_not_retried
 test_non_clone_dir_never_syncs_the_enclosing_repo
 test_non_clone_dir_named_directly_never_syncs_the_enclosing_repo
 test_symlinked_clone_still_syncs
+test_gone_unique_branch_survives_fleet_sync
+test_gone_landed_squash_branch_is_pruned
+test_worktree_list_failure_retains_gone_branches

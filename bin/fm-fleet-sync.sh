@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Refresh project clones: fast-forward the checked-out local default branch to
-# origin/<default> when safe, and prune local branches whose upstream tracking
-# branch is gone (the remote branch was deleted, i.e. its PR merged) and that no
-# worktree still needs.
+# origin/<default> when safe.
 # Self-heals the one unambiguously safe drift: a clean, detached HEAD that holds
 # no unique commits (it is an ancestor of origin/<default>) and whose <default>
 # branch is free to check out is re-attached and then fast-forwarded ("recovered:").
@@ -18,8 +16,10 @@
 # repository (the firstmate checkout) and be synced under that directory's label.
 # Anything else is reported as "skipped: not a clone root" naming the repository
 # that would have been touched.
-# Pruning never deletes the checked-out branch or a branch that still has a
-# worktree, so it cannot discard unlanded work; set FM_FLEET_PRUNE=0 to disable it.
+# Pruning discovers local branches whose upstream is [gone], then deletes a
+# candidate only when the shared helper can prove the tip is landed or
+# preserved. A worktree-list failure keeps every branch. Set FM_FLEET_PRUNE=0
+# to disable discovery.
 # When the fetch fails on an orphaned .git/packed-refs.lock (left by a ref rewrite
 # killed mid-write - e.g. a timed-out bootstrap sync or a teardown process kill),
 # it is retried with a bounded wait and removed only when provably stale; see
@@ -40,6 +40,8 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 # shellcheck source=bin/fm-lock-lib.sh
 . "$SCRIPT_DIR/fm-lock-lib.sh"
+# shellcheck source=bin/fm-git-cleanup-lib.sh
+. "$SCRIPT_DIR/fm-git-cleanup-lib.sh"
 # Inert unless FM_TIMING_LOG names a file; only the deferred network stage sets it.
 # shellcheck source=bin/fm-timing-lib.sh
 . "$SCRIPT_DIR/fm-timing-lib.sh"
@@ -219,22 +221,17 @@ fetch_with_packed_refs_lock_guard() {
 }
 
 prune_gone_branches() {
-  # Delete local branches whose upstream tracking branch is gone - the remote
-  # branch was deleted, which in this fleet means its PR merged - as long as
-  # nothing still needs them. Never the checked-out branch, and never a branch
-  # that still has a worktree (a live or not-yet-torn-down task). "Gone" plus
-  # "no worktree" already proves the work landed: teardown removes a branch's
-  # worktree only after confirming the work reached the remote. We deliberately
-  # do NOT also require the branch to be an ancestor of origin/<default> - PRs in
-  # this fleet are squash-merged, so a merged branch is never an ancestor and
-  # such a check would prune nothing. The no-worktree guard is the real safety
-  # net. Set FM_FLEET_PRUNE=0 to skip pruning entirely.
+  # [gone] is candidate discovery only. Deletion uses the shared landed-or-
+  # preserved predicate. A failed worktree list is a full protection set.
   [ "${FM_FLEET_PRUNE:-1}" != "0" ] || return 0
 
-  local worktree_branches current refline branch track
-  worktree_branches=$(git -C "$PROJ" worktree list --porcelain 2>/dev/null \
-    | sed -n 's#^branch refs/heads/##p')
+  local current refline branch track tip reason mode
+  if ! fm_git_cleanup_worktree_list_ok "$PROJ"; then
+    echo "$label: skipped branch prune: worktree list failed" >&2
+    return 0
+  fi
   current=$(git -C "$PROJ" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
+  mode=${FLEET_SYNC_MODE:-no-mistakes}
 
   while IFS= read -r refline; do
     branch=${refline%% *}
@@ -242,11 +239,13 @@ prune_gone_branches() {
     [ "$track" = "[gone]" ] || continue
     [ -n "$branch" ] || continue
     [ "$branch" != "$current" ] || continue
-    if printf '%s\n' "$worktree_branches" | grep -Fxq -- "$branch"; then
-      continue
-    fi
-    if git -C "$PROJ" branch -D -- "$branch" >/dev/null 2>&1; then
+    tip=$(git -C "$PROJ" rev-parse --verify "refs/heads/$branch" 2>/dev/null || true)
+    [ -n "$tip" ] || continue
+    if reason=$(fm_git_cleanup_delete_branch "$PROJ" "$branch" "$tip" "$mode" "" 0); then
       echo "$label: pruned $branch"
+    else
+      [ -n "$reason" ] || reason=unproved
+      echo "$label: retained $branch ($reason)" >&2
     fi
   done < <(git -C "$PROJ" for-each-ref \
     --format='%(refname:short) %(upstream:track)' refs/heads 2>/dev/null)
@@ -335,6 +334,7 @@ sync_project() {
     return 0
   fi
 
+  FLEET_SYNC_MODE=$mode
   if ! fetch_with_packed_refs_lock_guard; then
     reason="fetch failed"
     if [ -n "$FETCH_OUTPUT" ]; then

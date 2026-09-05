@@ -3090,6 +3090,329 @@ EOF
   pass "the run abort and the leaked-process reap both complete before the destructive worktree return"
 }
 
+prepare_landed_ship() {
+  local name=$1 case_dir
+  case_dir=$(make_case "$name")
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit_file "$case_dir" feature.txt hello "add feature"
+  land_on_origin_main "$case_dir" feature.txt hello
+  seed_backlog_in_flight "$case_dir"
+  printf '%s\n' "$case_dir"
+}
+
+add_clean_sibling() {
+  local case_dir=$1 name=$2
+  git -C "$case_dir/project" worktree add -q -b "fm/$name" "$case_dir/$name" main
+}
+
+test_leftover_siblings_clean_landed_are_removed() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-sib-clean)
+  add_clean_sibling "$case_dir" wt-resolver
+  add_clean_sibling "$case_dir" wt-baseline
+  add_clean_sibling "$case_dir" wt-other-resolver
+  fm_write_meta "$case_dir/state/other-task.meta" \
+    "window=firstmate:other" \
+    "worktree=$case_dir/wt-other-resolver" \
+    "project=$case_dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes"
+  mkdir -p "$case_dir/other-repo"
+  git init -q "$case_dir/other-repo"
+  printf 'keep\n' > "$case_dir/unrelated.txt"
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-sib-clean: teardown should succeed"
+  [ ! -d "$case_dir/wt-resolver" ] || fail "leftover-sib-clean: resolver sibling remained"
+  [ ! -d "$case_dir/wt-baseline" ] || fail "leftover-sib-clean: baseline sibling remained"
+  [ -d "$case_dir/wt" ] || fail "leftover-sib-clean: returned slot was removed"
+  [ -d "$case_dir/wt-other-resolver" ] || fail "leftover-sib-clean: other-task sibling was removed"
+  [ -d "$case_dir/other-repo" ] || fail "leftover-sib-clean: nested other repo was removed"
+  [ -f "$case_dir/unrelated.txt" ] || fail "leftover-sib-clean: unrelated file was removed"
+  pass "clean landed resolver/baseline siblings are removed and keep-set objects stay"
+}
+
+test_leftover_dirty_sibling_is_retained() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-sib-dirty)
+  add_clean_sibling "$case_dir" wt-resolver
+  printf 'dirt\n' > "$case_dir/wt-resolver/dirt.txt"
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-sib-dirty: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-sib-dirty: dirty sibling was removed"
+  grep -q 'retained' "$case_dir/stdout" || fail "leftover-sib-dirty: no retain reason"
+  pass "dirty sibling is retained with a reason and the task still closes"
+}
+
+test_leftover_gone_tmp_prunes_only_when_all_safe() {
+  local case_dir rc tmp_ok tmp_lock
+  case_dir=$(prepare_landed_ship leftover-gone-tmp)
+  tmp_ok=$(mktemp -d /tmp/fm-teardown-gone-ok.XXXXXX)
+  tmp_lock=$(mktemp -d /tmp/fm-teardown-gone-lock.XXXXXX)
+  git -C "$case_dir/project" worktree add -q -b tmp-gone-ok "$tmp_ok" main
+  git -C "$case_dir/project" worktree add -q -b tmp-gone-lock "$tmp_lock" main
+  git -C "$case_dir/project" worktree lock "$tmp_lock"
+  rm -rf "$tmp_ok" "$tmp_lock"
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-gone-tmp-lock: teardown should succeed"
+  git -C "$case_dir/project" worktree list --porcelain | grep -q 'tmp-gone-ok' \
+    || fail "leftover-gone-tmp-lock: safe row was pruned while a locked row existed"
+  git -C "$case_dir/project" worktree list --porcelain | grep -q 'tmp-gone-lock' \
+    || fail "leftover-gone-tmp-lock: locked missing row disappeared"
+  git -C "$case_dir/project" worktree unlock "$tmp_lock" >/dev/null 2>&1 || true
+  git -C "$case_dir/project" worktree prune --expire now >/dev/null 2>&1 || true
+  pass "one unsafe missing registration skips the whole prune"
+}
+
+test_leftover_gone_tmp_prunes_when_all_eligible() {
+  local case_dir rc tmp_ok
+  case_dir=$(prepare_landed_ship leftover-gone-tmp-ok)
+  tmp_ok=$(mktemp -d /tmp/fm-teardown-gone-safe.XXXXXX)
+  git -C "$case_dir/project" worktree add -q -b tmp-gone-safe "$tmp_ok" main
+  rm -rf "$tmp_ok"
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-gone-tmp-ok: teardown should succeed"
+  git -C "$case_dir/project" worktree list --porcelain | grep -q 'tmp-gone-safe' \
+    && fail "leftover-gone-tmp-ok: eligible temporary row remained"
+  pass "eligible gone temporary registrations prune when every prune row is safe"
+}
+
+test_leftover_unpublished_and_force_do_not_bypass() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-unpub)
+  add_clean_sibling "$case_dir" wt-resolver
+  printf 'unique-sibling\n' > "$case_dir/wt-resolver/unique-sibling.txt"
+  git -C "$case_dir/wt-resolver" add unique-sibling.txt
+  git -C "$case_dir/wt-resolver" -c user.email=t@t -c user.name=t \
+    commit -q -m unique-sibling
+  write_meta "$case_dir" no-mistakes scout
+  set +e
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-unpub: forced scout teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-unpub: --force released a unique sibling"
+  pass "scout and task --force do not bypass leftover unpublished retention"
+}
+
+test_leftover_pr_of_task_does_not_prove_sibling() {
+  local case_dir rc pr_head
+  case_dir=$(make_case leftover-pr-isolate)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit_file "$case_dir" feature.txt hello "add feature"
+  append_pr_meta_for_current_head "$case_dir"
+  pr_head=$(git -C "$case_dir/wt" rev-parse HEAD)
+  add_gh_pr_merged_for_head "$case_dir" "$pr_head"
+  seed_backlog_in_flight "$case_dir"
+  add_clean_sibling "$case_dir" wt-resolver
+  printf 'other-copy\n' > "$case_dir/wt-resolver/other-copy.txt"
+  git -C "$case_dir/wt-resolver" add other-copy.txt
+  git -C "$case_dir/wt-resolver" -c user.email=t@t -c user.name=t \
+    commit -q -m other-copy
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-pr-isolate: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-pr-isolate: task PR proved a different copy"
+  grep -q 'https://github.com/example/repo/pull/7' "$case_dir/data/backlog.md" \
+    || fail "leftover-pr-isolate: task completion URL was not preserved"
+  pass "a merged PR for the closing task cannot prove a leftover copy"
+}
+
+test_leftover_captured_landed_branch_is_deleted() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-branch)
+  git -C "$case_dir/project" branch leftover-unknown main
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-branch: teardown should succeed"
+  git -C "$case_dir/project" show-ref --verify --quiet refs/heads/fm/task-x1 \
+    && fail "leftover-branch: captured landed branch remained"
+  git -C "$case_dir/project" show-ref --verify --quiet refs/heads/leftover-unknown \
+    || fail "leftover-branch: unknown-attribution branch was deleted"
+  git -C "$case_dir/project" show-ref --verify --quiet refs/heads/main \
+    || fail "leftover-branch: main was deleted"
+  pass "captured landed branch is deleted and unknown or default branches remain"
+}
+
+test_leftover_live_cwd_and_host_under_sibling() {
+  local case_dir rc sleeper
+  case_dir=$(prepare_landed_ship leftover-cwd)
+  add_clean_sibling "$case_dir" wt-resolver
+  add_clean_sibling "$case_dir" wt-baseline
+  ( cd "$case_dir/wt-resolver" && sleep 60 ) &
+  sleeper=$!
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  kill "$sleeper" >/dev/null 2>&1 || true
+  wait "$sleeper" >/dev/null 2>&1 || true
+  expect_code 0 "$rc" "leftover-cwd: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-cwd: live-cwd sibling was removed"
+  [ ! -d "$case_dir/wt-baseline" ] || fail "leftover-cwd: idle sibling was not removed"
+  pass "a live cwd under a leftover sibling retains that sibling only"
+}
+
+test_leftover_rerun_is_idempotent() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-rerun)
+  add_clean_sibling "$case_dir" wt-resolver
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-rerun: first teardown should succeed"
+  [ ! -d "$case_dir/wt-resolver" ] || fail "leftover-rerun: sibling remained after first pass"
+  write_meta "$case_dir" no-mistakes ship
+  seed_backlog_in_flight "$case_dir"
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout2" 2> "$case_dir/stderr2"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-rerun: second teardown should succeed"
+  [ -d "$case_dir/wt" ] || fail "leftover-rerun: returned slot vanished on rerun"
+  pass "a second leftover pass makes no duplicate damage"
+}
+
+test_leftover_contended_lock_defers() {
+  local case_dir rc lock holder i
+  case_dir=$(prepare_landed_ship leftover-lock)
+  add_clean_sibling "$case_dir" wt-resolver
+  lock="$case_dir/state/.task-set.lock"
+  (
+    export FM_STATE_OVERRIDE="$case_dir/state"
+    export FM_HOME="$case_dir"
+    # shellcheck source=/dev/null
+    . "$ROOT/bin/fm-wake-lib.sh"
+    fm_lock_try_acquire "$lock" || exit 1
+    sleep 30
+  ) >/dev/null 2>&1 &
+  holder=$!
+  i=0
+  while [ ! -e "$lock" ] && [ "$i" -lt 50 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  if [ ! -e "$lock" ]; then
+    kill "$holder" >/dev/null 2>&1 || true
+    wait "$holder" >/dev/null 2>&1 || true
+    fail "leftover-lock: could not stage a live publication lock"
+  fi
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  kill "$holder" >/dev/null 2>&1 || true
+  wait "$holder" >/dev/null 2>&1 || true
+  expect_code 0 "$rc" "leftover-lock: teardown should still close"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-lock: sibling removed while lock contended"
+  grep -q 'deferred extra pass' "$case_dir/stdout" \
+    || fail "leftover-lock: no deferral note"
+  pass "a contended publication lock defers leftover cleanup without reopening the task"
+}
+
+test_leftover_real_treehouse_retired_lease() {
+  local case_dir rc root slot json lease_id holder real_th
+  real_th=$(command -v treehouse) || {
+    pass "real treehouse is not installed; A4 isolated-provider case skipped"
+    return 0
+  }
+  case_dir=$(prepare_landed_ship leftover-th-lease)
+  root="$case_dir/th-root"
+  mkdir -p "$root"
+  ( cd "$case_dir/project" && "$real_th" --root "$root" init >/dev/null )
+  json=$(cd "$case_dir/project" && "$real_th" --root "$root" get --lease --lease-holder retired-mate --json --no-fetch)
+  slot=$(printf '%s\n' "$json" | jq -r '.path')
+  lease_id=$(printf '%s\n' "$json" | jq -r '.lease_id')
+  holder=$(printf '%s\n' "$json" | jq -r '.lease_holder')
+  [ -n "$slot" ] && [ -d "$slot" ] || fail "leftover-th-lease: treehouse get did not create a slot"
+  [ "$holder" = retired-mate ] || fail "leftover-th-lease: unexpected holder $holder"
+  [ -n "$lease_id" ] || fail "leftover-th-lease: missing lease id"
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+set -u
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  exit 0
+fi
+exec "$real_th" --root "$root" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-th-lease: teardown should succeed"
+  [ ! -d "$slot" ] || fail "leftover-th-lease: proved retired lease slot remained"
+  [ -d "$case_dir/wt" ] || fail "leftover-th-lease: returned task slot was removed"
+  pass "a proved retired exact treehouse lease can return and destroy"
+}
+
+test_leftover_unknown_lease_is_retained() {
+  local case_dir rc root slot real_th
+  real_th=$(command -v treehouse) || {
+    pass "real treehouse is not installed; unknown-lease provider case skipped"
+    return 0
+  }
+  case_dir=$(prepare_landed_ship leftover-th-unknown)
+  root="$case_dir/th-root"
+  mkdir -p "$root"
+  ( cd "$case_dir/project" && "$real_th" --root "$root" init >/dev/null )
+  slot=$(cd "$case_dir/project" && "$real_th" --root "$root" get --lease --json --no-fetch | jq -r '.path')
+  [ -n "$slot" ] && [ -d "$slot" ] || fail "leftover-th-unknown: treehouse get did not create a slot"
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+set -u
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  exit 0
+fi
+exec "$real_th" --root "$root" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-th-unknown: teardown should succeed"
+  [ -d "$slot" ] || fail "leftover-th-unknown: empty-holder lease was destroyed"
+  pass "an unknown treehouse lease holder is retained"
+}
+
+test_leftover_then_sync_retains_unique_gone_branch() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-sync-unique)
+  git -C "$case_dir/wt" checkout -q -b leftover-unique
+  printf 'unique\n' > "$case_dir/wt/unique-gone.txt"
+  git -C "$case_dir/wt" add unique-gone.txt
+  git -C "$case_dir/wt" -c user.email=t@t -c user.name=t commit -q -m unique-gone
+  git -C "$case_dir/wt" push -q origin leftover-unique
+  git -C "$case_dir/origin.git" update-ref -d refs/heads/leftover-unique
+  git -C "$case_dir/project" fetch -q --prune origin
+  git -C "$case_dir/wt" checkout -q fm/task-x1
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-sync-unique: teardown should succeed"
+  git -C "$case_dir/project" rev-parse --verify leftover-unique >/dev/null \
+    || fail "leftover-sync-unique: unique [gone] branch was deleted by leftover or fleet sync"
+  pass "teardown followed by fleet sync retains a unique [gone] branch"
+}
+
 test_local_only_fork_remote_allows
 test_help_documents_force_validation_truth_skip
 test_invalid_ship_role_refuses
@@ -3159,3 +3482,16 @@ test_process_spawned_during_grace_is_reaped_on_later_pass
 test_persistent_scan_refuses_after_bounded_retries
 test_process_exit_during_identity_lookup_does_not_refuse
 test_run_abort_precedes_process_reap_precedes_worktree_removal
+test_leftover_siblings_clean_landed_are_removed
+test_leftover_dirty_sibling_is_retained
+test_leftover_gone_tmp_prunes_only_when_all_safe
+test_leftover_gone_tmp_prunes_when_all_eligible
+test_leftover_unpublished_and_force_do_not_bypass
+test_leftover_pr_of_task_does_not_prove_sibling
+test_leftover_captured_landed_branch_is_deleted
+test_leftover_live_cwd_and_host_under_sibling
+test_leftover_rerun_is_idempotent
+test_leftover_contended_lock_defers
+test_leftover_real_treehouse_retired_lease
+test_leftover_unknown_lease_is_retained
+test_leftover_then_sync_retains_unique_gone_branch
