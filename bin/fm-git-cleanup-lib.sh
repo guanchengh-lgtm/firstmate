@@ -10,6 +10,7 @@
 # bin/fm-fleet-sync.sh keeps [gone] discovery and refresh, then calls the
 # shared deletion predicate.
 # Treehouse owns managed-pool removal. Git owns linked-worktree admin removal.
+# Treehouse exact-path cleanup uses its execution flags; no-mistakes gates never use --yes.
 #
 # Proof functions take explicit repo, ref, mode, and optional PR inputs.
 # They never read teardown FORCE, KIND, WT, or PR_URL, and they never write
@@ -401,7 +402,7 @@ fm_git_cleanup_is_tmp_path() {
 fm_git_cleanup_protects_host() {
   local candidate=$1 host
   [ -n "$candidate" ] || return 0
-  for host in ${FM_GC_ROOT:-} ${FM_GC_HOME:-} ${FM_GC_HOST_CWD:-}; do
+  for host in "${FM_GC_ROOT:-}" "${FM_GC_HOME:-}" "${FM_GC_HOST_CWD:-}"; do
     [ -n "$host" ] || continue
     if [ "$candidate" = "$host" ]; then
       return 0
@@ -410,24 +411,6 @@ fm_git_cleanup_protects_host() {
       "$candidate"/*) return 0 ;;
     esac
   done
-  return 1
-}
-
-fm_git_cleanup_treehouse_pool_of() {
-  local path=$1 abs parent pool
-  abs=$(fm_git_cleanup_abs_dir "$path" 2>/dev/null || printf '%s\n' "$path")
-  case "$abs" in
-    */.treehouse/*/*/*)
-      parent=$(dirname "$abs")
-      pool=$(dirname "$parent")
-      case "$pool" in
-        */.treehouse/*)
-          printf '%s\n' "$pool"
-          return 0
-          ;;
-      esac
-      ;;
-  esac
   return 1
 }
 
@@ -452,7 +435,7 @@ fm_git_cleanup_copy_is_clean() {
      || [ -d "$path/.git/rebase-merge" ] || [ -d "$path/.git/rebase-apply" ]; then
     return 1
   fi
-  raw=$(git -C "$path" status --porcelain --ignored 2>/dev/null) || return 1
+  raw=$(git -C "$path" status --porcelain --ignored --ignore-submodules=none 2>/dev/null) || return 1
   [ -z "$raw" ]
 }
 
@@ -487,7 +470,6 @@ fm_git_cleanup_cwd_live() {
   [ -n "$root" ] || return 0
   while IFS=$(printf '\t') read -r pid path; do
     [ -n "$pid" ] || continue
-    [ "$pid" != "$$" ] || continue
     case "$path" in
       "$root"|"$root"/*) return 0 ;;
     esac
@@ -652,14 +634,22 @@ fm_git_cleanup_treehouse_status() {
   local repo=$1
   command -v treehouse >/dev/null 2>&1 || return 1
   command -v jq >/dev/null 2>&1 || return 1
+  [ -d "$repo" ] || return 1
   ( cd "$repo" && treehouse status --json ) 2>/dev/null
 }
 
-fm_git_cleanup_treehouse_slot_field() {
-  local json=$1 path=$2 field=$3
-  printf '%s\n' "$json" | jq -r --arg p "$path" --arg f "$field" '
-    .[] | select(.path == $p) | .[$f] // empty
+fm_git_cleanup_treehouse_slot() {
+  local json=$1 path=$2
+  printf '%s\n' "$json" | jq -ce --arg p "$path" '
+    [ .[] | select(.path == $p) ]
+    | select(length == 1)
+    | .[0]
   ' 2>/dev/null
+}
+
+fm_git_cleanup_treehouse_slot_field() {
+  local slot=$1 field=$2
+  printf '%s\n' "$slot" | jq -r --arg f "$field" '.[$f] // empty' 2>/dev/null
 }
 
 fm_git_cleanup_treehouse_destroy() {
@@ -669,7 +659,7 @@ fm_git_cleanup_treehouse_destroy() {
 
 fm_git_cleanup_treehouse_return_if_lease() {
   local repo=$1 path=$2 lease_id=$3 lease_holder=$4
-  ( cd "$repo" && treehouse return --if-lease-id "$lease_id" --if-lease-holder "$lease_holder" -- "$path" )
+  ( cd "$repo" && treehouse return --if-lease-id "$lease_id" --if-lease-holder "$lease_holder" --force -- "$path" )
 }
 
 fm_git_cleanup_revalidate_copy() {
@@ -767,8 +757,8 @@ fm_git_cleanup_handle_sibling() {
 }
 
 fm_git_cleanup_handle_orphan() {
-  local repo=$1 path=$2 head=$3 branch=$4 mode=$5 backend=$6 returned_pool=$7
-  local snap=$FM_GIT_CLEANUP_CWD_SNAP pool json status lease_id lease_holder
+  local repo=$1 path=$2 head=$3 branch=$4 mode=$5 backend=$6 returned=$7
+  local snap=$FM_GIT_CLEANUP_CWD_SNAP json slot status lease_id lease_holder
   if [ "$path" = "${FM_GC_REPO:-}" ]; then
     fm_git_cleanup_retain "$path" "primary"
     return 0
@@ -779,11 +769,6 @@ fm_git_cleanup_handle_orphan() {
   fi
   if fm_git_cleanup_protects_host "$path"; then
     fm_git_cleanup_retain "$path" "host"
-    return 0
-  fi
-  pool=$(fm_git_cleanup_treehouse_pool_of "$path" 2>/dev/null || true)
-  if [ -n "$returned_pool" ] && [ -n "$pool" ] && [ "$pool" = "$returned_pool" ]; then
-    fm_git_cleanup_retain "$path" "idle-pool-slot"
     return 0
   fi
   if [ ! -d "$path" ]; then
@@ -797,14 +782,27 @@ fm_git_cleanup_handle_orphan() {
     fm_git_cleanup_retain "$path" "other-project"
     return 0
   fi
-  if [ -z "$pool" ]; then
-    fm_git_cleanup_retain "$path" "unknown-lease"
-    return 0
-  fi
   if [ "$backend" = orca ]; then
     fm_git_cleanup_retain "$path" "orca-managed"
     return 0
   fi
+  json=$(fm_git_cleanup_treehouse_status "$repo" 2>/dev/null) || {
+    fm_git_cleanup_retain "$path" "unknown-lease"
+    return 0
+  }
+  slot=$(fm_git_cleanup_treehouse_slot "$json" "$path" 2>/dev/null) || {
+    fm_git_cleanup_retain "$path" "unknown-lease"
+    return 0
+  }
+  if [ -n "$returned" ] && fm_git_cleanup_treehouse_slot "$json" "$returned" >/dev/null 2>&1; then
+    fm_git_cleanup_retain "$path" "idle-pool-slot"
+    return 0
+  fi
+  status=$(fm_git_cleanup_treehouse_slot_field "$slot" status)
+  [ -n "$status" ] || {
+    fm_git_cleanup_retain "$path" "unknown-lease"
+    return 0
+  }
   if fm_git_cleanup_meta_mentions_path "$path"; then
     fm_git_cleanup_retain "$path" "live-meta"
     return 0
@@ -825,62 +823,65 @@ fm_git_cleanup_handle_orphan() {
     fm_git_cleanup_retain "$path" "unique-unpublished"
     return 0
   fi
-  json=$(fm_git_cleanup_treehouse_status "$repo" 2>/dev/null || true)
-  if [ -n "$json" ]; then
-    status=$(fm_git_cleanup_treehouse_slot_field "$json" "$path" status)
-    lease_id=$(fm_git_cleanup_treehouse_slot_field "$json" "$path" lease_id)
-    lease_holder=$(fm_git_cleanup_treehouse_slot_field "$json" "$path" lease_holder)
-    case "$status" in
-      leased)
-        case "$lease_id" in ''|*$'\n'*)
+  case "$status" in
+    leased)
+      lease_id=$(fm_git_cleanup_treehouse_slot_field "$slot" lease_id)
+      lease_holder=$(fm_git_cleanup_treehouse_slot_field "$slot" lease_holder)
+      case "$lease_id" in ''|*$'\n'*)
+        fm_git_cleanup_retain "$path" "unknown-lease"
+        return 0
+        ;;
+      esac
+      case "$lease_holder" in
+        ''|*$' '*|*$'\n'*|*$'\t'*)
           fm_git_cleanup_retain "$path" "unknown-lease"
           return 0
           ;;
-        esac
-        case "$lease_holder" in
-          ''|*$' '*|*$'\n'*|*$'\t'*)
-            fm_git_cleanup_retain "$path" "unknown-lease"
-            return 0
-            ;;
-          *[!A-Za-z0-9._-]*)
-            fm_git_cleanup_retain "$path" "unknown-lease"
-            return 0
-            ;;
-        esac
-        if ! fm_git_cleanup_revalidate_copy "$repo" "$path" "$head"; then
-          fm_git_cleanup_retain "$path" "identity-changed"
+        *[!A-Za-z0-9._-]*)
+          fm_git_cleanup_retain "$path" "unknown-lease"
           return 0
-        fi
-        if ! fm_git_cleanup_treehouse_return_if_lease "$repo" "$path" "$lease_id" "$lease_holder"; then
+          ;;
+      esac
+      if ! fm_git_cleanup_revalidate_copy "$repo" "$path" "$head"; then
+        fm_git_cleanup_retain "$path" "identity-changed"
+        return 0
+      fi
+      if ! fm_git_cleanup_treehouse_return_if_lease "$repo" "$path" "$lease_id" "$lease_holder"; then
+        fm_git_cleanup_retain "$path" "unknown-lease"
+        return 0
+      fi
+      if [ -d "$path" ]; then
+        json=$(fm_git_cleanup_treehouse_status "$repo" 2>/dev/null) || {
+          fm_git_cleanup_retain "$path" "unknown-lease"
+          return 0
+        }
+        slot=$(fm_git_cleanup_treehouse_slot "$json" "$path" 2>/dev/null) || {
+          fm_git_cleanup_retain "$path" "unknown-lease"
+          return 0
+        }
+        status=$(fm_git_cleanup_treehouse_slot_field "$slot" status)
+        if [ "$status" = leased ]; then
           fm_git_cleanup_retain "$path" "unknown-lease"
           return 0
         fi
-        if [ -d "$path" ]; then
-          json=$(fm_git_cleanup_treehouse_status "$repo" 2>/dev/null || true)
-          status=$(fm_git_cleanup_treehouse_slot_field "$json" "$path" status)
-          if [ "$status" = leased ]; then
-            fm_git_cleanup_retain "$path" "unknown-lease"
-            return 0
-          fi
-          if ! fm_git_cleanup_treehouse_destroy "$repo" "$path"; then
-            FM_GIT_CLEANUP_FAILED=1
-            fm_git_cleanup_retain "$path" "provider-failure"
-            return 0
-          fi
-        fi
-        if [ -d "$path" ]; then
-          fm_git_cleanup_retain "$path" "provider-failure"
+        if ! fm_git_cleanup_treehouse_destroy "$repo" "$path"; then
           FM_GIT_CLEANUP_FAILED=1
+          fm_git_cleanup_retain "$path" "provider-failure"
           return 0
         fi
-        fm_git_cleanup_removed "$path"
-        if [ -n "$branch" ] && [ "$branch" != HEAD ]; then
-          FM_GIT_CLEANUP_ATTRIB_BRANCHES=$FM_GIT_CLEANUP_ATTRIB_BRANCHES$'\n'"$branch $head"
-        fi
+      fi
+      if [ -d "$path" ]; then
+        fm_git_cleanup_retain "$path" "provider-failure"
+        FM_GIT_CLEANUP_FAILED=1
         return 0
-        ;;
-    esac
-  fi
+      fi
+      fm_git_cleanup_removed "$path"
+      if [ -n "$branch" ] && [ "$branch" != HEAD ]; then
+        FM_GIT_CLEANUP_ATTRIB_BRANCHES=$FM_GIT_CLEANUP_ATTRIB_BRANCHES$'\n'"$branch $head"
+      fi
+      return 0
+      ;;
+  esac
   if ! fm_git_cleanup_revalidate_copy "$repo" "$path" "$head"; then
     fm_git_cleanup_retain "$path" "identity-changed"
     return 0
@@ -980,7 +981,7 @@ EOF
 fm_git_cleanup_leftover_pass() {
   local repo=$1 home=$2 state=$3 data=$4 returned=$5 cap_branch=$6 cap_tip=$7
   local mode=$8 kind=$9 force=${10} pr_url=${11} backend=${12} root=${13}
-  local homes snap tmp returned_pool path head branch locked prunable
+  local homes snap tmp path head branch locked prunable
   local allow_force=0 pair b t
   FM_GIT_CLEANUP_REMOVED=0
   FM_GIT_CLEANUP_RETAINED=0
@@ -1061,10 +1062,6 @@ EOF
     fm_git_cleanup_warn "worktree list failed; leftover copies were not examined"
     return 1
   fi
-  returned_pool=
-  if [ -n "$FM_GC_RETURNED" ]; then
-    returned_pool=$(fm_git_cleanup_treehouse_pool_of "$FM_GC_RETURNED" 2>/dev/null || true)
-  fi
   while IFS=$(printf '\t') read -r path head branch locked prunable; do
     [ -n "$path" ] || continue
     case "$path" in *$'\n'*)
@@ -1085,7 +1082,7 @@ EOF
     if [ "$prunable" = 1 ]; then
       continue
     fi
-    fm_git_cleanup_handle_orphan "$repo" "$path" "$head" "$branch" "$mode" "$backend" "$returned_pool"
+    fm_git_cleanup_handle_orphan "$repo" "$path" "$head" "$branch" "$mode" "$backend" "$FM_GC_RETURNED"
   done <<EOF
 $(fm_git_cleanup_porcelain_entries "$repo")
 EOF

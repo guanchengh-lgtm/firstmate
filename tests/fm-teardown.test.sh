@@ -3250,22 +3250,52 @@ test_leftover_captured_landed_branch_is_deleted() {
 }
 
 test_leftover_live_cwd_and_host_under_sibling() {
-  local case_dir rc sleeper
-  case_dir=$(prepare_landed_ship leftover-cwd)
+  local case_dir rc sleeper host_dir
+  case_dir=$(prepare_landed_ship "leftover cwd")
   add_clean_sibling "$case_dir" wt-resolver
   add_clean_sibling "$case_dir" wt-baseline
+  host_dir="$case_dir/wt-baseline"
   ( cd "$case_dir/wt-resolver" && sleep 60 ) &
   sleeper=$!
   set +e
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  ( cd "$host_dir" && run_teardown "$case_dir" ) > "$case_dir/stdout" 2> "$case_dir/stderr"
   rc=$?
   set -e
   kill "$sleeper" >/dev/null 2>&1 || true
   wait "$sleeper" >/dev/null 2>&1 || true
   expect_code 0 "$rc" "leftover-cwd: teardown should succeed"
   [ -d "$case_dir/wt-resolver" ] || fail "leftover-cwd: live-cwd sibling was removed"
-  [ ! -d "$case_dir/wt-baseline" ] || fail "leftover-cwd: idle sibling was not removed"
-  pass "a live cwd under a leftover sibling retains that sibling only"
+  [ -d "$case_dir/wt-baseline" ] || fail "leftover-cwd: cleanup caller's sibling was removed"
+  pass "live child and cleanup caller cwd paths retain their siblings with spaces"
+}
+
+test_leftover_submodule_dirt_is_retained() {
+  local case_dir rc subrepo
+  case_dir=$(prepare_landed_ship leftover-submodule-dirt)
+  git -C "$case_dir/project" fetch -q origin main
+  git -C "$case_dir/project" reset -q --hard origin/main
+  subrepo="$case_dir/submodule-repo"
+  git init -q -b main "$subrepo"
+  git -C "$subrepo" -c user.email=t@t -c user.name=t commit -q --allow-empty -m baseline
+  printf 'base\n' > "$subrepo/tracked.txt"
+  git -C "$subrepo" add tracked.txt
+  git -C "$subrepo" -c user.email=t@t -c user.name=t commit -q -m tracked
+  git -C "$case_dir/project" -c protocol.file.allow=always submodule add -q "$subrepo" module
+  git -C "$case_dir/project" -c user.email=t@t -c user.name=t commit -q -m submodule
+  git -C "$case_dir/project" push -q origin main
+  add_clean_sibling "$case_dir" wt-resolver
+  git -C "$case_dir/wt-resolver" -c protocol.file.allow=always submodule update -q --init
+  git -C "$case_dir/wt-resolver" config submodule.module.ignore all
+  printf 'dirty\n' > "$case_dir/wt-resolver/module/tracked.txt"
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-submodule-dirt: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-submodule-dirt: dirty submodule sibling was removed"
+  grep -q "retained $case_dir/wt-resolver (dirty)" "$case_dir/stdout" \
+    || fail "leftover-submodule-dirt: no dirty retain reason"
+  pass "submodule dirt remains visible when repository config ignores it"
 }
 
 test_leftover_rerun_is_idempotent() {
@@ -3490,6 +3520,7 @@ test_leftover_unpublished_and_force_do_not_bypass
 test_leftover_pr_of_task_does_not_prove_sibling
 test_leftover_captured_landed_branch_is_deleted
 test_leftover_live_cwd_and_host_under_sibling
+test_leftover_submodule_dirt_is_retained
 test_leftover_rerun_is_idempotent
 test_leftover_contended_lock_defers
 test_leftover_real_treehouse_retired_lease
