@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for bin/fm-teardown.sh's landed-work safety and stale-lock recovery.
+# Tests for bin/fm-teardown.sh's task safety, stale-lock recovery, and leftover cleanup.
 #
 # The check refuses to tear down a worktree whose work has not LANDED, because
 # treehouse return hard-resets the worktree. "Landed" means reachable from a remote
@@ -7,7 +7,7 @@
 # and GitHub reports a PR head that contains the current local work, or its content
 # is already in the up-to-date default branch.
 #
-# Covers three fixes:
+# The opening matrix covers three earlier fixes:
 #   - local-only fork-remote: a fork IS a remote, so fork-pushed upstream-
 #     contribution PRs are teardown-eligible (the pre-fix code false-refused them).
 #   - squash-merge-then-delete-branch: the branch's own commits live nowhere on a
@@ -49,6 +49,8 @@
 #   (x) transient lock cleared after first failed return      -> retry ALLOW
 #   (y) persistent lock (never clears, not provably stale)    -> REFUSE loudly
 #   (z) no-mistakes + task parent of real merge on origin/main -> ALLOW
+# Later cases cover the leftover keep-set, safe sibling removal, report-only classes,
+# and checked deletion of proved branches through the complete teardown route.
 set -u
 
 # shellcheck source=tests/lib.sh disable=SC1091

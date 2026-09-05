@@ -37,6 +37,9 @@
 # idle pool-slot, primary, host, remote, and other-project candidates are
 # retained. There is no automatic discard mode.
 # Deletion failure is a retained/error result, never `|| true` success.
+# Each pass reports removed and retained totals plus a reason for each retained
+# candidate. A tool failure warns after task closure, while lock contention
+# emits a defer note without reporting cleanup failure.
 #
 # Sourced by bin/fm-teardown.sh, bin/fm-fleet-sync.sh, and tests.
 # No side effects on source. Safe under set -u.

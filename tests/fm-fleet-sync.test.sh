@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Behavior tests for fm-fleet-sync.sh drift handling.
+# Behavior tests for fm-fleet-sync.sh drift handling and branch cleanup.
 #
 # fm-fleet-sync fast-forwards a clone that is cleanly on its default branch. This
-# suite pins the two behavioral additions on top of that:
+# suite pins two drift behaviors on top of that:
 #   - the one safe drift self-heals: a clean, detached HEAD that holds no unique
 #     commits (it is an ancestor of origin/<default>) and whose <default> is free
 #     to check out is re-attached and then fast-forwarded ("recovered:").
@@ -27,6 +27,7 @@
 # worktree dir as its cwd also blocks removal (the clone-dir liveness check); a
 # transient lock that self-clears is retried without a force-remove; and any
 # non-packed-refs.lock fetch failure keeps today's behavior with no retry.
+# The branch-cleanup cases require landed or preserved proof and retain protected branches.
 set -u
 
 # shellcheck source=tests/lib.sh

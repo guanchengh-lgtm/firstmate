@@ -19,7 +19,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-owner-invoke-wait-check.sh` | Refuse a locked next act at turn end; spawn `--brief` checks require a completed OV report and retain the Claude plan-eng-review load rule |
 | `fm-skill-load-record.sh` | Claude PostToolUse Skill recorder (crewmate settings.local.json absolute path + tracked settings.json): append normalized skill loads into data/<task>/skills when FM_TASK_ID/FM_HOME are set |
 | `fm-startup-network.sh`  | Run session start's network checks and inactive-outcome scan off its blocking path, retaining reports and durable findings |
-| `fm-fleet-sync.sh`       | Refresh project clones with safe fast-forwards, self-heals, `STUCK:` reports, branch pruning, and bounded recovery from an orphaned `.git/packed-refs.lock` |
+| `fm-fleet-sync.sh`       | Refresh project clones with safe fast-forwards, self-heals, `STUCK:` reports, proved branch cleanup, and bounded recovery from an orphaned `.git/packed-refs.lock` |
 | `fm-fleet-snapshot.sh`   | Print structured fleet snapshot JSON and refresh only its parent-side remote-ledger cache (schema `fm-fleet-snapshot.v1`) |
 | `fm-home-summary-refresh.sh` | Atomically publish this home's structured summary ledger                         |
 | `fm-fleet-view.sh`       | Render the fleet snapshot as a human Markdown view                                   |
@@ -107,6 +107,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-supervise-daemon.sh` | Presence-gated away-mode sub-supervisor: self-handle routine wakes, guard injection by the detected primary harness, escalate batched digests, alert on failed delivery |
 | `fm-crew-state.sh`       | Print one deterministic current-state line for a crew                                |
 | `fm-validation-truth-lib.sh` | Refuse no-mistakes arm, merge, and cleanup unless validation truth is readable from the run or a PR-URL run record |
+| `fm-git-cleanup-lib.sh`  | Shared committed-work proofs, leftover keep-set, sibling removal, and checked branch deletion |
 | `fm-nm-run-lib.sh`       | Single owner of shared no-mistakes run-attribution primitives, code identity, live pushed-ref matching, and rules |
 | `fm-tangle-lib.sh`       | Shared default-branch resolution and primary-checkout tangle classification          |
 | `fm-timeout-lib.sh`      | Single owner of hard-bounded command execution and its fallback watchdog |
