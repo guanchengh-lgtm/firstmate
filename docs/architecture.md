@@ -306,7 +306,9 @@ A confirmed merge leaves a durable role-routed outcome instead of living only in
 The same emitter handles a merge firstmate performed and one its poll detected, while the watcher immediately delivers the emitter's local actionable poll row.
 [`bin/fm-validation-truth-lib.sh`](../bin/fm-validation-truth-lib.sh) owns the no-mistakes arm, merge, and non-force cleanup refusal, including the crew-state first proof and the PR-URL run-record second proof; unreadable validation truth fails closed with that wording rather than restarting the shared no-mistakes daemon.
 Teardown is fail-closed for ship worktrees: dirty worktrees refuse, and committed work must be landed before the worktree is returned.
-[`bin/fm-teardown.sh`](../bin/fm-teardown.sh)'s header owns the landed-work proofs, PR-discovery fallback, and stale-lock recovery procedure.
+[`bin/fm-teardown.sh`](../bin/fm-teardown.sh)'s header owns the complete task safety gate, the scout scratch exception, explicit task discard, and when leftover cleanup runs.
+[`bin/fm-git-cleanup-lib.sh`](../bin/fm-git-cleanup-lib.sh) owns the shared committed-work proofs, leftover inventory, the keep-set, safe sibling removal, checked branch deletion, and report-only retention of gone registrations and orphan copies for teardown and fleet sync.
+[`tests/fm-teardown.test.sh`](../tests/fm-teardown.test.sh) and [`tests/fm-fleet-sync.test.sh`](../tests/fm-fleet-sync.test.sh) own the behavior coverage for these cleanup routes.
 
 ## Optional Relay
 
@@ -379,7 +381,8 @@ Clean default-branch clones fast-forward to `origin/<default>`, and a clean deta
 Dirty clones, non-default branches, detached HEADs with unique commits, diverged defaults, and default branches checked out in another worktree are reported as `STUCK:` with their behind count and left untouched.
 Fetches blocked by an orphaned `.git/packed-refs.lock` use bounded retries and remove the lock only when the shared staleness proof can prove it abandoned; [configuration.md](configuration.md#toolchain) owns the recovery details and tuning knobs.
 Local-only projects, clones without an origin remote, and fetch failures remain benign skips.
-The refresh also prunes local branches whose remote is gone and that no worktree still needs.
+The refresh also discovers local branches whose remote is gone, then deletes a candidate only through the shared landed-or-preserved predicate in [`bin/fm-git-cleanup-lib.sh`](../bin/fm-git-cleanup-lib.sh).
+Its branch cleanup regressions run through [`tests/fm-fleet-sync.test.sh`](../tests/fm-fleet-sync.test.sh), while teardown integration runs through [`tests/fm-teardown.test.sh`](../tests/fm-teardown.test.sh).
 
 ## Self-updates stay safe
 

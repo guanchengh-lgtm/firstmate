@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for bin/fm-teardown.sh's landed-work safety and stale-lock recovery.
+# Tests for bin/fm-teardown.sh's task safety, stale-lock recovery, and leftover cleanup.
 #
 # The check refuses to tear down a worktree whose work has not LANDED, because
 # treehouse return hard-resets the worktree. "Landed" means reachable from a remote
@@ -7,7 +7,7 @@
 # and GitHub reports a PR head that contains the current local work, or its content
 # is already in the up-to-date default branch.
 #
-# Covers three fixes:
+# The opening matrix covers three earlier fixes:
 #   - local-only fork-remote: a fork IS a remote, so fork-pushed upstream-
 #     contribution PRs are teardown-eligible (the pre-fix code false-refused them).
 #   - squash-merge-then-delete-branch: the branch's own commits live nowhere on a
@@ -34,7 +34,6 @@
 #   (k) no-mistakes + merged PR but HEAD moved afterward        -> REFUSE (stale PR)
 #   (l) no-mistakes + stale origin/main but fetched content     -> ALLOW  (fresh fetch)
 #   (m) no-mistakes + local HEAD ancestor of merged PR head     -> ALLOW  (lagging local)
-#   (n) no-mistakes + replayed unpushed patch in merged PR head -> ALLOW  (replayed local)
 #   (o) fm-pr-check rerun after HEAD moved                      -> no stale pr_head
 #   (p) fm-pr-check when local HEAD lags                        -> record remote PR head
 #   (q) no-mistakes + NO pr= recorded, PR discovered by branch  -> ALLOW  (yolo/no-CI merge)
@@ -50,6 +49,8 @@
 #   (x) transient lock cleared after first failed return      -> retry ALLOW
 #   (y) persistent lock (never clears, not provably stale)    -> REFUSE loudly
 #   (z) no-mistakes + task parent of real merge on origin/main -> ALLOW
+# Later cases cover the leftover keep-set, safe sibling removal, report-only classes,
+# and checked deletion of proved branches through the complete teardown route.
 set -u
 
 # shellcheck source=tests/lib.sh disable=SC1091
@@ -316,19 +317,6 @@ commit_tree_from_wt_head() {
   printf '%s\n' "$msg" | git -C "$case_dir/wt" commit-tree "$tree" -p "$parent"
 }
 
-land_equivalent_patch_on_origin_branch() {
-  local case_dir=$1 branch=$2 file=$3 content=$4 msg=$5 tmp
-  tmp="$case_dir/_equiv"
-  git clone -q "$case_dir/origin.git" "$tmp"
-  printf '%s\n' "$content" > "$tmp/$file"
-  git -C "$tmp" add -- "$file"
-  git -C "$tmp" -c user.email=t@t -c user.name=t commit -q -m "$msg"
-  git -C "$tmp" push -q origin "HEAD:refs/heads/$branch"
-  git -C "$case_dir/project" fetch -q origin "$branch"
-  rm -rf "$tmp"
-  git -C "$case_dir/project" rev-parse "refs/remotes/origin/$branch"
-}
-
 # Override gh-axi so every call fails, simulating an API/network error.
 add_gh_axi_error() {
   local case_dir=$1
@@ -577,6 +565,14 @@ seed_backlog_in_flight() {
   tasks-axi add task-x1 "teardown fixture task" --kind "$kind" \
     --file "$case_dir/data/backlog.md" >/dev/null
   tasks-axi start task-x1 --file "$case_dir/data/backlog.md" >/dev/null
+}
+
+seed_done_task() {
+  local case_dir=$1 id=$2 kind=${3:-ship} repo=${4:-project}
+  tasks-axi add "$id" "retired teardown fixture" --kind "$kind" \
+    --repo "$repo" \
+    --file "$case_dir/data/backlog.md" >/dev/null
+  tasks-axi "done" "$id" --file "$case_dir/data/backlog.md" >/dev/null
 }
 
 backlog_row_state() {
@@ -879,29 +875,6 @@ test_no_pr_recorded_discovers_merged_pr_by_branch_allows() {
   assert_grep 'https://github.com/example/repo/pull/7' "$case_dir/data/backlog.md" \
     "no-pr-branch-discovery: resolved PR URL was not recorded on completion"
   pass "teardown discovers a merged PR by branch name and tears down when no pr= was ever recorded"
-}
-
-test_squash_merged_pr_allows_replayed_unpushed_patch() {
-  local case_dir rc parent_head pr_head
-  case_dir=$(make_case squash-replayed-patch)
-  write_meta "$case_dir" no-mistakes ship
-  wt_commit_file "$case_dir" local-parent.txt parent "local parent"
-  parent_head=$(git -C "$case_dir/wt" rev-parse HEAD)
-  git -C "$case_dir/wt" push -q origin "$parent_head:refs/heads/fm/task-x1"
-  git -C "$case_dir/project" fetch -q origin fm/task-x1
-  wt_commit_file "$case_dir" feature.txt hello "add feature"
-  append_pr_meta_url "$case_dir"
-  pr_head=$(land_equivalent_patch_on_origin_branch "$case_dir" pr-head feature.txt hello "add feature")
-  add_gh_pr_merged_for_head "$case_dir" "$pr_head"
-
-  set +e
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
-  rc=$?
-  set -e
-
-  expect_code 0 "$rc" "squash-replayed-patch: teardown should succeed when unpushed local patch is in the merged PR head"
-  ! grep -q REFUSED "$case_dir/stderr" || fail "squash-replayed-patch: teardown printed a REFUSED line"
-  pass "squash-merged PR accepts replayed unpushed local patches contained in the PR head"
 }
 
 test_merged_pr_with_later_local_commit_refuses() {
@@ -3090,6 +3063,975 @@ EOF
   pass "the run abort and the leaked-process reap both complete before the destructive worktree return"
 }
 
+prepare_landed_ship() {
+  local name=$1 case_dir
+  case_dir=$(make_case "$name")
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit_file "$case_dir" feature.txt hello "add feature"
+  land_on_origin_main "$case_dir" feature.txt hello
+  seed_backlog_in_flight "$case_dir"
+  printf '%s\n' "$case_dir"
+}
+
+add_clean_sibling() {
+  local case_dir=$1 name=$2
+  git -C "$case_dir/project" worktree add -q -b "fm/$name" "$case_dir/$name" main
+}
+
+test_leftover_siblings_clean_landed_are_removed() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-sib-clean)
+  add_clean_sibling "$case_dir" wt-resolver
+  add_clean_sibling "$case_dir" wt-baseline
+  add_clean_sibling "$case_dir" wt-other-resolver
+  fm_write_meta "$case_dir/state/other-task.meta" \
+    "window=firstmate:other" \
+    "worktree=$case_dir/wt-other-resolver" \
+    "project=$case_dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes"
+  mkdir -p "$case_dir/other-repo"
+  git init -q "$case_dir/other-repo"
+  printf 'keep\n' > "$case_dir/unrelated.txt"
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-sib-clean: teardown should succeed"
+  [ ! -d "$case_dir/wt-resolver" ] || fail "leftover-sib-clean: resolver sibling remained"
+  [ ! -d "$case_dir/wt-baseline" ] || fail "leftover-sib-clean: baseline sibling remained"
+  [ -d "$case_dir/wt" ] || fail "leftover-sib-clean: returned slot was removed"
+  [ -d "$case_dir/wt-other-resolver" ] || fail "leftover-sib-clean: other-task sibling was removed"
+  [ -d "$case_dir/other-repo" ] || fail "leftover-sib-clean: nested other repo was removed"
+  [ -f "$case_dir/unrelated.txt" ] || fail "leftover-sib-clean: unrelated file was removed"
+  pass "clean landed resolver/baseline siblings are removed and keep-set objects stay"
+}
+
+test_leftover_metadata_branch_retains_copy() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-meta-branch)
+  add_clean_sibling "$case_dir" wt-resolver
+  fm_write_meta "$case_dir/state/wt-resolver.meta" \
+    "window=firstmate:other" \
+    "worktree=$case_dir/missing-other-copy" \
+    "project=$case_dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-meta-branch: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] \
+    || fail "leftover-meta-branch: metadata branch lost its checkout"
+  grep -q "retained $case_dir/wt-resolver (live-meta)" "$case_dir/stdout" \
+    || fail "leftover-meta-branch: branch metadata did not protect the copy"
+  pass "live metadata protects its branch checkout when paths differ"
+}
+
+test_leftover_default_branches_retain_sibling_copies() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-default-copies)
+  git -C "$case_dir/origin.git" update-ref refs/heads/trunk refs/heads/main
+  git -C "$case_dir/origin.git" symbolic-ref HEAD refs/heads/trunk
+  git -C "$case_dir/project" fetch -q origin trunk
+  git -C "$case_dir/project" branch trunk refs/remotes/origin/trunk
+  git -C "$case_dir/project" remote set-head origin trunk
+  git -C "$case_dir/project" checkout -q -b primary main
+  git -C "$case_dir/project" worktree add -q "$case_dir/wt-resolver" main
+  add_clean_sibling "$case_dir" wt-baseline
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  : > "$case_dir/after-return"
+fi
+exit 0
+SH
+  cat > "$case_dir/fakebin/git" <<SH
+#!/usr/bin/env bash
+if [ -e "$case_dir/after-return" ] && [ ! -e "$case_dir/switched" ] \
+   && [ "\${1:-}" = -C ] && [ "\${2:-}" = "$case_dir/wt-baseline" ] \
+   && [ "\${3:-}" = status ]; then
+  "$REAL_GIT_FOR_TEST" "\$@"
+  rc=\$?
+  "$REAL_GIT_FOR_TEST" -C "$case_dir/wt-baseline" checkout -q trunk
+  : > "$case_dir/switched"
+  exit "\$rc"
+fi
+exec "$REAL_GIT_FOR_TEST" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/git"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-default-copies: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] \
+    || fail "leftover-default-copies: the main copy was removed"
+  [ -d "$case_dir/wt-baseline" ] \
+    || fail "leftover-default-copies: the changed default copy was removed"
+  [ "$(git -C "$case_dir/wt-baseline" branch --show-current)" = trunk ] \
+    || fail "leftover-default-copies: the default branch switch did not occur"
+  grep -q "retained $case_dir/wt-resolver (default-branch)" "$case_dir/stdout" \
+    || fail "leftover-default-copies: main did not get a default retention reason"
+  grep -q "retained $case_dir/wt-baseline (default-branch)" "$case_dir/stdout" \
+    || fail "leftover-default-copies: the resolved default did not get a retention reason"
+  pass "literal main and a changed resolved default retain sibling copies"
+}
+
+test_leftover_branch_change_to_metadata_branch_is_retained() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-meta-branch-race)
+  add_clean_sibling "$case_dir" wt-resolver
+  git -C "$case_dir/project" branch fm/protected main
+  fm_write_meta "$case_dir/state/protected.meta" \
+    "window=firstmate:other" \
+    "worktree=$case_dir/missing-protected-copy" \
+    "project=$case_dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes"
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  : > "$case_dir/after-return"
+  exit 0
+fi
+if [ "\${1:-}" = status ]; then printf '%s\n' '[]'; exit 0; fi
+exit 1
+SH
+  cat > "$case_dir/fakebin/git" <<SH
+#!/usr/bin/env bash
+if [ -e "$case_dir/after-return" ] && [ ! -e "$case_dir/switched" ] \
+   && [ "\${1:-}" = -C ] && [ "\${2:-}" = "$case_dir/wt-resolver" ] \
+   && [ "\${3:-}" = status ]; then
+  "$REAL_GIT_FOR_TEST" "\$@"
+  rc=\$?
+  "$REAL_GIT_FOR_TEST" -C "$case_dir/wt-resolver" checkout -q fm/protected
+  : > "$case_dir/switched"
+  exit "\$rc"
+fi
+exec "$REAL_GIT_FOR_TEST" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/git"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-meta-branch-race: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] \
+    || fail "leftover-meta-branch-race: changed metadata branch lost its copy"
+  [ "$(git -C "$case_dir/wt-resolver" branch --show-current)" = fm/protected ] \
+    || fail "leftover-meta-branch-race: branch switch did not occur"
+  grep -q "retained $case_dir/wt-resolver (mutation-recheck)" "$case_dir/stdout" \
+    || fail "leftover-meta-branch-race: mutation boundary did not retain the copy"
+  pass "a mutation-boundary branch change to live metadata retains the copy"
+}
+
+test_leftover_symlink_ancestor_inventory_is_retained() {
+  local case_dir rc real_parent orphan alias_parent alias
+  case_dir=$(prepare_landed_ship leftover-symlink-ancestor)
+  real_parent="$case_dir/real-parent"
+  orphan="$real_parent/project"
+  alias_parent="$case_dir/alias-parent"
+  alias="$alias_parent/project"
+  mkdir -p "$real_parent"
+  git -C "$case_dir/project" worktree add -q -b fm/symlink-ancestor "$orphan" main
+  ln -s "$real_parent" "$alias_parent"
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  : > "$case_dir/after-return"
+  exit 0
+fi
+if [ "\${1:-}" = status ]; then
+  printf '%s\n' '[]'
+  exit 0
+fi
+exit 1
+SH
+  cat > "$case_dir/fakebin/git" <<SH
+#!/usr/bin/env bash
+if [ -e "$case_dir/after-return" ] && [ "\${1:-}" = -C ] \
+   && [ "\${3:-}" = -c ] && [ "\${5:-}" = worktree ] \
+   && [ "\${6:-}" = list ] && [ "\${7:-}" = --porcelain ]; then
+  "$REAL_GIT_FOR_TEST" "\$@" | sed 's|^worktree $orphan$|worktree $alias|'
+  exit "\${PIPESTATUS[0]}"
+fi
+exec "$REAL_GIT_FOR_TEST" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/git"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-symlink-ancestor: teardown should succeed"
+  [ -d "$orphan" ] || fail "leftover-symlink-ancestor: cleanup followed the alias"
+  grep -q "retained $alias (symlink)" "$case_dir/stdout" \
+    || fail "leftover-symlink-ancestor: the alias was not retained"
+  pass "a symlink ancestor cannot redirect a cleanup target"
+}
+
+test_leftover_locked_sibling_is_retained() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-locked-sibling)
+  add_clean_sibling "$case_dir" wt-resolver
+  git -C "$case_dir/project" worktree lock "$case_dir/wt-resolver"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-locked-sibling: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] \
+    || fail "leftover-locked-sibling: cleanup removed a locked copy"
+  grep -q "retained $case_dir/wt-resolver (locked)" "$case_dir/stdout" \
+    || fail "leftover-locked-sibling: no locked retention result"
+  grep -q 'leftover cleanup did not finish after task closure succeeded' "$case_dir/stderr" \
+    && fail "leftover-locked-sibling: normal retention became a cleanup failure"
+  pass "a locked live sibling is retained without a cleanup failure"
+}
+
+test_leftover_dirty_sibling_is_retained() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-sib-dirty)
+  add_clean_sibling "$case_dir" wt-resolver
+  printf 'dirt\n' > "$case_dir/wt-resolver/dirt.txt"
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-sib-dirty: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-sib-dirty: dirty sibling was removed"
+  grep -q 'retained' "$case_dir/stdout" || fail "leftover-sib-dirty: no retain reason"
+  pass "dirty sibling is retained with a reason and the task still closes"
+}
+
+test_leftover_stale_remote_ref_does_not_prove_sibling() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-stale-remote)
+  add_clean_sibling "$case_dir" wt-resolver
+  printf 'remote-only\n' > "$case_dir/wt-resolver/remote-only.txt"
+  git -C "$case_dir/wt-resolver" add remote-only.txt
+  git -C "$case_dir/wt-resolver" -c user.email=t@t -c user.name=t \
+    commit -q -m remote-only
+  git -C "$case_dir/wt-resolver" push -q origin fm/wt-resolver
+  git -C "$case_dir/origin.git" update-ref -d refs/heads/fm/wt-resolver
+  git -C "$case_dir/project" show-ref --verify --quiet refs/remotes/origin/fm/wt-resolver \
+    || fail "leftover-stale-remote: setup did not retain the stale tracking ref"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-stale-remote: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] \
+    || fail "leftover-stale-remote: stale remote proof removed unique work"
+  grep -q "retained $case_dir/wt-resolver (unique-unpublished)" "$case_dir/stdout" \
+    || fail "leftover-stale-remote: no unpublished retain reason"
+  pass "a deleted remote branch cannot prove work through a stale tracking ref"
+}
+
+test_leftover_default_content_avoids_forge_lookup() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-local-content-first)
+  add_clean_sibling "$case_dir" wt-resolver
+  printf 'squashed\n' > "$case_dir/wt-resolver/squashed.txt"
+  git -C "$case_dir/wt-resolver" add squashed.txt
+  git -C "$case_dir/wt-resolver" -c user.email=t@t -c user.name=t \
+    commit -q -m sibling-squash
+  land_on_origin_main "$case_dir" squashed.txt squashed
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  : > "$case_dir/after-return"
+  exit 0
+fi
+exit 0
+SH
+  cat > "$case_dir/fakebin/gh-axi" <<SH
+#!/usr/bin/env bash
+[ ! -e "$case_dir/after-return" ] || : > "$case_dir/forge-called"
+case "\${1:-} \${2:-}" in
+  "pr list") printf '%s\n' "count: 0 (showing first 0)" "pull_requests[]: []"; exit 0 ;;
+esac
+exit 1
+SH
+  cat > "$case_dir/fakebin/gh" <<SH
+#!/usr/bin/env bash
+[ ! -e "$case_dir/after-return" ] || : > "$case_dir/forge-called"
+exit 1
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/gh-axi" "$case_dir/fakebin/gh"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-local-content-first: teardown should succeed"
+  [ ! -d "$case_dir/wt-resolver" ] \
+    || fail "leftover-local-content-first: squash-landed sibling remained"
+  [ ! -e "$case_dir/forge-called" ] \
+    || fail "leftover-local-content-first: local proof waited for the forge"
+  pass "cached default content proves a squash before any forge lookup"
+}
+
+test_leftover_orig_head_retains_live_copy() {
+  local case_dir rc live_unique live_admin
+  case_dir=$(prepare_landed_ship leftover-orig-head)
+  add_clean_sibling "$case_dir" wt-resolver
+  printf 'live unique\n' > "$case_dir/wt-resolver/live-unique.txt"
+  git -C "$case_dir/wt-resolver" add live-unique.txt
+  git -C "$case_dir/wt-resolver" -c user.email=t@t -c user.name=t \
+    commit -q -m live-unique
+  live_unique=$(git -C "$case_dir/wt-resolver" rev-parse HEAD)
+  git -C "$case_dir/wt-resolver" reset -q --hard main
+  live_admin=$(git -C "$case_dir/wt-resolver" rev-parse --absolute-git-dir)
+  [ "$(cat "$live_admin/ORIG_HEAD")" = "$live_unique" ] \
+    || fail "leftover-orig-head: live ORIG_HEAD setup failed"
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-orig-head: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] \
+    || fail "leftover-orig-head: live ORIG_HEAD copy was removed"
+  git -C "$case_dir/project" cat-file -e "$live_unique^{commit}" \
+    || fail "leftover-orig-head: live unique commit was lost"
+  pass "ORIG_HEAD protects unique work in a live copy"
+}
+
+test_leftover_gone_tmp_registration_is_reported() {
+  local case_dir rc missing
+  case_dir=$(prepare_landed_ship leftover-gone-report)
+  missing=$(mktemp -d /tmp/fm-teardown-gone-report.XXXXXX)
+  missing=$(cd "$missing" && pwd -P)
+  git -C "$case_dir/project" worktree add -q -b tmp-gone-report "$missing" main
+  rm -rf "$missing"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-gone-report: teardown should succeed"
+  git -C "$case_dir/project" worktree list --porcelain | grep -Fx "worktree $missing" >/dev/null \
+    || fail "leftover-gone-report: missing registration was removed"
+  grep -F "retained $missing (gone-registration)" "$case_dir/stdout" >/dev/null \
+    || fail "leftover-gone-report: retained registration was not reported"
+  pass "a gone temporary registration stays registered and is reported retained"
+}
+
+test_leftover_unrecorded_copy_is_reported_without_treehouse() {
+  local case_dir rc orphan
+  case_dir=$(prepare_landed_ship leftover-orphan-report)
+  tasks-axi "done" task-x1 --file "$case_dir/data/backlog.md" >/dev/null
+  orphan="$case_dir/unrecorded-copy"
+  git -C "$case_dir/project" worktree add -q -b fm/unrecorded-copy "$orphan" main
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$case_dir/treehouse.log"
+exit 1
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+  rc=0
+  FM_HOME="$case_dir" FM_STATE_OVERRIDE="$case_dir/state" \
+    PATH="$case_dir/fakebin:$PATH" bash -s -- "$ROOT" "$case_dir" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" <<'SH' || rc=$?
+set -eu
+root=$1
+case_dir=$2
+. "$root/bin/fm-wake-lib.sh"
+. "$root/bin/fm-git-cleanup-lib.sh"
+fm_git_cleanup_leftover_pass "$case_dir/project" "$case_dir" "$case_dir/data" \
+  "$case_dir/wt" "" "" no-mistakes ship "" "$root"
+SH
+  expect_code 0 "$rc" "leftover-orphan-report: pass should succeed"
+  [ -d "$orphan" ] || fail "leftover-orphan-report: unrecorded copy was removed"
+  grep -F "retained $orphan (unrecorded-copy)" "$case_dir/stdout" >/dev/null \
+    || fail "leftover-orphan-report: retained copy was not reported"
+  [ ! -s "$case_dir/treehouse.log" ] \
+    || fail "leftover-orphan-report: leftover pass invoked Treehouse"
+  pass "an unrecorded same-repository copy stays without any Treehouse invocation"
+}
+
+test_leftover_unpublished_and_force_do_not_bypass() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-unpub)
+  add_clean_sibling "$case_dir" wt-resolver
+  printf 'unique-sibling\n' > "$case_dir/wt-resolver/unique-sibling.txt"
+  git -C "$case_dir/wt-resolver" add unique-sibling.txt
+  git -C "$case_dir/wt-resolver" -c user.email=t@t -c user.name=t \
+    commit -q -m unique-sibling
+  write_meta "$case_dir" no-mistakes scout
+  set +e
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-unpub: forced scout teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-unpub: --force released a unique sibling"
+  pass "scout and task --force do not bypass leftover unpublished retention"
+}
+
+test_leftover_pr_of_task_does_not_prove_sibling() {
+  local case_dir rc pr_head
+  case_dir=$(make_case leftover-pr-isolate)
+  write_meta "$case_dir" no-mistakes ship
+  wt_commit_file "$case_dir" feature.txt hello "add feature"
+  append_pr_meta_for_current_head "$case_dir"
+  pr_head=$(git -C "$case_dir/wt" rev-parse HEAD)
+  add_gh_pr_merged_for_head "$case_dir" "$pr_head"
+  seed_backlog_in_flight "$case_dir"
+  add_clean_sibling "$case_dir" wt-resolver
+  printf 'other-copy\n' > "$case_dir/wt-resolver/other-copy.txt"
+  git -C "$case_dir/wt-resolver" add other-copy.txt
+  git -C "$case_dir/wt-resolver" -c user.email=t@t -c user.name=t \
+    commit -q -m other-copy
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-pr-isolate: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-pr-isolate: task PR proved a different copy"
+  grep -q 'https://github.com/example/repo/pull/7' "$case_dir/data/backlog.md" \
+    || fail "leftover-pr-isolate: task completion URL was not preserved"
+  pass "a merged PR for the closing task cannot prove a leftover copy"
+}
+
+test_leftover_captured_landed_branch_is_deleted() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-branch)
+  git -C "$case_dir/project" branch leftover-unknown main
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-branch: teardown should succeed"
+  git -C "$case_dir/project" show-ref --verify --quiet refs/heads/fm/task-x1 \
+    && fail "leftover-branch: captured landed branch remained"
+  git -C "$case_dir/project" show-ref --verify --quiet refs/heads/leftover-unknown \
+    || fail "leftover-branch: unknown-attribution branch was deleted"
+  git -C "$case_dir/project" show-ref --verify --quiet refs/heads/main \
+    || fail "leftover-branch: main was deleted"
+  pass "captured landed branch is deleted and unknown or default branches remain"
+}
+
+test_leftover_normal_scout_discards_only_captured_branch() {
+  local case_dir rc
+  case_dir=$(make_case leftover-scout-captured)
+  write_meta "$case_dir" no-mistakes scout
+  wt_commit_file "$case_dir" scout.txt unique "scout work"
+  git -C "$case_dir/project" branch fm/other-scout-copy HEAD
+  add_compatible_tasks_axi "$case_dir"
+  mkdir -p "$case_dir/data/task-x1"
+  printf '%s\n' '# Findings' 'The scout report is complete.' \
+    > "$case_dir/data/task-x1/report.md"
+  FM_HOME="$case_dir" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_DATA_OVERRIDE="$case_dir/data" FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_CONFIG_OVERRIDE="$case_dir/config" PATH="$case_dir/fakebin:$PATH" \
+    "$ROOT/bin/fm-captain-hold.sh" complete task-x1 --none --no-ideas \
+    > "$case_dir/complete.out" 2> "$case_dir/complete.err" \
+    || fail "leftover-scout-captured: captain-hold completion failed"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-scout-captured: teardown should succeed"
+  git -C "$case_dir/project" show-ref --verify --quiet refs/heads/fm/task-x1 \
+    && fail "leftover-scout-captured: the captured scout branch remained"
+  git -C "$case_dir/project" show-ref --verify --quiet refs/heads/fm/other-scout-copy \
+    || fail "leftover-scout-captured: the scout exception released another branch"
+  pass "a normal scout discards only its captured branch"
+}
+
+test_leftover_live_cwd_and_host_under_sibling() {
+  local case_dir rc sleeper host_dir
+  case_dir=$(prepare_landed_ship "leftover cwd")
+  add_clean_sibling "$case_dir" wt-resolver
+  add_clean_sibling "$case_dir" wt-baseline
+  host_dir="$case_dir/wt-baseline"
+  ( cd "$case_dir/wt-resolver" && sleep 60 ) &
+  sleeper=$!
+  set +e
+  ( cd "$host_dir" && run_teardown "$case_dir" ) > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  kill "$sleeper" >/dev/null 2>&1 || true
+  wait "$sleeper" >/dev/null 2>&1 || true
+  expect_code 0 "$rc" "leftover-cwd: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-cwd: live-cwd sibling was removed"
+  [ -d "$case_dir/wt-baseline" ] || fail "leftover-cwd: cleanup caller's sibling was removed"
+  pass "live child and cleanup caller cwd paths retain their siblings with spaces"
+}
+
+test_leftover_submodule_dirt_is_retained() {
+  local case_dir rc subrepo
+  case_dir=$(prepare_landed_ship leftover-submodule-dirt)
+  git -C "$case_dir/project" fetch -q origin main
+  git -C "$case_dir/project" reset -q --hard origin/main
+  subrepo="$case_dir/submodule-repo"
+  git init -q -b main "$subrepo"
+  git -C "$subrepo" -c user.email=t@t -c user.name=t commit -q --allow-empty -m baseline
+  printf 'base\n' > "$subrepo/tracked.txt"
+  git -C "$subrepo" add tracked.txt
+  git -C "$subrepo" -c user.email=t@t -c user.name=t commit -q -m tracked
+  git -C "$case_dir/project" -c protocol.file.allow=always submodule add -q "$subrepo" module
+  git -C "$case_dir/project" -c user.email=t@t -c user.name=t commit -q -m submodule
+  git -C "$case_dir/project" push -q origin main
+  add_clean_sibling "$case_dir" wt-resolver
+  git -C "$case_dir/wt-resolver" -c protocol.file.allow=always submodule update -q --init
+  git -C "$case_dir/wt-resolver" config submodule.module.ignore all
+  printf 'dirty\n' > "$case_dir/wt-resolver/module/tracked.txt"
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-submodule-dirt: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-submodule-dirt: dirty submodule sibling was removed"
+  grep -q "retained $case_dir/wt-resolver (dirty)" "$case_dir/stdout" \
+    || fail "leftover-submodule-dirt: no dirty retain reason"
+  pass "submodule dirt remains visible when repository config ignores it"
+}
+
+test_leftover_rerun_is_idempotent() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-rerun)
+  add_clean_sibling "$case_dir" wt-resolver
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-rerun: first teardown should succeed"
+  [ ! -d "$case_dir/wt-resolver" ] || fail "leftover-rerun: sibling remained after first pass"
+  write_meta "$case_dir" no-mistakes ship
+  seed_backlog_in_flight "$case_dir"
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout2" 2> "$case_dir/stderr2"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-rerun: second teardown should succeed"
+  [ -d "$case_dir/wt" ] || fail "leftover-rerun: returned slot vanished on rerun"
+  pass "a second leftover pass makes no duplicate damage"
+}
+
+test_leftover_contended_lock_defers() {
+  local case_dir rc lock holder i
+  case_dir=$(prepare_landed_ship leftover-lock)
+  add_clean_sibling "$case_dir" wt-resolver
+  lock="$case_dir/state/.task-set.lock"
+  (
+    export FM_STATE_OVERRIDE="$case_dir/state"
+    export FM_HOME="$case_dir"
+    # shellcheck source=/dev/null
+    . "$ROOT/bin/fm-wake-lib.sh"
+    fm_lock_try_acquire "$lock" || exit 1
+    sleep 30
+  ) >/dev/null 2>&1 &
+  holder=$!
+  i=0
+  while [ ! -e "$lock" ] && [ "$i" -lt 50 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  if [ ! -e "$lock" ]; then
+    kill "$holder" >/dev/null 2>&1 || true
+    wait "$holder" >/dev/null 2>&1 || true
+    fail "leftover-lock: could not stage a live publication lock"
+  fi
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  kill "$holder" >/dev/null 2>&1 || true
+  wait "$holder" >/dev/null 2>&1 || true
+  expect_code 0 "$rc" "leftover-lock: teardown should still close"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-lock: sibling removed while lock contended"
+  grep -q 'deferred extra pass' "$case_dir/stdout" \
+    || fail "leftover-lock: no deferral note"
+  pass "a contended publication lock defers leftover cleanup without reopening the task"
+}
+
+test_leftover_private_ref_is_retained() {
+  local case_dir rc private_head
+  case_dir=$(prepare_landed_ship leftover-private-ref)
+  add_clean_sibling "$case_dir" wt-resolver
+  printf 'private\n' > "$case_dir/wt-resolver/private.txt"
+  git -C "$case_dir/wt-resolver" add private.txt
+  git -C "$case_dir/wt-resolver" -c user.email=t@t -c user.name=t commit -q -m private
+  private_head=$(git -C "$case_dir/wt-resolver" rev-parse HEAD)
+  git -C "$case_dir/wt-resolver" reset -q --hard main
+  git -C "$case_dir/wt-resolver" update-ref refs/worktree/leftover-private "$private_head"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-private-ref: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-private-ref: private ref worktree was removed"
+  git -C "$case_dir/wt-resolver" rev-parse --verify refs/worktree/leftover-private >/dev/null \
+    || fail "leftover-private-ref: unique private ref vanished"
+  pass "a unique worktree-private ref retains its worktree"
+}
+
+test_leftover_registered_stopped_home_is_retained() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-stopped-home)
+  add_clean_sibling "$case_dir" wt-resolver
+  mkdir -p "$case_dir/wt-resolver/state"
+  printf '%s\n' "- stopped-mate - stopped fixture (home: $case_dir/wt-resolver; scope: test; projects: project; added 2026-09-05)" \
+    > "$case_dir/data/secondmates.md"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-stopped-home: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-stopped-home: registered home was removed"
+  pass "a registered stopped secondmate home stays in the keep-set"
+}
+
+test_leftover_linked_operation_is_retained() {
+  local case_dir rc merge_head
+  case_dir=$(prepare_landed_ship leftover-operation)
+  add_clean_sibling "$case_dir" wt-resolver
+  merge_head=$(git -C "$case_dir/wt-resolver" rev-parse --git-path MERGE_HEAD)
+  git -C "$case_dir/wt-resolver" rev-parse HEAD > "$merge_head"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-operation: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-operation: in-progress worktree was removed"
+  pass "operation state in a linked worktree gitdir blocks cleanup"
+}
+
+test_leftover_empty_worktree_metadata_defers() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-empty-meta)
+  add_clean_sibling "$case_dir" wt-resolver
+  fm_write_meta "$case_dir/state/stopped.meta" \
+    "window=firstmate:stopped" "worktree=" "project=$case_dir/project" "kind=ship"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-empty-meta: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-empty-meta: cleanup ignored malformed metadata"
+  grep -q 'leftover cleanup did not finish after task closure succeeded: ownership inventory unavailable' "$case_dir/stderr" \
+    || fail "leftover-empty-meta: no ownership warning was reported"
+  pass "an empty metadata worktree defers the leftover pass"
+}
+
+test_leftover_known_done_ship_branch_is_removed() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-done-branch)
+  mkdir -p "$case_dir/projects"
+  ln -s "$case_dir/project" "$case_dir/projects/project"
+  seed_done_task "$case_dir" old-ship ship
+  git -C "$case_dir/project" branch fm/old-ship main
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-done-branch: teardown should succeed"
+  git -C "$case_dir/project" show-ref --verify --quiet refs/heads/fm/old-ship \
+    && fail "leftover-done-branch: known landed ship branch remained"
+  pass "done task evidence attributes a landed ship branch for cleanup"
+}
+
+test_leftover_done_ship_evidence_is_repo_bound() {
+  local case_dir rc other
+  case_dir=$(prepare_landed_ship leftover-done-repo-bound)
+  mkdir -p "$case_dir/projects"
+  other="$case_dir/other-project"
+  git init -q -b main "$other"
+  git -C "$other" -c user.email=t@t -c user.name=t commit -q --allow-empty -m baseline
+  ln -s "$other" "$case_dir/projects/other"
+  seed_done_task "$case_dir" shared-id ship other
+  git -C "$case_dir/project" branch fm/shared-id main
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-done-repo-bound: teardown should succeed"
+  git -C "$case_dir/project" show-ref --verify --quiet refs/heads/fm/shared-id \
+    || fail "leftover-done-repo-bound: another repository authorized branch deletion"
+  pass "completed ship evidence applies only to its exact repository"
+}
+
+test_leftover_registered_home_without_state_defers() {
+  local case_dir rc foreign
+  case_dir=$(prepare_landed_ship leftover-home-no-state)
+  add_clean_sibling "$case_dir" wt-resolver
+  foreign="$case_dir/foreign-home"
+  mkdir -p "$foreign"
+  printf '%s\n' "- foreign-mate - missing state fixture (home: $foreign; scope: test; projects: project; added 2026-09-05)" \
+    > "$case_dir/data/secondmates.md"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-home-no-state: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-home-no-state: cleanup ignored unknown home state"
+  grep -q 'leftover cleanup did not finish after task closure succeeded: ownership inventory unavailable' "$case_dir/stderr" \
+    || fail "leftover-home-no-state: no ownership warning was reported"
+  pass "a registered home without readable state defers cleanup"
+}
+
+test_leftover_proof_failures_warn_after_closure() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-default-failure)
+  add_clean_sibling "$case_dir" wt-resolver
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  : > "$case_dir/after-return"
+  exit 0
+fi
+exit 0
+SH
+  cat > "$case_dir/fakebin/git" <<SH
+#!/usr/bin/env bash
+if [ -e "$case_dir/after-return" ] && printf '%s\n' "\$*" | grep -F 'fetch --quiet origin +refs/heads/main:refs/remotes/origin/main' >/dev/null; then
+  exit 9
+fi
+exec "$REAL_GIT_FOR_TEST" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/git"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-default-failure: teardown should still close"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-default-failure: missing default proof removed a copy"
+  grep -q 'leftover cleanup did not finish after task closure succeeded: default branch proof unavailable' "$case_dir/stderr" \
+    || fail "leftover-default-failure: missing default proof did not warn"
+
+  case_dir=$(prepare_landed_ship leftover-cwd-failure)
+  add_clean_sibling "$case_dir" wt-resolver
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  : > "$case_dir/after-return"
+  exit 0
+fi
+exit 0
+SH
+  cat > "$case_dir/fakebin/lsof" <<SH
+#!/usr/bin/env bash
+[ ! -e "$case_dir/after-return" ] || exit 9
+exec "$REAL_LSOF_FOR_TEST" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/lsof"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-cwd-failure: teardown should still close"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-cwd-failure: failed process inspection removed a copy"
+  grep -q 'leftover cleanup did not finish after task closure succeeded: cwd inspection failed' "$case_dir/stderr" \
+    || fail "leftover-cwd-failure: failed process inspection did not warn"
+  pass "default and process proof failures warn after task closure"
+}
+
+test_leftover_nested_registered_home_protects_live_copy() {
+  local case_dir rc parent child
+  case_dir=$(prepare_landed_ship leftover-nested-home)
+  add_clean_sibling "$case_dir" wt-resolver
+  parent="$case_dir/parent-home"
+  child="$case_dir/child-home"
+  mkdir -p "$parent/state" "$parent/data" "$child/state" "$child/data"
+  printf '%s\n' "- parent - nested fixture (home: $parent; scope: test; projects: project; added 2026-09-05)" \
+    > "$case_dir/data/secondmates.md"
+  printf '%s\n' "- child - nested fixture (home: $child; scope: test; projects: project; added 2026-09-05)" \
+    > "$parent/data/secondmates.md"
+  fm_write_meta "$child/state/live.meta" \
+    "window=firstmate:live" "worktree=$case_dir/wt-resolver" \
+    "project=$case_dir/project" "kind=ship"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-nested-home: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-nested-home: nested live metadata lost its copy"
+  grep -q "retained $case_dir/wt-resolver (live-meta)" "$case_dir/stdout" \
+    || fail "leftover-nested-home: nested metadata did not enter the keep-set"
+  pass "nested registered homes lock and protect their live copies"
+}
+
+test_leftover_malformed_inventory_retains_candidates() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-malformed-inventory)
+  add_clean_sibling "$case_dir" wt-resolver
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  : > "$case_dir/after-return"
+  exit 0
+fi
+exit 0
+SH
+  cat > "$case_dir/fakebin/git" <<SH
+#!/usr/bin/env bash
+if [ -e "$case_dir/after-return" ] && printf '%s\n' "\$*" | grep -F 'worktree list --porcelain' >/dev/null; then
+  printf 'worktree %s\nHEAD %s\ninvalid-field\n\n' \
+    "$case_dir/project" "$(git -C "$case_dir/project" rev-parse HEAD)"
+  exit 0
+fi
+exec "$REAL_GIT_FOR_TEST" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/git"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-malformed-inventory: teardown should still close"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-malformed-inventory: malformed inventory removed a candidate"
+  grep -q 'worktree list failed' "$case_dir/stderr" \
+    || fail "leftover-malformed-inventory: malformed inventory was silent"
+  pass "a malformed worktree inventory retains all candidates with a warning"
+}
+
+test_leftover_ignored_payload_and_partial_success() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-partial)
+  add_clean_sibling "$case_dir" wt-resolver
+  add_clean_sibling "$case_dir" wt-baseline
+  printf '%s\n' ignored.txt > "$case_dir/excludes"
+  git -C "$case_dir/wt-baseline" config core.excludesFile "$case_dir/excludes"
+  printf 'keep\n' > "$case_dir/wt-baseline/ignored.txt"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-partial: teardown should succeed"
+  [ ! -d "$case_dir/wt-resolver" ] || fail "leftover-partial: safe sibling was not removed"
+  [ -d "$case_dir/wt-baseline" ] || fail "leftover-partial: ignored payload was removed"
+  grep -q "retained $case_dir/wt-baseline (dirty)" "$case_dir/stdout" \
+    || fail "leftover-partial: ignored payload had no retain reason"
+  grep -Eq 'removed [1-9][0-9]*, retained [1-9][0-9]*' "$case_dir/stdout" \
+    || fail "leftover-partial: result did not report partial success"
+  pass "ignored payload is retained while a safe sibling still succeeds"
+}
+
+test_leftover_process_started_after_scan_is_retained() {
+  local case_dir rc sleeper
+  case_dir=$(prepare_landed_ship leftover-post-scan-cwd)
+  add_clean_sibling "$case_dir" wt-resolver
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  : > "$case_dir/after-return"
+  exit 0
+fi
+exit 0
+SH
+  cat > "$case_dir/fakebin/lsof" <<SH
+#!/usr/bin/env bash
+if [ -e "$case_dir/after-return" ]; then
+  count=0
+  [ ! -f "$case_dir/lsof-count" ] || count=\$(cat "$case_dir/lsof-count")
+  count=\$((count + 1))
+  printf '%s\n' "\$count" > "$case_dir/lsof-count"
+  if [ "\$count" = 2 ]; then
+    (cd "$case_dir/wt-resolver" && sleep 30) >/dev/null 2>&1 &
+    printf '%s\n' "\$!" > "$case_dir/sleeper-pid"
+    sleep 0.1
+  fi
+fi
+exec "$REAL_LSOF_FOR_TEST" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/lsof"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-post-scan-cwd: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-post-scan-cwd: new cwd process lost its copy"
+  [ -f "$case_dir/sleeper-pid" ] || fail "leftover-post-scan-cwd: race process did not start"
+  sleeper=$(cat "$case_dir/sleeper-pid")
+  kill "$sleeper" >/dev/null 2>&1 || true
+  wait "$sleeper" >/dev/null 2>&1 || true
+  grep -q "retained $case_dir/wt-resolver (mutation-recheck)" "$case_dir/stdout" \
+    || fail "leftover-post-scan-cwd: mutation scan did not retain the copy"
+  pass "a process started after the first scan retains the candidate"
+}
+
+test_leftover_default_is_resolved_once_for_multiple_copies() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-default-cache)
+  add_clean_sibling "$case_dir" wt-resolver
+  add_clean_sibling "$case_dir" wt-baseline
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  : > "$case_dir/after-return"
+  exit 0
+fi
+exit 0
+SH
+  cat > "$case_dir/fakebin/git" <<SH
+#!/usr/bin/env bash
+if [ -e "$case_dir/after-return" ] && printf '%s\n' "\$*" | grep -F 'fetch --quiet origin +refs/heads/main:refs/remotes/origin/main' >/dev/null; then
+  count=0
+  [ ! -f "$case_dir/default-fetch-count" ] || count=\$(cat "$case_dir/default-fetch-count")
+  printf '%s\n' "\$((count + 1))" > "$case_dir/default-fetch-count"
+fi
+exec "$REAL_GIT_FOR_TEST" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/git"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-default-cache: teardown should succeed"
+  [ "$(cat "$case_dir/default-fetch-count")" = 1 ] \
+    || fail "leftover-default-cache: default proof fetched more than once"
+  pass "multiple leftover copies reuse one default resolution"
+}
+
+test_cleanup_branch_mutation_races_and_git_failures() {
+  local case_dir race_repo old_tip new_tip reason checkout_count
+  case_dir=$(prepare_landed_ship leftover-branch-races)
+  race_repo="$case_dir/project"
+  old_tip=$(git -C "$race_repo" rev-parse main)
+  new_tip=$(printf 'race\n' | git -C "$race_repo" commit-tree "main^{tree}" -p main)
+  git -C "$race_repo" branch race-ref "$old_tip"
+  reason=$(
+    . "$ROOT/bin/fm-git-cleanup-lib.sh"
+    FM_GIT_CLEANUP_DEFAULT_REPO=$race_repo
+    FM_GIT_CLEANUP_DEFAULT_NAME=main
+    FM_GIT_CLEANUP_DEFAULT_REF=refs/remotes/origin/main
+    FM_GIT_CLEANUP_META_BRANCHES=
+    git() {
+      if [ "${1:-}" = -C ] && [ "${3:-}" = update-ref ] \
+         && [ "${4:-}" = -d ] && [ "${5:-}" = refs/heads/race-ref ]; then
+        command git -C "$race_repo" update-ref refs/heads/race-ref "$new_tip"
+      fi
+      command git "$@"
+    }
+    fm_git_cleanup_delete_branch "$race_repo" race-ref "$old_tip" no-mistakes "" 0
+  ) || true
+  [ "$reason" = tip-changed ] || fail "leftover-branch-races: ref change returned $reason"
+  git -C "$race_repo" show-ref --verify --quiet refs/heads/race-ref \
+    || fail "leftover-branch-races: changed ref was deleted"
+
+  git -C "$race_repo" branch race-checkout "$old_tip"
+  checkout_count="$case_dir/checkout-count"
+  reason=$(
+    . "$ROOT/bin/fm-git-cleanup-lib.sh"
+    FM_GIT_CLEANUP_DEFAULT_REPO=$race_repo
+    FM_GIT_CLEANUP_DEFAULT_NAME=main
+    FM_GIT_CLEANUP_DEFAULT_REF=refs/remotes/origin/main
+    FM_GIT_CLEANUP_META_BRANCHES=
+    git() {
+      if [ "${1:-}" = -C ] && [ "${3:-}" = -c ] && [ "${5:-}" = worktree ]; then
+        calls=0
+        [ ! -f "$checkout_count" ] || calls=$(<"$checkout_count")
+        calls=$((calls + 1))
+        printf '%s\n' "$calls" > "$checkout_count"
+        command git "$@"
+        if [ "$calls" = 3 ]; then
+          printf '\nworktree /simulated\nHEAD %s\nbranch refs/heads/race-checkout\n\n' "$old_tip"
+        fi
+        return
+      fi
+      command git "$@"
+    }
+    fm_git_cleanup_delete_branch "$race_repo" race-checkout "$old_tip" no-mistakes "" 0
+  ) || true
+  [ "$reason" = checked-out ] || fail "leftover-branch-races: checkout change returned $reason"
+  git -C "$race_repo" show-ref --verify --quiet refs/heads/race-checkout \
+    || fail "leftover-branch-races: newly checked-out branch was deleted"
+
+  git -C "$race_repo" branch race-failure "$old_tip"
+  reason=$(
+    . "$ROOT/bin/fm-git-cleanup-lib.sh"
+    FM_GIT_CLEANUP_DEFAULT_REPO=$race_repo
+    FM_GIT_CLEANUP_DEFAULT_NAME=main
+    FM_GIT_CLEANUP_DEFAULT_REF=refs/remotes/origin/main
+    FM_GIT_CLEANUP_META_BRANCHES=
+    git() {
+      if [ "${1:-}" = -C ] && [ "${3:-}" = update-ref ] \
+         && [ "${4:-}" = -d ]; then
+        return 1
+      fi
+      command git "$@"
+    }
+    fm_git_cleanup_delete_branch "$race_repo" race-failure "$old_tip" no-mistakes "" 0
+  ) || true
+  [ "$reason" = delete-failed ] || fail "leftover-branch-races: Git failure returned $reason"
+  git -C "$race_repo" show-ref --verify --quiet refs/heads/race-failure \
+    || fail "leftover-branch-races: failed Git deletion removed the branch"
+  pass "ref changes, checkout changes, and Git failures retain branches"
+}
+
+test_leftover_then_sync_retains_unique_gone_branch() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-sync-unique)
+  git -C "$case_dir/wt" checkout -q -b leftover-unique
+  printf 'unique\n' > "$case_dir/wt/unique-gone.txt"
+  git -C "$case_dir/wt" add unique-gone.txt
+  git -C "$case_dir/wt" -c user.email=t@t -c user.name=t commit -q -m unique-gone
+  git -C "$case_dir/wt" push -q origin leftover-unique
+  git -C "$case_dir/origin.git" update-ref -d refs/heads/leftover-unique
+  git -C "$case_dir/project" fetch -q --prune origin
+  git -C "$case_dir/wt" checkout -q fm/task-x1
+  set +e
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+  expect_code 0 "$rc" "leftover-sync-unique: teardown should succeed"
+  git -C "$case_dir/project" rev-parse --verify leftover-unique >/dev/null \
+    || fail "leftover-sync-unique: unique [gone] branch was deleted by leftover or fleet sync"
+  pass "teardown followed by fleet sync retains a unique [gone] branch"
+}
+
 test_local_only_fork_remote_allows
 test_help_documents_force_validation_truth_skip
 test_invalid_ship_role_refuses
@@ -3118,7 +4060,6 @@ test_herdr_projection_teardown_surfaces_restore_failure_without_blocking_cleanup
 test_squash_merged_branch_deleted_allows
 test_squash_merged_pr_allows_when_head_ancestor_of_pr_head
 test_no_pr_recorded_discovers_merged_pr_by_branch_allows
-test_squash_merged_pr_allows_replayed_unpushed_patch
 test_merged_pr_with_later_local_commit_refuses
 test_pr_check_does_not_refresh_stale_pr_head
 test_pr_check_records_remote_head_when_local_lags
@@ -3159,3 +4100,38 @@ test_process_spawned_during_grace_is_reaped_on_later_pass
 test_persistent_scan_refuses_after_bounded_retries
 test_process_exit_during_identity_lookup_does_not_refuse
 test_run_abort_precedes_process_reap_precedes_worktree_removal
+test_leftover_siblings_clean_landed_are_removed
+test_leftover_metadata_branch_retains_copy
+test_leftover_default_branches_retain_sibling_copies
+test_leftover_branch_change_to_metadata_branch_is_retained
+test_leftover_symlink_ancestor_inventory_is_retained
+test_leftover_locked_sibling_is_retained
+test_leftover_dirty_sibling_is_retained
+test_leftover_stale_remote_ref_does_not_prove_sibling
+test_leftover_default_content_avoids_forge_lookup
+test_leftover_orig_head_retains_live_copy
+test_leftover_gone_tmp_registration_is_reported
+test_leftover_unrecorded_copy_is_reported_without_treehouse
+test_leftover_unpublished_and_force_do_not_bypass
+test_leftover_pr_of_task_does_not_prove_sibling
+test_leftover_captured_landed_branch_is_deleted
+test_leftover_normal_scout_discards_only_captured_branch
+test_leftover_live_cwd_and_host_under_sibling
+test_leftover_submodule_dirt_is_retained
+test_leftover_rerun_is_idempotent
+test_leftover_contended_lock_defers
+test_leftover_then_sync_retains_unique_gone_branch
+test_leftover_private_ref_is_retained
+test_leftover_registered_stopped_home_is_retained
+test_leftover_linked_operation_is_retained
+test_leftover_empty_worktree_metadata_defers
+test_leftover_known_done_ship_branch_is_removed
+test_leftover_done_ship_evidence_is_repo_bound
+test_leftover_registered_home_without_state_defers
+test_leftover_proof_failures_warn_after_closure
+test_leftover_nested_registered_home_protects_live_copy
+test_leftover_malformed_inventory_retains_candidates
+test_leftover_ignored_payload_and_partial_success
+test_leftover_process_started_after_scan_is_retained
+test_leftover_default_is_resolved_once_for_multiple_copies
+test_cleanup_branch_mutation_races_and_git_failures

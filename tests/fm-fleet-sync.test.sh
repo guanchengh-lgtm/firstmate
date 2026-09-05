@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Behavior tests for fm-fleet-sync.sh drift handling.
+# Behavior tests for fm-fleet-sync.sh drift handling and branch cleanup.
 #
 # fm-fleet-sync fast-forwards a clone that is cleanly on its default branch. This
-# suite pins the two behavioral additions on top of that:
+# suite pins two drift behaviors on top of that:
 #   - the one safe drift self-heals: a clean, detached HEAD that holds no unique
 #     commits (it is an ancestor of origin/<default>) and whose <default> is free
 #     to check out is re-attached and then fast-forwarded ("recovered:").
@@ -27,6 +27,7 @@
 # worktree dir as its cwd also blocks removal (the clone-dir liveness check); a
 # transient lock that self-clears is retried without a force-remove; and any
 # non-packed-refs.lock fetch failure keeps today's behavior with no retry.
+# The branch-cleanup cases require landed or preserved proof and retain protected branches.
 set -u
 
 # shellcheck source=tests/lib.sh
@@ -35,16 +36,15 @@ set -u
 fm_git_identity fmtest fmtest@example.invalid
 
 TMP_ROOT=$(fm_test_tmproot fm-fleet-sync-tests)
-HOME_N=0
 
 # --- fixtures ---------------------------------------------------------------
 
 # new_home: fresh isolated FM_HOME with an empty projects/ dir. Each test gets its
 # own so the whole-fleet form never sees another test's clones.
 new_home() {
-  HOME_N=$((HOME_N + 1))
-  local h="$TMP_ROOT/home-$HOME_N"
-  mkdir -p "$h/projects"
+  local h
+  h=$(mktemp -d "$TMP_ROOT/home.XXXXXX") || return 1
+  mkdir -p "$h/projects" "$h/state"
   printf '%s\n' "$h"
 }
 
@@ -673,6 +673,211 @@ test_symlinked_clone_still_syncs() {
   pass "the clone-root guard accepts a symlinked clone directory"
 }
 
+make_gone_branch() {
+  local clone=$1 work=$2 name=$3 unique=$4
+  git -C "$work" checkout -q -b "$name"
+  if [ "$unique" = 1 ]; then
+    commit_file "$work" "$name.txt" unique "$name unique"
+  fi
+  git -C "$work" push -q -u origin "$name"
+  git -C "$clone" fetch -q origin
+  git -C "$clone" branch -q "$name" "origin/$name"
+  git -C "$work" checkout -q main
+  git -C "$work" push -q origin --delete "$name"
+  git -C "$clone" fetch -q --prune origin
+}
+
+test_gone_unique_branch_survives_fleet_sync() {
+  local home clone work
+  home=$(new_home)
+  clone=$(build_pair "$home" goneuniq)
+  work="$home/work-goneuniq"
+  make_gone_branch "$clone" "$work" leftover-unique 1
+  git -C "$clone" rev-parse --verify leftover-unique >/dev/null \
+    || fail "gone-unique: setup lost the local branch"
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-fleet-sync.sh" "$clone" \
+    > "$home/out-goneuniq" 2> "$home/err-goneuniq" || true
+  git -C "$clone" rev-parse --verify leftover-unique >/dev/null \
+    || fail "gone-unique: unique [gone] branch was deleted"
+  grep -q 'retained leftover-unique' "$home/err-goneuniq" \
+    || fail "gone-unique: no retain reason"
+  pass "a [gone] branch with unique unpublished work survives fleet sync"
+}
+
+test_gone_landed_squash_branch_is_pruned() {
+  local home clone work
+  home=$(new_home)
+  clone=$(build_pair "$home" goneland)
+  work="$home/work-goneland"
+  git -C "$work" checkout -q -b leftover-landed
+  commit_file "$work" land.txt yes land
+  git -C "$work" push -q -u origin leftover-landed
+  git -C "$work" checkout -q main
+  git -C "$work" merge -q --squash leftover-landed
+  git -C "$work" commit -qm squash-land
+  git -C "$work" push -q origin main
+  git -C "$clone" fetch -q origin
+  git -C "$clone" branch -q leftover-landed origin/leftover-landed
+  git -C "$work" push -q origin --delete leftover-landed
+  git -C "$clone" fetch -q --prune origin
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-fleet-sync.sh" "$clone" \
+    > "$home/out-goneland" 2> "$home/err-goneland" || true
+  git -C "$clone" rev-parse --verify leftover-landed >/dev/null \
+    && fail "gone-landed: landed squash [gone] branch remained"
+  grep -q 'pruned leftover-landed' "$home/out-goneland" \
+    || fail "gone-landed: no prune note"
+  pass "a [gone] branch whose content is in the default branch is pruned"
+}
+
+test_gone_branch_with_live_metadata_is_retained() {
+  local home clone work
+  home=$(new_home)
+  clone=$(build_pair "$home" gonemeta)
+  work="$home/work-gonemeta"
+  make_gone_branch "$clone" "$work" fm/paused 0
+  mkdir -p "$home/state"
+  fm_write_meta "$home/state/paused.meta" \
+    "window=firstmate:paused" \
+    "worktree=$clone" \
+    "project=$clone" \
+    "kind=ship"
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-fleet-sync.sh" "$clone" \
+    > "$home/out-gonemeta" 2> "$home/err-gonemeta" || true
+  git -C "$clone" rev-parse --verify fm/paused >/dev/null \
+    || fail "gone-meta: a live task branch was deleted"
+  grep -q 'retained fm/paused (live-meta)' "$home/err-gonemeta" \
+    || fail "gone-meta: no live metadata retain reason"
+  pass "live task metadata protects a [gone] branch"
+}
+
+test_malformed_kind_metadata_defers_gone_branch_cleanup() {
+  local malformed home clone work branch meta
+  for malformed in missing duplicate; do
+    home=$(new_home)
+    clone=$(build_pair "$home" "gonekind-$malformed")
+    work="$home/work-gonekind-$malformed"
+    branch="fm/$malformed-kind"
+    meta="$home/state/$malformed-kind.meta"
+    make_gone_branch "$clone" "$work" "$branch" 0
+    if [ "$malformed" = missing ]; then
+      fm_write_meta "$meta" \
+        "window=firstmate:$malformed-kind" \
+        "worktree=$clone" \
+        "project=$clone"
+    else
+      fm_write_meta "$meta" \
+        "window=firstmate:$malformed-kind" \
+        "worktree=$clone" \
+        "project=$clone" \
+        "kind=ship" \
+        "kind=scout"
+    fi
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-fleet-sync.sh" "$clone" \
+      > "$home/out-gonekind" 2> "$home/err-gonekind" || true
+    git -C "$clone" rev-parse --verify "$branch" >/dev/null \
+      || fail "gone-kind-$malformed: malformed metadata allowed branch deletion"
+    grep -q 'skipped branch prune: ownership inventory or publication lock unavailable' \
+      "$home/err-gonekind" \
+      || fail "gone-kind-$malformed: malformed metadata did not defer cleanup"
+  done
+  pass "missing and duplicate task kinds defer [gone] branch cleanup"
+}
+
+test_valid_custom_default_retains_gone_branch() {
+  local home clone work
+  home=$(new_home)
+  clone=$(build_pair "$home" gonecustom)
+  work="$home/work-gonecustom"
+  git -C "$work" checkout -q -b custom
+  git -C "$work" push -q -u origin custom
+  git -C "$clone" fetch -q origin
+  git -C "$clone" branch -q custom origin/custom
+  git --git-dir="$home/remotes/gonecustom.git" symbolic-ref HEAD refs/heads/custom
+  git -C "$clone" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/custom
+  git -C "$clone" config branch.custom.remote origin
+  git -C "$clone" config branch.custom.merge refs/heads/deleted-custom
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-fleet-sync.sh" "$clone" \
+    > "$home/out-gonecustom" 2> "$home/err-gonecustom" || true
+  git -C "$clone" rev-parse --verify custom >/dev/null \
+    || fail "gone-custom: valid custom default branch was deleted"
+  grep -q 'retained custom (default-branch)' "$home/err-gonecustom" \
+    || fail "gone-custom: no default retain reason"
+  pass "a valid non-main default remains protected while its ref exists"
+}
+
+test_unknown_custom_default_retains_gone_branch() {
+  local home clone work
+  home=$(new_home)
+  clone=$(build_pair "$home" gonecustomunknown)
+  work="$home/work-gonecustomunknown"
+  make_gone_branch "$clone" "$work" custom 0
+  git --git-dir="$home/remotes/gonecustomunknown.git" symbolic-ref HEAD refs/heads/custom
+  git -C "$clone" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/custom
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-fleet-sync.sh" "$clone" \
+    > "$home/out-gonecustomunknown" 2> "$home/err-gonecustomunknown" || true
+  git -C "$clone" rev-parse --verify custom >/dev/null \
+    || fail "gone-custom-unknown: failed default lookup deleted the branch"
+  grep -q 'cannot determine default branch' "$home/out-gonecustomunknown" \
+    || fail "gone-custom-unknown: no unknown default result"
+  pass "a failed default lookup retains a custom branch"
+}
+
+test_worktree_list_failure_retains_gone_branches() {
+  local home clone work fakebin
+  home=$(new_home)
+  clone=$(build_pair "$home" goneblind)
+  work="$home/work-goneblind"
+  make_gone_branch "$clone" "$work" leftover-blind 0
+  real_git=$(command -v git)
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/git" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do
+  if [ "\$a" = worktree ]; then
+    echo "fatal: worktree list failed" >&2
+    exit 128
+  fi
+done
+exec "$real_git" "\$@"
+SH
+  chmod +x "$fakebin/git"
+  PATH="$fakebin:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-fleet-sync.sh" "$clone" \
+    > "$home/out-goneblind" 2> "$home/err-goneblind" || true
+  git -C "$clone" rev-parse --verify leftover-blind >/dev/null \
+    || fail "gone-blind: worktree-list failure deleted a branch"
+  pass "a worktree-list failure cannot become an empty protection set"
+}
+
+test_branch_inventory_failure_retains_gone_branches() {
+  local home clone work fakebin
+  home=$(new_home)
+  clone=$(build_pair "$home" gonebranchinventory)
+  work="$home/work-gonebranchinventory"
+  make_gone_branch "$clone" "$work" leftover-inventory 0
+  real_git=$(command -v git)
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/git" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do
+  if [ "\$a" = for-each-ref ]; then
+    echo "fatal: branch inventory failed" >&2
+    exit 128
+  fi
+done
+exec "$real_git" "\$@"
+SH
+  chmod +x "$fakebin/git"
+  PATH="$fakebin:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-fleet-sync.sh" "$clone" \
+    > "$home/out-gonebranchinventory" 2> "$home/err-gonebranchinventory" || true
+  git -C "$clone" rev-parse --verify leftover-inventory >/dev/null \
+    || fail "gone-branch-inventory: inventory failure deleted a branch"
+  grep -q 'skipped branch prune: branch inventory failed' "$home/err-gonebranchinventory" \
+    || fail "gone-branch-inventory: inventory failure was silent"
+  pass "a branch inventory failure retains gone branches with a warning"
+}
+
 test_non_signature_fetch_failure_is_not_retried() {
   local home fakebin clone out err
   home=$(new_home)
@@ -719,3 +924,11 @@ test_non_signature_fetch_failure_is_not_retried
 test_non_clone_dir_never_syncs_the_enclosing_repo
 test_non_clone_dir_named_directly_never_syncs_the_enclosing_repo
 test_symlinked_clone_still_syncs
+test_gone_unique_branch_survives_fleet_sync
+test_gone_landed_squash_branch_is_pruned
+test_gone_branch_with_live_metadata_is_retained
+test_malformed_kind_metadata_defers_gone_branch_cleanup
+test_valid_custom_default_retains_gone_branch
+test_unknown_custom_default_retains_gone_branch
+test_worktree_list_failure_retains_gone_branches
+test_branch_inventory_failure_retains_gone_branches
