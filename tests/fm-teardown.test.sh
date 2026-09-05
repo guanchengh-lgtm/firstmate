@@ -34,7 +34,6 @@
 #   (k) no-mistakes + merged PR but HEAD moved afterward        -> REFUSE (stale PR)
 #   (l) no-mistakes + stale origin/main but fetched content     -> ALLOW  (fresh fetch)
 #   (m) no-mistakes + local HEAD ancestor of merged PR head     -> ALLOW  (lagging local)
-#   (n) no-mistakes + replayed unpushed patch in merged PR head -> ALLOW  (replayed local)
 #   (o) fm-pr-check rerun after HEAD moved                      -> no stale pr_head
 #   (p) fm-pr-check when local HEAD lags                        -> record remote PR head
 #   (q) no-mistakes + NO pr= recorded, PR discovered by branch  -> ALLOW  (yolo/no-CI merge)
@@ -314,19 +313,6 @@ commit_tree_from_wt_head() {
   local case_dir=$1 parent=$2 msg=$3 tree
   tree=$(git -C "$case_dir/wt" rev-parse "$parent^{tree}") || return 1
   printf '%s\n' "$msg" | git -C "$case_dir/wt" commit-tree "$tree" -p "$parent"
-}
-
-land_equivalent_patch_on_origin_branch() {
-  local case_dir=$1 branch=$2 file=$3 content=$4 msg=$5 tmp
-  tmp="$case_dir/_equiv"
-  git clone -q "$case_dir/origin.git" "$tmp"
-  printf '%s\n' "$content" > "$tmp/$file"
-  git -C "$tmp" add -- "$file"
-  git -C "$tmp" -c user.email=t@t -c user.name=t commit -q -m "$msg"
-  git -C "$tmp" push -q origin "HEAD:refs/heads/$branch"
-  git -C "$case_dir/project" fetch -q origin "$branch"
-  rm -rf "$tmp"
-  git -C "$case_dir/project" rev-parse "refs/remotes/origin/$branch"
 }
 
 # Override gh-axi so every call fails, simulating an API/network error.
@@ -887,29 +873,6 @@ test_no_pr_recorded_discovers_merged_pr_by_branch_allows() {
   assert_grep 'https://github.com/example/repo/pull/7' "$case_dir/data/backlog.md" \
     "no-pr-branch-discovery: resolved PR URL was not recorded on completion"
   pass "teardown discovers a merged PR by branch name and tears down when no pr= was ever recorded"
-}
-
-test_squash_merged_pr_allows_replayed_unpushed_patch() {
-  local case_dir rc parent_head pr_head
-  case_dir=$(make_case squash-replayed-patch)
-  write_meta "$case_dir" no-mistakes ship
-  wt_commit_file "$case_dir" local-parent.txt parent "local parent"
-  parent_head=$(git -C "$case_dir/wt" rev-parse HEAD)
-  git -C "$case_dir/wt" push -q origin "$parent_head:refs/heads/fm/task-x1"
-  git -C "$case_dir/project" fetch -q origin fm/task-x1
-  wt_commit_file "$case_dir" feature.txt hello "add feature"
-  append_pr_meta_url "$case_dir"
-  pr_head=$(land_equivalent_patch_on_origin_branch "$case_dir" pr-head feature.txt hello "add feature")
-  add_gh_pr_merged_for_head "$case_dir" "$pr_head"
-
-  set +e
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
-  rc=$?
-  set -e
-
-  expect_code 0 "$rc" "squash-replayed-patch: teardown should succeed when unpushed local patch is in the merged PR head"
-  ! grep -q REFUSED "$case_dir/stderr" || fail "squash-replayed-patch: teardown printed a REFUSED line"
-  pass "squash-merged PR accepts replayed unpushed local patches contained in the PR head"
 }
 
 test_merged_pr_with_later_local_commit_refuses() {
@@ -3162,6 +3125,54 @@ test_leftover_metadata_branch_retains_copy() {
   pass "live metadata protects its branch checkout when paths differ"
 }
 
+test_leftover_default_branches_retain_sibling_copies() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-default-copies)
+  git -C "$case_dir/origin.git" update-ref refs/heads/trunk refs/heads/main
+  git -C "$case_dir/origin.git" symbolic-ref HEAD refs/heads/trunk
+  git -C "$case_dir/project" fetch -q origin trunk
+  git -C "$case_dir/project" branch trunk refs/remotes/origin/trunk
+  git -C "$case_dir/project" remote set-head origin trunk
+  git -C "$case_dir/project" checkout -q -b primary main
+  git -C "$case_dir/project" worktree add -q "$case_dir/wt-resolver" main
+  add_clean_sibling "$case_dir" wt-baseline
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  : > "$case_dir/after-return"
+fi
+exit 0
+SH
+  cat > "$case_dir/fakebin/git" <<SH
+#!/usr/bin/env bash
+if [ -e "$case_dir/after-return" ] && [ ! -e "$case_dir/switched" ] \
+   && [ "\${1:-}" = -C ] && [ "\${2:-}" = "$case_dir/wt-baseline" ] \
+   && [ "\${3:-}" = status ]; then
+  "$REAL_GIT_FOR_TEST" "\$@"
+  rc=\$?
+  "$REAL_GIT_FOR_TEST" -C "$case_dir/wt-baseline" checkout -q trunk
+  : > "$case_dir/switched"
+  exit "\$rc"
+fi
+exec "$REAL_GIT_FOR_TEST" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/git"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-default-copies: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] \
+    || fail "leftover-default-copies: the main copy was removed"
+  [ -d "$case_dir/wt-baseline" ] \
+    || fail "leftover-default-copies: the changed default copy was removed"
+  [ "$(git -C "$case_dir/wt-baseline" branch --show-current)" = trunk ] \
+    || fail "leftover-default-copies: the default branch switch did not occur"
+  grep -q "retained $case_dir/wt-resolver (default-branch)" "$case_dir/stdout" \
+    || fail "leftover-default-copies: main did not get a default retention reason"
+  grep -q "retained $case_dir/wt-baseline (default-branch)" "$case_dir/stdout" \
+    || fail "leftover-default-copies: the resolved default did not get a retention reason"
+  pass "literal main and a changed resolved default retain sibling copies"
+}
+
 test_leftover_branch_change_to_metadata_branch_is_retained() {
   local case_dir rc
   case_dir=$(prepare_landed_ship leftover-meta-branch-race)
@@ -3923,13 +3934,12 @@ SH
 }
 
 test_cleanup_branch_mutation_races_and_git_failures() {
-  local case_dir race_repo old_tip new_tip reason ref_count checkout_count
+  local case_dir race_repo old_tip new_tip reason checkout_count
   case_dir=$(prepare_landed_ship leftover-branch-races)
   race_repo="$case_dir/project"
   old_tip=$(git -C "$race_repo" rev-parse main)
   new_tip=$(printf 'race\n' | git -C "$race_repo" commit-tree "main^{tree}" -p main)
   git -C "$race_repo" branch race-ref "$old_tip"
-  ref_count="$case_dir/ref-count"
   reason=$(
     . "$ROOT/bin/fm-git-cleanup-lib.sh"
     FM_GIT_CLEANUP_DEFAULT_REPO=$race_repo
@@ -3937,15 +3947,9 @@ test_cleanup_branch_mutation_races_and_git_failures() {
     FM_GIT_CLEANUP_DEFAULT_REF=refs/remotes/origin/main
     FM_GIT_CLEANUP_META_BRANCHES=
     git() {
-      if [ "${1:-}" = -C ] && [ "${3:-}" = rev-parse ] \
-         && [ "${5:-}" = refs/heads/race-ref ]; then
-        calls=0
-        [ ! -f "$ref_count" ] || calls=$(<"$ref_count")
-        calls=$((calls + 1))
-        printf '%s\n' "$calls" > "$ref_count"
-        if [ "$calls" = 2 ]; then
-          command git -C "$race_repo" update-ref refs/heads/race-ref "$new_tip"
-        fi
+      if [ "${1:-}" = -C ] && [ "${3:-}" = update-ref ] \
+         && [ "${4:-}" = -d ] && [ "${5:-}" = refs/heads/race-ref ]; then
+        command git -C "$race_repo" update-ref refs/heads/race-ref "$new_tip"
       fi
       command git "$@"
     }
@@ -3991,8 +3995,8 @@ test_cleanup_branch_mutation_races_and_git_failures() {
     FM_GIT_CLEANUP_DEFAULT_REF=refs/remotes/origin/main
     FM_GIT_CLEANUP_META_BRANCHES=
     git() {
-      if [ "${1:-}" = -C ] && [ "${3:-}" = branch ] \
-         && { [ "${4:-}" = -d ] || [ "${4:-}" = -D ]; }; then
+      if [ "${1:-}" = -C ] && [ "${3:-}" = update-ref ] \
+         && [ "${4:-}" = -d ]; then
         return 1
       fi
       command git "$@"
@@ -4054,7 +4058,6 @@ test_herdr_projection_teardown_surfaces_restore_failure_without_blocking_cleanup
 test_squash_merged_branch_deleted_allows
 test_squash_merged_pr_allows_when_head_ancestor_of_pr_head
 test_no_pr_recorded_discovers_merged_pr_by_branch_allows
-test_squash_merged_pr_allows_replayed_unpushed_patch
 test_merged_pr_with_later_local_commit_refuses
 test_pr_check_does_not_refresh_stale_pr_head
 test_pr_check_records_remote_head_when_local_lags
@@ -4097,6 +4100,7 @@ test_process_exit_during_identity_lookup_does_not_refuse
 test_run_abort_precedes_process_reap_precedes_worktree_removal
 test_leftover_siblings_clean_landed_are_removed
 test_leftover_metadata_branch_retains_copy
+test_leftover_default_branches_retain_sibling_copies
 test_leftover_branch_change_to_metadata_branch_is_retained
 test_leftover_symlink_ancestor_inventory_is_retained
 test_leftover_locked_sibling_is_retained

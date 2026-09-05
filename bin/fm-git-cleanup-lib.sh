@@ -289,42 +289,9 @@ fm_git_cleanup_ensure_commit_object() {
   git -C "$repo" cat-file -e "$commit^{commit}" 2>/dev/null
 }
 
-fm_git_cleanup_patch_id_for_commit() {
-  local repo=$1 commit=$2
-  git -C "$repo" show --pretty=medium --no-ext-diff "$commit" 2>/dev/null \
-    | git patch-id --stable 2>/dev/null \
-    | awk 'NR == 1 { print $1 }'
-}
-
-fm_git_cleanup_unpushed_patches_in_pr_head() {
-  local repo=$1 pr_head=$2 current=$3 base pr_patch_ids commit patch_id unpushed
-  [ -n "$current" ] || return 1
-  fm_git_cleanup_prepare_remote_proof "$repo" || return 1
-  base=$(git -C "$repo" merge-base "$current" "$pr_head" 2>/dev/null) || return 1
-  pr_patch_ids=$(
-    git -C "$repo" log --format=%H "$base..$pr_head" -- 2>/dev/null \
-      | while IFS= read -r commit; do
-          fm_git_cleanup_patch_id_for_commit "$repo" "$commit"
-        done \
-      | sed '/^$/d' \
-      | sort -u
-  ) || return 1
-  [ -n "$pr_patch_ids" ] || return 1
-  unpushed=$(fm_git_cleanup_remote_unpreserved_commits "$repo" "$current") || return 1
-  [ -n "$unpushed" ] || return 1
-  while IFS= read -r commit; do
-    [ -n "$commit" ] || continue
-    patch_id=$(fm_git_cleanup_patch_id_for_commit "$repo" "$commit") || return 1
-    [ -n "$patch_id" ] || return 1
-    printf '%s\n' "$pr_patch_ids" | grep -qxF "$patch_id" || return 1
-  done <<EOF
-$unpushed
-EOF
-}
-
 # Prints the resolved PR URL on success. Never assigns a caller global.
 fm_git_cleanup_pr_is_merged() {
-  local repo=$1 branch=$2 pr_url=$3 current=${4:-} target view state remainder head resolved_url landed=0
+  local repo=$1 branch=$2 pr_url=$3 current=${4:-} target view state remainder head resolved_url
   [ -n "$repo" ] || return 1
   if [ -z "$current" ]; then
     current=$(git -C "$repo" rev-parse --verify HEAD 2>/dev/null) || return 1
@@ -350,12 +317,7 @@ fm_git_cleanup_pr_is_merged() {
   esac
   [ -n "$head" ] || return 1
   fm_git_cleanup_ensure_commit_object "$repo" "$target" "$head" || return 1
-  if git -C "$repo" merge-base --is-ancestor "$current" "$head" 2>/dev/null; then
-    landed=1
-  elif fm_git_cleanup_unpushed_patches_in_pr_head "$repo" "$head" "$current"; then
-    landed=1
-  fi
-  [ "$landed" = 1 ] || return 1
+  git -C "$repo" merge-base --is-ancestor "$current" "$head" 2>/dev/null || return 1
   printf '%s\n' "$resolved_url"
 }
 
@@ -513,11 +475,13 @@ fm_git_cleanup_delete_branch() {
     printf '%s\n' "checked-out"
     return 1
   fi
-  if git -C "$repo" branch -d -- "$branch" >/dev/null 2>&1; then
-    return 0
-  fi
-  if ! git -C "$repo" branch -D -- "$branch" >/dev/null 2>&1; then
-    printf '%s\n' "delete-failed"
+  if ! git -C "$repo" update-ref -d "refs/heads/$branch" "$tip" >/dev/null 2>&1; then
+    now=$(git -C "$repo" rev-parse --verify "refs/heads/$branch" 2>/dev/null || true)
+    if [ "$now" != "$tip" ]; then
+      printf '%s\n' "tip-changed"
+    else
+      printf '%s\n' "delete-failed"
+    fi
     return 1
   fi
   if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
@@ -975,24 +939,22 @@ fm_git_cleanup_remove_unmanaged_worktree() {
   git -C "$repo" worktree remove -- "$path"
 }
 
-fm_git_cleanup_revalidate_copy() {
-  local repo=$1 path=$2 signature=$3 now
+fm_git_cleanup_copy_ready_at_mutation() {
+  local repo=$1 path=$2 branch=$3 mode=$4 signature=$5 snap=$6
+  local head current_branch signature_head now
   [ -d "$path" ] && [ ! -L "$path" ] || return 1
   fm_git_cleanup_is_copy_root "$path" || return 1
   fm_git_cleanup_same_repo "$repo" "$path" || return 1
   now=$(fm_git_cleanup_copy_signature "$path") || return 1
-  [ "$now" = "$signature" ]
-}
-
-fm_git_cleanup_copy_ready_at_mutation() {
-  local repo=$1 path=$2 branch=$3 mode=$4 signature=$5 snap=$6
-  local head current_branch signature_head
-  fm_git_cleanup_revalidate_copy "$repo" "$path" "$signature" || return 1
-  signature_head=${signature%%$'\n'*}
+  signature_head=${now%%$'\n'*}
   case "$signature_head" in *$'\t'*) ;; *) return 1 ;; esac
   head=${signature_head%%$'\t'*}
   current_branch=${signature_head#*$'\t'}
   [ -n "$head" ] && [ -n "$current_branch" ] || return 1
+  if [ "$current_branch" = main ] || [ "$current_branch" = "$FM_GIT_CLEANUP_DEFAULT_NAME" ]; then
+    return 2
+  fi
+  [ "$now" = "$signature" ] || return 1
   [ "$current_branch" = "$branch" ] || return 1
   ! fm_git_cleanup_protects_host "$path" || return 1
   ! fm_git_cleanup_protects_home "$path" || return 1
@@ -1015,7 +977,7 @@ fm_git_cleanup_consider_branch() {
 
 fm_git_cleanup_handle_sibling() {
   local repo=$1 path=$2 head=$3 branch=$4 mode=$5
-  local snap=$FM_GIT_CLEANUP_CWD_SNAP signature
+  local snap=$FM_GIT_CLEANUP_CWD_SNAP signature ready
   if fm_git_cleanup_protects_host "$path"; then
     fm_git_cleanup_retain "$path" "host"
     return 0
@@ -1033,6 +995,10 @@ fm_git_cleanup_handle_sibling() {
   fi
   if ! fm_git_cleanup_same_repo "$repo" "$path"; then
     fm_git_cleanup_retain "$path" "other-project"
+    return 0
+  fi
+  if [ "$branch" = main ] || [ "$branch" = "$FM_GIT_CLEANUP_DEFAULT_NAME" ]; then
+    fm_git_cleanup_retain "$path" "default-branch"
     return 0
   fi
   if fm_git_cleanup_meta_mentions_copy "$path" "$branch"; then
@@ -1059,7 +1025,14 @@ fm_git_cleanup_handle_sibling() {
     fm_git_cleanup_retain "$path" "unique-unpublished"
     return 0
   fi
-  if ! fm_git_cleanup_copy_ready_at_mutation "$repo" "$path" "$branch" "$mode" "$signature" "$snap"; then
+  if fm_git_cleanup_copy_ready_at_mutation "$repo" "$path" "$branch" "$mode" "$signature" "$snap"; then
+    :
+  else
+    ready=$?
+    if [ "$ready" = 2 ]; then
+      fm_git_cleanup_retain "$path" "default-branch"
+      return 0
+    fi
     fm_git_cleanup_retain "$path" "mutation-recheck"
     return 0
   fi
