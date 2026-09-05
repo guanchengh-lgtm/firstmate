@@ -58,6 +58,8 @@ FM_GIT_CLEANUP_DEFAULT_REF=
 FM_GIT_CLEANUP_DEFAULT_NAME=
 FM_GIT_CLEANUP_DEFAULT_REPO=
 FM_GIT_CLEANUP_ATTRIB_BRANCHES=
+FM_GIT_CLEANUP_TREEHOUSE_FILTER_JSON=
+FM_GIT_CLEANUP_TREEHOUSE_FILTER_READY=0
 FM_GIT_CLEANUP_TIMEOUT_SECS=${FM_GIT_CLEANUP_TIMEOUT_SECS:-15}
 case "$FM_GIT_CLEANUP_TIMEOUT_SECS" in
   ''|*[!0-9]*|0) FM_GIT_CLEANUP_TIMEOUT_SECS=15 ;;
@@ -971,6 +973,14 @@ fm_git_cleanup_treehouse_status() {
   printf '%s\n' "$out" | jq -ce 'select(type == "array")' 2>/dev/null
 }
 
+fm_git_cleanup_prepare_treehouse_filter() {
+  local repo=$1
+  [ "$FM_GIT_CLEANUP_TREEHOUSE_FILTER_READY" = 1 ] && return 0
+  FM_GIT_CLEANUP_TREEHOUSE_FILTER_JSON=$(fm_git_cleanup_treehouse_status "$repo" 2>/dev/null) \
+    || return 1
+  FM_GIT_CLEANUP_TREEHOUSE_FILTER_READY=1
+}
+
 fm_git_cleanup_treehouse_slot() {
   local json=$1 path=$2 base=${3:-.} rows row raw normalized found= count=0
   rows=$(printf '%s\n' "$json" | jq -ce '.[]' 2>/dev/null) || return 1
@@ -1053,14 +1063,20 @@ fm_git_cleanup_revalidate_copy() {
 }
 
 fm_git_cleanup_copy_ready_at_mutation() {
-  local repo=$1 path=$2 branch=$3 mode=$4 signature=$5 snap=$6 head
+  local repo=$1 path=$2 branch=$3 mode=$4 signature=$5 snap=$6
+  local head current_branch signature_head
   fm_git_cleanup_revalidate_copy "$repo" "$path" "$signature" || return 1
+  signature_head=${signature%%$'\n'*}
+  case "$signature_head" in *$'\t'*) ;; *) return 1 ;; esac
+  head=${signature_head%%$'\t'*}
+  current_branch=${signature_head#*$'\t'}
+  [ -n "$head" ] && [ -n "$current_branch" ] || return 1
+  [ "$current_branch" = "$branch" ] || return 1
   ! fm_git_cleanup_protects_host "$path" || return 1
   ! fm_git_cleanup_protects_home "$path" || return 1
-  ! fm_git_cleanup_meta_mentions_copy "$path" "$branch" || return 1
+  ! fm_git_cleanup_meta_mentions_copy "$path" "$current_branch" || return 1
   fm_git_cleanup_copy_is_clean "$path" || return 1
-  head=${signature%%$'\t'*}
-  fm_git_cleanup_copy_refs_are_landed "$path" "$branch" "$mode" "$head" || return 1
+  fm_git_cleanup_copy_refs_are_landed "$path" "$current_branch" "$mode" "$head" || return 1
   fm_git_cleanup_cwd_snapshot "$snap" || return 1
   ! fm_git_cleanup_cwd_live "$snap" "$path"
 }
@@ -1159,11 +1175,12 @@ fm_git_cleanup_handle_orphan() {
     fm_git_cleanup_retain "$path" "other-project"
     return 0
   fi
-  active_json=$(fm_git_cleanup_treehouse_status "$repo" 2>/dev/null) || {
+  fm_git_cleanup_prepare_treehouse_filter "$repo" || {
     FM_GIT_CLEANUP_FAILED=1
     fm_git_cleanup_retain "$path" "provider-failure"
     return 0
   }
+  active_json=$FM_GIT_CLEANUP_TREEHOUSE_FILTER_JSON
   if slot=$(fm_git_cleanup_treehouse_slot "$active_json" "$path" "$repo" 2>/dev/null); then
     status=$(fm_git_cleanup_treehouse_slot_field "$slot" status)
     case "$status" in
@@ -1314,6 +1331,20 @@ fm_git_cleanup_prune_inventory_safe() {
       fm_git_cleanup_retain "$path" "locked"
       continue
     fi
+    if [ -n "${FM_GC_RETURNED:-}" ] && [ "$path" = "$FM_GC_RETURNED" ]; then
+      unsafe=1
+      unsafe_row=$path
+      fm_git_cleanup_retain "$path" "returned-slot"
+      continue
+    fi
+    if [ "$branch" = main ] \
+       || { [ -n "$FM_GIT_CLEANUP_DEFAULT_NAME" ] \
+            && [ "$branch" = "$FM_GIT_CLEANUP_DEFAULT_NAME" ]; }; then
+      unsafe=1
+      unsafe_row=$path
+      fm_git_cleanup_retain "$path" "default-branch"
+      continue
+    fi
     if ! fm_git_cleanup_is_tmp_path "$path"; then
       unsafe=1
       unsafe_row=$path
@@ -1332,7 +1363,7 @@ fm_git_cleanup_prune_inventory_safe() {
       fm_git_cleanup_retain "$path" "registered-home"
       continue
     fi
-    if fm_git_cleanup_meta_mentions_path "$path"; then
+    if fm_git_cleanup_meta_mentions_copy "$path" "$branch"; then
       unsafe=1
       unsafe_row=$path
       fm_git_cleanup_retain "$path" "live-meta"
@@ -1378,8 +1409,37 @@ EOF
   return 0
 }
 
+fm_git_cleanup_entries_has_path() {
+  local entries=$1 target=$2 path head branch locked prunable
+  while IFS=$(printf '\t') read -r path head branch locked prunable; do
+    [ "$path" = "$target" ] && return 0
+  done <<EOF
+$entries
+EOF
+  return 1
+}
+
+fm_git_cleanup_record_pruned_entries() {
+  local before=$1 after=$2 path head branch locked prunable missing
+  while IFS=$(printf '\t') read -r path head branch locked prunable; do
+    [ -n "$path" ] || continue
+    missing=0
+    if [ "$prunable" = 1 ] || [ ! -d "$path" ]; then
+      missing=1
+    fi
+    [ "$missing" = 1 ] || continue
+    if fm_git_cleanup_entries_has_path "$after" "$path"; then
+      fm_git_cleanup_retain "$path" "prune-race"
+    else
+      fm_git_cleanup_removed "registration $path"
+    fi
+  done <<EOF
+$before
+EOF
+}
+
 fm_git_cleanup_prune_gone_tmp() {
-  local repo=$1 entries=$2 fresh
+  local repo=$1 entries=$2 fresh after
   fm_git_cleanup_prune_inventory_safe "$repo" "$entries" || return 0
   fresh=$(fm_git_cleanup_porcelain_entries "$repo") || {
     FM_GIT_CLEANUP_FAILED=1
@@ -1388,6 +1448,12 @@ fm_git_cleanup_prune_gone_tmp() {
   }
   fm_git_cleanup_prune_inventory_safe "$repo" "$fresh" || return 0
   if git -C "$repo" worktree prune --expire now; then
+    after=$(fm_git_cleanup_porcelain_entries "$repo") || {
+      FM_GIT_CLEANUP_FAILED=1
+      fm_git_cleanup_note "git prune count unavailable: unreadable result inventory"
+      return 0
+    }
+    fm_git_cleanup_record_pruned_entries "$fresh" "$after"
     fm_git_cleanup_note "pruned eligible temporary registrations"
     return 0
   fi
@@ -1413,6 +1479,8 @@ fm_git_cleanup_leftover_pass() {
   FM_GIT_CLEANUP_DEFAULT_REPO=
   FM_GIT_CLEANUP_DEFAULT_NAME=
   FM_GIT_CLEANUP_DEFAULT_REF=
+  FM_GIT_CLEANUP_TREEHOUSE_FILTER_JSON=
+  FM_GIT_CLEANUP_TREEHOUSE_FILTER_READY=0
   case "$kind" in
     ship|scout) ;;
     *) return 0 ;;

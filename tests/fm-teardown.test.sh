@@ -3162,6 +3162,52 @@ test_leftover_metadata_branch_retains_copy() {
   pass "live metadata protects its branch checkout when paths differ"
 }
 
+test_leftover_branch_change_to_metadata_branch_is_retained() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-meta-branch-race)
+  add_clean_sibling "$case_dir" wt-resolver
+  git -C "$case_dir/project" branch fm/protected main
+  fm_write_meta "$case_dir/state/protected.meta" \
+    "window=firstmate:other" \
+    "worktree=$case_dir/missing-protected-copy" \
+    "project=$case_dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes"
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  : > "$case_dir/after-return"
+  exit 0
+fi
+if [ "\${1:-}" = status ]; then printf '%s\n' '[]'; exit 0; fi
+exit 1
+SH
+  cat > "$case_dir/fakebin/git" <<SH
+#!/usr/bin/env bash
+if [ -e "$case_dir/after-return" ] && [ ! -e "$case_dir/switched" ] \
+   && [ "\${1:-}" = -C ] && [ "\${2:-}" = "$case_dir/wt-resolver" ] \
+   && [ "\${3:-}" = status ]; then
+  "$REAL_GIT_FOR_TEST" "\$@"
+  rc=\$?
+  "$REAL_GIT_FOR_TEST" -C "$case_dir/wt-resolver" checkout -q fm/protected
+  : > "$case_dir/switched"
+  exit "\$rc"
+fi
+exec "$REAL_GIT_FOR_TEST" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/git"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-meta-branch-race: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] \
+    || fail "leftover-meta-branch-race: changed metadata branch lost its copy"
+  [ "$(git -C "$case_dir/wt-resolver" branch --show-current)" = fm/protected ] \
+    || fail "leftover-meta-branch-race: branch switch did not occur"
+  grep -q "retained $case_dir/wt-resolver (mutation-recheck)" "$case_dir/stdout" \
+    || fail "leftover-meta-branch-race: mutation boundary did not retain the copy"
+  pass "a mutation-boundary branch change to live metadata retains the copy"
+}
+
 test_leftover_symlink_ancestor_inventory_is_retained() {
   local case_dir rc real_parent orphan alias_parent alias
   case_dir=$(prepare_landed_ship leftover-symlink-ancestor)
@@ -3272,7 +3318,56 @@ test_leftover_gone_tmp_prunes_when_all_eligible() {
   expect_code 0 "$rc" "leftover-gone-tmp-ok: teardown should succeed"
   git -C "$case_dir/project" worktree list --porcelain | grep -q 'tmp-gone-safe' \
     && fail "leftover-gone-tmp-ok: eligible temporary row remained"
+  grep -q 'removed registration ' "$case_dir/stdout" \
+    || fail "leftover-gone-tmp-ok: pruned registration was not counted"
   pass "eligible gone temporary registrations prune when every prune row is safe"
+}
+
+test_leftover_prune_applies_complete_keep_set() {
+  local case_dir rc default_path default_admin meta_path meta_admin safe_path safe_admin returned_admin
+  case_dir=$(prepare_landed_ship leftover-prune-keep-set)
+  default_path=$(mktemp -d /tmp/fm-teardown-default.XXXXXX)
+  meta_path=$(mktemp -d /tmp/fm-teardown-meta.XXXXXX)
+  safe_path=$(mktemp -d /tmp/fm-teardown-safe.XXXXXX)
+  git -C "$case_dir/project" worktree add -q --detach "$default_path" main
+  default_admin=$(git -C "$default_path" rev-parse --absolute-git-dir)
+  printf '%s\n' 'ref: refs/heads/main' > "$default_admin/HEAD"
+  git -C "$case_dir/project" worktree add -q -b fm/protected-prune "$meta_path" main
+  meta_admin=$(git -C "$meta_path" rev-parse --absolute-git-dir)
+  fm_write_meta "$case_dir/state/protected-prune.meta" \
+    "window=firstmate:other" \
+    "worktree=$case_dir/missing-protected-prune-copy" \
+    "project=$case_dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes"
+  git -C "$case_dir/project" worktree add -q -b tmp-prune-safe "$safe_path" main
+  safe_admin=$(git -C "$safe_path" rev-parse --absolute-git-dir)
+  returned_admin=$(git -C "$case_dir/wt" rev-parse --absolute-git-dir)
+  rm -rf "$default_path" "$meta_path" "$safe_path"
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  rm -rf -- "$case_dir/wt"
+  exit 0
+fi
+if [ "\${1:-}" = status ]; then printf '%s\n' '[]'; exit 0; fi
+exit 1
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-prune-keep-set: teardown should succeed"
+  [ -d "$default_admin" ] || fail "leftover-prune-keep-set: default registration was pruned"
+  [ -d "$meta_admin" ] || fail "leftover-prune-keep-set: metadata branch registration was pruned"
+  [ -d "$returned_admin" ] || fail "leftover-prune-keep-set: returned registration was pruned"
+  [ -d "$safe_admin" ] || fail "leftover-prune-keep-set: safe row was pruned during an unsafe prune"
+  grep -q ' (default-branch)' "$case_dir/stdout" \
+    || fail "leftover-prune-keep-set: default branch had no keep reason"
+  grep -q ' (live-meta)' "$case_dir/stdout" \
+    || fail "leftover-prune-keep-set: metadata branch had no keep reason"
+  grep -q "retained $case_dir/wt (returned-slot)" "$case_dir/stdout" \
+    || fail "leftover-prune-keep-set: returned slot had no keep reason"
+  pass "missing-registration pruning applies the complete keep-set"
 }
 
 test_leftover_unpublished_and_force_do_not_bypass() {
@@ -3675,26 +3770,34 @@ SH
 }
 
 test_leftover_safe_foreign_pool_copy_is_removed() {
-  local case_dir rc foreign_root orphan
+  local case_dir rc foreign_root orphan orphan_two active_count
   case_dir=$(prepare_landed_ship leftover-foreign-unleased)
   foreign_root="$case_dir/foreign-root"
   orphan="$foreign_root/pool/1/project"
+  orphan_two="$foreign_root/pool/2/project"
   mkdir -p "$(dirname "$orphan")"
+  mkdir -p "$(dirname "$orphan_two")"
   git -C "$case_dir/project" worktree add -q -b fm/foreign-unleased "$orphan" main
+  git -C "$case_dir/project" worktree add -q -b fm/foreign-unleased-two "$orphan_two" main
   cat > "$case_dir/fakebin/treehouse" <<SH
 #!/usr/bin/env bash
 if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then exit 0; fi
 if [ "\${1:-}" = status ]; then
   if [ "\${TREEHOUSE_ROOT:-}" = "$foreign_root" ]; then
-    printf '%s\n' '[{"path":"$orphan","status":"available","lease_id":"","lease_holder":""}]'
+    printf '%s\n' '[{"path":"$orphan","status":"available","lease_id":"","lease_holder":""},{"path":"$orphan_two","status":"available","lease_id":"","lease_holder":""}]'
   else
+    count=0
+    [ ! -f "$case_dir/active-status-count" ] || count=\$(cat "$case_dir/active-status-count")
+    printf '%s\n' "\$((count + 1))" > "$case_dir/active-status-count"
     printf '%s\n' '[]'
   fi
   exit 0
 fi
 if [ "\${1:-}" = destroy ]; then
-  printf '%s\n' "\$*" > "$case_dir/provider.log"
-  exec "$REAL_GIT_FOR_TEST" -C "$case_dir/project" worktree remove -- "$orphan"
+  printf '%s\n' "\$*" >> "$case_dir/provider.log"
+  target=
+  for arg in "\$@"; do target=\$arg; done
+  exec "$REAL_GIT_FOR_TEST" -C "$case_dir/project" worktree remove -- "\$target"
 fi
 exit 1
 SH
@@ -3703,9 +3806,15 @@ SH
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
   expect_code 0 "$rc" "leftover-foreign-unleased: teardown should succeed"
   [ ! -d "$orphan" ] || fail "leftover-foreign-unleased: safe foreign pool copy remained"
-  [ "$(cat "$case_dir/provider.log")" = "destroy --yes -- $orphan" ] \
-    || fail "leftover-foreign-unleased: provider did not receive the exact safe target"
-  pass "a safe unleased foreign pool copy uses exact provider removal"
+  [ ! -d "$orphan_two" ] || fail "leftover-foreign-unleased: second foreign copy remained"
+  grep -Fxq "destroy --yes -- $orphan" "$case_dir/provider.log" \
+    || fail "leftover-foreign-unleased: provider missed the first exact target"
+  grep -Fxq "destroy --yes -- $orphan_two" "$case_dir/provider.log" \
+    || fail "leftover-foreign-unleased: provider missed the second exact target"
+  active_count=$(cat "$case_dir/active-status-count")
+  [ "$active_count" = 3 ] \
+    || fail "leftover-foreign-unleased: filter status was not reused: $active_count calls"
+  pass "safe foreign copies reuse filtering status and keep final provider checks"
 }
 
 test_leftover_retired_lease_receipt_does_not_authorize_removal() {
@@ -4362,11 +4471,13 @@ test_process_exit_during_identity_lookup_does_not_refuse
 test_run_abort_precedes_process_reap_precedes_worktree_removal
 test_leftover_siblings_clean_landed_are_removed
 test_leftover_metadata_branch_retains_copy
+test_leftover_branch_change_to_metadata_branch_is_retained
 test_leftover_symlink_ancestor_inventory_is_retained
 test_leftover_locked_sibling_is_retained
 test_leftover_dirty_sibling_is_retained
 test_leftover_gone_tmp_prunes_only_when_all_safe
 test_leftover_gone_tmp_prunes_when_all_eligible
+test_leftover_prune_applies_complete_keep_set
 test_leftover_unpublished_and_force_do_not_bypass
 test_leftover_pr_of_task_does_not_prove_sibling
 test_leftover_captured_landed_branch_is_deleted
