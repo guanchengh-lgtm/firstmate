@@ -289,14 +289,6 @@ test_home_seed_uses_treehouse_acquired_home() {
   grep -F 'treehouse get --lease --lease-holder dash' "$log" >/dev/null || fail "seed did not durably lease a home under the secondmate id"
   [ -f "$lease" ] || fail "seed did not record a treehouse lease"
   [ "$(cat "$lease")" = dash ] || fail "seed did not set the lease holder to the secondmate id"
-  grep -Fx 'schema=fm-treehouse-lease.v1' "$home/data/dash/treehouse-lease" >/dev/null \
-    || fail "seed did not write the durable treehouse lease receipt"
-  grep -Fx "path=$acquired_abs" "$home/data/dash/treehouse-lease" >/dev/null \
-    || fail "seed lease receipt did not bind the acquired home"
-  grep -Fx 'lease_id=fake-dash' "$home/data/dash/treehouse-lease" >/dev/null \
-    || fail "seed lease receipt did not bind the lease identity"
-  grep -Fx 'lease_holder=dash' "$home/data/dash/treehouse-lease" >/dev/null \
-    || fail "seed lease receipt did not bind the lease holder"
   [ -f "$acquired/.fm-secondmate-home" ] || fail "seed did not mark acquired home"
   [ "$(cat "$acquired/.fm-secondmate-home")" = dash ] || fail "seed wrote wrong acquired-home marker"
   [ -d "$acquired/projects/alpha/.git" ] || fail "seed did not clone project into acquired home"
