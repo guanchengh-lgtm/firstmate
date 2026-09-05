@@ -22,6 +22,7 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 SPAWN="$ROOT/bin/fm-spawn.sh"
+BRIEF="$ROOT/bin/fm-brief.sh"
 PROMOTE="$ROOT/bin/fm-promote.sh"
 PROJECT_MODE="$ROOT/bin/fm-project-mode.sh"
 TMP_ROOT=$(fm_test_tmproot fm-task-delivery)
@@ -506,6 +507,108 @@ EOF
   pass "fm-promote: records builder via the role marker and ignores brief prose"
 }
 
+test_promote_refuses_a_symlinked_task_record() {
+  local home meta target original out status leftover
+  home="$TMP_ROOT/promote-symlink/home"
+  mkdir -p "$home/state"
+  meta="$home/state/promote-sym.meta"
+  target="$TMP_ROOT/promote-symlink/foreign-task-record"
+  original="$TMP_ROOT/promote-symlink/foreign-task-record.expected"
+  printf '%s\n' 'window=fm-promote-sym' 'kind=scout' 'worktree=/tmp/wt' > "$target"
+  cp "$target" "$original"
+  ln -s "$target" "$meta"
+
+  out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+    "$PROMOTE" promote-sym --mode direct-PR --yolo on --surface internal-only 2>&1)
+  status=$?
+  [ "$status" -ne 0 ] || fail "promotion through a symlink record should refuse"
+  assert_contains "$out" "task record" "promotion did not identify the unpublished task record"
+  [ -L "$meta" ] || fail "promotion replaced or removed the symlink record"
+  cmp -s "$target" "$original" \
+    || fail "promotion rewrote the symlink target in place"
+  assert_absent "$home/data/promote-sym/ship-instructions.md" \
+    "refused promotion published ship instructions"
+  leftover=$(find "$home/state" -maxdepth 1 -name '.*.meta.promote.*' -print 2>/dev/null || true)
+  [ -z "$leftover" ] || fail "promotion left a staging file after a refused publish: $leftover"
+  pass "fm-promote: a symlinked task record is refused and its target is left untouched"
+}
+
+test_promotion_delivers_the_real_definition_of_done() {
+  local home meta out sendroot payload mode id brief_dod delivered_dod extra
+  home="$TMP_ROOT/promote-dod/home"
+  sendroot="$TMP_ROOT/promote-dod/sendroot"
+  mkdir -p "$home/state" "$sendroot/bin"
+  cat > "$sendroot/bin/fm-send.sh" <<'STUB'
+#!/usr/bin/env bash
+printf '%s' "$2" > "$FM_TEST_CAPTURE"
+STUB
+  chmod +x "$sendroot/bin/fm-send.sh"
+
+  for mode in no-mistakes direct-PR local-only; do
+    extra=()
+    if [ "$mode" = direct-PR ]; then
+      extra=(--surface internal-only)
+    fi
+    id="promote-dod-$(printf '%s' "$mode" | tr '[:upper:]' '[:lower:]')"
+    meta="$home/state/$id.meta"
+    printf 'window=fm-%s\nkind=scout\nworktree=/tmp/wt\n' "$id" > "$meta"
+    out=$(FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" \
+      "$PROMOTE" "$id" --mode "$mode" --yolo off ${extra[@]+"${extra[@]}"} 2>&1) \
+      || fail "$mode: promotion should succeed"
+
+    payload="$TMP_ROOT/promote-dod/payload-$id"
+    ( cd "$sendroot" \
+      && FM_TEST_CAPTURE="$payload" \
+         eval "$(printf '%s\n' "$out" | sed -n 's/^next: //p' | grep 'fm-send\.sh')" ) \
+      || fail "$mode: promotion's delivery command did not run"
+    assert_present "$payload" "$mode: promotion delivered no message to the worker"
+
+    grep -qx "Delivery contract: mode=$mode" "$payload" \
+      || fail "$mode: promoted worker did not receive the machine-readable delivery contract"
+    assert_grep "# Definition of done" "$payload" \
+      "$mode: promoted worker did not receive a Definition of done"
+    assert_grep "pwd -P" "$payload" \
+      "$mode: promoted worker was not told to verify its physical worktree"
+    assert_grep "git rev-parse --show-toplevel" "$payload" \
+      "$mode: promoted worker was not told to verify its repository root"
+    assert_grep "If either does not resolve to the worktree you were launched in, stop and escalate to firstmate" "$payload" \
+      "$mode: promoted worker was not told to stop for any wrong worktree"
+    assert_grep "git checkout -b fm/$id" "$payload" \
+      "$mode: promoted worker was not told to leave the scratch base for its ship branch"
+
+    FM_HOME="$home" "$BRIEF" "$id" fixture-project --mode "$mode" ${extra[@]+"${extra[@]}"} >/dev/null 2>&1 \
+      || fail "$mode: ordinary ship brief generation should succeed"
+    brief_dod="$TMP_ROOT/promote-dod/brief-dod-$id"
+    delivered_dod="$TMP_ROOT/promote-dod/delivered-dod-$id"
+    awk '/^# Definition of done$/ { emit=1 } emit' "$home/data/$id/brief.md" > "$brief_dod"
+    awk '/^# Definition of done$/ { emit=1 } emit' "$payload" > "$delivered_dod"
+    cmp -s "$brief_dod" "$delivered_dod" \
+      || fail "$mode: promotion and ordinary brief generation delivered different Definitions of done"
+  done
+
+  payload="$TMP_ROOT/promote-dod/payload-promote-dod-no-mistakes"
+  assert_grep "ask-user findings are never the verifier's to answer: escalate to firstmate" "$payload" \
+    "promoted no-mistakes worker did not receive the ask-user escalation rule"
+  assert_grep "NEVER pass \`--yes\` (or \`-y\`)" "$payload" \
+    "promoted no-mistakes worker did not receive the --yes prohibition"
+  assert_grep "It is banned fleet-wide" "$payload" \
+    "promoted no-mistakes worker did not receive the fleet-wide ban wording"
+
+  payload="$TMP_ROOT/promote-dod/payload-promote-dod-direct-pr"
+  assert_grep "supersede the scout delivery rules and report-based Definition of done" "$payload" \
+    "promoted worker retained the scout delivery contract"
+  assert_grep "status protocol; the instruction inbox and its acknowledgement; the escalation rules, including ask-user; and every safety rule" "$payload" \
+    "promoted worker lost the scout protocols and safety rules that still apply"
+
+  assert_grep "Do NOT run /no-mistakes" "$payload" \
+    "promoted direct-PR worker lost its no-pipeline contract"
+  assert_grep "Do NOT push, do NOT open a PR, do NOT merge" "$TMP_ROOT/promote-dod/payload-promote-dod-local-only" \
+    "promoted local-only worker lost its no-remote contract"
+  assert_no_grep "no-mistakes axi respond" "$TMP_ROOT/promote-dod/payload-promote-dod-direct-pr" \
+    "promoted direct-PR worker received the pipeline gate contract"
+  pass "fm-promote: a promoted worker receives the same mode-specific delivery contract a briefed one does"
+}
+
 # The registry parser survives for the mechanical consumers only. It accepts the
 # conditional policy, maps it to its most rigorous leg for them, and exposes the
 # raw annotation for the one caller that must tell a policy from a flat mode.
@@ -710,6 +813,8 @@ test_scout_records_no_delivery_posture
 test_promote_help_owns_the_workflow_without_runtime_state
 test_promote_requires_and_records_the_delivery_contract
 test_promote_records_builder_from_the_role_marker_not_brief_prose
+test_promote_refuses_a_symlinked_task_record
+test_promotion_delivers_the_real_definition_of_done
 test_project_mode_maps_the_conditional_policy
 test_direct_pr_requires_internal_only_surface
 echo "# all fm-task-delivery tests passed"
