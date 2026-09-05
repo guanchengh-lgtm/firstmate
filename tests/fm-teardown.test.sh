@@ -584,7 +584,7 @@ seed_done_task() {
   tasks-axi add "$id" "retired teardown fixture" --kind "$kind" \
     --repo "$repo" \
     --file "$case_dir/data/backlog.md" >/dev/null
-  tasks-axi done "$id" --file "$case_dir/data/backlog.md" >/dev/null
+  tasks-axi "done" "$id" --file "$case_dir/data/backlog.md" >/dev/null
 }
 
 backlog_row_state() {
@@ -3345,8 +3345,8 @@ SH
   pass "cached default content proves a squash before any forge lookup"
 }
 
-test_leftover_orig_head_retains_live_and_missing_copies() {
-  local case_dir rc missing live_unique missing_unique live_admin missing_admin
+test_leftover_orig_head_retains_live_copy() {
+  local case_dir rc live_unique live_admin
   case_dir=$(prepare_landed_ship leftover-orig-head)
   add_clean_sibling "$case_dir" wt-resolver
   printf 'live unique\n' > "$case_dir/wt-resolver/live-unique.txt"
@@ -3359,161 +3359,64 @@ test_leftover_orig_head_retains_live_and_missing_copies() {
   [ "$(cat "$live_admin/ORIG_HEAD")" = "$live_unique" ] \
     || fail "leftover-orig-head: live ORIG_HEAD setup failed"
 
-  missing=$(mktemp -d /tmp/fm-teardown-orig-head.XXXXXX)
-  git -C "$case_dir/project" worktree add -q -b tmp-orig-head "$missing" main
-  printf 'missing unique\n' > "$missing/missing-unique.txt"
-  git -C "$missing" add missing-unique.txt
-  git -C "$missing" -c user.email=t@t -c user.name=t commit -q -m missing-unique
-  missing_unique=$(git -C "$missing" rev-parse HEAD)
-  git -C "$missing" reset -q --hard main
-  missing_admin=$(git -C "$missing" rev-parse --absolute-git-dir)
-  [ "$(cat "$missing_admin/ORIG_HEAD")" = "$missing_unique" ] \
-    || fail "leftover-orig-head: missing ORIG_HEAD setup failed"
-  rm -rf "$missing"
-
   rc=0
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
   expect_code 0 "$rc" "leftover-orig-head: teardown should succeed"
   [ -d "$case_dir/wt-resolver" ] \
     || fail "leftover-orig-head: live ORIG_HEAD copy was removed"
-  [ -d "$missing_admin" ] \
-    || fail "leftover-orig-head: missing ORIG_HEAD registration was pruned"
   git -C "$case_dir/project" cat-file -e "$live_unique^{commit}" \
     || fail "leftover-orig-head: live unique commit was lost"
-  git -C "$case_dir/project" cat-file -e "$missing_unique^{commit}" \
-    || fail "leftover-orig-head: missing unique commit was lost"
-  pass "ORIG_HEAD protects unique work in live and missing registrations"
+  pass "ORIG_HEAD protects unique work in a live copy"
 }
 
-test_leftover_gone_tmp_prunes_only_when_all_safe() {
-  local case_dir rc tmp_ok tmp_lock
-  case_dir=$(prepare_landed_ship leftover-gone-tmp)
-  tmp_ok=$(mktemp -d /tmp/fm-teardown-gone-ok.XXXXXX)
-  tmp_lock=$(mktemp -d /tmp/fm-teardown-gone-lock.XXXXXX)
-  git -C "$case_dir/project" worktree add -q -b tmp-gone-ok "$tmp_ok" main
-  git -C "$case_dir/project" worktree add -q -b tmp-gone-lock "$tmp_lock" main
-  git -C "$case_dir/project" worktree lock "$tmp_lock"
-  rm -rf "$tmp_ok" "$tmp_lock"
-  set +e
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
-  rc=$?
-  set -e
-  expect_code 0 "$rc" "leftover-gone-tmp-lock: teardown should succeed"
-  git -C "$case_dir/project" worktree list --porcelain | grep -q 'tmp-gone-ok' \
-    || fail "leftover-gone-tmp-lock: safe row was pruned while a locked row existed"
-  git -C "$case_dir/project" worktree list --porcelain | grep -q 'tmp-gone-lock' \
-    || fail "leftover-gone-tmp-lock: locked missing row disappeared"
-  grep -q 'whole-prune-blocked' "$case_dir/stdout" \
-    || fail "leftover-gone-tmp-lock: safe blocked row had no retained result"
-  git -C "$case_dir/project" worktree unlock "$tmp_lock" >/dev/null 2>&1 || true
-  git -C "$case_dir/project" worktree prune --expire now >/dev/null 2>&1 || true
-  pass "one unsafe missing registration skips the whole prune"
-}
-
-test_leftover_gone_tmp_prunes_when_all_eligible() {
-  local case_dir rc tmp_ok
-  case_dir=$(prepare_landed_ship leftover-gone-tmp-ok)
-  tmp_ok=$(mktemp -d /tmp/fm-teardown-gone-safe.XXXXXX)
-  git -C "$case_dir/project" worktree add -q -b tmp-gone-safe "$tmp_ok" main
-  rm -rf "$tmp_ok"
-  set +e
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
-  rc=$?
-  set -e
-  expect_code 0 "$rc" "leftover-gone-tmp-ok: teardown should succeed"
-  git -C "$case_dir/project" worktree list --porcelain | grep -q 'tmp-gone-safe' \
-    && fail "leftover-gone-tmp-ok: eligible temporary row remained"
-  grep -q 'removed registration ' "$case_dir/stdout" \
-    || fail "leftover-gone-tmp-ok: pruned registration was not counted"
-  git -C "$case_dir/project" show-ref --verify --quiet refs/heads/tmp-gone-safe \
-    && fail "leftover-gone-tmp-ok: attributed landed branch remained"
-  pass "eligible gone temporary registrations prune when every prune row is safe"
-}
-
-test_leftover_incomplete_inventory_retains_registration() {
-  local case_dir rc missing admin
-  case_dir=$(prepare_landed_ship leftover-incomplete-inventory)
-  missing=$(mktemp -d /tmp/fm-teardown-incomplete.XXXXXX)
+test_leftover_gone_tmp_registration_is_reported() {
+  local case_dir rc missing
+  case_dir=$(prepare_landed_ship leftover-gone-report)
+  missing=$(mktemp -d /tmp/fm-teardown-gone-report.XXXXXX)
   missing=$(cd "$missing" && pwd -P)
-  git -C "$case_dir/project" worktree add -q -b tmp-incomplete "$missing" main
-  admin=$(git -C "$missing" rev-parse --absolute-git-dir)
+  git -C "$case_dir/project" worktree add -q -b tmp-gone-report "$missing" main
   rm -rf "$missing"
-  cat > "$case_dir/fakebin/treehouse" <<SH
-#!/usr/bin/env bash
-if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
-  : > "$case_dir/after-return"
-  exit 0
-fi
-exit 0
-SH
-  cat > "$case_dir/fakebin/git" <<SH
-#!/usr/bin/env bash
-if [ -e "$case_dir/after-return" ] && printf '%s\n' "\$*" | grep -F 'worktree list --porcelain' >/dev/null; then
-  "$REAL_GIT_FOR_TEST" "\$@" | awk -v target="$missing" '
-    /^worktree / { selected=(\$0 == "worktree " target) }
-    selected && (\$1 == "HEAD" || \$1 == "branch" || \$1 == "detached") { next }
-    { print }
-  '
-  exit "\${PIPESTATUS[0]}"
-fi
-exec "$REAL_GIT_FOR_TEST" "\$@"
-SH
-  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/git"
   rc=0
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 0 "$rc" "leftover-incomplete-inventory: teardown should still close"
-  [ -d "$admin" ] \
-    || fail "leftover-incomplete-inventory: incomplete row was pruned"
-  grep -q 'worktree list failed' "$case_dir/stderr" \
-    || fail "leftover-incomplete-inventory: incomplete row was silent"
-  pass "an incomplete worktree row retains every registration"
+  expect_code 0 "$rc" "leftover-gone-report: teardown should succeed"
+  git -C "$case_dir/project" worktree list --porcelain | grep -Fx "worktree $missing" >/dev/null \
+    || fail "leftover-gone-report: missing registration was removed"
+  grep -F "retained $missing (gone-registration)" "$case_dir/stdout" >/dev/null \
+    || fail "leftover-gone-report: retained registration was not reported"
+  pass "a gone temporary registration stays registered and is reported retained"
 }
 
-test_leftover_prune_applies_complete_keep_set() {
-  local case_dir rc default_path default_admin meta_path meta_admin safe_path safe_admin returned_admin
-  case_dir=$(prepare_landed_ship leftover-prune-keep-set)
-  default_path=$(mktemp -d /tmp/fm-teardown-default.XXXXXX)
-  meta_path=$(mktemp -d /tmp/fm-teardown-meta.XXXXXX)
-  safe_path=$(mktemp -d /tmp/fm-teardown-safe.XXXXXX)
-  git -C "$case_dir/project" worktree add -q --detach "$default_path" main
-  default_admin=$(git -C "$default_path" rev-parse --absolute-git-dir)
-  printf '%s\n' 'ref: refs/heads/main' > "$default_admin/HEAD"
-  git -C "$case_dir/project" worktree add -q -b fm/protected-prune "$meta_path" main
-  meta_admin=$(git -C "$meta_path" rev-parse --absolute-git-dir)
-  fm_write_meta "$case_dir/state/protected-prune.meta" \
-    "window=firstmate:other" \
-    "worktree=$case_dir/missing-protected-prune-copy" \
-    "project=$case_dir/project" \
-    "kind=ship" \
-    "mode=no-mistakes"
-  git -C "$case_dir/project" worktree add -q -b tmp-prune-safe "$safe_path" main
-  safe_admin=$(git -C "$safe_path" rev-parse --absolute-git-dir)
-  returned_admin=$(git -C "$case_dir/wt" rev-parse --absolute-git-dir)
-  rm -rf "$default_path" "$meta_path" "$safe_path"
+test_leftover_unrecorded_copy_is_reported_without_treehouse() {
+  local case_dir rc orphan
+  case_dir=$(prepare_landed_ship leftover-orphan-report)
+  tasks-axi "done" task-x1 --file "$case_dir/data/backlog.md" >/dev/null
+  orphan="$case_dir/unrecorded-copy"
+  git -C "$case_dir/project" worktree add -q -b fm/unrecorded-copy "$orphan" main
   cat > "$case_dir/fakebin/treehouse" <<SH
 #!/usr/bin/env bash
-if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
-  rm -rf -- "$case_dir/wt"
-  exit 0
-fi
-if [ "\${1:-}" = status ]; then printf '%s\n' '[]'; exit 0; fi
+printf '%s\n' "\$*" >> "$case_dir/treehouse.log"
 exit 1
 SH
   chmod +x "$case_dir/fakebin/treehouse"
   rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 0 "$rc" "leftover-prune-keep-set: teardown should succeed"
-  [ -d "$default_admin" ] || fail "leftover-prune-keep-set: default registration was pruned"
-  [ -d "$meta_admin" ] || fail "leftover-prune-keep-set: metadata branch registration was pruned"
-  [ -d "$returned_admin" ] || fail "leftover-prune-keep-set: returned registration was pruned"
-  [ -d "$safe_admin" ] || fail "leftover-prune-keep-set: safe row was pruned during an unsafe prune"
-  grep -q ' (default-branch)' "$case_dir/stdout" \
-    || fail "leftover-prune-keep-set: default branch had no keep reason"
-  grep -q ' (live-meta)' "$case_dir/stdout" \
-    || fail "leftover-prune-keep-set: metadata branch had no keep reason"
-  grep -q "retained $case_dir/wt (returned-slot)" "$case_dir/stdout" \
-    || fail "leftover-prune-keep-set: returned slot had no keep reason"
-  pass "missing-registration pruning applies the complete keep-set"
+  FM_HOME="$case_dir" FM_STATE_OVERRIDE="$case_dir/state" \
+    PATH="$case_dir/fakebin:$PATH" bash -s -- "$ROOT" "$case_dir" \
+    > "$case_dir/stdout" 2> "$case_dir/stderr" <<'SH' || rc=$?
+set -eu
+root=$1
+case_dir=$2
+. "$root/bin/fm-wake-lib.sh"
+. "$root/bin/fm-git-cleanup-lib.sh"
+fm_git_cleanup_leftover_pass "$case_dir/project" "$case_dir" "$case_dir/data" \
+  "$case_dir/wt" "" "" no-mistakes ship "" "$root"
+SH
+  expect_code 0 "$rc" "leftover-orphan-report: pass should succeed"
+  [ -d "$orphan" ] || fail "leftover-orphan-report: unrecorded copy was removed"
+  grep -F "retained $orphan (unrecorded-copy)" "$case_dir/stdout" >/dev/null \
+    || fail "leftover-orphan-report: retained copy was not reported"
+  [ ! -s "$case_dir/treehouse.log" ] \
+    || fail "leftover-orphan-report: leftover pass invoked Treehouse"
+  pass "an unrecorded same-repository copy stays without any Treehouse invocation"
 }
 
 test_leftover_unpublished_and_force_do_not_bypass() {
@@ -3710,43 +3613,6 @@ test_leftover_contended_lock_defers() {
   pass "a contended publication lock defers leftover cleanup without reopening the task"
 }
 
-test_leftover_real_treehouse_unrecorded_lease() {
-  local case_dir rc root slot json lease_id holder real_th
-  real_th=$(command -v treehouse) || {
-    pass "real treehouse is not installed; A4 isolated-provider case skipped"
-    return 0
-  }
-  case_dir=$(prepare_landed_ship leftover-th-lease)
-  seed_done_task "$case_dir" retired-mate secondmate
-  root="$case_dir/th-root"
-  mkdir -p "$root"
-  ( cd "$case_dir/project" && "$real_th" --root "$root" init >/dev/null )
-  json=$(cd "$case_dir/project" && "$real_th" --root "$root" get --lease --lease-holder retired-mate --json --no-fetch)
-  slot=$(printf '%s\n' "$json" | jq -r '.path')
-  lease_id=$(printf '%s\n' "$json" | jq -r '.lease_id')
-  holder=$(printf '%s\n' "$json" | jq -r '.lease_holder')
-  [ -n "$slot" ] && [ -d "$slot" ] || fail "leftover-th-lease: treehouse get did not create a slot"
-  [ "$holder" = retired-mate ] || fail "leftover-th-lease: unexpected holder $holder"
-  [ -n "$lease_id" ] || fail "leftover-th-lease: missing lease id"
-  cat > "$case_dir/fakebin/treehouse" <<SH
-#!/usr/bin/env bash
-set -u
-if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
-  exit 0
-fi
-exec "$real_th" --root "$root" "\$@"
-SH
-  chmod +x "$case_dir/fakebin/treehouse"
-  set +e
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
-  rc=$?
-  set -e
-  expect_code 0 "$rc" "leftover-th-lease: teardown should succeed"
-  [ -d "$slot" ] || fail "leftover-th-lease: unrecorded lease slot was removed"
-  [ -d "$case_dir/wt" ] || fail "leftover-th-lease: returned task slot was removed"
-  pass "a completed holder cannot prove an unrecorded lease identity"
-}
-
 test_leftover_private_ref_is_retained() {
   local case_dir rc private_head
   case_dir=$(prepare_landed_ship leftover-private-ref)
@@ -3803,32 +3669,9 @@ test_leftover_empty_worktree_metadata_defers() {
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
   expect_code 0 "$rc" "leftover-empty-meta: teardown should succeed"
   [ -d "$case_dir/wt-resolver" ] || fail "leftover-empty-meta: cleanup ignored malformed metadata"
-  grep -q 'deferred extra pass' "$case_dir/stdout" \
-    || fail "leftover-empty-meta: no ownership deferral was reported"
+  grep -q 'leftover cleanup did not finish after task closure succeeded: ownership inventory unavailable' "$case_dir/stderr" \
+    || fail "leftover-empty-meta: no ownership warning was reported"
   pass "an empty metadata worktree defers the leftover pass"
-}
-
-test_leftover_provider_failure_retains_copy() {
-  local case_dir rc orphan
-  case_dir=$(prepare_landed_ship leftover-provider-failure)
-  orphan="$case_dir/provider-orphan"
-  git -C "$case_dir/project" worktree add -q -b fm/provider-failure "$orphan" main
-  cat > "$case_dir/fakebin/treehouse" <<SH
-#!/usr/bin/env bash
-if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then exit 0; fi
-if [ "\${1:-}" = status ]; then exit 9; fi
-exit 1
-SH
-  chmod +x "$case_dir/fakebin/treehouse"
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 0 "$rc" "leftover-provider-failure: teardown should still close"
-  [ -d "$orphan" ] || fail "leftover-provider-failure: provider failure removed the copy"
-  grep -q 'provider-failure' "$case_dir/stdout" \
-    || fail "leftover-provider-failure: no retain reason"
-  grep -q 'leftover cleanup did not finish after task closure succeeded' "$case_dir/stderr" \
-    || fail "leftover-provider-failure: no post-close warning"
-  pass "a provider failure retains the copy and reports partial cleanup"
 }
 
 test_leftover_known_done_ship_branch_is_removed() {
@@ -3876,229 +3719,9 @@ test_leftover_registered_home_without_state_defers() {
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
   expect_code 0 "$rc" "leftover-home-no-state: teardown should succeed"
   [ -d "$case_dir/wt-resolver" ] || fail "leftover-home-no-state: cleanup ignored unknown home state"
-  grep -q 'deferred extra pass' "$case_dir/stdout" \
-    || fail "leftover-home-no-state: no ownership deferral was reported"
+  grep -q 'leftover cleanup did not finish after task closure succeeded: ownership inventory unavailable' "$case_dir/stderr" \
+    || fail "leftover-home-no-state: no ownership warning was reported"
   pass "a registered home without readable state defers cleanup"
-}
-
-test_leftover_active_pool_and_unknown_states_are_retained() {
-  local case_dir rc available unknown
-  case_dir=$(prepare_landed_ship leftover-provider-states)
-  available="$case_dir/provider-available"
-  unknown="$case_dir/provider-maintenance"
-  git -C "$case_dir/project" worktree add -q -b fm/provider-available "$available" main
-  git -C "$case_dir/project" worktree add -q -b fm/provider-maintenance "$unknown" main
-  cat > "$case_dir/fakebin/treehouse" <<SH
-#!/usr/bin/env bash
-if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then exit 0; fi
-if [ "\${1:-}" = status ]; then
-  printf '%s\n' '[{"path":"$available","status":"available","lease_id":"","lease_holder":""},{"path":"$unknown","status":"maintenance","lease_id":"","lease_holder":""}]'
-  exit 0
-fi
-if [ "\${1:-}" = destroy ] || [ "\${1:-}" = return ]; then
-  printf '%s\n' "\$*" >> "$case_dir/provider.log"
-  exit 0
-fi
-exit 1
-SH
-  chmod +x "$case_dir/fakebin/treehouse"
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 0 "$rc" "leftover-provider-states: teardown should succeed"
-  [ -d "$available" ] || fail "leftover-provider-states: an active pool slot was removed"
-  [ -d "$unknown" ] || fail "leftover-provider-states: an unknown provider state was removed"
-  [ ! -e "$case_dir/provider.log" ] || fail "leftover-provider-states: a retained slot reached mutation"
-  grep -q "retained $available (idle-pool-slot)" "$case_dir/stdout" \
-    || fail "leftover-provider-states: no active pool retain reason"
-  grep -q "retained $unknown (unknown-lease)" "$case_dir/stdout" \
-    || fail "leftover-provider-states: no unknown state retain reason"
-  pass "active pool slots and unknown provider states stay retained"
-}
-
-test_leftover_safe_foreign_pool_copy_is_removed() {
-  local case_dir rc foreign_root orphan orphan_two active_count
-  case_dir=$(prepare_landed_ship leftover-foreign-unleased)
-  foreign_root="$case_dir/foreign-root"
-  orphan="$foreign_root/pool/1/project"
-  orphan_two="$foreign_root/pool/2/project"
-  mkdir -p "$(dirname "$orphan")"
-  mkdir -p "$(dirname "$orphan_two")"
-  git -C "$case_dir/project" worktree add -q -b fm/foreign-unleased "$orphan" main
-  git -C "$case_dir/project" worktree add -q -b fm/foreign-unleased-two "$orphan_two" main
-  cat > "$case_dir/fakebin/treehouse" <<SH
-#!/usr/bin/env bash
-if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then exit 0; fi
-if [ "\${1:-}" = status ]; then
-  if [ "\${TREEHOUSE_ROOT:-}" = "$foreign_root" ]; then
-    printf '%s\n' '[{"path":"$orphan","status":"available","lease_id":"","lease_holder":""},{"path":"$orphan_two","status":"available","lease_id":"","lease_holder":""}]'
-  else
-    count=0
-    [ ! -f "$case_dir/active-status-count" ] || count=\$(cat "$case_dir/active-status-count")
-    printf '%s\n' "\$((count + 1))" > "$case_dir/active-status-count"
-    printf '%s\n' '[]'
-  fi
-  exit 0
-fi
-if [ "\${1:-}" = destroy ]; then
-  printf '%s\n' "\$*" >> "$case_dir/provider.log"
-  target=
-  for arg in "\$@"; do target=\$arg; done
-  exec "$REAL_GIT_FOR_TEST" -C "$case_dir/project" worktree remove -- "\$target"
-fi
-exit 1
-SH
-  chmod +x "$case_dir/fakebin/treehouse"
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 0 "$rc" "leftover-foreign-unleased: teardown should succeed"
-  [ ! -d "$orphan" ] || fail "leftover-foreign-unleased: safe foreign pool copy remained"
-  [ ! -d "$orphan_two" ] || fail "leftover-foreign-unleased: second foreign copy remained"
-  grep -Fxq "destroy --yes -- $orphan" "$case_dir/provider.log" \
-    || fail "leftover-foreign-unleased: provider missed the first exact target"
-  grep -Fxq "destroy --yes -- $orphan_two" "$case_dir/provider.log" \
-    || fail "leftover-foreign-unleased: provider missed the second exact target"
-  active_count=$(cat "$case_dir/active-status-count")
-  [ "$active_count" = 3 ] \
-    || fail "leftover-foreign-unleased: filter status was not reused: $active_count calls"
-  pass "safe foreign copies reuse filtering status and keep final provider checks"
-}
-
-test_leftover_clean_provider_alias_is_retained() {
-  local case_dir rc foreign_root orphan
-  case_dir=$(prepare_landed_ship leftover-clean-provider-alias)
-  foreign_root="$case_dir/clean-root"
-  orphan="$foreign_root/pool/1/project"
-  mkdir -p "$(dirname "$orphan")"
-  git -C "$case_dir/project" worktree add -q -b fm/provider-clean "$orphan" main
-  cat > "$case_dir/fakebin/treehouse" <<SH
-#!/usr/bin/env bash
-if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then exit 0; fi
-if [ "\${1:-}" = status ]; then
-  if [ "\${TREEHOUSE_ROOT:-}" = "$foreign_root" ]; then
-    printf '%s\n' '[{"path":"$orphan","status":"clean","lease_id":"","lease_holder":""}]'
-  else
-    printf '%s\n' '[]'
-  fi
-  exit 0
-fi
-if [ "\${1:-}" = destroy ]; then
-  printf '%s\n' "\$*" >> "$case_dir/provider.log"
-  target=
-  for arg in "\$@"; do target=\$arg; done
-  exec "$REAL_GIT_FOR_TEST" -C "$case_dir/project" worktree remove -- "\$target"
-fi
-exit 1
-SH
-  chmod +x "$case_dir/fakebin/treehouse"
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 0 "$rc" "leftover-clean-provider-alias: teardown should succeed"
-  [ -d "$orphan" ] \
-    || fail "leftover-clean-provider-alias: unproved provider state removed the copy"
-  [ ! -e "$case_dir/provider.log" ] \
-    || fail "leftover-clean-provider-alias: unproved state reached destroy"
-  grep -q "retained $orphan (unknown-lease)" "$case_dir/stdout" \
-    || fail "leftover-clean-provider-alias: no unknown state retain reason"
-  pass "the undocumented clean provider state cannot authorize deletion"
-}
-
-test_leftover_retired_lease_receipt_does_not_authorize_removal() {
-  local case_dir rc foreign_root orphan receipt
-  case_dir=$(prepare_landed_ship leftover-retired-lease)
-  foreign_root="$case_dir/retired-root"
-  orphan="$foreign_root/pool/2/project"
-  mkdir -p "$(dirname "$orphan")" "$case_dir/data/retired-mate"
-  git -C "$case_dir/project" worktree add -q -b fm/retired-lease "$orphan" main
-  seed_done_task "$case_dir" retired-mate secondmate
-  receipt="$case_dir/data/retired-mate/treehouse-lease"
-  fm_write_meta "$receipt" \
-    "schema=fm-treehouse-lease.v1" "path=$orphan" \
-    "lease_id=retired-id" "lease_holder=retired-mate"
-  cat > "$case_dir/fakebin/treehouse" <<SH
-#!/usr/bin/env bash
-if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then exit 0; fi
-if [ "\${1:-}" = status ]; then
-  if [ "\${TREEHOUSE_ROOT:-}" = "$foreign_root" ]; then
-    printf '%s\n' '[{"path":"$orphan","status":"leased","lease_id":"retired-id","lease_holder":"retired-mate"}]'
-  else
-    printf '%s\n' '[]'
-  fi
-  exit 0
-fi
-if [ "\${1:-}" = return ] || [ "\${1:-}" = destroy ]; then
-  printf '%s\n' "\$*" >> "$case_dir/provider.log"
-  exit 0
-fi
-exit 1
-SH
-  chmod +x "$case_dir/fakebin/treehouse"
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 0 "$rc" "leftover-retired-lease: teardown should succeed"
-  [ -d "$orphan" ] || fail "leftover-retired-lease: a receipt released a leased copy"
-  [ ! -e "$case_dir/provider.log" ] \
-    || fail "leftover-retired-lease: a receipt authorized provider mutation"
-  grep -q "retained $orphan (unknown-lease)" "$case_dir/stdout" \
-    || fail "leftover-retired-lease: the lease was not retained as unknown"
-  pass "a retired lease receipt cannot authorize provider removal"
-}
-
-test_leftover_provider_destroy_process_race_is_retained() {
-  local case_dir rc foreign_root orphan sleeper
-  case_dir=$(prepare_landed_ship leftover-destroy-cwd-race)
-  foreign_root="$case_dir/destroy-race-root"
-  orphan="$foreign_root/pool/1/project"
-  mkdir -p "$(dirname "$orphan")"
-  git -C "$case_dir/project" worktree add -q -b fm/destroy-cwd-race "$orphan" main
-  cat > "$case_dir/fakebin/treehouse" <<SH
-#!/usr/bin/env bash
-if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
-  : > "$case_dir/after-return"
-  exit 0
-fi
-if [ "\${1:-}" = status ]; then
-  if [ "\${TREEHOUSE_ROOT:-}" = "$foreign_root" ]; then
-    printf '%s\n' '[{"path":"$orphan","status":"available","lease_id":"","lease_holder":""}]'
-  else
-    printf '%s\n' '[]'
-  fi
-  exit 0
-fi
-if [ "\${1:-}" = destroy ]; then
-  printf '%s\n' "\$*" >> "$case_dir/provider.log"
-  exit 0
-fi
-exit 1
-SH
-  cat > "$case_dir/fakebin/lsof" <<SH
-#!/usr/bin/env bash
-if [ -e "$case_dir/after-return" ]; then
-  count=0
-  [ ! -f "$case_dir/lsof-count" ] || count=\$(cat "$case_dir/lsof-count")
-  count=\$((count + 1))
-  printf '%s\n' "\$count" > "$case_dir/lsof-count"
-  if [ "\$count" = 4 ]; then
-    (cd "$orphan" && sleep 30) >/dev/null 2>&1 &
-    printf '%s\n' "\$!" > "$case_dir/sleeper-pid"
-    sleep 0.1
-  fi
-fi
-exec "$REAL_LSOF_FOR_TEST" "\$@"
-SH
-  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/lsof"
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 0 "$rc" "leftover-destroy-cwd-race: teardown should succeed"
-  [ -d "$orphan" ] || fail "leftover-destroy-cwd-race: a late process lost its unleased copy"
-  [ -f "$case_dir/sleeper-pid" ] || fail "leftover-destroy-cwd-race: the race process did not start"
-  [ ! -e "$case_dir/provider.log" ] || fail "leftover-destroy-cwd-race: provider destroy ran after a process appeared"
-  sleeper=$(cat "$case_dir/sleeper-pid")
-  kill -0 "$sleeper" 2>/dev/null || fail "leftover-destroy-cwd-race: the late process stopped"
-  kill "$sleeper" >/dev/null 2>&1 || true
-  wait "$sleeper" >/dev/null 2>&1 || true
-  grep -q "retained $orphan (mutation-recheck)" "$case_dir/stdout" \
-    || fail "leftover-destroy-cwd-race: the final process scan did not retain the copy"
-  pass "a late process retains an unleased provider copy before destroy"
 }
 
 test_leftover_proof_failures_warn_after_closure() {
@@ -4153,48 +3776,6 @@ SH
   pass "default and process proof failures warn after task closure"
 }
 
-test_leftover_real_treehouse_unleased_destroy() {
-  local case_dir rc root slot json lease_id holder real_th
-  real_th=$(command -v treehouse) || {
-    pass "real treehouse is not installed; unleased destroy case skipped"
-    return 0
-  }
-  case_dir=$(prepare_landed_ship leftover-real-unleased)
-  root="$case_dir/real-unleased-root"
-  mkdir -p "$root"
-  ( cd "$case_dir/project" && "$real_th" --root "$root" init >/dev/null )
-  json=$(cd "$case_dir/project" && "$real_th" --root "$root" get --lease \
-    --lease-holder real-unleased --json --no-fetch)
-  slot=$(printf '%s\n' "$json" | jq -r '.path')
-  lease_id=$(printf '%s\n' "$json" | jq -r '.lease_id')
-  holder=$(printf '%s\n' "$json" | jq -r '.lease_holder')
-  [ -n "$slot" ] && [ -d "$slot" ] || fail "leftover-real-unleased: treehouse get did not create a slot"
-  ( cd "$case_dir/project" && "$real_th" --root "$root" return \
-    --if-lease-id "$lease_id" --if-lease-holder "$holder" -- "$slot" >/dev/null )
-  [ -d "$slot" ] || fail "leftover-real-unleased: return removed the available slot"
-  cat > "$case_dir/fakebin/treehouse" <<SH
-#!/usr/bin/env bash
-if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then exit 0; fi
-if [ "\${1:-}" = status ] && [ "\${TREEHOUSE_ROOT:-}" != "$root" ]; then
-  printf '%s\n' '[]'
-  exit 0
-fi
-if [ "\${TREEHOUSE_ROOT:-}" = "$root" ]; then
-  if [ "\${1:-}" = destroy ]; then printf '%s\n' "\$*" >> "$case_dir/provider.log"; fi
-  exec "$real_th" --root "$root" "\$@"
-fi
-exit 1
-SH
-  chmod +x "$case_dir/fakebin/treehouse"
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 0 "$rc" "leftover-real-unleased: teardown should succeed"
-  [ ! -d "$slot" ] || fail "leftover-real-unleased: real provider kept the safe available slot"
-  grep -Fx "destroy --yes -- $slot" "$case_dir/provider.log" >/dev/null \
-    || fail "leftover-real-unleased: real provider did not receive exact destroy"
-  pass "real treehouse destroys a safe unleased foreign slot"
-}
-
 test_leftover_nested_registered_home_protects_live_copy() {
   local case_dir rc parent child
   case_dir=$(prepare_landed_ship leftover-nested-home)
@@ -4216,76 +3797,6 @@ test_leftover_nested_registered_home_protects_live_copy() {
   grep -q "retained $case_dir/wt-resolver (live-meta)" "$case_dir/stdout" \
     || fail "leftover-nested-home: nested metadata did not enter the keep-set"
   pass "nested registered homes lock and protect their live copies"
-}
-
-test_leftover_missing_admin_private_ref_and_operation_block_prune() {
-  local case_dir rc private_path operation_path private_admin private_head merge_head
-  case_dir=$(prepare_landed_ship leftover-missing-admin)
-  private_path=$(mktemp -d /tmp/fm-teardown-private.XXXXXX)
-  operation_path=$(mktemp -d /tmp/fm-teardown-operation.XXXXXX)
-  git -C "$case_dir/project" worktree add -q -b tmp-private "$private_path" main
-  printf 'private\n' > "$private_path/private.txt"
-  git -C "$private_path" add private.txt
-  git -C "$private_path" -c user.email=t@t -c user.name=t commit -q -m private
-  private_head=$(git -C "$private_path" rev-parse HEAD)
-  git -C "$private_path" reset -q --hard main
-  git -C "$private_path" update-ref refs/worktree/private "$private_head"
-  private_admin=$(git -C "$private_path" rev-parse --absolute-git-dir)
-  git -C "$case_dir/project" worktree add -q -b tmp-operation "$operation_path" main
-  merge_head=$(git -C "$operation_path" rev-parse --git-path MERGE_HEAD)
-  git -C "$operation_path" rev-parse HEAD > "$merge_head"
-  rm -rf "$private_path" "$operation_path"
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 0 "$rc" "leftover-missing-admin: teardown should succeed"
-  [ -d "$private_admin" ] || fail "leftover-missing-admin: private-ref registration was pruned"
-  [ -e "$merge_head" ] || fail "leftover-missing-admin: operation registration was pruned"
-  grep -q 'unique-unpublished' "$case_dir/stdout" \
-    || fail "leftover-missing-admin: no private-ref retain reason"
-  grep -q 'operation-in-progress' "$case_dir/stdout" \
-    || fail "leftover-missing-admin: no operation retain reason"
-  git --git-dir="$private_admin" update-ref -d refs/worktree/private
-  rm -f "$merge_head"
-  git -C "$case_dir/project" worktree prune --expire now
-  pass "missing administrative private refs and operation state block pruning"
-}
-
-test_leftover_private_tmp_registration_is_pruned() {
-  local case_dir rc missing admin
-  [ -d /private/tmp ] || {
-    pass "private tmp alias is unavailable; registration case skipped"
-    return 0
-  }
-  case_dir=$(prepare_landed_ship leftover-private-tmp)
-  missing=$(mktemp -d /private/tmp/fm-teardown-alias.XXXXXX)
-  git -C "$case_dir/project" worktree add -q -b tmp-private-alias "$missing" main
-  admin=$(git -C "$missing" rev-parse --absolute-git-dir)
-  rm -rf "$missing"
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 0 "$rc" "leftover-private-tmp: teardown should succeed"
-  [ ! -d "$admin" ] || fail "leftover-private-tmp: eligible alias registration remained"
-  pass "the private tmp alias is an eligible temporary registration"
-}
-
-test_leftover_missing_detached_admin_head_blocks_prune() {
-  local case_dir rc missing admin unique
-  case_dir=$(prepare_landed_ship leftover-detached-admin)
-  missing=$(mktemp -d /tmp/fm-teardown-detached.XXXXXX)
-  git -C "$case_dir/project" worktree add -q --detach "$missing" main
-  printf 'detached\n' > "$missing/detached.txt"
-  git -C "$missing" add detached.txt
-  git -C "$missing" -c user.email=t@t -c user.name=t commit -q -m detached
-  unique=$(git -C "$missing" rev-parse HEAD)
-  admin=$(git -C "$missing" rev-parse --absolute-git-dir)
-  rm -rf "$missing"
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 0 "$rc" "leftover-detached-admin: teardown should succeed"
-  [ -d "$admin" ] || fail "leftover-detached-admin: unique detached registration was pruned"
-  git -C "$case_dir/project" cat-file -e "$unique^{commit}" \
-    || fail "leftover-detached-admin: unique detached head was lost"
-  pass "a unique detached administrative head blocks the whole prune"
 }
 
 test_leftover_malformed_inventory_retains_candidates() {
@@ -4317,46 +3828,6 @@ SH
   grep -q 'worktree list failed' "$case_dir/stderr" \
     || fail "leftover-malformed-inventory: malformed inventory was silent"
   pass "a malformed worktree inventory retains all candidates with a warning"
-}
-
-test_leftover_prune_revalidates_the_full_inventory() {
-  local case_dir rc missing admin
-  case_dir=$(prepare_landed_ship leftover-prune-recheck)
-  missing=$(mktemp -d /tmp/fm-teardown-recheck.XXXXXX)
-  git -C "$case_dir/project" worktree add -q -b tmp-recheck "$missing" main
-  admin=$(git -C "$missing" rev-parse --absolute-git-dir)
-  rm -rf "$missing"
-  cat > "$case_dir/fakebin/treehouse" <<SH
-#!/usr/bin/env bash
-if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
-  : > "$case_dir/after-return"
-  exit 0
-fi
-exit 0
-SH
-  cat > "$case_dir/fakebin/git" <<SH
-#!/usr/bin/env bash
-if [ -e "$case_dir/after-return" ] && printf '%s\n' "\$*" | grep -F 'worktree list --porcelain' >/dev/null; then
-  count=0
-  [ ! -f "$case_dir/list-count" ] || count=\$(cat "$case_dir/list-count")
-  count=\$((count + 1))
-  printf '%s\n' "\$count" > "$case_dir/list-count"
-  if [ "\$count" = 2 ]; then
-    "$REAL_GIT_FOR_TEST" -C "$case_dir/project" rev-parse HEAD > "$admin/MERGE_HEAD"
-  fi
-fi
-exec "$REAL_GIT_FOR_TEST" "\$@"
-SH
-  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/git"
-  rc=0
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
-  expect_code 0 "$rc" "leftover-prune-recheck: teardown should succeed"
-  [ -d "$admin" ] || fail "leftover-prune-recheck: changed administrative state was pruned"
-  grep -q 'operation-in-progress' "$case_dir/stdout" \
-    || fail "leftover-prune-recheck: mutation inventory was not revalidated"
-  rm -f "$admin/MERGE_HEAD"
-  git -C "$case_dir/project" worktree prune --expire now
-  pass "the full prune set is revalidated at the mutation boundary"
 }
 
 test_leftover_ignored_payload_and_partial_success() {
@@ -4452,16 +3923,16 @@ SH
 }
 
 test_cleanup_branch_mutation_races_and_git_failures() {
-  local case_dir repo old_tip new_tip reason ref_count checkout_count
+  local case_dir race_repo old_tip new_tip reason ref_count checkout_count
   case_dir=$(prepare_landed_ship leftover-branch-races)
-  repo="$case_dir/project"
-  old_tip=$(git -C "$repo" rev-parse main)
-  new_tip=$(printf 'race\n' | git -C "$repo" commit-tree "main^{tree}" -p main)
-  git -C "$repo" branch race-ref "$old_tip"
+  race_repo="$case_dir/project"
+  old_tip=$(git -C "$race_repo" rev-parse main)
+  new_tip=$(printf 'race\n' | git -C "$race_repo" commit-tree "main^{tree}" -p main)
+  git -C "$race_repo" branch race-ref "$old_tip"
   ref_count="$case_dir/ref-count"
   reason=$(
     . "$ROOT/bin/fm-git-cleanup-lib.sh"
-    FM_GIT_CLEANUP_DEFAULT_REPO=$repo
+    FM_GIT_CLEANUP_DEFAULT_REPO=$race_repo
     FM_GIT_CLEANUP_DEFAULT_NAME=main
     FM_GIT_CLEANUP_DEFAULT_REF=refs/remotes/origin/main
     FM_GIT_CLEANUP_META_BRANCHES=
@@ -4473,22 +3944,22 @@ test_cleanup_branch_mutation_races_and_git_failures() {
         calls=$((calls + 1))
         printf '%s\n' "$calls" > "$ref_count"
         if [ "$calls" = 2 ]; then
-          command git -C "$repo" update-ref refs/heads/race-ref "$new_tip"
+          command git -C "$race_repo" update-ref refs/heads/race-ref "$new_tip"
         fi
       fi
       command git "$@"
     }
-    fm_git_cleanup_delete_branch "$repo" race-ref "$old_tip" no-mistakes "" 0
+    fm_git_cleanup_delete_branch "$race_repo" race-ref "$old_tip" no-mistakes "" 0
   ) || true
   [ "$reason" = tip-changed ] || fail "leftover-branch-races: ref change returned $reason"
-  git -C "$repo" show-ref --verify --quiet refs/heads/race-ref \
+  git -C "$race_repo" show-ref --verify --quiet refs/heads/race-ref \
     || fail "leftover-branch-races: changed ref was deleted"
 
-  git -C "$repo" branch race-checkout "$old_tip"
+  git -C "$race_repo" branch race-checkout "$old_tip"
   checkout_count="$case_dir/checkout-count"
   reason=$(
     . "$ROOT/bin/fm-git-cleanup-lib.sh"
-    FM_GIT_CLEANUP_DEFAULT_REPO=$repo
+    FM_GIT_CLEANUP_DEFAULT_REPO=$race_repo
     FM_GIT_CLEANUP_DEFAULT_NAME=main
     FM_GIT_CLEANUP_DEFAULT_REF=refs/remotes/origin/main
     FM_GIT_CLEANUP_META_BRANCHES=
@@ -4506,16 +3977,16 @@ test_cleanup_branch_mutation_races_and_git_failures() {
       fi
       command git "$@"
     }
-    fm_git_cleanup_delete_branch "$repo" race-checkout "$old_tip" no-mistakes "" 0
+    fm_git_cleanup_delete_branch "$race_repo" race-checkout "$old_tip" no-mistakes "" 0
   ) || true
   [ "$reason" = checked-out ] || fail "leftover-branch-races: checkout change returned $reason"
-  git -C "$repo" show-ref --verify --quiet refs/heads/race-checkout \
+  git -C "$race_repo" show-ref --verify --quiet refs/heads/race-checkout \
     || fail "leftover-branch-races: newly checked-out branch was deleted"
 
-  git -C "$repo" branch race-failure "$old_tip"
+  git -C "$race_repo" branch race-failure "$old_tip"
   reason=$(
     . "$ROOT/bin/fm-git-cleanup-lib.sh"
-    FM_GIT_CLEANUP_DEFAULT_REPO=$repo
+    FM_GIT_CLEANUP_DEFAULT_REPO=$race_repo
     FM_GIT_CLEANUP_DEFAULT_NAME=main
     FM_GIT_CLEANUP_DEFAULT_REF=refs/remotes/origin/main
     FM_GIT_CLEANUP_META_BRANCHES=
@@ -4526,42 +3997,12 @@ test_cleanup_branch_mutation_races_and_git_failures() {
       fi
       command git "$@"
     }
-    fm_git_cleanup_delete_branch "$repo" race-failure "$old_tip" no-mistakes "" 0
+    fm_git_cleanup_delete_branch "$race_repo" race-failure "$old_tip" no-mistakes "" 0
   ) || true
   [ "$reason" = delete-failed ] || fail "leftover-branch-races: Git failure returned $reason"
-  git -C "$repo" show-ref --verify --quiet refs/heads/race-failure \
+  git -C "$race_repo" show-ref --verify --quiet refs/heads/race-failure \
     || fail "leftover-branch-races: failed Git deletion removed the branch"
   pass "ref changes, checkout changes, and Git failures retain branches"
-}
-
-test_leftover_unknown_lease_is_retained() {
-  local case_dir rc root slot real_th
-  real_th=$(command -v treehouse) || {
-    pass "real treehouse is not installed; unknown-lease provider case skipped"
-    return 0
-  }
-  case_dir=$(prepare_landed_ship leftover-th-unknown)
-  root="$case_dir/th-root"
-  mkdir -p "$root"
-  ( cd "$case_dir/project" && "$real_th" --root "$root" init >/dev/null )
-  slot=$(cd "$case_dir/project" && "$real_th" --root "$root" get --lease --json --no-fetch | jq -r '.path')
-  [ -n "$slot" ] && [ -d "$slot" ] || fail "leftover-th-unknown: treehouse get did not create a slot"
-  cat > "$case_dir/fakebin/treehouse" <<SH
-#!/usr/bin/env bash
-set -u
-if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
-  exit 0
-fi
-exec "$real_th" --root "$root" "\$@"
-SH
-  chmod +x "$case_dir/fakebin/treehouse"
-  set +e
-  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
-  rc=$?
-  set -e
-  expect_code 0 "$rc" "leftover-th-unknown: teardown should succeed"
-  [ -d "$slot" ] || fail "leftover-th-unknown: empty-holder lease was destroyed"
-  pass "an unknown treehouse lease holder is retained"
 }
 
 test_leftover_then_sync_retains_unique_gone_branch() {
@@ -4662,11 +4103,9 @@ test_leftover_locked_sibling_is_retained
 test_leftover_dirty_sibling_is_retained
 test_leftover_stale_remote_ref_does_not_prove_sibling
 test_leftover_default_content_avoids_forge_lookup
-test_leftover_orig_head_retains_live_and_missing_copies
-test_leftover_gone_tmp_prunes_only_when_all_safe
-test_leftover_gone_tmp_prunes_when_all_eligible
-test_leftover_incomplete_inventory_retains_registration
-test_leftover_prune_applies_complete_keep_set
+test_leftover_orig_head_retains_live_copy
+test_leftover_gone_tmp_registration_is_reported
+test_leftover_unrecorded_copy_is_reported_without_treehouse
 test_leftover_unpublished_and_force_do_not_bypass
 test_leftover_pr_of_task_does_not_prove_sibling
 test_leftover_captured_landed_branch_is_deleted
@@ -4675,30 +4114,17 @@ test_leftover_live_cwd_and_host_under_sibling
 test_leftover_submodule_dirt_is_retained
 test_leftover_rerun_is_idempotent
 test_leftover_contended_lock_defers
-test_leftover_real_treehouse_unrecorded_lease
-test_leftover_unknown_lease_is_retained
 test_leftover_then_sync_retains_unique_gone_branch
 test_leftover_private_ref_is_retained
 test_leftover_registered_stopped_home_is_retained
 test_leftover_linked_operation_is_retained
 test_leftover_empty_worktree_metadata_defers
-test_leftover_provider_failure_retains_copy
 test_leftover_known_done_ship_branch_is_removed
 test_leftover_done_ship_evidence_is_repo_bound
 test_leftover_registered_home_without_state_defers
-test_leftover_active_pool_and_unknown_states_are_retained
-test_leftover_safe_foreign_pool_copy_is_removed
-test_leftover_clean_provider_alias_is_retained
-test_leftover_retired_lease_receipt_does_not_authorize_removal
-test_leftover_provider_destroy_process_race_is_retained
 test_leftover_proof_failures_warn_after_closure
-test_leftover_real_treehouse_unleased_destroy
 test_leftover_nested_registered_home_protects_live_copy
-test_leftover_missing_admin_private_ref_and_operation_block_prune
-test_leftover_private_tmp_registration_is_pruned
-test_leftover_missing_detached_admin_head_blocks_prune
 test_leftover_malformed_inventory_retains_candidates
-test_leftover_prune_revalidates_the_full_inventory
 test_leftover_ignored_payload_and_partial_success
 test_leftover_process_started_after_scan_is_retained
 test_leftover_default_is_resolved_once_for_multiple_copies
