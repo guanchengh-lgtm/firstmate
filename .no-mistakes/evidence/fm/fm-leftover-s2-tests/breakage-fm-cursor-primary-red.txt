@@ -1,0 +1,21 @@
+ok - fm-turnend-guard: Cursor payload is inert without --cursor and blocks with it
+ok - fm-turnend-guard: a non-Cursor payload keeps blocking
+ok - fm-claude-stop-autoarm: inert on a Cursor-delivered payload
+ok - fm-sessionstart-run: inert on a Cursor payload, unchanged otherwise
+ok - fm-arm-pretool-check: Cursor duplicate allows, --cursor denies in Cursor's own shape
+ok - fm-cd-pretool-check: Cursor duplicate allows, --cursor denies in Cursor's own shape
+ok - cursor park: silent no-op when no supervision is needed
+ok - cursor park: an actionable close is delivered as one watcher-kind follow-up
+ok - cursor park: matching ancestry survives a startup lease
+ok - cursor park: always exits 0, even when supervision is genuinely down
+ok - cursor park: the repair nag is bounded and then goes quiet
+ok - cursor park: a repair nag is emitted only after its budget persists
+ok - cursor park: a delivered wake resets the bounded repair budget
+ok - cursor park: the loop_count ceiling warns exactly once, then stops the loop
+ok - cursor park: an older park stands down after a newer stop claim
+ok - cursor park: the newest stop exclusively owns a concurrent commit
+ok - cursor park: a superseded park cannot consume repair budget
+ok - cursor park: inert while away mode is active
+not ok - Pi-hosted Cursor SDK must not park or wake: {
+  "followup_message": "⁣FIRSTMATE_OP: v1 watcher: firstmate watcher wake - one supervision event needs a handling turn now.\nstale: fixture-win needs a look\n\nRun bin/fm-wake-drain.sh first, handle the wake, then run its exact WAKE_ACK_REQUIRED --ack-through command. Until that post-handling acknowledgement, interruption leaves the wake durable for idempotent re-handling. This stop hook owns watcher continuity: when the handling turn ends, the next needed cycle parks automatically - do NOT run bin/fm-watch-arm.sh after an ordinary wake."
+}
