@@ -3687,6 +3687,7 @@ if [ "\${1:-}" = status ]; then
 fi
 if [ "\${1:-}" = return ]; then
   printf '%s\n' "\$*" >> "$case_dir/provider.log"
+  "$REAL_GIT_FOR_TEST" -C "$orphan" checkout -q --detach main
   printf '%s\n' available > "$case_dir/provider-state"
   exit 0
 fi
@@ -3701,12 +3702,312 @@ SH
   run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
   expect_code 0 "$rc" "leftover-retired-lease: teardown should succeed"
   [ ! -d "$orphan" ] || fail "leftover-retired-lease: proved retired lease remained"
-  grep -Fx "return --if-lease-id retired-id --if-lease-holder retired-mate --force -- $orphan" \
+  grep -Fx "return --if-lease-id retired-id --if-lease-holder retired-mate -- $orphan" \
     "$case_dir/provider.log" >/dev/null \
     || fail "leftover-retired-lease: conditional return did not match the receipt"
   grep -Fx "destroy --yes -- $orphan" "$case_dir/provider.log" >/dev/null \
     || fail "leftover-retired-lease: exact destroy did not follow the return"
+  git -C "$case_dir/project" show-ref --verify --quiet refs/heads/fm/retired-lease \
+    && fail "leftover-retired-lease: the original orphan branch remained"
   pass "an exact durable retirement receipt permits conditional return and removal"
+}
+
+test_leftover_provider_process_races_are_retained() {
+  local case_dir rc foreign_root orphan receipt sleeper
+  case_dir=$(prepare_landed_ship leftover-return-cwd-race)
+  seed_done_task "$case_dir" retired-mate secondmate
+  foreign_root="$case_dir/return-race-root"
+  orphan="$foreign_root/pool/1/project"
+  mkdir -p "$(dirname "$orphan")" "$case_dir/data/retired-mate"
+  git -C "$case_dir/project" worktree add -q -b fm/return-cwd-race "$orphan" main
+  receipt="$case_dir/data/retired-mate/treehouse-lease"
+  fm_write_meta "$receipt" \
+    "schema=fm-treehouse-lease.v1" "path=$orphan" \
+    "lease_id=return-race-id" "lease_holder=retired-mate"
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  : > "$case_dir/after-return"
+  exit 0
+fi
+if [ "\${1:-}" = status ]; then
+  if [ "\${TREEHOUSE_ROOT:-}" = "$foreign_root" ]; then
+    printf '%s\n' '[{"path":"$orphan","status":"leased","lease_id":"return-race-id","lease_holder":"retired-mate"}]'
+  else
+    printf '%s\n' '[]'
+  fi
+  exit 0
+fi
+if [ "\${1:-}" = return ]; then
+  printf '%s\n' "\$*" >> "$case_dir/provider.log"
+  exit 0
+fi
+exit 1
+SH
+  cat > "$case_dir/fakebin/lsof" <<SH
+#!/usr/bin/env bash
+if [ -e "$case_dir/after-return" ]; then
+  count=0
+  [ ! -f "$case_dir/lsof-count" ] || count=\$(cat "$case_dir/lsof-count")
+  count=\$((count + 1))
+  printf '%s\n' "\$count" > "$case_dir/lsof-count"
+  if [ "\$count" = 3 ]; then
+    (cd "$orphan" && sleep 30) >/dev/null 2>&1 &
+    printf '%s\n' "\$!" > "$case_dir/sleeper-pid"
+    sleep 0.1
+  fi
+fi
+exec "$REAL_LSOF_FOR_TEST" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/lsof"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-return-cwd-race: teardown should succeed"
+  [ -d "$orphan" ] || fail "leftover-return-cwd-race: a late process lost its leased copy"
+  [ -f "$case_dir/sleeper-pid" ] || fail "leftover-return-cwd-race: the race process did not start"
+  [ ! -e "$case_dir/provider.log" ] || fail "leftover-return-cwd-race: the provider return ran after a process appeared"
+  sleeper=$(cat "$case_dir/sleeper-pid")
+  kill -0 "$sleeper" 2>/dev/null || fail "leftover-return-cwd-race: the provider killed the late process"
+  kill "$sleeper" >/dev/null 2>&1 || true
+  wait "$sleeper" >/dev/null 2>&1 || true
+  grep -q "retained $orphan (mutation-recheck)" "$case_dir/stdout" \
+    || fail "leftover-return-cwd-race: the final process scan did not retain the lease"
+
+  case_dir=$(prepare_landed_ship leftover-destroy-cwd-race)
+  foreign_root="$case_dir/destroy-race-root"
+  orphan="$foreign_root/pool/1/project"
+  mkdir -p "$(dirname "$orphan")"
+  git -C "$case_dir/project" worktree add -q -b fm/destroy-cwd-race "$orphan" main
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  : > "$case_dir/after-return"
+  exit 0
+fi
+if [ "\${1:-}" = status ]; then
+  if [ "\${TREEHOUSE_ROOT:-}" = "$foreign_root" ]; then
+    printf '%s\n' '[{"path":"$orphan","status":"available","lease_id":"","lease_holder":""}]'
+  else
+    printf '%s\n' '[]'
+  fi
+  exit 0
+fi
+if [ "\${1:-}" = destroy ]; then
+  printf '%s\n' "\$*" >> "$case_dir/provider.log"
+  exit 0
+fi
+exit 1
+SH
+  cat > "$case_dir/fakebin/lsof" <<SH
+#!/usr/bin/env bash
+if [ -e "$case_dir/after-return" ]; then
+  count=0
+  [ ! -f "$case_dir/lsof-count" ] || count=\$(cat "$case_dir/lsof-count")
+  count=\$((count + 1))
+  printf '%s\n' "\$count" > "$case_dir/lsof-count"
+  if [ "\$count" = 4 ]; then
+    (cd "$orphan" && sleep 30) >/dev/null 2>&1 &
+    printf '%s\n' "\$!" > "$case_dir/sleeper-pid"
+    sleep 0.1
+  fi
+fi
+exec "$REAL_LSOF_FOR_TEST" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/lsof"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-destroy-cwd-race: teardown should succeed"
+  [ -d "$orphan" ] || fail "leftover-destroy-cwd-race: a late process lost its unleased copy"
+  [ -f "$case_dir/sleeper-pid" ] || fail "leftover-destroy-cwd-race: the race process did not start"
+  [ ! -e "$case_dir/provider.log" ] || fail "leftover-destroy-cwd-race: provider destroy ran after a process appeared"
+  sleeper=$(cat "$case_dir/sleeper-pid")
+  kill -0 "$sleeper" 2>/dev/null || fail "leftover-destroy-cwd-race: the late process stopped"
+  kill "$sleeper" >/dev/null 2>&1 || true
+  wait "$sleeper" >/dev/null 2>&1 || true
+  grep -q "retained $orphan (mutation-recheck)" "$case_dir/stdout" \
+    || fail "leftover-destroy-cwd-race: the final process scan did not retain the copy"
+  pass "late processes retain provider copies before return and destroy"
+}
+
+test_leftover_conditional_return_failure_warns() {
+  local case_dir rc foreign_root orphan receipt
+  case_dir=$(prepare_landed_ship leftover-return-failure)
+  seed_done_task "$case_dir" retired-mate secondmate
+  foreign_root="$case_dir/return-failure-root"
+  orphan="$foreign_root/pool/1/project"
+  mkdir -p "$(dirname "$orphan")" "$case_dir/data/retired-mate"
+  git -C "$case_dir/project" worktree add -q -b fm/return-failure "$orphan" main
+  receipt="$case_dir/data/retired-mate/treehouse-lease"
+  fm_write_meta "$receipt" \
+    "schema=fm-treehouse-lease.v1" "path=$orphan" \
+    "lease_id=return-failure-id" "lease_holder=retired-mate"
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then exit 0; fi
+if [ "\${1:-}" = status ]; then
+  if [ "\${TREEHOUSE_ROOT:-}" = "$foreign_root" ]; then
+    printf '%s\n' '[{"path":"$orphan","status":"leased","lease_id":"return-failure-id","lease_holder":"retired-mate"}]'
+  else
+    printf '%s\n' '[]'
+  fi
+  exit 0
+fi
+if [ "\${1:-}" = return ]; then exit 9; fi
+exit 1
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-return-failure: teardown should still close"
+  [ -d "$orphan" ] || fail "leftover-return-failure: failed return removed the copy"
+  grep -q "retained $orphan (provider-failure)" "$case_dir/stdout" \
+    || fail "leftover-return-failure: conditional return failure was quiet retention"
+  grep -q 'leftover cleanup did not finish after task closure succeeded' "$case_dir/stderr" \
+    || fail "leftover-return-failure: conditional return failure did not warn"
+  pass "a failed conditional return reports a post-close provider warning"
+}
+
+test_leftover_proof_failures_warn_after_closure() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-default-failure)
+  add_clean_sibling "$case_dir" wt-resolver
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  : > "$case_dir/after-return"
+  exit 0
+fi
+exit 0
+SH
+  cat > "$case_dir/fakebin/git" <<SH
+#!/usr/bin/env bash
+if [ -e "$case_dir/after-return" ] && printf '%s\n' "\$*" | grep -F 'fetch --quiet origin +refs/heads/main:refs/remotes/origin/main' >/dev/null; then
+  exit 9
+fi
+exec "$REAL_GIT_FOR_TEST" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/git"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-default-failure: teardown should still close"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-default-failure: missing default proof removed a copy"
+  grep -q 'leftover cleanup did not finish after task closure succeeded: default branch proof unavailable' "$case_dir/stderr" \
+    || fail "leftover-default-failure: missing default proof did not warn"
+
+  case_dir=$(prepare_landed_ship leftover-cwd-failure)
+  add_clean_sibling "$case_dir" wt-resolver
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  : > "$case_dir/after-return"
+  exit 0
+fi
+exit 0
+SH
+  cat > "$case_dir/fakebin/lsof" <<SH
+#!/usr/bin/env bash
+[ ! -e "$case_dir/after-return" ] || exit 9
+exec "$REAL_LSOF_FOR_TEST" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/lsof"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-cwd-failure: teardown should still close"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-cwd-failure: failed process inspection removed a copy"
+  grep -q 'leftover cleanup did not finish after task closure succeeded: cwd inspection failed' "$case_dir/stderr" \
+    || fail "leftover-cwd-failure: failed process inspection did not warn"
+  pass "default and process proof failures warn after task closure"
+}
+
+test_leftover_real_treehouse_unleased_destroy() {
+  local case_dir rc root slot json lease_id holder real_th
+  real_th=$(command -v treehouse) || {
+    pass "real treehouse is not installed; unleased destroy case skipped"
+    return 0
+  }
+  case_dir=$(prepare_landed_ship leftover-real-unleased)
+  root="$case_dir/real-unleased-root"
+  mkdir -p "$root"
+  ( cd "$case_dir/project" && "$real_th" --root "$root" init >/dev/null )
+  json=$(cd "$case_dir/project" && "$real_th" --root "$root" get --lease \
+    --lease-holder real-unleased --json --no-fetch)
+  slot=$(printf '%s\n' "$json" | jq -r '.path')
+  lease_id=$(printf '%s\n' "$json" | jq -r '.lease_id')
+  holder=$(printf '%s\n' "$json" | jq -r '.lease_holder')
+  [ -n "$slot" ] && [ -d "$slot" ] || fail "leftover-real-unleased: treehouse get did not create a slot"
+  ( cd "$case_dir/project" && "$real_th" --root "$root" return \
+    --if-lease-id "$lease_id" --if-lease-holder "$holder" -- "$slot" >/dev/null )
+  [ -d "$slot" ] || fail "leftover-real-unleased: return removed the available slot"
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then exit 0; fi
+if [ "\${1:-}" = status ] && [ "\${TREEHOUSE_ROOT:-}" != "$root" ]; then
+  printf '%s\n' '[]'
+  exit 0
+fi
+if [ "\${TREEHOUSE_ROOT:-}" = "$root" ]; then
+  if [ "\${1:-}" = destroy ]; then printf '%s\n' "\$*" >> "$case_dir/provider.log"; fi
+  exec "$real_th" --root "$root" "\$@"
+fi
+exit 1
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-real-unleased: teardown should succeed"
+  [ ! -d "$slot" ] || fail "leftover-real-unleased: real provider kept the safe available slot"
+  grep -Fx "destroy --yes -- $slot" "$case_dir/provider.log" >/dev/null \
+    || fail "leftover-real-unleased: real provider did not receive exact destroy"
+  pass "real treehouse destroys a safe unleased foreign slot"
+}
+
+test_leftover_real_treehouse_retired_return_and_destroy() {
+  local case_dir rc root slot json lease_id holder receipt real_th
+  real_th=$(command -v treehouse) || {
+    pass "real treehouse is not installed; retired lease removal case skipped"
+    return 0
+  }
+  case_dir=$(prepare_landed_ship leftover-real-retired)
+  seed_done_task "$case_dir" retired-mate secondmate
+  root="$case_dir/real-retired-root"
+  mkdir -p "$root" "$case_dir/data/retired-mate"
+  ( cd "$case_dir/project" && "$real_th" --root "$root" init >/dev/null )
+  json=$(cd "$case_dir/project" && "$real_th" --root "$root" get --lease \
+    --lease-holder retired-mate --json --no-fetch)
+  slot=$(printf '%s\n' "$json" | jq -r '.path')
+  lease_id=$(printf '%s\n' "$json" | jq -r '.lease_id')
+  holder=$(printf '%s\n' "$json" | jq -r '.lease_holder')
+  [ -n "$slot" ] && [ -d "$slot" ] || fail "leftover-real-retired: treehouse get did not create a slot"
+  receipt="$case_dir/data/retired-mate/treehouse-lease"
+  fm_write_meta "$receipt" \
+    "schema=fm-treehouse-lease.v1" "path=$slot" \
+    "lease_id=$lease_id" "lease_holder=$holder"
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then exit 0; fi
+if [ "\${1:-}" = status ] && [ "\${TREEHOUSE_ROOT:-}" != "$root" ]; then
+  printf '%s\n' '[]'
+  exit 0
+fi
+if [ "\${TREEHOUSE_ROOT:-}" = "$root" ]; then
+  case "\${1:-}" in
+    return|destroy) printf '%s\n' "\$*" >> "$case_dir/provider.log" ;;
+  esac
+  exec "$real_th" --root "$root" "\$@"
+fi
+exit 1
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-real-retired: teardown should succeed"
+  [ ! -d "$slot" ] || fail "leftover-real-retired: real provider kept the proved retired slot"
+  grep -Fx "return --if-lease-id $lease_id --if-lease-holder $holder -- $slot" \
+    "$case_dir/provider.log" >/dev/null \
+    || fail "leftover-real-retired: real provider did not receive conditional return"
+  grep -Fx "destroy --yes -- $slot" "$case_dir/provider.log" >/dev/null \
+    || fail "leftover-real-retired: real provider did not receive exact destroy"
+  pass "real treehouse conditionally returns and destroys a retired lease"
 }
 
 test_leftover_nested_registered_home_protects_live_copy() {
@@ -4194,6 +4495,11 @@ test_leftover_registered_home_without_state_defers
 test_leftover_active_pool_and_unknown_states_are_retained
 test_leftover_safe_foreign_pool_copy_is_removed
 test_leftover_exact_retired_lease_is_removed
+test_leftover_provider_process_races_are_retained
+test_leftover_conditional_return_failure_warns
+test_leftover_proof_failures_warn_after_closure
+test_leftover_real_treehouse_unleased_destroy
+test_leftover_real_treehouse_retired_return_and_destroy
 test_leftover_nested_registered_home_protects_live_copy
 test_leftover_missing_admin_private_ref_and_operation_block_prune
 test_leftover_private_tmp_registration_is_pruned

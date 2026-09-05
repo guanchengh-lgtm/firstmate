@@ -980,6 +980,7 @@ fm_git_cleanup_treehouse_root_of() {
   slot=$(dirname "$path") || return 1
   pool=$(dirname "$slot") || return 1
   root=$(dirname "$pool") || return 1
+  [ "$(basename "$root")" != .treehouse ] || root=$(dirname "$root")
   [ "$root" != / ] || return 1
   fm_git_cleanup_abs_dir "$root"
 }
@@ -1030,7 +1031,7 @@ fm_git_cleanup_treehouse_return_if_lease() {
   local repo=$1 root=$2 path=$3 lease_id=$4 lease_holder=$5
   (cd "$repo" && fm_run_timed "$FM_GIT_CLEANUP_TIMEOUT_SECS" \
     env TREEHOUSE_ROOT="$root" treehouse return --if-lease-id "$lease_id" \
-      --if-lease-holder "$lease_holder" --force -- "$path")
+      --if-lease-holder "$lease_holder" -- "$path")
 }
 
 fm_git_cleanup_retired_lease_matches() {
@@ -1078,11 +1079,11 @@ fm_git_cleanup_copy_ready_at_mutation() {
   ! fm_git_cleanup_protects_host "$path" || return 1
   ! fm_git_cleanup_protects_home "$path" || return 1
   ! fm_git_cleanup_meta_mentions_path "$path" || return 1
-  fm_git_cleanup_cwd_snapshot "$snap" || return 1
-  ! fm_git_cleanup_cwd_live "$snap" "$path" || return 1
   fm_git_cleanup_copy_is_clean "$path" || return 1
   head=${signature%%$'\t'*}
-  fm_git_cleanup_copy_refs_are_landed "$path" "$branch" "$mode" "$head"
+  fm_git_cleanup_copy_refs_are_landed "$path" "$branch" "$mode" "$head" || return 1
+  fm_git_cleanup_cwd_snapshot "$snap" || return 1
+  ! fm_git_cleanup_cwd_live "$snap" "$path"
 }
 
 fm_git_cleanup_consider_branch() {
@@ -1258,11 +1259,15 @@ fm_git_cleanup_handle_orphan() {
         return 0
       fi
       if ! fm_git_cleanup_treehouse_return_if_lease "$repo" "$root" "$path" "$lease_id" "$lease_holder"; then
-        fm_git_cleanup_retain "$path" "unknown-lease"
+        FM_GIT_CLEANUP_FAILED=1
+        fm_git_cleanup_retain "$path" "provider-failure"
         return 0
       fi
       [ -d "$path" ] || {
         fm_git_cleanup_removed "$path"
+        if [ -n "$branch" ] && [ "$branch" != HEAD ]; then
+          FM_GIT_CLEANUP_ATTRIB_BRANCHES=$FM_GIT_CLEANUP_ATTRIB_BRANCHES$'\n'"$branch $head"
+        fi
         return 0
       }
       post_signature=$(fm_git_cleanup_copy_signature "$path") || {
@@ -1335,8 +1340,8 @@ fm_git_cleanup_handle_orphan() {
     return 0
   fi
   fm_git_cleanup_removed "$path"
-  if [ -n "$post_branch" ] && [ "$post_branch" != HEAD ]; then
-    FM_GIT_CLEANUP_ATTRIB_BRANCHES=$FM_GIT_CLEANUP_ATTRIB_BRANCHES$'\n'"$post_branch $head"
+  if [ -n "$branch" ] && [ "$branch" != HEAD ]; then
+    FM_GIT_CLEANUP_ATTRIB_BRANCHES=$FM_GIT_CLEANUP_ATTRIB_BRANCHES$'\n'"$branch $head"
   fi
 }
 
@@ -1481,8 +1486,8 @@ fm_git_cleanup_leftover_pass() {
   fi
   if ! fm_git_cleanup_prepare_default "$repo" "$mode"; then
     fm_git_cleanup_release_taskset_locks
-    fm_git_cleanup_note "deferred extra pass (default branch proof unavailable)"
-    return 0
+    fm_git_cleanup_warn "default branch proof unavailable"
+    return 1
   fi
   tmp=$(mktemp -d "${TMPDIR:-/tmp}/fm-git-cleanup.XXXXXX") || {
     fm_git_cleanup_release_taskset_locks
@@ -1494,8 +1499,8 @@ fm_git_cleanup_leftover_pass() {
   if ! fm_git_cleanup_cwd_snapshot "$snap"; then
     fm_git_cleanup_release_taskset_locks
     rm -rf -- "$tmp"
-    fm_git_cleanup_note "deferred extra pass (cwd inspection failed)"
-    return 0
+    fm_git_cleanup_warn "cwd inspection failed"
+    return 1
   fi
   entries=$(fm_git_cleanup_porcelain_entries "$repo") || {
     fm_git_cleanup_release_taskset_locks
