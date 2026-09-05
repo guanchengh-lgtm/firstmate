@@ -729,6 +729,44 @@ test_gone_landed_squash_branch_is_pruned() {
   pass "a [gone] branch whose content is in the default branch is pruned"
 }
 
+test_gone_branch_with_live_metadata_is_retained() {
+  local home clone work
+  home=$(new_home)
+  clone=$(build_pair "$home" gonemeta)
+  work="$home/work-gonemeta"
+  make_gone_branch "$clone" "$work" fm/paused 0
+  mkdir -p "$home/state"
+  fm_write_meta "$home/state/paused.meta" \
+    "window=firstmate:paused" \
+    "worktree=$clone" \
+    "project=$clone" \
+    "kind=ship"
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-fleet-sync.sh" "$clone" \
+    > "$home/out-gonemeta" 2> "$home/err-gonemeta" || true
+  git -C "$clone" rev-parse --verify fm/paused >/dev/null \
+    || fail "gone-meta: a live task branch was deleted"
+  grep -q 'retained fm/paused (live-meta)' "$home/err-gonemeta" \
+    || fail "gone-meta: no live metadata retain reason"
+  pass "live task metadata protects a [gone] branch"
+}
+
+test_unknown_custom_default_retains_gone_branch() {
+  local home clone work
+  home=$(new_home)
+  clone=$(build_pair "$home" gonecustom)
+  work="$home/work-gonecustom"
+  make_gone_branch "$clone" "$work" custom 0
+  git --git-dir="$home/remotes/gonecustom.git" symbolic-ref HEAD refs/heads/custom
+  git -C "$clone" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/custom
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-fleet-sync.sh" "$clone" \
+    > "$home/out-gonecustom" 2> "$home/err-gonecustom" || true
+  git -C "$clone" rev-parse --verify custom >/dev/null \
+    || fail "gone-custom: unknown custom default branch was deleted"
+  grep -q 'default branch proof unavailable' "$home/err-gonecustom" \
+    || fail "gone-custom: no unknown default retain reason"
+  pass "a failed default lookup retains a custom [gone] branch"
+}
+
 test_worktree_list_failure_retains_gone_branches() {
   local home clone work fakebin
   home=$(new_home)
@@ -804,4 +842,6 @@ test_non_clone_dir_named_directly_never_syncs_the_enclosing_repo
 test_symlinked_clone_still_syncs
 test_gone_unique_branch_survives_fleet_sync
 test_gone_landed_squash_branch_is_pruned
+test_gone_branch_with_live_metadata_is_retained
+test_unknown_custom_default_retains_gone_branch
 test_worktree_list_failure_retains_gone_branches

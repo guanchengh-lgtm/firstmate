@@ -40,6 +40,10 @@ FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 PROJECTS="${FM_PROJECTS_OVERRIDE:-$FM_HOME/projects}"
 # shellcheck source=bin/fm-lock-lib.sh
 . "$SCRIPT_DIR/fm-lock-lib.sh"
+# shellcheck source=bin/fm-secondmate-registry-lib.sh
+. "$SCRIPT_DIR/fm-secondmate-registry-lib.sh"
+# shellcheck source=bin/fm-wake-lib.sh
+. "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-git-cleanup-lib.sh
 . "$SCRIPT_DIR/fm-git-cleanup-lib.sh"
 # Inert unless FM_TIMING_LOG names a file; only the deferred network stage sets it.
@@ -216,6 +220,18 @@ prune_gone_branches() {
   fi
   current=$(git -C "$PROJ" symbolic-ref --quiet --short HEAD 2>/dev/null || true)
   mode=${FLEET_SYNC_MODE:-no-mistakes}
+  if ! fm_git_cleanup_prepare_keep_set "$FM_HOME" "$FM_HOME/data"; then
+    echo "$label: skipped branch prune: ownership inventory or publication lock unavailable" >&2
+    return 0
+  fi
+  FM_GIT_CLEANUP_DEFAULT_REPO=
+  FM_GIT_CLEANUP_DEFAULT_NAME=
+  FM_GIT_CLEANUP_DEFAULT_REF=
+  if ! fm_git_cleanup_prepare_default "$PROJ" "$mode"; then
+    fm_git_cleanup_release_taskset_locks
+    echo "$label: skipped branch prune: default branch proof unavailable" >&2
+    return 0
+  fi
 
   while IFS= read -r refline; do
     branch=${refline%% *}
@@ -233,6 +249,7 @@ prune_gone_branches() {
     fi
   done < <(git -C "$PROJ" for-each-ref \
     --format='%(refname:short) %(upstream:track)' refs/heads 2>/dev/null)
+  fm_git_cleanup_release_taskset_locks
 }
 
 # True when some worktree of $PROJ has $DEFAULT checked out (so we cannot attach
@@ -330,10 +347,14 @@ sync_project() {
 
   prune_gone_branches || true
 
-  DEFAULT=$(fm_git_cleanup_default_branch "$PROJ") || {
-    echo "$label: skipped: cannot determine default branch"
-    return 0
-  }
+  if [ "$FM_GIT_CLEANUP_DEFAULT_REPO" = "$PROJ" ] && [ -n "$FM_GIT_CLEANUP_DEFAULT_NAME" ]; then
+    DEFAULT=$FM_GIT_CLEANUP_DEFAULT_NAME
+  else
+    DEFAULT=$(fm_git_cleanup_default_branch "$PROJ") || {
+      echo "$label: skipped: cannot determine default branch"
+      return 0
+    }
+  fi
   BASE="origin/$DEFAULT"
   if ! git -C "$PROJ" rev-parse --verify --quiet "$BASE^{commit}" >/dev/null; then
     echo "$label: skipped: $BASE does not exist"

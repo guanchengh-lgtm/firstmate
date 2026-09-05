@@ -1066,21 +1066,6 @@ remove_pr_poll_artifacts() {
     "$state_dir/$id.check-trust" || return 1
 }
 
-# Resolve the PR number for a worktree branch via gh-axi. Echoes the number on a
-# single match and returns 0; returns non-zero on no match or any lookup failure,
-# so the caller treats it as "no PR found" (fail-safe).
-pr_number_from_branch() {
-  fm_git_cleanup_pr_number_from_branch "$WT" "$1"
-}
-
-pr_number_from_target() {
-  fm_git_cleanup_pr_number_from_target "$1"
-}
-
-ensure_commit_object() {
-  fm_git_cleanup_ensure_commit_object "$WT" "$1" "$2"
-}
-
 # Task-path wrapper: reuse the shared proof, then record a discovered PR URL
 # only for this closing task. Leftover candidates never call this wrapper.
 pr_is_merged() {

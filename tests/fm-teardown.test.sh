@@ -579,6 +579,13 @@ seed_backlog_in_flight() {
   tasks-axi start task-x1 --file "$case_dir/data/backlog.md" >/dev/null
 }
 
+seed_done_task() {
+  local case_dir=$1 id=$2 kind=${3:-ship}
+  tasks-axi add "$id" "retired teardown fixture" --kind "$kind" \
+    --file "$case_dir/data/backlog.md" >/dev/null
+  tasks-axi done "$id" --file "$case_dir/data/backlog.md" >/dev/null
+}
+
 backlog_row_state() {
   local case_dir=$1
   tasks-axi show task-x1 --file "$case_dir/data/backlog.md" 2>/dev/null |
@@ -3363,6 +3370,7 @@ test_leftover_real_treehouse_retired_lease() {
     return 0
   }
   case_dir=$(prepare_landed_ship leftover-th-lease)
+  seed_done_task "$case_dir" retired-mate secondmate
   root="$case_dir/th-root"
   mkdir -p "$root"
   ( cd "$case_dir/project" && "$real_th" --root "$root" init >/dev/null )
@@ -3390,6 +3398,150 @@ SH
   [ ! -d "$slot" ] || fail "leftover-th-lease: proved retired lease slot remained"
   [ -d "$case_dir/wt" ] || fail "leftover-th-lease: returned task slot was removed"
   pass "a proved retired exact treehouse lease can return and destroy"
+}
+
+test_leftover_private_ref_is_retained() {
+  local case_dir rc private_head
+  case_dir=$(prepare_landed_ship leftover-private-ref)
+  add_clean_sibling "$case_dir" wt-resolver
+  printf 'private\n' > "$case_dir/wt-resolver/private.txt"
+  git -C "$case_dir/wt-resolver" add private.txt
+  git -C "$case_dir/wt-resolver" -c user.email=t@t -c user.name=t commit -q -m private
+  private_head=$(git -C "$case_dir/wt-resolver" rev-parse HEAD)
+  git -C "$case_dir/wt-resolver" reset -q --hard main
+  git -C "$case_dir/wt-resolver" update-ref refs/worktree/leftover-private "$private_head"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-private-ref: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-private-ref: private ref worktree was removed"
+  git -C "$case_dir/wt-resolver" rev-parse --verify refs/worktree/leftover-private >/dev/null \
+    || fail "leftover-private-ref: unique private ref vanished"
+  pass "a unique worktree-private ref retains its worktree"
+}
+
+test_leftover_registered_stopped_home_is_retained() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-stopped-home)
+  add_clean_sibling "$case_dir" wt-resolver
+  mkdir -p "$case_dir/wt-resolver/state"
+  printf '%s\n' "- stopped-mate - stopped fixture (home: $case_dir/wt-resolver; scope: test; projects: project; added 2026-09-05)" \
+    > "$case_dir/data/secondmates.md"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-stopped-home: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-stopped-home: registered home was removed"
+  pass "a registered stopped secondmate home stays in the keep-set"
+}
+
+test_leftover_linked_operation_is_retained() {
+  local case_dir rc merge_head
+  case_dir=$(prepare_landed_ship leftover-operation)
+  add_clean_sibling "$case_dir" wt-resolver
+  merge_head=$(git -C "$case_dir/wt-resolver" rev-parse --git-path MERGE_HEAD)
+  git -C "$case_dir/wt-resolver" rev-parse HEAD > "$merge_head"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-operation: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-operation: in-progress worktree was removed"
+  pass "operation state in a linked worktree gitdir blocks cleanup"
+}
+
+test_leftover_empty_worktree_metadata_defers() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-empty-meta)
+  add_clean_sibling "$case_dir" wt-resolver
+  fm_write_meta "$case_dir/state/stopped.meta" \
+    "window=firstmate:stopped" "worktree=" "project=$case_dir/project" "kind=ship"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-empty-meta: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] || fail "leftover-empty-meta: cleanup ignored malformed metadata"
+  grep -q 'deferred extra pass' "$case_dir/stdout" \
+    || fail "leftover-empty-meta: no ownership deferral was reported"
+  pass "an empty metadata worktree defers the leftover pass"
+}
+
+test_leftover_provider_failure_retains_copy() {
+  local case_dir rc orphan
+  case_dir=$(prepare_landed_ship leftover-provider-failure)
+  orphan="$case_dir/provider-orphan"
+  git -C "$case_dir/project" worktree add -q -b fm/provider-failure "$orphan" main
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then exit 0; fi
+if [ "\${1:-}" = status ]; then
+  printf '%s\n' '[{"path":"$orphan","status":"clean","lease_id":"","lease_holder":""}]'
+  exit 0
+fi
+if [ "\${1:-}" = destroy ]; then exit 9; fi
+exit 1
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-provider-failure: teardown should still close"
+  [ -d "$orphan" ] || fail "leftover-provider-failure: provider failure removed the copy"
+  grep -q 'provider-failure' "$case_dir/stdout" \
+    || fail "leftover-provider-failure: no retain reason"
+  grep -q 'leftover cleanup did not finish after task closure succeeded' "$case_dir/stderr" \
+    || fail "leftover-provider-failure: no post-close warning"
+  pass "a provider failure retains the copy and reports partial cleanup"
+}
+
+test_leftover_lease_reacquisition_retains_copy() {
+  local case_dir rc orphan
+  case_dir=$(prepare_landed_ship leftover-lease-race)
+  seed_done_task "$case_dir" retired-mate secondmate
+  orphan="$case_dir/leased-orphan"
+  git -C "$case_dir/project" worktree add -q -b fm/leased-race "$orphan" main
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then exit 0; fi
+if [ "\${1:-}" = return ]; then
+  printf 'returned\n' >> "$case_dir/provider.log"
+  exit 0
+fi
+if [ "\${1:-}" = status ]; then
+  count=0
+  [ ! -f "$case_dir/status-count" ] || count=\$(cat "$case_dir/status-count")
+  count=\$((count + 1))
+  printf '%s\n' "\$count" > "$case_dir/status-count"
+  if [ "\$count" -eq 1 ]; then
+    printf '%s\n' '[{"path":"$orphan","status":"leased","lease_id":"old-id","lease_holder":"retired-mate"}]'
+  else
+    printf '%s\n' '[{"path":"$orphan","status":"leased","lease_id":"new-id","lease_holder":"new-owner"}]'
+  fi
+  exit 0
+fi
+if [ "\${1:-}" = destroy ]; then
+  printf 'destroyed\n' >> "$case_dir/provider.log"
+  exit 0
+fi
+exit 1
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-lease-race: teardown should succeed"
+  [ -d "$orphan" ] || fail "leftover-lease-race: reacquired copy was removed"
+  grep -q '^returned$' "$case_dir/provider.log" \
+    || fail "leftover-lease-race: conditional return did not run"
+  ! grep -q '^destroyed$' "$case_dir/provider.log" \
+    || fail "leftover-lease-race: replacement lease reached destroy"
+  pass "lease reacquisition between return and destroy retains the replacement"
+}
+
+test_leftover_known_done_ship_branch_is_removed() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-done-branch)
+  seed_done_task "$case_dir" old-ship ship
+  git -C "$case_dir/project" branch fm/old-ship main
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-done-branch: teardown should succeed"
+  git -C "$case_dir/project" show-ref --verify --quiet refs/heads/fm/old-ship \
+    && fail "leftover-done-branch: known landed ship branch remained"
+  pass "done task evidence attributes a landed ship branch for cleanup"
 }
 
 test_leftover_unknown_lease_is_retained() {
@@ -3526,3 +3678,10 @@ test_leftover_contended_lock_defers
 test_leftover_real_treehouse_retired_lease
 test_leftover_unknown_lease_is_retained
 test_leftover_then_sync_retains_unique_gone_branch
+test_leftover_private_ref_is_retained
+test_leftover_registered_stopped_home_is_retained
+test_leftover_linked_operation_is_retained
+test_leftover_empty_worktree_metadata_defers
+test_leftover_provider_failure_retains_copy
+test_leftover_lease_reacquisition_retains_copy
+test_leftover_known_done_ship_branch_is_removed
