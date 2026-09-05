@@ -1137,10 +1137,19 @@ test_self_held_lock_reclaims_instead_of_deadlocking() {
     . "$1"
     lock="$2/.fixture2.lock"
     fm_lock_acquire_wait "$lock" || exit 10
+    owner=$(readlink "$lock") || exit 14
+    [ "$(cat "$lock/pid")" = "$$" ] || exit 15
     ( fm_lock_try_acquire "$lock" && exit 13; exit 0 ) || exit 13
+    [ "$(readlink "$lock")" = "$owner" ] || exit 16
+    [ "$(cat "$lock/pid")" = "$$" ] || exit 17
+    ( fm_lock_release "$lock" ) || exit 18
+    [ "$(readlink "$lock")" = "$owner" ] || exit 19
+    [ "$(cat "$lock/pid")" = "$$" ] || exit 20
     fm_lock_release "$lock"
+    [ ! -e "$lock" ] && [ ! -L "$lock" ] || exit 21
+    [ ! -e "$owner" ] || exit 22
   ' _ "$ROOT/bin/fm-wake-lib.sh" "$state" || rc=$?
-  [ "$rc" -eq 0 ] || fail "a subshell reclaimed its parent's live hold (rc=$rc)"
+  [ "$rc" -eq 0 ] || fail "parent lock ownership changed across rejected child acquire/release or parent cleanup failed (rc=$rc)"
   pass "an abandoned same-process lock hold is reclaimed; a parent's live hold is not"
 }
 
