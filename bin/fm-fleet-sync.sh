@@ -213,7 +213,7 @@ prune_gone_branches() {
   # preserved predicate. A failed worktree list is a full protection set.
   [ "${FM_FLEET_PRUNE:-1}" != "0" ] || return 0
 
-  local current refline branch track tip reason mode
+  local current refs refline branch track tip reason mode
   if ! fm_git_cleanup_worktree_list_ok "$PROJ"; then
     echo "$label: skipped branch prune: worktree list failed" >&2
     return 0
@@ -224,6 +224,12 @@ prune_gone_branches() {
     echo "$label: skipped branch prune: ownership inventory or publication lock unavailable" >&2
     return 0
   fi
+  refs=$(git -C "$PROJ" for-each-ref \
+    --format='%(refname:short) %(upstream:track)' refs/heads 2>/dev/null) || {
+    fm_git_cleanup_release_taskset_locks
+    echo "$label: skipped branch prune: branch inventory failed" >&2
+    return 0
+  }
   while IFS= read -r refline; do
     branch=${refline%% *}
     track=${refline#* }
@@ -238,8 +244,9 @@ prune_gone_branches() {
       [ -n "$reason" ] || reason=unproved
       echo "$label: retained $branch ($reason)" >&2
     fi
-  done < <(git -C "$PROJ" for-each-ref \
-    --format='%(refname:short) %(upstream:track)' refs/heads 2>/dev/null)
+  done <<EOF
+$refs
+EOF
   fm_git_cleanup_release_taskset_locks
 }
 
@@ -346,7 +353,7 @@ sync_project() {
 
   prune_gone_branches || true
 
-  if [ "$FM_GIT_CLEANUP_DEFAULT_REPO" = "$PROJ" ] && [ -n "$FM_GIT_CLEANUP_DEFAULT_NAME" ]; then
+  if fm_git_cleanup_default_is_prepared "$PROJ"; then
     DEFAULT=$FM_GIT_CLEANUP_DEFAULT_NAME
   else
     DEFAULT=$(fm_git_cleanup_default_branch "$PROJ") || {

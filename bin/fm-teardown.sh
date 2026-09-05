@@ -1081,7 +1081,7 @@ pr_is_merged() {
 content_in_default() {
   local head
   head=$(git -C "$WT" rev-parse --verify HEAD 2>/dev/null) || return 1
-  fm_git_cleanup_content_in_default "$WT" "$MODE" "${PR_URL:-}" "$head"
+  fm_git_cleanup_content_in_default "$WT" "$MODE" "$head"
 }
 
 work_is_landed() {
@@ -3075,7 +3075,7 @@ if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
   fm_git_cleanup_leftover_pass \
     "$PROJ" "$(dirname "$STATE")" "$DATA" \
     "${WT:-}" "${TASK_CLEANUP_BRANCH:-}" "${TASK_CLEANUP_TIP:-}" \
-    "$MODE" "$KIND" "${FORCE:-}" "${PR_URL:-}" "${BACKEND:-}" "$FM_ROOT" \
+    "$MODE" "$KIND" "${FORCE:-}" "$FM_ROOT" \
     || true
 fi
 if [ "$KIND" != scout ] && [ "$KIND" != secondmate ] && [ "$MODE" != local-only ]; then

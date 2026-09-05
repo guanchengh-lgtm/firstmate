@@ -388,27 +388,26 @@ seeded_origin_url() {
 }
 
 acquire_treehouse_home() {
-  local id=$1 home
-  # Durably lease a firstmate worktree from the pool. The lease persists with no
-  # live process and is skipped by later get/prune, so the home survives restarts
-  # until teardown or rollback returns it. treehouse prints only the worktree path
-  # to stdout (banners go to stderr), so command substitution captures the path.
-  home=$(cd "$FM_ROOT" && treehouse get --lease --lease-holder "$id") || {
+  local id=$1 json home lease_id lease_holder
+  command -v jq >/dev/null 2>&1 || {
+    echo "error: jq is required to record a treehouse lease" >&2
+    return 1
+  }
+  json=$(cd "$FM_ROOT" && treehouse get --lease --lease-holder "$id" --json) || {
     echo "error: treehouse get --lease failed to lease a firstmate home" >&2
     return 1
   }
+  home=$(printf '%s\n' "$json" | jq -er '.path | strings | select(length > 0)') || return 1
+  lease_id=$(printf '%s\n' "$json" | jq -er '.lease_id | strings | select(length > 0)') || return 1
+  lease_holder=$(printf '%s\n' "$json" | jq -er '.lease_holder | strings | select(length > 0)') || return 1
+  [ "$lease_holder" = "$id" ] || return 1
+  case "$home$lease_id$lease_holder" in *$'\t'*|*$'\n'*|*$'\r'*) return 1 ;; esac
   [ -n "$home" ] || { echo "error: treehouse get --lease did not report a firstmate home" >&2; return 1; }
-  printf '%s\n' "$home"
+  printf '%s\t%s\t%s\n' "$home" "$lease_id" "$lease_holder"
 }
 
 ensure_home() {
-  local id=$1 requested=$2 home
-  if [ "$requested" = "-" ]; then
-    home=$(acquire_treehouse_home "$id")
-    verify_firstmate_home "$home"
-    return
-  fi
-
+  local requested=$1 home
   home=$(abs_path_for_new "$requested")
   refuse_active_home_path "$home" || return 1
   if [ -e "$home" ]; then
@@ -530,6 +529,10 @@ SEED_SUB_REG_EXISTED=0
 SEED_CHARTER_EXISTED=0
 SEED_MARKER_EXISTED=0
 SEED_PARENT_MARKER_EXISTED=0
+SEED_LEASE_RECEIPT=
+SEED_LEASE_RECEIPT_EXISTED=0
+SEED_TREEHOUSE_LEASE_ID=
+SEED_TREEHOUSE_LEASE_HOLDER=
 
 restore_seed_file() {
   local existed=$1 backup=$2 path=$3
@@ -657,6 +660,9 @@ seed_rollback() {
   fi
 
   if [ -n "${SEED_BACKUP_DIR:-}" ]; then
+    if [ -n "${SEED_LEASE_RECEIPT:-}" ]; then
+      restore_seed_file "$SEED_LEASE_RECEIPT_EXISTED" "$SEED_BACKUP_DIR/treehouse-lease" "$SEED_LEASE_RECEIPT"
+    fi
     restore_seed_file "$SEED_PARENT_REG_EXISTED" "$SEED_BACKUP_DIR/parent-secondmates.md" "$REG"
     rm -rf -- "$SEED_BACKUP_DIR" 2>/dev/null || true
   fi
@@ -839,7 +845,6 @@ seed_home() {
   SEED_HOME=
   SEED_HOME_ACQUIRED=0
   SEED_HOME_CREATED=0
-  SEED_HOME_ACQUIRED=0
   SEED_HOME_BACKED_UP=0
   SEED_BACKUP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/fm-home-seed.XXXXXX")
   SEED_CREATED_PROJECTS_FILE="$SEED_BACKUP_DIR/created-projects"
@@ -851,6 +856,18 @@ seed_home() {
   SEED_SUB_REG_EXISTED=0
   SEED_CHARTER_EXISTED=0
   SEED_MARKER_EXISTED=0
+  SEED_LEASE_RECEIPT="$DATA/$id/treehouse-lease"
+  SEED_LEASE_RECEIPT_EXISTED=0
+  SEED_TREEHOUSE_LEASE_ID=
+  SEED_TREEHOUSE_LEASE_HOLDER=
+  if [ -e "$SEED_LEASE_RECEIPT" ] || [ -L "$SEED_LEASE_RECEIPT" ]; then
+    [ -f "$SEED_LEASE_RECEIPT" ] && [ ! -L "$SEED_LEASE_RECEIPT" ] || {
+      echo "error: treehouse lease receipt is not a regular file: $SEED_LEASE_RECEIPT" >&2
+      return 1
+    }
+    SEED_LEASE_RECEIPT_EXISTED=1
+    cp "$SEED_LEASE_RECEIPT" "$SEED_BACKUP_DIR/treehouse-lease"
+  fi
   if [ -f "$REG" ]; then
     SEED_PARENT_REG_EXISTED=1
     cp "$REG" "$SEED_BACKUP_DIR/parent-secondmates.md"
@@ -858,7 +875,11 @@ seed_home() {
 
   if [ "$requested_home" = "-" ]; then
     SEED_HOME_ACQUIRED=1
-    home=$(acquire_treehouse_home "$id")
+    IFS=$(printf '\t') read -r home SEED_TREEHOUSE_LEASE_ID SEED_TREEHOUSE_LEASE_HOLDER <<EOF
+$(acquire_treehouse_home "$id")
+EOF
+    [ -n "$home" ] && [ -n "$SEED_TREEHOUSE_LEASE_ID" ] \
+      && [ "$SEED_TREEHOUSE_LEASE_HOLDER" = "$id" ] || return 1
     SEED_HOME="$home"
     home=$(verify_firstmate_home "$home")
   else
@@ -867,7 +888,7 @@ seed_home() {
     validate_home_assignment "$id" "$requested_abs" || return 1
     SEED_HOME="$requested_abs"
     [ -e "$requested_abs" ] || SEED_HOME_CREATED=1
-    home=$(ensure_home "$id" "$requested_abs")
+    home=$(ensure_home "$requested_abs")
   fi
   SEED_HOME="$home"
   validate_registry_home_text "$home" || return 1
@@ -959,6 +980,17 @@ seed_home() {
   mv -f -- "$home/$SUB_HOME_PARENT_MARKER.tmp.$$" "$home/$SUB_HOME_PARENT_MARKER"
   printf '%s\n' "$id" > "$home/$SUB_HOME_MARKER.tmp.$$"
   mv -f -- "$home/$SUB_HOME_MARKER.tmp.$$" "$home/$SUB_HOME_MARKER"
+  if [ "$SEED_HOME_ACQUIRED" = 1 ]; then
+    {
+      printf 'schema=fm-treehouse-lease.v1\n'
+      printf 'path=%s\n' "$home"
+      printf 'lease_id=%s\n' "$SEED_TREEHOUSE_LEASE_ID"
+      printf 'lease_holder=%s\n' "$SEED_TREEHOUSE_LEASE_HOLDER"
+    } > "$SEED_LEASE_RECEIPT.tmp.$$"
+    mv -f -- "$SEED_LEASE_RECEIPT.tmp.$$" "$SEED_LEASE_RECEIPT"
+  else
+    rm -f -- "$SEED_LEASE_RECEIPT"
+  fi
   write_registry "$id" "$home" "$projects_csv" "$SEED_PARENT_BRIEF"
   validate_registry
   SEED_COMMITTED=1

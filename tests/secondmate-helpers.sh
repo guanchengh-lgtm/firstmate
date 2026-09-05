@@ -57,15 +57,15 @@ set -u
 printf 'treehouse %s\n' "$*" >> "${FM_FAKE_TMUX_LOG:-/dev/null}"
 case "${1:-}" in
   get)
-    # Durable lease: print only the worktree path to stdout (banners to stderr),
-    # and record the lease holder so tests can assert it is set and later cleared.
     shift
     holder=
+    json=0
     while [ $# -gt 0 ]; do
       case "$1" in
         --lease) ;;
         --lease-holder) shift; holder=${1:-} ;;
         --lease-holder=*) holder=${1#--lease-holder=} ;;
+        --json) json=1 ;;
       esac
       shift
     done
@@ -73,7 +73,12 @@ case "${1:-}" in
       mkdir -p "$FM_FAKE_TREEHOUSE_HOME"
       [ -n "${FM_FAKE_TREEHOUSE_LEASE_FILE:-}" ] && printf '%s\n' "$holder" > "$FM_FAKE_TREEHOUSE_LEASE_FILE"
       printf 'leased worktree for %s\n' "${holder:-unknown}" >&2
-      printf '%s\n' "$FM_FAKE_TREEHOUSE_HOME"
+      if [ "$json" = 1 ]; then
+        printf '{"path":"%s","lease_id":"fake-%s","lease_holder":"%s"}\n' \
+          "$FM_FAKE_TREEHOUSE_HOME" "$holder" "$holder"
+      else
+        printf '%s\n' "$FM_FAKE_TREEHOUSE_HOME"
+      fi
     fi
     exit 0
     ;;

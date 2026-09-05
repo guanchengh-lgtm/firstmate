@@ -816,6 +816,35 @@ SH
   pass "a worktree-list failure cannot become an empty protection set"
 }
 
+test_branch_inventory_failure_retains_gone_branches() {
+  local home clone work fakebin
+  home=$(new_home)
+  clone=$(build_pair "$home" gonebranchinventory)
+  work="$home/work-gonebranchinventory"
+  make_gone_branch "$clone" "$work" leftover-inventory 0
+  real_git=$(command -v git)
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/git" <<SH
+#!/usr/bin/env bash
+for a in "\$@"; do
+  if [ "\$a" = for-each-ref ]; then
+    echo "fatal: branch inventory failed" >&2
+    exit 128
+  fi
+done
+exec "$real_git" "\$@"
+SH
+  chmod +x "$fakebin/git"
+  PATH="$fakebin:$PATH" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-fleet-sync.sh" "$clone" \
+    > "$home/out-gonebranchinventory" 2> "$home/err-gonebranchinventory" || true
+  git -C "$clone" rev-parse --verify leftover-inventory >/dev/null \
+    || fail "gone-branch-inventory: inventory failure deleted a branch"
+  grep -q 'skipped branch prune: branch inventory failed' "$home/err-gonebranchinventory" \
+    || fail "gone-branch-inventory: inventory failure was silent"
+  pass "a branch inventory failure retains gone branches with a warning"
+}
+
 test_non_signature_fetch_failure_is_not_retried() {
   local home fakebin clone out err
   home=$(new_home)
@@ -868,3 +897,4 @@ test_gone_branch_with_live_metadata_is_retained
 test_valid_custom_default_retains_gone_branch
 test_unknown_custom_default_retains_gone_branch
 test_worktree_list_failure_retains_gone_branches
+test_branch_inventory_failure_retains_gone_branches
