@@ -1020,6 +1020,10 @@ test_relay_disabled_unmarked_teardown_skips_public_path() {
   printf 'manual\n' > "$home/config/backlog-backend"
   cat > "$home/fakebin/tasks-axi" <<'SH'
 #!/usr/bin/env bash
+if [ "${1:-}" = list ]; then
+  printf '%s\n' 'count: 0' 'tasks[0]{id,state,kind,project}:'
+  exit 0
+fi
 echo "$*" >> "$FAKE_TASKS_AXI_LOG"
 exit 99
 SH
@@ -1035,7 +1039,7 @@ SH
     FM_CONFIG_OVERRIDE="$home/config" FAKE_TASKS_AXI_LOG="$tasks_log" \
     "$TEARDOWN" work-disabled 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || fail "relay-disabled unmarked teardown must not refuse public-followup cleanup (rc=$rc): $out"
-  [ ! -s "$tasks_log" ] || fail "relay-disabled unmarked teardown must not invoke tasks-axi: $(tr '\n' ';' < "$tasks_log")"
+  [ ! -s "$tasks_log" ] || fail "relay-disabled unmarked teardown must not invoke public-followup tasks-axi commands: $(tr '\n' ';' < "$tasks_log")"
   assert_not_contains "$out" "still owes a public reply" \
     "relay-disabled unmarked teardown must not run the public commitment guard"
   assert_absent "$home/state/public-followup" \
@@ -1056,6 +1060,10 @@ test_relay_disabled_parent_allows_marked_child_teardown() {
   printf 'manual\n' > "$child/config/backlog-backend"
   cat > "$child/fakebin/tasks-axi" <<'SH'
 #!/usr/bin/env bash
+if [ "${1:-}" = list ]; then
+  printf '%s\n' 'count: 0' 'tasks[0]{id,state,kind,project}:'
+  exit 0
+fi
 echo "$*" >> "$FAKE_TASKS_AXI_LOG"
 exit 99
 SH
@@ -1072,12 +1080,12 @@ SH
     FM_PUBLIC_FOLLOWUP_PRIMARY_HOME="$parent" FAKE_TASKS_AXI_LOG="$tasks_log" \
     "$TEARDOWN" work-disabled 2>&1) || rc=$?
   [ "$rc" -eq 0 ] || fail "relay-disabled parent must allow marked-child teardown (rc=$rc): $out"
-  [ ! -s "$tasks_log" ] || fail "relay-disabled parent must not invoke tasks-axi for a marked child"
+  [ ! -s "$tasks_log" ] || fail "relay-disabled parent must not invoke public-followup tasks-axi commands for a marked child"
   assert_not_contains "$out" "still owes a public reply" \
     "relay-disabled parent must not run the public commitment guard"
   assert_absent "$child/state/public-followup" \
     "relay-disabled parent must not create a public-followup artifact"
-  pass "a marked child proceeds without tasks-axi when its parent relay is disabled"
+  pass "a marked child proceeds without public-followup tasks-axi work when its parent relay is disabled"
 }
 
 test_secondmate_parent_binding_matches_literal_id() {

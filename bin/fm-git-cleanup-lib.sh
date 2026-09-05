@@ -143,10 +143,13 @@ fm_git_cleanup_default_branch() {
   local repo=$1 ref branch
   [ -n "$repo" ] || return 1
   if git -C "$repo" remote get-url origin >/dev/null 2>&1; then
-    ref=$(git -C "$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) || return 1
-    case "$ref" in origin/?*) ;; *) return 1 ;; esac
-    printf '%s\n' "${ref#origin/}"
-    return 0
+    ref=$(git -C "$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+    case "$ref" in
+      origin/?*)
+        printf '%s\n' "${ref#origin/}"
+        return 0
+        ;;
+    esac
   fi
   for branch in main master; do
     if git -C "$repo" show-ref --verify --quiet "refs/heads/$branch"; then
