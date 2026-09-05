@@ -1,0 +1,2 @@
+workflow_semantics ok ci_push=main ci_pull_request=main attestation_pull_request=main
+no_mistakes_values ok allow_repo_commands=true disable_project_settings=true pr.base_branch=unset
