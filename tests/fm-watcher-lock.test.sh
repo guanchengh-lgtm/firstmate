@@ -373,6 +373,86 @@ test_lock_empty_pid_uses_minimum_grace() {
   pass "empty mid-acquire lock keeps a minimum grace"
 }
 
+# Preparation can happen in another frame. Claim must publish the actual
+# holder, not merely trust the preparing frame's already-populated PID file.
+test_lock_claim_publishes_claiming_frame() {
+  local dir state rc
+  dir=$(make_case lock-claim-publication)
+  state="$dir/state"
+  rc=0
+  FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    lock="$2/.claim.lock"
+    owner=$(fm_lock_owner_dir "$lock") || exit 10
+    fm_lock_prepare_owner "$owner" || exit 11
+    [ "$(cat "$owner/pid")" = "$$" ] || exit 12
+    ln -s "$owner" "$lock" || exit 13
+    bash -c '\''
+      . "$1"
+      [ "$(cat "$3/pid")" = "$4" ] || exit 14
+      [ "$$" != "$4" ] || exit 15
+      fm_lock_claim "$2" "$3" || exit 16
+      [ "$(readlink "$2")" = "$3" ] || exit 17
+      [ "$(cat "$2/pid")" = "$$" ] || exit 18
+      fm_lock_release "$2"
+      [ ! -e "$2" ] && [ ! -L "$2" ] || exit 19
+      [ ! -e "$3" ] || exit 20
+    '\'' _ "$1" "$lock" "$owner" "$$"
+  ' _ "$LIB" "$state" || rc=$?
+  [ "$rc" -eq 0 ] || fail "claim did not publish and release the claiming frame PID (rc=$rc)"
+  pass "claim replaces the preparing frame PID with the actual holder"
+}
+
+test_lock_claim_refuses_pid_write_failure() {
+  local dir state rc
+  dir=$(make_case lock-claim-write-failure)
+  state="$dir/state"
+  rc=0
+  FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    lock="$2/.claim.lock"
+    owner=$(fm_lock_owner_dir "$lock") || exit 10
+    ln -s "$owner" "$lock" || exit 11
+    mkdir "$owner/pid" || exit 12
+    if fm_lock_claim "$lock" "$owner"; then exit 13; fi
+    [ -d "$owner/pid" ] || exit 14
+    [ "$(readlink "$lock")" = "$owner" ] || exit 15
+  ' _ "$LIB" "$state" || rc=$?
+  [ "$rc" -eq 0 ] || fail "claim accepted a failed PID write or damaged the owner link (rc=$rc)"
+  pass "claim fails closed when its holder PID cannot be written"
+}
+
+test_lock_claim_refuses_pid_readback_mismatch() {
+  local dir state rc
+  dir=$(make_case lock-claim-readback-mismatch)
+  state="$dir/state"
+  rc=0
+  FM_STATE_OVERRIDE="$state" bash -c '
+    . "$1"
+    lock="$2/.claim.lock"
+    owner=$(fm_lock_owner_dir "$lock") || exit 10
+    ln -s "$owner" "$lock" || exit 11
+    readback_marker="$2/readback-observed"
+    # Corrupt only the observed readback, after checking the real write.
+    # The function runs in command substitution, so use a file witness.
+    cat() {
+      if [ "$#" -eq 1 ] && [ "$1" = "$owner/pid" ]; then
+        [ "$(command cat "$1")" = "$$" ] || return 1
+        : > "$readback_marker"
+        printf "mismatched-holder\n"
+      else
+        command cat "$@"
+      fi
+    }
+    if fm_lock_claim "$lock" "$owner"; then exit 12; fi
+    [ -e "$readback_marker" ] || exit 13
+    [ ! -e "$owner" ] || exit 14
+    [ "$(readlink "$lock")" = "$owner" ] || exit 15
+  ' _ "$LIB" "$state" || rc=$?
+  [ "$rc" -eq 0 ] || fail "claim accepted a mismatched PID readback or failed cleanup (rc=$rc)"
+  pass "claim fails closed after a mismatched holder PID readback"
+}
+
 test_lock_late_claim_loses_after_recreate() {
   local dir state lockdir out
   dir=$(make_case lock-late-claim)
@@ -1134,6 +1214,9 @@ test_lock_stale_steal_single_winner_under_concurrency
 test_lock_live_steal_mutex_is_not_reclaimed
 test_lock_does_not_steal_live_lock
 test_lock_empty_pid_uses_minimum_grace
+test_lock_claim_publishes_claiming_frame
+test_lock_claim_refuses_pid_write_failure
+test_lock_claim_refuses_pid_readback_mismatch
 test_lock_late_claim_loses_after_recreate
 test_lock_paused_mid_acquire_claim_fails_during_steal
 test_watch_restart_rejects_reused_pid
