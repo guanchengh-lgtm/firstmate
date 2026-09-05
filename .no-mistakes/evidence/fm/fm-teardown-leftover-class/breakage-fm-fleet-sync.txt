@@ -1,0 +1,2 @@
+Squash commit -- not updating HEAD
+not ok - gone-landed: landed squash [gone] branch remained

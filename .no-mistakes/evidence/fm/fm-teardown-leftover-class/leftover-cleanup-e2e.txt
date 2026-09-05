@@ -1,0 +1,48 @@
+BEFORE TEARDOWN
+worktree /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-teardown-tests.drwhRW/evidence-leftovers/project
+HEAD b6e19508cbe1beaa78099bdf31a7534f0b921f0a
+branch refs/heads/main
+
+worktree /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-teardown-tests.drwhRW/evidence-leftovers/wt
+HEAD 7d866dd851bd9342665e8ffd4254a0f1d9a5f022
+branch refs/heads/fm/task-x1
+
+worktree /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-teardown-tests.drwhRW/evidence-leftovers/wt-baseline
+HEAD b6e19508cbe1beaa78099bdf31a7534f0b921f0a
+branch refs/heads/fm/wt-baseline
+
+worktree /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-teardown-tests.drwhRW/evidence-leftovers/wt-resolver
+HEAD b6e19508cbe1beaa78099bdf31a7534f0b921f0a
+branch refs/heads/fm/wt-resolver
+
+TEARDOWN OUTPUT
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 1s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+leftover: retained /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-teardown-tests.drwhRW/evidence-leftovers/wt-baseline (dirty)
+leftover: removed /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-teardown-tests.drwhRW/evidence-leftovers/wt-resolver
+leftover: removed branch fm/task-x1
+leftover: removed branch fm/wt-resolver
+leftover: removed 3, retained 1
+/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-teardown-tests.drwhRW/evidence-leftovers/project: synced b6e1950..76f7d0c
+teardown task-x1 complete (window firstmate:fm-task-x1, worktree /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-teardown-tests.drwhRW/evidence-leftovers/wt)
+Backlog: task-x1 is closed in /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-teardown-tests.drwhRW/evidence-leftovers/data/backlog.md. Run tasks-axi ready for dependency-cleared candidates, check date gates, and dispatch only work whose blockers are gone and date is due.
+AFTER TEARDOWN
+worktree /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-teardown-tests.drwhRW/evidence-leftovers/project
+HEAD 76f7d0c34dee84d14ade8543c86c4b6b2607cb8b
+branch refs/heads/main
+
+worktree /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-teardown-tests.drwhRW/evidence-leftovers/wt
+HEAD 7d866dd851bd9342665e8ffd4254a0f1d9a5f022
+detached
+
+worktree /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-teardown-tests.drwhRW/evidence-leftovers/wt-baseline
+HEAD b6e19508cbe1beaa78099bdf31a7534f0b921f0a
+branch refs/heads/fm/wt-baseline
+
+RESULT clean sibling removed
+RESULT dirty sibling retained

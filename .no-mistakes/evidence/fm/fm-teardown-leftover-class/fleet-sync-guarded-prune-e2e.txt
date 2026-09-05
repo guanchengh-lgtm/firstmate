@@ -1,0 +1,9 @@
+UNPUBLISHED GONE BRANCH
+evidence-unique: retained leftover-unique (unique-unpublished)
+evidence-unique: already current
+RESULT unique branch retained
+Squash commit -- not updating HEAD
+LANDED GONE BRANCH
+evidence-landed: pruned leftover-landed
+evidence-landed: synced aa2a8bf..2c9d937
+RESULT landed branch removed
