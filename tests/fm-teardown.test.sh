@@ -3282,6 +3282,109 @@ test_leftover_dirty_sibling_is_retained() {
   pass "dirty sibling is retained with a reason and the task still closes"
 }
 
+test_leftover_stale_remote_ref_does_not_prove_sibling() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-stale-remote)
+  add_clean_sibling "$case_dir" wt-resolver
+  printf 'remote-only\n' > "$case_dir/wt-resolver/remote-only.txt"
+  git -C "$case_dir/wt-resolver" add remote-only.txt
+  git -C "$case_dir/wt-resolver" -c user.email=t@t -c user.name=t \
+    commit -q -m remote-only
+  git -C "$case_dir/wt-resolver" push -q origin fm/wt-resolver
+  git -C "$case_dir/origin.git" update-ref -d refs/heads/fm/wt-resolver
+  git -C "$case_dir/project" show-ref --verify --quiet refs/remotes/origin/fm/wt-resolver \
+    || fail "leftover-stale-remote: setup did not retain the stale tracking ref"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-stale-remote: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] \
+    || fail "leftover-stale-remote: stale remote proof removed unique work"
+  grep -q "retained $case_dir/wt-resolver (unique-unpublished)" "$case_dir/stdout" \
+    || fail "leftover-stale-remote: no unpublished retain reason"
+  pass "a deleted remote branch cannot prove work through a stale tracking ref"
+}
+
+test_leftover_default_content_avoids_forge_lookup() {
+  local case_dir rc
+  case_dir=$(prepare_landed_ship leftover-local-content-first)
+  add_clean_sibling "$case_dir" wt-resolver
+  printf 'squashed\n' > "$case_dir/wt-resolver/squashed.txt"
+  git -C "$case_dir/wt-resolver" add squashed.txt
+  git -C "$case_dir/wt-resolver" -c user.email=t@t -c user.name=t \
+    commit -q -m sibling-squash
+  land_on_origin_main "$case_dir" squashed.txt squashed
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  : > "$case_dir/after-return"
+  exit 0
+fi
+exit 0
+SH
+  cat > "$case_dir/fakebin/gh-axi" <<SH
+#!/usr/bin/env bash
+[ ! -e "$case_dir/after-return" ] || : > "$case_dir/forge-called"
+case "\${1:-} \${2:-}" in
+  "pr list") printf '%s\n' "count: 0 (showing first 0)" "pull_requests[]: []"; exit 0 ;;
+esac
+exit 1
+SH
+  cat > "$case_dir/fakebin/gh" <<SH
+#!/usr/bin/env bash
+[ ! -e "$case_dir/after-return" ] || : > "$case_dir/forge-called"
+exit 1
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/gh-axi" "$case_dir/fakebin/gh"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-local-content-first: teardown should succeed"
+  [ ! -d "$case_dir/wt-resolver" ] \
+    || fail "leftover-local-content-first: squash-landed sibling remained"
+  [ ! -e "$case_dir/forge-called" ] \
+    || fail "leftover-local-content-first: local proof waited for the forge"
+  pass "cached default content proves a squash before any forge lookup"
+}
+
+test_leftover_orig_head_retains_live_and_missing_copies() {
+  local case_dir rc missing live_unique missing_unique live_admin missing_admin
+  case_dir=$(prepare_landed_ship leftover-orig-head)
+  add_clean_sibling "$case_dir" wt-resolver
+  printf 'live unique\n' > "$case_dir/wt-resolver/live-unique.txt"
+  git -C "$case_dir/wt-resolver" add live-unique.txt
+  git -C "$case_dir/wt-resolver" -c user.email=t@t -c user.name=t \
+    commit -q -m live-unique
+  live_unique=$(git -C "$case_dir/wt-resolver" rev-parse HEAD)
+  git -C "$case_dir/wt-resolver" reset -q --hard main
+  live_admin=$(git -C "$case_dir/wt-resolver" rev-parse --absolute-git-dir)
+  [ "$(cat "$live_admin/ORIG_HEAD")" = "$live_unique" ] \
+    || fail "leftover-orig-head: live ORIG_HEAD setup failed"
+
+  missing=$(mktemp -d /tmp/fm-teardown-orig-head.XXXXXX)
+  git -C "$case_dir/project" worktree add -q -b tmp-orig-head "$missing" main
+  printf 'missing unique\n' > "$missing/missing-unique.txt"
+  git -C "$missing" add missing-unique.txt
+  git -C "$missing" -c user.email=t@t -c user.name=t commit -q -m missing-unique
+  missing_unique=$(git -C "$missing" rev-parse HEAD)
+  git -C "$missing" reset -q --hard main
+  missing_admin=$(git -C "$missing" rev-parse --absolute-git-dir)
+  [ "$(cat "$missing_admin/ORIG_HEAD")" = "$missing_unique" ] \
+    || fail "leftover-orig-head: missing ORIG_HEAD setup failed"
+  rm -rf "$missing"
+
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-orig-head: teardown should succeed"
+  [ -d "$case_dir/wt-resolver" ] \
+    || fail "leftover-orig-head: live ORIG_HEAD copy was removed"
+  [ -d "$missing_admin" ] \
+    || fail "leftover-orig-head: missing ORIG_HEAD registration was pruned"
+  git -C "$case_dir/project" cat-file -e "$live_unique^{commit}" \
+    || fail "leftover-orig-head: live unique commit was lost"
+  git -C "$case_dir/project" cat-file -e "$missing_unique^{commit}" \
+    || fail "leftover-orig-head: missing unique commit was lost"
+  pass "ORIG_HEAD protects unique work in live and missing registrations"
+}
+
 test_leftover_gone_tmp_prunes_only_when_all_safe() {
   local case_dir rc tmp_ok tmp_lock
   case_dir=$(prepare_landed_ship leftover-gone-tmp)
@@ -3300,6 +3403,8 @@ test_leftover_gone_tmp_prunes_only_when_all_safe() {
     || fail "leftover-gone-tmp-lock: safe row was pruned while a locked row existed"
   git -C "$case_dir/project" worktree list --porcelain | grep -q 'tmp-gone-lock' \
     || fail "leftover-gone-tmp-lock: locked missing row disappeared"
+  grep -q 'whole-prune-blocked' "$case_dir/stdout" \
+    || fail "leftover-gone-tmp-lock: safe blocked row had no retained result"
   git -C "$case_dir/project" worktree unlock "$tmp_lock" >/dev/null 2>&1 || true
   git -C "$case_dir/project" worktree prune --expire now >/dev/null 2>&1 || true
   pass "one unsafe missing registration skips the whole prune"
@@ -3320,7 +3425,48 @@ test_leftover_gone_tmp_prunes_when_all_eligible() {
     && fail "leftover-gone-tmp-ok: eligible temporary row remained"
   grep -q 'removed registration ' "$case_dir/stdout" \
     || fail "leftover-gone-tmp-ok: pruned registration was not counted"
+  git -C "$case_dir/project" show-ref --verify --quiet refs/heads/tmp-gone-safe \
+    && fail "leftover-gone-tmp-ok: attributed landed branch remained"
   pass "eligible gone temporary registrations prune when every prune row is safe"
+}
+
+test_leftover_incomplete_inventory_retains_registration() {
+  local case_dir rc missing admin
+  case_dir=$(prepare_landed_ship leftover-incomplete-inventory)
+  missing=$(mktemp -d /tmp/fm-teardown-incomplete.XXXXXX)
+  missing=$(cd "$missing" && pwd -P)
+  git -C "$case_dir/project" worktree add -q -b tmp-incomplete "$missing" main
+  admin=$(git -C "$missing" rev-parse --absolute-git-dir)
+  rm -rf "$missing"
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then
+  : > "$case_dir/after-return"
+  exit 0
+fi
+exit 0
+SH
+  cat > "$case_dir/fakebin/git" <<SH
+#!/usr/bin/env bash
+if [ -e "$case_dir/after-return" ] && printf '%s\n' "\$*" | grep -F 'worktree list --porcelain' >/dev/null; then
+  "$REAL_GIT_FOR_TEST" "\$@" | awk -v target="$missing" '
+    /^worktree / { selected=(\$0 == "worktree " target) }
+    selected && (\$1 == "HEAD" || \$1 == "branch" || \$1 == "detached") { next }
+    { print }
+  '
+  exit "\${PIPESTATUS[0]}"
+fi
+exec "$REAL_GIT_FOR_TEST" "\$@"
+SH
+  chmod +x "$case_dir/fakebin/treehouse" "$case_dir/fakebin/git"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-incomplete-inventory: teardown should still close"
+  [ -d "$admin" ] \
+    || fail "leftover-incomplete-inventory: incomplete row was pruned"
+  grep -q 'worktree list failed' "$case_dir/stderr" \
+    || fail "leftover-incomplete-inventory: incomplete row was silent"
+  pass "an incomplete worktree row retains every registration"
 }
 
 test_leftover_prune_applies_complete_keep_set() {
@@ -3815,6 +3961,45 @@ SH
   [ "$active_count" = 3 ] \
     || fail "leftover-foreign-unleased: filter status was not reused: $active_count calls"
   pass "safe foreign copies reuse filtering status and keep final provider checks"
+}
+
+test_leftover_clean_provider_alias_is_retained() {
+  local case_dir rc foreign_root orphan
+  case_dir=$(prepare_landed_ship leftover-clean-provider-alias)
+  foreign_root="$case_dir/clean-root"
+  orphan="$foreign_root/pool/1/project"
+  mkdir -p "$(dirname "$orphan")"
+  git -C "$case_dir/project" worktree add -q -b fm/provider-clean "$orphan" main
+  cat > "$case_dir/fakebin/treehouse" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = return ] && [ "\${2:-}" = --force ]; then exit 0; fi
+if [ "\${1:-}" = status ]; then
+  if [ "\${TREEHOUSE_ROOT:-}" = "$foreign_root" ]; then
+    printf '%s\n' '[{"path":"$orphan","status":"clean","lease_id":"","lease_holder":""}]'
+  else
+    printf '%s\n' '[]'
+  fi
+  exit 0
+fi
+if [ "\${1:-}" = destroy ]; then
+  printf '%s\n' "\$*" >> "$case_dir/provider.log"
+  target=
+  for arg in "\$@"; do target=\$arg; done
+  exec "$REAL_GIT_FOR_TEST" -C "$case_dir/project" worktree remove -- "\$target"
+fi
+exit 1
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+  rc=0
+  run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+  expect_code 0 "$rc" "leftover-clean-provider-alias: teardown should succeed"
+  [ -d "$orphan" ] \
+    || fail "leftover-clean-provider-alias: unproved provider state removed the copy"
+  [ ! -e "$case_dir/provider.log" ] \
+    || fail "leftover-clean-provider-alias: unproved state reached destroy"
+  grep -q "retained $orphan (unknown-lease)" "$case_dir/stdout" \
+    || fail "leftover-clean-provider-alias: no unknown state retain reason"
+  pass "the undocumented clean provider state cannot authorize deletion"
 }
 
 test_leftover_retired_lease_receipt_does_not_authorize_removal() {
@@ -4475,8 +4660,12 @@ test_leftover_branch_change_to_metadata_branch_is_retained
 test_leftover_symlink_ancestor_inventory_is_retained
 test_leftover_locked_sibling_is_retained
 test_leftover_dirty_sibling_is_retained
+test_leftover_stale_remote_ref_does_not_prove_sibling
+test_leftover_default_content_avoids_forge_lookup
+test_leftover_orig_head_retains_live_and_missing_copies
 test_leftover_gone_tmp_prunes_only_when_all_safe
 test_leftover_gone_tmp_prunes_when_all_eligible
+test_leftover_incomplete_inventory_retains_registration
 test_leftover_prune_applies_complete_keep_set
 test_leftover_unpublished_and_force_do_not_bypass
 test_leftover_pr_of_task_does_not_prove_sibling
@@ -4499,6 +4688,7 @@ test_leftover_done_ship_evidence_is_repo_bound
 test_leftover_registered_home_without_state_defers
 test_leftover_active_pool_and_unknown_states_are_retained
 test_leftover_safe_foreign_pool_copy_is_removed
+test_leftover_clean_provider_alias_is_retained
 test_leftover_retired_lease_receipt_does_not_authorize_removal
 test_leftover_provider_destroy_process_race_is_retained
 test_leftover_proof_failures_warn_after_closure

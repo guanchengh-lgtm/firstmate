@@ -57,6 +57,9 @@ FM_GIT_CLEANUP_SHIP_BRANCHES=
 FM_GIT_CLEANUP_DEFAULT_REF=
 FM_GIT_CLEANUP_DEFAULT_NAME=
 FM_GIT_CLEANUP_DEFAULT_REPO=
+FM_GIT_CLEANUP_REMOTE_PROOF_REPO=
+FM_GIT_CLEANUP_REMOTE_PROOF_TIPS=
+FM_GIT_CLEANUP_REMOTE_PROOF_READY=0
 FM_GIT_CLEANUP_ATTRIB_BRANCHES=
 FM_GIT_CLEANUP_TREEHOUSE_FILTER_JSON=
 FM_GIT_CLEANUP_TREEHOUSE_FILTER_READY=0
@@ -172,6 +175,11 @@ fm_git_cleanup_resolve_default() {
   FM_GIT_CLEANUP_DEFAULT_REPO=$common
   FM_GIT_CLEANUP_DEFAULT_NAME=$name
   FM_GIT_CLEANUP_DEFAULT_REF=$ref
+  if [ "$FM_GIT_CLEANUP_REMOTE_PROOF_REPO" != "$common" ]; then
+    FM_GIT_CLEANUP_REMOTE_PROOF_REPO=
+    FM_GIT_CLEANUP_REMOTE_PROOF_TIPS=
+    FM_GIT_CLEANUP_REMOTE_PROOF_READY=0
+  fi
 }
 
 fm_git_cleanup_default_is_prepared() {
@@ -188,6 +196,61 @@ fm_git_cleanup_prepare_default() {
 
 fm_git_cleanup_prepare_fetched_default() {
   fm_git_cleanup_resolve_default "$1" "$2" 0
+}
+
+fm_git_cleanup_prepare_remote_proof() {
+  local repo=$1 common remotes remote listed line oid ref tips=
+  common=$(fm_git_cleanup_common_dir "$repo") || return 1
+  if [ "$FM_GIT_CLEANUP_REMOTE_PROOF_REPO" = "$common" ] \
+     && [ "$FM_GIT_CLEANUP_REMOTE_PROOF_READY" != 0 ]; then
+    [ "$FM_GIT_CLEANUP_REMOTE_PROOF_READY" = 1 ]
+    return $?
+  fi
+  FM_GIT_CLEANUP_REMOTE_PROOF_REPO=$common
+  FM_GIT_CLEANUP_REMOTE_PROOF_TIPS=
+  FM_GIT_CLEANUP_REMOTE_PROOF_READY=2
+  remotes=$(git -C "$repo" remote 2>/dev/null) || return 1
+  while IFS= read -r remote; do
+    [ -n "$remote" ] || continue
+    case "$remote" in *$'\t'*|*$'\r'*) return 1 ;; esac
+    listed=$(fm_run_timed "$FM_GIT_CLEANUP_TIMEOUT_SECS" \
+      git -C "$repo" ls-remote --heads "$remote" 2>/dev/null) || return 1
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      case "$line" in *$'\t'refs/heads/*) ;; *) return 1 ;; esac
+      oid=${line%%$'\t'*}
+      ref=${line#*$'\t'}
+      case "$oid" in ''|*[!0-9a-fA-F]*) return 1 ;; esac
+      case "$ref" in refs/heads/?*) ;; *) return 1 ;; esac
+      if git -C "$repo" cat-file -e "$oid^{commit}" 2>/dev/null; then
+        tips=$tips$'\n'$oid
+      fi
+    done <<EOF
+$listed
+EOF
+  done <<EOF
+$remotes
+EOF
+  FM_GIT_CLEANUP_REMOTE_PROOF_TIPS=$(printf '%s\n' "$tips" | sed '/^$/d' | sort -u)
+  FM_GIT_CLEANUP_REMOTE_PROOF_READY=1
+}
+
+fm_git_cleanup_remote_unpreserved_commits() {
+  local repo=$1 tip=$2 common oid
+  common=$(fm_git_cleanup_common_dir "$repo") || return 1
+  [ "$FM_GIT_CLEANUP_REMOTE_PROOF_REPO" = "$common" ] \
+    && [ "$FM_GIT_CLEANUP_REMOTE_PROOF_READY" = 1 ] || return 1
+  set -- "$tip"
+  if [ -n "$FM_GIT_CLEANUP_REMOTE_PROOF_TIPS" ]; then
+    set -- "$@" --not
+    while IFS= read -r oid; do
+      [ -n "$oid" ] || continue
+      set -- "$@" "$oid"
+    done <<EOF
+$FM_GIT_CLEANUP_REMOTE_PROOF_TIPS
+EOF
+  fi
+  git -C "$repo" rev-list "$@" -- 2>/dev/null
 }
 
 fm_git_cleanup_pr_number_from_target() {
@@ -237,6 +300,7 @@ fm_git_cleanup_patch_id_for_commit() {
 fm_git_cleanup_unpushed_patches_in_pr_head() {
   local repo=$1 pr_head=$2 current=$3 base pr_patch_ids commit patch_id unpushed
   [ -n "$current" ] || return 1
+  fm_git_cleanup_prepare_remote_proof "$repo" || return 1
   base=$(git -C "$repo" merge-base "$current" "$pr_head" 2>/dev/null) || return 1
   pr_patch_ids=$(
     git -C "$repo" log --format=%H "$base..$pr_head" -- 2>/dev/null \
@@ -247,7 +311,7 @@ fm_git_cleanup_unpushed_patches_in_pr_head() {
       | sort -u
   ) || return 1
   [ -n "$pr_patch_ids" ] || return 1
-  unpushed=$(git -C "$repo" log --format=%H "$current" --not --remotes -- 2>/dev/null) || return 1
+  unpushed=$(fm_git_cleanup_remote_unpreserved_commits "$repo" "$current") || return 1
   [ -n "$unpushed" ] || return 1
   while IFS= read -r commit; do
     [ -n "$commit" ] || continue
@@ -312,8 +376,8 @@ fm_git_cleanup_content_in_default() {
 
 fm_git_cleanup_tip_on_remotes() {
   local repo=$1 tip=$2 leftover
-  leftover=$(git -C "$repo" rev-list --count "$tip" --not --remotes -- 2>/dev/null) || return 1
-  [ "$leftover" = 0 ]
+  leftover=$(fm_git_cleanup_remote_unpreserved_commits "$repo" "$tip") || return 1
+  [ -z "$leftover" ]
 }
 
 # Candidate-specific landed proof. Does not mutate PR_URL.
@@ -323,19 +387,25 @@ fm_git_cleanup_work_is_landed() {
   if [ -z "$commit" ]; then
     commit=$(git -C "$repo" rev-parse --verify HEAD 2>/dev/null) || return 1
   fi
+  if ! fm_git_cleanup_default_is_prepared "$repo"; then
+    fm_git_cleanup_prepare_default "$repo" "$mode" || return 1
+  fi
+  fm_git_cleanup_prepare_remote_proof "$repo" >/dev/null 2>&1 || true
   if fm_git_cleanup_tip_on_remotes "$repo" "$commit"; then
     return 0
   fi
+  if fm_git_cleanup_content_in_default "$repo" "$mode" "$commit"; then
+    return 0
+  fi
   if [ "$mode" = local-only ]; then
-    fm_git_cleanup_content_in_default "$repo" "$mode" "$commit"
-    return $?
+    return 1
   fi
   if [ -n "$pr_url" ] || { [ -n "$branch" ] && [ "$branch" != HEAD ]; }; then
     if fm_git_cleanup_pr_is_merged "$repo" "$branch" "$pr_url" "$commit" >/dev/null; then
       return 0
     fi
   fi
-  fm_git_cleanup_content_in_default "$repo" "$mode" "$commit"
+  return 1
 }
 
 fm_git_cleanup_worktree_list() {
@@ -506,10 +576,31 @@ fm_git_cleanup_copy_is_clean() {
   [ -z "$raw" ]
 }
 
+fm_git_cleanup_pseudorefs() {
+  local gitdir=$1 common=$2 file name oid
+  for file in "$gitdir"/*; do
+    [ -e "$file" ] || [ -L "$file" ] || continue
+    name=$(basename "$file")
+    case "$name" in HEAD|*[!A-Z0-9_]*) continue ;; esac
+    [ -f "$file" ] && [ ! -L "$file" ] && [ -r "$file" ] || return 1
+    oid=$(GIT_DIR="$gitdir" GIT_COMMON_DIR="$common" \
+      git rev-parse --verify "$name^{commit}" 2>/dev/null) || continue
+    printf 'pseudoref/%s\t%s\n' "$name" "$oid"
+  done
+}
+
 fm_git_cleanup_private_refs() {
-  local path=$1
-  git -C "$path" for-each-ref --format='%(refname)%09%(objectname)' \
-    refs/worktree refs/bisect refs/rewritten 2>/dev/null
+  local path=$1 common gitdir refs pseudorefs
+  common=$(fm_git_cleanup_common_dir "$path") || return 1
+  gitdir=$(git -C "$path" rev-parse --git-dir 2>/dev/null) || return 1
+  case "$gitdir" in
+    /*) ;;
+    *) gitdir=$(cd "$path" && cd "$gitdir" && pwd -P) || return 1 ;;
+  esac
+  refs=$(git -C "$path" for-each-ref --format='%(refname)%09%(objectname)' \
+    refs/worktree refs/bisect refs/rewritten 2>/dev/null) || return 1
+  pseudorefs=$(fm_git_cleanup_pseudorefs "$gitdir" "$common") || return 1
+  printf '%s\n%s\n' "$refs" "$pseudorefs" | sed '/^$/d'
 }
 
 fm_git_cleanup_copy_signature() {
@@ -839,6 +930,7 @@ fm_git_cleanup_porcelain_entries() {
   while IFS= read -r line || [ -n "$line" ]; do
     if [ -z "$line" ]; then
       if [ -n "$path" ]; then
+        [ -n "$head" ] && [ -n "$branch" ] || return 1
         printf '%s\t%s\t%s\t%s\t%s\n' "$path" "$head" "$branch" "$locked" "$prunable"
       fi
       path=
@@ -876,6 +968,7 @@ fm_git_cleanup_porcelain_entries() {
 $listed
 EOF
   if [ -n "$path" ]; then
+    [ -n "$head" ] && [ -n "$branch" ] || return 1
     printf '%s\t%s\t%s\t%s\t%s\n' "$path" "$head" "$branch" "$locked" "$prunable"
   fi
 }
@@ -937,10 +1030,13 @@ fm_git_cleanup_admin_has_operation() {
 }
 
 fm_git_cleanup_admin_private_refs() {
-  local repo=$1 admin=$2 common
+  local repo=$1 admin=$2 common refs pseudorefs
   common=$(fm_git_cleanup_common_dir "$repo") || return 1
-  GIT_DIR=$admin GIT_COMMON_DIR=$common git for-each-ref \
-    --format='%(refname)%09%(objectname)' refs/worktree refs/bisect refs/rewritten 2>/dev/null
+  refs=$(GIT_DIR=$admin GIT_COMMON_DIR=$common git for-each-ref \
+    --format='%(refname)%09%(objectname)' refs/worktree refs/bisect refs/rewritten 2>/dev/null) \
+    || return 1
+  pseudorefs=$(fm_git_cleanup_pseudorefs "$admin" "$common") || return 1
+  printf '%s\n%s\n' "$refs" "$pseudorefs" | sed '/^$/d'
 }
 
 fm_git_cleanup_admin_refs_are_landed() {
@@ -1043,7 +1139,7 @@ fm_git_cleanup_treehouse_slot_is_available() {
   lease_id=$(fm_git_cleanup_treehouse_slot_field "$slot" lease_id) || return 1
   lease_holder=$(fm_git_cleanup_treehouse_slot_field "$slot" lease_holder) || return 1
   [ -n "$status" ] || return 1
-  case "$status" in available|clean) ;; *) return 1 ;; esac
+  case "$status" in available) ;; *) return 1 ;; esac
   [ -z "$lease_id" ] && [ -z "$lease_holder" ]
 }
 
@@ -1184,7 +1280,7 @@ fm_git_cleanup_handle_orphan() {
   if slot=$(fm_git_cleanup_treehouse_slot "$active_json" "$path" "$repo" 2>/dev/null); then
     status=$(fm_git_cleanup_treehouse_slot_field "$slot" status)
     case "$status" in
-      available|clean) fm_git_cleanup_retain "$path" "idle-pool-slot" ;;
+      available) fm_git_cleanup_retain "$path" "idle-pool-slot" ;;
       leased|in_use|in-use|busy|reserved) fm_git_cleanup_retain "$path" "active-pool-slot" ;;
       *) fm_git_cleanup_retain "$path" "unknown-lease" ;;
     esac
@@ -1247,7 +1343,7 @@ fm_git_cleanup_handle_orphan() {
       fm_git_cleanup_retain "$path" "unknown-lease"
       return 0
       ;;
-    available|clean)
+    available)
       fm_git_cleanup_treehouse_slot_is_available "$slot" || {
         fm_git_cleanup_retain "$path" "unknown-lease"
         return 0
@@ -1317,7 +1413,7 @@ fm_git_cleanup_handle_orphan() {
 
 fm_git_cleanup_prune_inventory_safe() {
   local repo=$1 entries=$2 path head branch locked prunable unsafe=0 unsafe_row
-  local missing admin admin_head
+  local missing admin admin_head blocked= blocked_path
   while IFS=$(printf '\t') read -r path head branch locked prunable; do
     [ -n "$path" ] || continue
     missing=0
@@ -1399,10 +1495,17 @@ fm_git_cleanup_prune_inventory_safe() {
       fm_git_cleanup_retain "$path" "unique-unpublished"
       continue
     fi
+    blocked=$blocked$'\n'$path
   done <<EOF
 $entries
 EOF
   if [ "$unsafe" = 1 ]; then
+    while IFS= read -r blocked_path; do
+      [ -n "$blocked_path" ] || continue
+      fm_git_cleanup_retain "$blocked_path" "whole-prune-blocked"
+    done <<EOF
+$blocked
+EOF
     fm_git_cleanup_note "skipped whole prune because $unsafe_row is unsafe"
     return 1
   fi
@@ -1432,6 +1535,9 @@ fm_git_cleanup_record_pruned_entries() {
       fm_git_cleanup_retain "$path" "prune-race"
     else
       fm_git_cleanup_removed "registration $path"
+      if [ -n "$branch" ] && [ "$branch" != HEAD ]; then
+        FM_GIT_CLEANUP_ATTRIB_BRANCHES=$FM_GIT_CLEANUP_ATTRIB_BRANCHES$'\n'"$branch $head"
+      fi
     fi
   done <<EOF
 $before
@@ -1479,6 +1585,9 @@ fm_git_cleanup_leftover_pass() {
   FM_GIT_CLEANUP_DEFAULT_REPO=
   FM_GIT_CLEANUP_DEFAULT_NAME=
   FM_GIT_CLEANUP_DEFAULT_REF=
+  FM_GIT_CLEANUP_REMOTE_PROOF_REPO=
+  FM_GIT_CLEANUP_REMOTE_PROOF_TIPS=
+  FM_GIT_CLEANUP_REMOTE_PROOF_READY=0
   FM_GIT_CLEANUP_TREEHOUSE_FILTER_JSON=
   FM_GIT_CLEANUP_TREEHOUSE_FILTER_READY=0
   case "$kind" in
