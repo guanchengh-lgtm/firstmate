@@ -748,6 +748,8 @@ EOF
 
   cap_section=$(printf '%s\n' "$out" | awk '/^data\/captain\.md$/{flag=1;next}/^data\//{flag=0}flag')
   assert_contains "$cap_section" "(present, empty)" "empty-but-present captain.md was not distinguished from ABSENT"
+  assert_contains "$out" $'RECORD\nfm-record: state=disabled' \
+    "locked session start did not print the disabled Record checkpoint"
 
   pass "context digest distinguishes ABSENT, empty-but-present, and populated files"
 }
@@ -811,6 +813,8 @@ EOF
   # The rest of the digest (read-only-safe) still completed.
   assert_contains "$out" "FLEET STATE" "fleet-state digest section missing on the read-only path"
   assert_contains "$out" "NEXT STEP" "closing reminder missing on the read-only path"
+  assert_contains "$out" $'RECORD\nfm-record: state=disabled' \
+    "read-only session start did not inspect Record health"
 
   pass "a lock refusal prints a loud read-only banner, skips every mutating step, and still completes the digest"
 }
@@ -2151,6 +2155,8 @@ EOF
   assert_contains "$reemit" "CONTEXT" "--reemit dropped the context digest"
   assert_contains "$reemit" "FLEET STATE" "--reemit dropped the fleet-state digest"
   assert_contains "$reemit" "NEXT STEP" "--reemit dropped the closing reminder"
+  assert_contains "$reemit" $'RECORD\nfm-record: state=disabled' \
+    "--reemit did not inspect Record health"
 
   pass "--reemit reprints the digest without repeating startup's mutating sweeps and still drains queued wakes"
 }
@@ -2733,8 +2739,92 @@ test_bootstrap_host_cwd read-only copy lsof
 test_bootstrap_host_cwd locked nested git
 test_bootstrap_host_cwd read-only nested git
 
+setup_session_record() {
+  local home=$1 origin
+  origin="$home/record-origin.git"
+  mkdir -p "$home/empty-home"
+  git init --quiet --bare --initial-branch=main "$origin"
+  HOME="$home/empty-home" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_DATA_OVERRIDE="$home/data" FM_STATE_OVERRIDE="$home/state" \
+    FM_CONFIG_OVERRIDE="$home/config" FM_RECORD_SETTLE_SECONDS=0 \
+    "$ROOT/bin/fm-record.sh" setup --init --origin "file://$origin" --code-root "$ROOT" \
+    >/dev/null \
+    || fail "session-start Record setup failed"
+}
+
+record_tool_path() {
+  local dir path=
+  for cmd in gitleaks git-lfs git; do
+    command -v "$cmd" >/dev/null || fail "session-start Record fixture missing $cmd"
+    dir=$(dirname "$(command -v "$cmd")")
+    case ":$path:" in
+      *":$dir:"*) ;;
+      *) path="${path}${path:+:}$dir" ;;
+    esac
+  done
+  printf '%s\n' "$path"
+}
+
+test_record_checkpoint_only_on_locked_startup() {
+  local rec root home fakebin holder_pid out first second tools
+  rec=$(new_world record-checkpoint)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  setup_session_record "$home"
+  printf 'session note\n' > "$home/data/captain.md"
+  tools=$(record_tool_path)
+
+  out=$(
+    FM_RECORD_SETTLE_SECONDS=0 \
+      run_session_start "$home" "$root" "$fakebin:$tools:$BASE_PATH"
+  )
+  assert_contains "$out" $'RECORD\nfm-record: state=committed-local' \
+    "locked session start did not checkpoint the Record"
+  git --git-dir="$home/data/.git" --work-tree="$home/data" cat-file -e HEAD:captain.md \
+    || fail "locked session start did not commit captain.md"
+  first=$(git --git-dir="$home/data/.git" rev-parse HEAD)
+
+  sleep 300 &
+  holder_pid=$!
+  printf '%s\n' "$holder_pid" > "$home/state/.lock"
+  printf 'read-only must not commit this\n' > "$home/data/later.md"
+  out=$(
+    FM_RECORD_SETTLE_SECONDS=0 \
+      run_session_start "$home" "$root" "$fakebin:$tools:$BASE_PATH"
+  )
+  kill "$holder_pid" 2>/dev/null || true
+  wait "$holder_pid" 2>/dev/null || true
+  assert_contains "$out" "READ-ONLY SESSION" "configured Record fixture did not enter read-only mode"
+  assert_contains "$out" $'RECORD\nfm-record: state=' \
+    "read-only session start omitted Record health"
+  second=$(git --git-dir="$home/data/.git" rev-parse HEAD)
+  [ "$first" = "$second" ] || fail "read-only session start moved Record HEAD"
+  git --git-dir="$home/data/.git" --work-tree="$home/data" cat-file -e HEAD:later.md 2>/dev/null \
+    && fail "read-only session start committed later.md"
+
+  out=$(
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$root" FM_FAKE_HARNESS_PID=$$ \
+      FM_RECORD_SETTLE_SECONDS=0 \
+      PATH="$fakebin:$tools:$BASE_PATH" \
+      env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
+      "$SESSION_START" --reemit
+  )
+  assert_contains "$out" $'RECORD\nfm-record: state=' \
+    "--reemit omitted Record health"
+  [ "$(git --git-dir="$home/data/.git" rev-parse HEAD)" = "$first" ] \
+    || fail "--reemit moved Record HEAD"
+  git --git-dir="$home/data/.git" --work-tree="$home/data" cat-file -e HEAD:later.md 2>/dev/null \
+    && fail "--reemit committed later.md"
+  pass "session start checkpoints the Record only on a locked startup"
+}
+
 test_context_digest_absent_empty_present
 test_lock_refusal_read_only_path
+test_record_checkpoint_only_on_locked_startup
 test_lock_write_failure_read_only_path
 test_trace_context_effective_state_is_frozen_after_lock
 test_session_lock_concurrent_single_winner

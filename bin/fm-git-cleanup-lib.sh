@@ -541,7 +541,8 @@ fm_git_cleanup_pseudorefs() {
   for file in "$gitdir"/*; do
     [ -e "$file" ] || [ -L "$file" ] || continue
     name=$(basename "$file")
-    case "$name" in HEAD|*[!A-Z0-9_]*) continue ;; esac
+    # A locale A-Z range also matches lowercase names, so logs would fail closed.
+    case "$name" in HEAD|*[!ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_]*) continue ;; esac
     [ -f "$file" ] && [ ! -L "$file" ] && [ -r "$file" ] || return 1
     oid=$(GIT_DIR="$gitdir" GIT_COMMON_DIR="$common" \
       git rev-parse --verify "$name^{commit}" 2>/dev/null) || continue

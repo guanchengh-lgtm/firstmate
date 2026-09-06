@@ -988,6 +988,17 @@ The digest above is complete for this session start. The READ-ONCE CONTRACT
 section near the top of it governs what may still be read from disk.
 EOF
 
+# Full locked startup checkpoints the Record after those mutations and before
+# the completion receipt. Read-only and --reemit paths inspect health only.
+# A Record failure must not abort session start.
+if [ "$READ_ONLY" -eq 0 ] && [ "$REEMIT" -eq 0 ]; then
+  record_out=$("$SCRIPT_DIR/fm-record.sh" checkpoint --reason session-start 2>&1) || true
+else
+  record_out=$("$SCRIPT_DIR/fm-record.sh" health 2>&1) || true
+fi
+printf '\nRECORD\n%s\n' "$record_out"
+unset record_out
+
 if [ "$READ_ONLY" -eq 0 ] && [ "$REEMIT" -eq 0 ]; then
   COMPLETION_RECORDED=0
   COMPLETION_PID=$(cat "$STATE/.lock" 2>/dev/null || true)

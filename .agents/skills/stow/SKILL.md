@@ -284,6 +284,15 @@ A receipt that says safe while any `data/decisions/*.md` still marks a pick open
 A pick never written to any decision file cannot be seen.
 The checker does not scrape transcripts; do not invent a second reader.
 
+## Record checkpoint
+
+After this home's own curation and the open lock-file check above, run `bin/fm-record.sh checkpoint --reason stow`.
+That command owns the local snapshot; report its result in this home's receipt.
+Do not put a commit inside `bin/fm-stow-cascade.sh`.
+That enumerator only lists homes and mechanical inputs.
+Each home's own completed-stow path checkpoints that home.
+The primary does not copy or commit another home's files.
+
 ## Automatic cascade to secondmates
 
 In a primary home, every `/stow` cascades to every registered secondmate after this home's own required pass and knowledge sweep are complete.

@@ -2917,6 +2917,18 @@ else
   fi
 fi
 
+# Capture the task's report, metadata, status, and inbox before any
+# irreversible cleanup. A disabled home is an explicit no-op. A required
+# checkpoint refusal keeps the durable sources in place.
+if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
+  if [ "${FORCE:-}" != "--force" ]; then
+    if ! "$SCRIPT_DIR/fm-record.sh" checkpoint --reason teardown --required >&2; then
+      echo "REFUSED: Record checkpoint could not capture a durable local commit before cleanup." >&2
+      exit 1
+    fi
+  fi
+fi
+
 # Every landed/discard-work refusal above has now passed (or --force skipped
 # them). Fix 1 and Fix 2 (see script header) run here, unconditionally on
 # --force, and before ANY destructive step below - a still-parked run or a

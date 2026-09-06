@@ -1135,6 +1135,9 @@ $raw_open
 EOF
     fi
   fi
+  record_out=$("$SCRIPT_DIR/fm-record.sh" checkpoint --reason complete 2>&1) \
+    || fail "Record checkpoint failed; completion is not attested"
+  printf '%s\n' "$record_out"
   printf 'complete: %s captain-call and product-idea inventories reviewed%s%s\n' \
     "$origin" "${keys:+; captain-calls=$keys}" "${idea_keys:+; ideas=$idea_keys}"
 }

@@ -1494,6 +1494,96 @@ EOF
   pass "scout teardown requires its report and captain-hold completion, not source repetition"
 }
 
+setup_teardown_record() {
+  local case_dir=$1 origin
+  origin="$case_dir/record-origin.git"
+  mkdir -p "$case_dir/empty-home"
+  git init --quiet --bare --initial-branch=main "$origin"
+  HOME="$case_dir/empty-home" \
+    FM_HOME="$case_dir" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_DATA_OVERRIDE="$case_dir/data" FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_CONFIG_OVERRIDE="$case_dir/config" FM_RECORD_SETTLE_SECONDS=0 \
+    "$ROOT/bin/fm-record.sh" setup --init --origin "file://$origin" --code-root "$ROOT" \
+    >/dev/null \
+    || fail "teardown Record setup failed"
+}
+
+teardown_secret_fixture() {
+  printf '%s%s' 'ghp' '_0123456789abcdefghijklmnopqrstuvwxyzAB'
+}
+
+test_scout_teardown_scan_block_keeps_inbox_and_meta() {
+  local case_dir rc report secret
+  case_dir=$(make_case scout-record-scan-block)
+  write_meta "$case_dir" no-mistakes scout
+  mkdir -p "$case_dir/data/task-x1" "$case_dir/state/task-x1.inbox"
+  printf '%s\n' '# Findings' 'The completed analysis does not repeat either source literal.' \
+    > "$case_dir/data/task-x1/report.md"
+  printf 'keep this inbox\n' > "$case_dir/state/task-x1.inbox/001.msg"
+  FM_HOME="$case_dir" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_DATA_OVERRIDE="$case_dir/data" FM_STATE_OVERRIDE="$case_dir/state" \
+    FM_CONFIG_OVERRIDE="$case_dir/config" PATH="$case_dir/fakebin:$PATH" \
+    "$ROOT/bin/fm-captain-hold.sh" complete task-x1 --none --no-ideas \
+    >/dev/null \
+    || fail "scout scan-block fixture could not complete"
+  setup_teardown_record "$case_dir"
+  secret=$(teardown_secret_fixture)
+  printf '%s\n' "$secret" > "$case_dir/data/leaky.md"
+  rc=0
+  FM_HOME="$case_dir" FM_RECORD_SETTLE_SECONDS=0 \
+    run_teardown "$case_dir" > "$case_dir/blocked.out" 2> "$case_dir/blocked.err" || rc=$?
+  expect_code 1 "$rc" "scout teardown should refuse when the Record scan blocks"
+  assert_grep 'REFUSED: Record checkpoint' "$case_dir/blocked.err" \
+    "scan-blocked scout teardown did not name the Record refusal"
+  assert_not_contains "$(cat "$case_dir/blocked.out")$(cat "$case_dir/blocked.err")" "$secret" \
+    "scan-blocked scout teardown echoed the secret"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "scan-blocked scout teardown removed metadata"
+  assert_present "$case_dir/state/task-x1.inbox/001.msg" \
+    "scan-blocked scout teardown removed the inbox"
+  pass "scout teardown keeps inbox and metadata when the Record scan blocks"
+}
+
+test_local_only_teardown_scan_block_keeps_meta() {
+  local case_dir rc secret wt_head
+  case_dir=$(make_case local-only-record-scan-block)
+  write_meta "$case_dir" local-only ship
+  wt_commit "$case_dir" "merged work"
+  wt_head=$(git -C "$case_dir/wt" rev-parse HEAD)
+  git -C "$case_dir/project" update-ref refs/heads/main "$wt_head"
+  mkdir -p "$case_dir/state/task-x1.inbox"
+  printf 'keep ship inbox\n' > "$case_dir/state/task-x1.inbox/001.msg"
+  setup_teardown_record "$case_dir"
+  secret=$(teardown_secret_fixture)
+  printf '%s\n' "$secret" > "$case_dir/data/leaky.md"
+  rc=0
+  FM_HOME="$case_dir" FM_RECORD_SETTLE_SECONDS=0 \
+    run_teardown "$case_dir" > "$case_dir/blocked.out" 2> "$case_dir/blocked.err" || rc=$?
+  expect_code 1 "$rc" "local-only teardown should refuse when the Record scan blocks"
+  assert_grep 'REFUSED: Record checkpoint' "$case_dir/blocked.err" \
+    "scan-blocked local-only teardown did not name the Record refusal"
+  assert_present "$case_dir/state/task-x1.meta" \
+    "scan-blocked local-only teardown removed metadata"
+  assert_present "$case_dir/state/task-x1.inbox/001.msg" \
+    "scan-blocked local-only teardown removed the inbox"
+  pass "local-only teardown keeps metadata when the Record scan blocks"
+}
+
+test_force_skips_record_checkpoint_when_scan_would_block() {
+  local case_dir secret
+  case_dir=$(make_case force-skips-record)
+  write_meta "$case_dir" local-only ship
+  setup_teardown_record "$case_dir"
+  secret=$(teardown_secret_fixture)
+  printf '%s\n' "$secret" > "$case_dir/data/leaky.md"
+  FM_HOME="$case_dir" FM_RECORD_SETTLE_SECONDS=0 \
+    run_teardown "$case_dir" --force > "$case_dir/forced.out" 2> "$case_dir/forced.err" \
+    || fail "forced teardown failed while the Record would have been scan-blocked"
+  assert_absent "$case_dir/state/task-x1.meta" \
+    "forced teardown left metadata after skipping the Record checkpoint"
+  pass "force skips the Record checkpoint and still tears down"
+}
+
 test_teardown_missing_busy_sidecar_completes() {
   local case_dir gen rc
   case_dir=$(make_case missing-busy-sidecar)
@@ -4203,6 +4293,9 @@ test_local_only_fork_remote_allows
 test_help_documents_force_validation_truth_skip
 test_invalid_ship_role_refuses
 test_scout_teardown_uses_report_and_captain_hold_gates
+test_scout_teardown_scan_block_keeps_inbox_and_meta
+test_local_only_teardown_scan_block_keeps_meta
+test_force_skips_record_checkpoint_when_scan_would_block
 test_teardown_closes_the_backlog_item_itself
 test_spawn_then_teardown_closes_backlog_atomically
 test_teardown_manual_backend_leaves_the_backlog_to_the_operator

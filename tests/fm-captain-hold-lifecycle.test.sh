@@ -535,8 +535,10 @@ test_none_inventory_and_resolved_prose_do_not_create_holds() {
 Decision record: the earlier choice is resolved.
 The recommendation is informational and needs no captain action.
 EOF
-  run_captain "$home" complete "$id" --none --no-ideas >/dev/null \
+  run_captain "$home" complete "$id" --none --no-ideas > "$home/none-complete.out" \
     || fail "explicit no-call inventory failed"
+  assert_contains "$(cat "$home/none-complete.out")" 'fm-record: state=disabled' \
+    "accepted completion omitted the disabled Record checkpoint"
   json=$(run_bearings "$home") || fail "Bearings failed for no-call inventory"
   printf '%s' "$json" | jq -e '
     (.decisions_open | any(.id | startswith("sample-resolved-review")) | not)
@@ -1278,6 +1280,75 @@ EOF
   pass "a captain call with no routed work, a verified transfer, an open decision, and an answered call all stay silent"
 }
 
+setup_hold_record() {
+  local home=$1 origin
+  origin="$home/record-origin.git"
+  mkdir -p "$home/empty-home"
+  git init --quiet --bare --initial-branch=main "$origin"
+  HOME="$home/empty-home" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_DATA_OVERRIDE="$home/data" FM_STATE_OVERRIDE="$home/state" \
+    FM_CONFIG_OVERRIDE="$home/config" FM_RECORD_SETTLE_SECONDS=0 \
+    "$ROOT/bin/fm-record.sh" setup --init --origin "file://$origin" --code-root "$ROOT" \
+    >/dev/null \
+    || fail "captain-hold Record setup failed"
+}
+
+hold_secret_fixture() {
+  printf '%s%s' 'ghp' '_0123456789abcdefghijklmnopqrstuvwxyzAB'
+}
+
+test_complete_scan_block_cannot_print_success() {
+  local home id secret
+  home=$(make_home record-scan-block)
+  id=sample-scan-review
+  mkdir -p "$home/data/$id"
+  tasks_in "$home" add "$id" "Review a leaky sample" --kind scout --repo sample --start >/dev/null \
+    || fail "could not create scan-block investigation"
+  write_origin_meta "$home" "$id"
+  printf 'done: report complete\n' > "$home/state/$id.status"
+  printf '# Sample scan review\n\nNo captain choice remains.\n' > "$home/data/$id/report.md"
+  setup_hold_record "$home"
+  secret=$(hold_secret_fixture)
+  printf '%s\n' "$secret" > "$home/data/leaky.md"
+  if run_captain "$home" complete "$id" --none --no-ideas \
+    > "$home/scan.out" 2> "$home/scan.err"; then
+    fail "scan-blocked completion printed success"
+  fi
+  if grep -E '^complete:' "$home/scan.out" >/dev/null; then
+    fail "scan-blocked completion still printed complete success"
+  fi
+  assert_not_contains "$(cat "$home/scan.out")$(cat "$home/scan.err")" "$secret" \
+    "scan-blocked completion echoed the secret"
+  assert_present "$home/state/$id.meta" \
+    "scan-blocked completion removed origin metadata"
+  pass "accepted completion cannot print success when the Record scan blocks"
+}
+
+test_verify_does_not_checkpoint_the_record() {
+  local home id before
+  home=$(make_home record-verify-readonly)
+  id=sample-verify-review
+  mkdir -p "$home/data/$id"
+  tasks_in "$home" add "$id" "Review a verified sample" --kind scout --repo sample --start >/dev/null \
+    || fail "could not create verify investigation"
+  write_origin_meta "$home" "$id"
+  printf 'done: report complete\n' > "$home/state/$id.status"
+  printf '# Sample verify review\n\nNo captain choice remains.\n' > "$home/data/$id/report.md"
+  setup_hold_record "$home"
+  run_captain "$home" complete "$id" --none --no-ideas >/dev/null \
+    || fail "verify fixture could not complete"
+  before=$(git --git-dir="$home/data/.git" rev-parse HEAD)
+  printf 'verify must not commit this\n' > "$home/data/after-complete.md"
+  run_captain "$home" verify "$id" >/dev/null \
+    || fail "verify failed on a completed origin"
+  [ "$(git --git-dir="$home/data/.git" rev-parse HEAD)" = "$before" ] \
+    || fail "verify created a Record commit"
+  git --git-dir="$home/data/.git" --work-tree="$home/data" cat-file -e HEAD:after-complete.md \
+    2>/dev/null && fail "verify committed a later file"
+  pass "verify remains read-only and never checkpoints the Record"
+}
+
 test_uninventoried_report_decision_refuses_completion
 test_completion_gate_attests_and_transfers
 test_answer_records_and_closes
@@ -1297,3 +1368,5 @@ test_chat_channel_feeds_the_same_keyed_answer_intake
 test_origin_slug_validation_precedes_path_construction
 test_status_resolution_over_an_open_hold_is_signalled
 test_legitimate_holds_produce_no_divergence_signal
+test_complete_scan_block_cannot_print_success
+test_verify_does_not_checkpoint_the_record
