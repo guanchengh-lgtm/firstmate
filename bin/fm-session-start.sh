@@ -201,7 +201,7 @@
 # Usage: fm-session-start.sh [--reemit] [--source <source>]
 #   Prints the full ordered digest to stdout and exits 0 after ordinary reports
 #   and lock refusals.
-#   A linked-worktree home refusal exits 1 before any home read or write.
+#   A linked-worktree home refusal exits 1 before startup reads or writes its state.
 #   This is a reporting command, not a lock gate.
 #   A lock refusal is reported as a loud
 #   banner inline, never a silent failure or a non-zero exit that would make
