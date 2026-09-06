@@ -1063,6 +1063,7 @@ test_absolute_record_citation_is_excluded() {
   task="$home/task.md"
   mkdir -p "$record/prior" "$home/config"
   printf '%s\n' '# Widget sprocket' 'date: 2026-09-01' 'status: reported' > "$record/prior/report.md"
+  # shellcheck disable=SC2016 # Backticks must remain literal in the citation.
   printf '# Task\nContinue widget sprocket work from `%s/prior/report.md`.\n' "$record" > "$task"
   FM_HOME="$home" FM_DATA_OVERRIDE="$record" "$ROOT/bin/fm-brief.sh" absolute-citation firstmate \
     --mode no-mistakes --task-file "$task" >/dev/null 2>&1 || fail "absolute citation brief failed"
@@ -1220,6 +1221,7 @@ test_foreign_citation_does_not_hide_local_brief_recall() {
   home="$TMP_ROOT/foreign-brief-citation"
   mkdir -p "$home/data/prior"
   printf '# Widget\nstatus: reported\n' > "$home/data/prior/report.md"
+  # shellcheck disable=SC2016 # Backticks must remain literal in the citation.
   printf 'Continue widget work described in `%s/other/data/prior/report.md`.\n' "$home" > "$home/task.md"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" foreign-citation firstmate --mode no-mistakes --task-file "$home/task.md" \
     >/dev/null 2>&1 || fail "foreign-citation brief failed"

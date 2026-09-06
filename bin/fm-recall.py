@@ -210,7 +210,9 @@ def open_regular(path, root=None, root_fd=None):
             parts = relative.split(os.sep)
             if any(part in ("", ".", "..") for part in parts):
                 return None
-            dir_fd = os.dup(root_fd) if root_fd is not None else os.open(root, directory)
+            dir_fd = (
+                os.dup(root_fd) if root_fd is not None else os.open(root, directory)
+            )
             for part in parts[:-1]:
                 child_fd = os.open(part, directory, dir_fd=dir_fd)
                 os.close(dir_fd)
@@ -849,7 +851,9 @@ def load_decisions(corpus):
             or not contained(corpus.root, path)
         ):
             continue
-        lines, partial, tail = read_head_lines(path, HEAD_LIMIT, corpus.root, corpus.root_fd)
+        lines, partial, tail = read_head_lines(
+            path, HEAD_LIMIT, corpus.root, corpus.root_fd
+        )
         if lines is None:
             corpus.note("source", "unreadable decision %s" % name)
             continue
@@ -1246,7 +1250,8 @@ def extract_identities(text, root):
         display = normalize_record_path(reference, root)
         if display:
             add(
-                archive_row_identity(reference, root) or identity_from_path(display, root)
+                archive_row_identity(reference, root)
+                or identity_from_path(display, root)
             )
     for match in MD_LINK.finditer(text):
         add(

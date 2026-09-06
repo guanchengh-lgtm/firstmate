@@ -433,6 +433,7 @@ test_extracted_identity_excludes_the_same_canonical_token() {
   mkdir -p "$home/data"
   write_report "$home" prior-widget "Prior widget archive" 2026-01-01 reported
   write_report "$home" other-sprocket "Other sprocket notes" 2026-01-02 reported
+  # shellcheck disable=SC2016 # Backticks must remain literal in the references.
   for reference in 'data/prior-widget/report.md' '`data/prior-widget/report.md`' \
     '``data/prior-widget/report.md``' "\`$home/data/prior-widget/report.md\`"; do
     token=$(
