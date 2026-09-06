@@ -1,0 +1,10 @@
+Subject: bin/fm-lint.sh:74
+Before: REQUIRED_RUFF=0.16.6
+After: REQUIRED_RUFF=0.0.0
+Selector: test_pins_an_explicit_version
+Command: ["bash", "-T", "-c", "trap 'if [[ \"$BASH_COMMAND\" == test_help_reports_the_complete_interface ]]; then trap - DEBUG; test_pins_an_explicit_version; exit; fi' DEBUG; source tests/fm-lint.test.sh"]
+Exit: 1
+
+not ok - fm-lint.sh must pin Ruff 0.16.6 (missing: '0.16.6')
+--- output ---
+0.0.0

@@ -1,0 +1,4 @@
+Command: ["bash", "-T", "-c", "trap 'if [[ \"$BASH_COMMAND\" == test_help_reports_the_complete_interface ]]; then trap - DEBUG; test_pins_an_explicit_version; exit; fi' DEBUG; source tests/fm-lint.test.sh"]
+Exit: 0
+
+ok - fm-lint.sh pins an explicit ShellCheck version (0.11.0)

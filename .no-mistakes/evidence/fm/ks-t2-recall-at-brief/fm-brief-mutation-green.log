@@ -1,0 +1,14 @@
+Command: ["bash", "tests/fm-brief.test.sh", "recall"]
+Exit: 0
+
+ok - legacy generated briefs preserve task input, named sources, and recall placement
+ok - foreign brief citations preserve local recall eligibility
+ok - successful scaffold and refresh show one bounded recall warning
+ok - one scaffold boundary preserves task, source, validation, verifier, and refresh behavior
+ok - fm-brief.sh: one generated boundary serves task, source, refresh, and validation paths
+ok - fm-brief.sh: worker check refuses fake slashes but permits names
+ok - fm-brief.sh: scout sources become a durable informational manifest
+ok - fm-brief.sh: --verifier writes a verifier-leading sibling and leaves brief.md alone
+ok - absolute citations under an overridden Record root are excluded and recorded
+ok - fm-brief.sh: task-file, named sources, refresh, and verifier/secondmate recall contracts hold
+ok - fm-brief.sh: manifest warnings, current backlog state, concurrent refresh, and receipt bounds hold

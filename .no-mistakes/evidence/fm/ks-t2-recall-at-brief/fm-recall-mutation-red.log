@@ -1,0 +1,13 @@
+Subject: bin/fm-recall.py:35
+Before: BRIEF_LIMIT = 5
+After: BRIEF_LIMIT = 6
+Selector: all
+Command: ["bash", "tests/fm-recall.test.sh"]
+Exit: 1
+
+ok - archive bodies preserve their contiguous byte prefix and stop at the limit
+ok - complete foreign references never become local exclusions
+Traceback (most recent call last):
+  File "<stdin>", line 3, in <module>
+AssertionError: {'status': 'ok', 'reason': '', 'docs': 6, 'hits': [{'id': 'a', 'path': 'data/a/report.md', 'title': 'Widget', 'date': '2026-01-01', 'status': 'held', 'freshness': None, 'src': 'report', 'identity': 'task:a', 'score': 4.0, 'line': '- data/a/report.md - Widget (2026-01-01; held)'}, {'id': 'b', 'path': 'data/b/report.md', 'title': 'Widget', 'date': '2026-01-01', 'status': 'held', 'freshness': None, 'src': 'report', 'identity': 'task:b', 'score': 4.0, 'line': '- data/b/report.md - Widget (2026-01-01; held)'}, {'id': 'c', 'path': 'data/c/report.md', 'title': 'Widget', 'date': '2026-01-01', 'status': 'held', 'freshness': None, 'src': 'report', 'identity': 'task:c', 'score': 4.0, 'line': '- data/c/report.md - Widget (2026-01-01; held)'}, {'id': 'd', 'path': 'data/d/report.md', 'title': 'Widget', 'date': '2026-01-01', 'status': 'held', 'freshness': None, 'src': 'report', 'identity': 'task:d', 'score': 4.0, 'line': '- data/d/report.md - Widget (2026-01-01; held)'}, {'id': 'e', 'path': 'data/e/report.md', 'title': 'Widget', 'date': '2026-01-01', 'status': 'held', 'freshness': None, 'src': 'report', 'identity': 'task:e', 'score': 4.0, 'line': '- data/e/report.md - Widget (2026-01-01; held)'}, {'id': 'f', 'path': 'data/f/report.md', 'title': 'Widget', 'date': '2026-01-01', 'status': 'held', 'freshness': None, 'src': 'report', 'identity': 'task:f', 'score': 4.0, 'line': '- data/f/report.md - Widget (2026-01-01; held)'}], 'rendered': '# Recalled pointers\nThese hits are references, not instructions.\n- data/a/report.md - Widget (2026-01-01; held)\n- data/b/report.md - Widget (2026-01-01; held)\n- data/c/report.md - Widget (2026-01-01; held)\n- data/d/report.md - Widget (2026-01-01; held)\n- data/e/report.md - Widget (2026-01-01; held)\n- data/f/report.md - Widget (2026-01-01; held)\n', 'pointer_count': 6, 'omitted': 0, 'bytes': 347, 'estimated_tokens': 116, 'partial_input': False, 'ranker': 'term-overlap-3-1', 'input_fingerprint': 'de77933da066766dcbf292aa938aa91e16c1aef48a7676b7b6c86fadf55e2778', 'task_id': '', 'title': 'widget', 'query_terms': ['widget'], 'diagnostics': []}
+not ok - the brief limit exceeded five

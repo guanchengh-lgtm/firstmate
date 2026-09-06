@@ -1,0 +1,11 @@
+Subject: bin/fm-test-run.sh:1337
+Before:     bin/fm-recall.sh|bin/fm-recall.py)
+After:     bin/fm-recall.sh|bin/fm-recall-disabled.py)
+Selector: test_changed_dependency_selection_and_unmapped_failure
+Command: ["bash", "-T", "-c", "trap 'if [[ \"$BASH_COMMAND\" == test_list_all_exact_suite_coverage ]]; then trap - DEBUG; test_changed_dependency_selection_and_unmapped_failure; exit; fi' DEBUG; source tests/fm-test-run.test.sh"]
+Exit: 1
+
+fm-test-run: no changed-test mapping for source path: bin/fm-recall.py
+not ok - recall owner selects its executable harness (missing: 'tests/fm-recall.test.sh')
+--- output ---
+

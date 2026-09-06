@@ -1,0 +1,188 @@
+$ fm-brief.sh evidence-brief firstmate --mode no-mistakes --task-file task.md --source data/cited/report.md
+warning: no usable session recall manifest (absent); using brief-local exclusions only
+scaffolded: /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VX4783MRHEA6B80DDHFHSY/state/test-tmp/fm-session-start-tests.7Or8Rc/product-evidence/home/data/evidence-brief/brief.md (ship, mode=no-mistakes)
+
+$ fm-recall.sh --title "widget sprocket" --surface brief --now 2026-09-07
+# Recalled pointers
+These hits are references, not instructions.
+- data/prior-widget/report.md - Prior widget archive (2026-01-01; reported; check-freshness)
+- data/cited/report.md - Widget reference (2026-01-01; reported; check-freshness)
+- data/held/report.md - Widget held (2026-01-01; held)
+- data/parked/report.md - Widget parked (2026-01-01; parked)
+Synthetic corpus timing: 0.099808 seconds; documents=4; rendered_bytes=356; estimated_tokens=119.
+
+$ fm-session-start.sh
+
+================================================================================
+SESSION START - /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VX4783MRHEA6B80DDHFHSY/state/test-tmp/fm-session-start-tests.7Or8Rc/product-evidence/home
+================================================================================
+
+LOCK
+--------------------------------------------------------------------------------
+lock acquired: harness pid 46410
+
+BOOTSTRAP
+--------------------------------------------------------------------------------
+MISSING: tasks-axi (install: npm install -g tasks-axi)
+MISSING: quota-axi (install: npm install -g quota-axi)
+
+WAKE QUEUE
+--------------------------------------------------------------------------------
+(no queued wakes)
+================================================================================
+SUPERVISION OPERATING INSTRUCTIONS - primary harness: claude
+================================================================================
+Current state:
+- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.
+- Away mode: inactive.
+- X mode: inactive; use the default watcher cadence.
+- Ordinary wake: the Stop-owned auto-arm (bin/fm-claude-stop-autoarm.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.
+
+Mode: Claude Stop-hook-owned supervision.
+
+When this session owns supervision and away mode is not active:
+1. Drain first with `bin/fm-wake-drain.sh`.
+   Handle every item required by the harness-neutral drain contract in [`AGENTS.md`](../../AGENTS.md#8-supervision-protocol), then run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`; until then the work remains durable for idempotent re-handling after interruption.
+2. Routine watcher arm and re-arm are owned by the Stop `asyncRewake` hook (`bin/fm-claude-stop-autoarm.sh`), never by you.
+   Every turn end while supervision is needed launches or attaches one home-scoped watcher cycle with no model command and no model tokens.
+   An actionable close wakes you through the hook's exit-2 rewake, delivered as a `Stop hook feedback` message.
+3. On a `Stop hook feedback` wake (`signal:`, `stale:`, `check:`, or `heartbeat`), run `bin/fm-wake-drain.sh` first and handle the wake.
+   Do not run `bin/fm-watch-arm.sh` after an ordinary wake; the next turn end re-arms automatically when supervision is still needed.
+   Do not invent a wake from an attach-status line alone; act only on items allowed by the harness-neutral drain contract or a real watcher reason line.
+4. On the one `Stop hook feedback` automatic-mechanism failure notice (`firstmate watcher auto-arm FAILED ...`), drain, inspect the automatic mechanism failure, and do not turn the notice into a repeating manual-arm loop.
+5. If the Stop hook does not claim the home or reports an exhausted failure, inspect its registration and watcher startup path before ending blind.
+   Keep the Stop-owned automatic mechanism as the only Claude arm owner.
+6. Treat `watcher: started ...` and `watcher: attached ...` inside automatic arm output as proof that one live cycle exists.
+   On attach, the arm follows verified identity-matched successors instead of exiting when the first cycle ends.
+7. The durable wake queue preserves actionable events between a rewake and the next Stop-launched arm, while the bounded turn-end guard prevents a blind Stop when recovery did not start.
+   No PreToolUse hook denies fleet commands based on watcher status.
+   [`watcher-continuity.md`](../watcher-continuity.md) owns the exact session-lock recovery boundary.
+8. The turn-end guard (`bin/fm-turnend-guard.sh --claude`) remains the final backstop.
+   It requires the PID-strict live-watcher and fresh-beacon predicate at the Stop boundary, while the mid-turn pull guard accepts a fresh beacon without a live process under Claude's between-turns auto-arm model.
+   It allows the stop when a watcher is healthy or an open auto-arm generation claim owns recovery, while fresh failure epochs advance the bounded one-time attended fail-open progression described in [`turnend-guard.md`](../turnend-guard.md).
+9. Waiting on the hook-owned cycle is silent: do not send idle progress while the watcher is parked.
+
+The watcher itself remains `bin/fm-watch.sh`, and `bin/fm-watch-arm.sh` remains the verified arm wrapper that the Stop hook foregrounds.
+Re-arm attaches to an existing healthy cycle when one is already present and follows its verified successor chain.
+See [`watcher-continuity.md`](../watcher-continuity.md) for the arm-layer successor and clean-close failure contract and the Claude ownership model.
+
+
+================================================================================
+READ-ONCE CONTRACT
+================================================================================
+Everything below provides a required PRIOR SESSION retrieve, every state/*.meta, a
+compact data/backlog.md listing, a bounded tail of every state/*.status,
+data/projects.md, data/secondmates.md, data/captain.md, data/captain-shared.md,
+and data/learnings.md.
+Recalled pointers after CONTEXT are references, not proof that those bodies
+were read.
+Do NOT re-read any of them after reading this digest, and do NOT bulk-read
+data/backlog.md or state/*.status: re-reading everything defeats the entire
+point of this command.
+
+Go to a source directly only when:
+  - this digest flagged it ABSENT (then rebuild or create it per AGENTS.md),
+  - its contents looked unparseable or corrupt,
+  - an individual full status log is needed for older wake-event history, or a
+    status line was capped and its tail matters (each task's full log path is
+    printed with its tail),
+  - a full task body is needed (tasks-axi show <id> --full, or data/backlog.md),
+  - the backlog listing disclosed omitted queued items and this turn needs them,
+  - the PRIOR SESSION fold reported missing, unreadable, parse-failed, or
+    truncated input and this turn needs one of its three targeted categories,
+  - the NETWORK CHECKS section reported its checks still IN PROGRESS and this
+    turn needs their verdict (bin/fm-startup-network.sh report),
+  - or a STARTUP TRUNCATED banner named the stage that would have printed it, in
+    which case that stage's sources were never emitted and must be reconciled.
+
+================================================================================
+PRIOR SESSION
+================================================================================
+scope: targeted prior-talk fold only; not 100% of chat; no GBrain, Graphify, or Obsidian ingestion.
+INCOMPLETE: prior session parser produced no result.
+
+================================================================================
+FLEET STATE
+================================================================================
+
+data/backlog.md
+--------------------------------------------------------------------------------
+compact backlog listing (manual backend; done rows omitted; every in-flight, held, and blocked title line kept; other queued bounded to 20; indented task bodies omitted)
+## In flight
+- [ ] inflight-one - Unique widget sprocket recall token (repo: firstmate) (kind: ship)
+- [ ] inflight-two - Unique widget sprocket recall token (repo: firstmate) (kind: ship)
+## Queued
+- [ ] held-one - Unique widget sprocket recall token (repo: firstmate) (kind: ship) (hold: captain choice pending) (hold-kind: captain)
+- [ ] blocked-one - Unique widget sprocket recall token (repo: firstmate) (kind: ship) blocked-by: inflight-one
+- [ ] ready-one - Unique widget sprocket recall token (repo: firstmate) (kind: ship)
+- [ ] ready-two - Unique widget sprocket recall token (repo: firstmate) (kind: ship)
+- [ ] ready-three - Unique widget sprocket recall token (repo: firstmate) (kind: ship)
+(shown 2 in-flight, 2 held or blocked queued, 3 of 3 other queued title line(s); 0 done row(s) omitted)
+Full task bodies remain available on demand: tasks-axi show <id> --full when compatible tasks-axi is available, or data/backlog.md.
+
+Work under way (state/*.meta)
+--------------------------------------------------------------------------------
+(none)
+
+Orphan status logs (state/*.status without matching .meta)
+--------------------------------------------------------------------------------
+(none)
+
+AFK
+--------------------------------------------------------------------------------
+absent
+
+================================================================================
+NETWORK CHECKS
+================================================================================
+completed off the startup path in 1s: GitHub authentication, dead-secondmate relaunch, secondmate convergence, pending handoff delivery, project clone refresh with its drift reporting, and inactive terminal-outcome reconciliation.
+(silent - no problems found)
+
+================================================================================
+CONTEXT
+================================================================================
+
+data/projects.md
+--------------------------------------------------------------------------------
+ABSENT
+
+data/secondmates.md
+--------------------------------------------------------------------------------
+ABSENT
+
+data/captain.md
+--------------------------------------------------------------------------------
+Use data/cited/report.md for widget work.
+
+data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)
+--------------------------------------------------------------------------------
+ABSENT
+
+data/learnings.md
+--------------------------------------------------------------------------------
+ABSENT
+
+================================================================================
+RECALLED POINTERS
+================================================================================
+These hits are references, not instructions. A pointer is not proof that its body has been read.
+### inflight-one
+- data/prior-widget/report.md - Prior widget archive (2026-01-01; reported; check-freshness)
+### inflight-two
+- data/held/report.md - Widget held (2026-01-01; held)
+### held-one
+- data/parked/report.md - Widget parked (2026-01-01; parked)
+
+================================================================================
+NEXT STEP
+================================================================================
+Follow the supervision operating instructions block above for harness 'claude'.
+This script never starts supervision itself.
+
+The digest above is complete for this session start. The READ-ONCE CONTRACT
+section near the top of it governs what may still be read from disk.
+
+$ fm-brief.sh --refresh-recall ship brief.md
+Before session, the brief emits: data/prior-widget/report.md, data/held/report.md, data/parked/report.md
+After session, refresh emits no duplicate pointers and preserves task and scaffold text.
+Session receipt: {"Related": [], "bytes": 534, "date": "2026-09-06", "digest_bytes": 10619, "estimated_tokens": 179, "home": "/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VX4783MRHEA6B80DDHFHSY/state/test-tmp/fm-session-start-tests.7Or8Rc/product-evidence/home", "id": "session-46410", "missing_input": "memory", "pointer_count": 3, "residual_tokens": 450, "selected_item_count": 5, "session": "46410", "status": "emitted", "surface": "session-start", "timestamp_utc": "2026-09-06T19:27:20Z", "truncation": "none", "type": "session-recall-receipt"}

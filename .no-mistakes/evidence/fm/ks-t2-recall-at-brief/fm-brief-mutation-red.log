@@ -1,0 +1,11 @@
+Subject: bin/fm-brief.sh:567
+Before:   if brief_task_is_pending "$task_tmp"; then
+After:   if true; then
+Selector: recall
+Command: ["bash", "tests/fm-brief.test.sh", "recall"]
+Exit: 1
+
+Traceback (most recent call last):
+  File "<stdin>", line 6, in <module>
+AssertionError: {'Related': [], 'bytes': 0, 'date': '2026-09-06', 'emitted_paths': [], 'estimated_tokens': 0, 'id': 'legacy-ship', 'input_fingerprint': '', 'named_sources': ['data/named/report.md'], 'preexisting_cited_paths': ['data/named/report.md'], 'ranker': 'term-overlap-3-1', 'receipt_bound': 'receipt bound: kept at most 10 named sources and 10 citations, each cut at 200 characters; omitted 0 named source(s) and 0 citation(s)', 'status': 'pending', 'surface': 'brief', 'task_id': 'legacy-ship', 'timestamp_utc': '2026-09-06T19:30:29Z', 'type': 'recall-receipt'}
+not ok - legacy scaffold content became task input

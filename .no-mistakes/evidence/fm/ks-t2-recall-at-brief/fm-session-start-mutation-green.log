@@ -1,0 +1,4 @@
+Command: ["bash", "-T", "-c", "trap 'if [[ \"$BASH_COMMAND\" == test_session_recall_returns_before_slow_network ]]; then trap - DEBUG; test_session_recall_selects_five_open_items; exit; fi' DEBUG; source tests/fm-session-start.test.sh recall"]
+Exit: 0
+
+ok - session start selects at most five unique open items and keeps the remaining live rows

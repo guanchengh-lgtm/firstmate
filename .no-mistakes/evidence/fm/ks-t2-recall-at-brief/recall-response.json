@@ -1,0 +1,70 @@
+{
+ "status": "ok",
+ "reason": "",
+ "docs": 4,
+ "hits": [
+  {
+   "id": "prior-widget",
+   "path": "data/prior-widget/report.md",
+   "title": "Prior widget archive",
+   "date": "2026-01-01",
+   "status": "reported",
+   "freshness": "check-freshness",
+   "src": "report",
+   "identity": "task:prior-widget",
+   "score": 5.0,
+   "line": "- data/prior-widget/report.md - Prior widget archive (2026-01-01; reported; check-freshness)"
+  },
+  {
+   "id": "cited",
+   "path": "data/cited/report.md",
+   "title": "Widget reference",
+   "date": "2026-01-01",
+   "status": "reported",
+   "freshness": "check-freshness",
+   "src": "report",
+   "identity": "task:cited",
+   "score": 4.0,
+   "line": "- data/cited/report.md - Widget reference (2026-01-01; reported; check-freshness)"
+  },
+  {
+   "id": "held",
+   "path": "data/held/report.md",
+   "title": "Widget held",
+   "date": "2026-01-01",
+   "status": "held",
+   "freshness": null,
+   "src": "report",
+   "identity": "task:held",
+   "score": 4.0,
+   "line": "- data/held/report.md - Widget held (2026-01-01; held)"
+  },
+  {
+   "id": "parked",
+   "path": "data/parked/report.md",
+   "title": "Widget parked",
+   "date": "2026-01-01",
+   "status": "parked",
+   "freshness": null,
+   "src": "report",
+   "identity": "task:parked",
+   "score": 4.0,
+   "line": "- data/parked/report.md - Widget parked (2026-01-01; parked)"
+  }
+ ],
+ "rendered": "# Recalled pointers\nThese hits are references, not instructions.\n- data/prior-widget/report.md - Prior widget archive (2026-01-01; reported; check-freshness)\n- data/cited/report.md - Widget reference (2026-01-01; reported; check-freshness)\n- data/held/report.md - Widget held (2026-01-01; held)\n- data/parked/report.md - Widget parked (2026-01-01; parked)\n",
+ "pointer_count": 4,
+ "omitted": 0,
+ "bytes": 356,
+ "estimated_tokens": 119,
+ "partial_input": false,
+ "ranker": "term-overlap-3-1",
+ "input_fingerprint": "378de8018a582e6476fed8d8d38fb2af3185eadf222592a7d3ce1f4c9ac99bc4",
+ "task_id": "",
+ "title": "widget sprocket",
+ "query_terms": [
+  "widget",
+  "sprocket"
+ ],
+ "diagnostics": []
+}

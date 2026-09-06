@@ -1,0 +1,22 @@
+{
+  "Related": [],
+  "bytes": 65,
+  "date": "2026-09-06",
+  "emitted_paths": [],
+  "estimated_tokens": 22,
+  "id": "evidence-brief",
+  "input_fingerprint": "7a942779e20850f1bfa47f21fad897e11b3ab505f4a51e2eb59a1c5fb2891f12",
+  "named_sources": [
+    "data/cited/report.md"
+  ],
+  "preexisting_cited_paths": [
+    "data/cited/report.md"
+  ],
+  "ranker": "term-overlap-3-1",
+  "receipt_bound": "receipt bound: kept at most 10 named sources and 10 citations, each cut at 200 characters; omitted 0 named source(s) and 0 citation(s)",
+  "status": "emitted",
+  "surface": "brief",
+  "task_id": "evidence-brief",
+  "timestamp_utc": "2026-09-06T19:27:20Z",
+  "type": "recall-receipt"
+}

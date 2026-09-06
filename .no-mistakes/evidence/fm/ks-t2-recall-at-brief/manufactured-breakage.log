@@ -1,0 +1,17 @@
+Mutating bin/fm-recall.py:35 for tests/fm-recall.test.sh (all).
+Observed red; restored source; git status --porcelain is empty.
+Same selector is green.
+Mutating bin/fm-brief.sh:567 for tests/fm-brief.test.sh (recall).
+Observed red; restored source; git status --porcelain is empty.
+Same selector is green.
+Mutating bin/fm-session-start.sh:669 for tests/fm-session-start.test.sh (test_session_recall_selects_five_open_items).
+Observed red; restored source; git status --porcelain is empty.
+Same selector is green.
+Mutating bin/fm-lint.sh:74 for tests/fm-lint.test.sh (test_pins_an_explicit_version).
+Observed red; restored source; git status --porcelain is empty.
+Same selector is green.
+Mutating bin/fm-test-run.sh:1337 for tests/fm-test-run.test.sh (test_changed_dependency_selection_and_unmapped_failure).
+Observed red; restored source; git status --porcelain is empty.
+Same selector is green.
+breakage: final clean state; git status --porcelain is empty after all five restores and green reruns.
+Transient worktree fixtures removed. Final git status --porcelain is empty; HEAD is unchanged.

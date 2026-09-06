@@ -1,0 +1,10 @@
+{
+ "status": "unavailable",
+ "reason": "corpus root is not a directory",
+ "ranker": "term-overlap-3-1",
+ "hits": [],
+ "rendered": "",
+ "pointer_count": 0,
+ "bytes": 0,
+ "estimated_tokens": 0
+}

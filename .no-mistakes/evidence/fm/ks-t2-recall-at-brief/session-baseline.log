@@ -1,0 +1,13 @@
+ok - saved digest output does not wait for detached network work
+ok - invalid-budget reemit retains the exact printed identities
+ok - each session retains its own measured receipt
+ok - session recall excludes only identities in the captured digest
+ok - session start selects at most five unique open items and keeps the remaining live rows
+ok - session start dedupes exact identities already emitted in prior digest stages
+ok - session start emits no recall block when the residual budget is exhausted
+ok - session start publishes the identities it showed, not only its new recall hits
+ok - a lock-refused session may render recall but never writes receipts or manifests
+ok - read-only startup and reemit preserve the existing owner artifacts
+ok - session recall captures identities from public commitments
+ok - reemit refreshes recall artifacts for later briefs
+ok - holdout titles retain ready queue priority

@@ -1,0 +1,19 @@
+{
+  "Related": [],
+  "bytes": 534,
+  "date": "2026-09-06",
+  "digest_bytes": 10619,
+  "estimated_tokens": 179,
+  "home": "/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VX4783MRHEA6B80DDHFHSY/state/test-tmp/fm-session-start-tests.7Or8Rc/product-evidence/home",
+  "id": "session-46410",
+  "missing_input": "memory",
+  "pointer_count": 3,
+  "residual_tokens": 450,
+  "selected_item_count": 5,
+  "session": "46410",
+  "status": "emitted",
+  "surface": "session-start",
+  "timestamp_utc": "2026-09-06T19:27:20Z",
+  "truncation": "none",
+  "type": "session-recall-receipt"
+}

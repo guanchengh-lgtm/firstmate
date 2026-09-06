@@ -1,0 +1,4 @@
+Command: ["bash", "-T", "-c", "trap 'if [[ \"$BASH_COMMAND\" == test_list_all_exact_suite_coverage ]]; then trap - DEBUG; test_changed_dependency_selection_and_unmapped_failure; exit; fi' DEBUG; source tests/fm-test-run.test.sh"]
+Exit: 0
+
+ok - changed selection covers dependents and fails closed for unmapped source

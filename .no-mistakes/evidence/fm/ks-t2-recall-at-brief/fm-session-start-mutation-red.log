@@ -1,0 +1,11 @@
+Subject: bin/fm-session-start.sh:669
+Before:       limit = (n < 5) ? n : 5
+After:       limit = (n < 4) ? n : 4
+Selector: test_session_recall_selects_five_open_items
+Command: ["bash", "-T", "-c", "trap 'if [[ \"$BASH_COMMAND\" == test_session_recall_returns_before_slow_network ]]; then trap - DEBUG; test_session_recall_selects_five_open_items; exit; fi' DEBUG; source tests/fm-session-start.test.sh recall"]
+Exit: 1
+
+Traceback (most recent call last):
+  File "<stdin>", line 3, in <module>
+AssertionError: {'Related': [], 'bytes': 388, 'date': '2026-09-06', 'digest_bytes': 10433, 'estimated_tokens': 130, 'home': '/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VX4783MRHEA6B80DDHFHSY/state/test-tmp/fm-session-start-tests.yAvl5p/recall-five/home', 'id': 'session-78863', 'missing_input': 'memory', 'pointer_count': 1, 'residual_tokens': 450, 'selected_item_count': 4, 'session': '78863', 'status': 'emitted', 'surface': 'session-start', 'timestamp_utc': '2026-09-06T19:30:50Z', 'truncation': 'none', 'type': 'session-recall-receipt'}
+not ok - session recall receipt assertion failed
