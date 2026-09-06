@@ -27,7 +27,7 @@ fm_backlog_status_overrides() {  # <backlog-path>
       if (id == "") return
       state = fallback
       if (line ~ /hold-kind:[[:space:]]*parked/) state = "parked"
-      else if (line ~ /[(]hold|hold-kind:/) state = "held"
+      else if (line ~ /[(]hold:|[(]hold-kind:|hold-kind:[[:space:]]/) state = "held"
       printf "%s=%s\n", id, state
     }
     /^##[[:space:]]+/ { state = state_for_heading($0); next }

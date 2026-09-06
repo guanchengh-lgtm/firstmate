@@ -2787,6 +2787,26 @@ EOF
   pass "session start emits no recall block when the residual budget is exhausted"
 }
 
+test_session_recall_manifest_carries_shown_identities() {
+  local rec root home fakebin out manifest
+  rec=$(new_world recall-manifest-union)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  seed_session_recall_world "$home"
+  printf 'Captain note: see data/prior-widget/report.md for the widget sprocket history.\n' \
+    > "$home/data/captain.md"
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "data/prior-widget/report.md" "the context digest did not print the citation"
+  manifest="$home/state/.session-recall-identities"
+  assert_present "$manifest" "session start published no recall identity manifest"
+  grep -qx 'task:prior-widget' "$manifest" \
+    || fail "the manifest omitted an identity the digest already showed"
+  pass "session start publishes the identities it showed, not only its new recall hits"
+}
+
 test_session_recall_read_only_does_not_write_receipts() {
   local rec root home fakebin out holder_pid
   rec=$(new_world recall-readonly)
@@ -2896,5 +2916,6 @@ test_session_recall_selects_five_open_items
 test_session_recall_dedupes_emitted_identities
 test_session_recall_skips_when_budget_is_exhausted
 test_session_recall_read_only_does_not_write_receipts
+test_session_recall_manifest_carries_shown_identities
 
 echo "# fm-session-start.test.sh: all assertions passed"

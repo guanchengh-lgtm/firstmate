@@ -310,8 +310,17 @@ stage() {  # <stage-name>: breadcrumb for the parent's truncation banner
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 
 session_start_record_digest_bytes() {  # <bytes>
-  local receipt=$STATE/.session-recall-receipt.json
+  local receipt=$STATE/.session-recall-receipt.json lock_pid
   [ -f "$receipt" ] && [ ! -L "$receipt" ] || return 0
+  lock_pid=$(tr -d '\r\n' < "$STATE/.lock" 2>/dev/null || true)
+  case "$lock_pid" in ''|*[!0-9]*) return 0 ;; esac
+  FM_DIGEST_SESSION=$lock_pid python3 - "$receipt" >/dev/null 2>&1 <<'PYSESSION' || return 0
+import json, os, sys
+
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+if str(payload.get("session") or "") != os.environ.get("FM_DIGEST_SESSION", ""):
+    raise SystemExit(1)
+PYSESSION
   FM_DIGEST_BYTES=$1 python3 - "$receipt" <<'PYDIGEST' || true
 import json
 import os
@@ -386,8 +395,10 @@ if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
     printf '%s\n' "$BAR"
   fi
   if [ -n "$SESSION_START_DIGEST_FILE" ]; then
-    session_start_record_digest_bytes \
-      "$(wc -c < "$SESSION_START_DIGEST_FILE" | tr -d '[:space:]')"
+    if [ "$REEMIT" -eq 0 ] && [ "$SESSION_START_RC" -eq 0 ]; then
+      session_start_record_digest_bytes \
+        "$(wc -c < "$SESSION_START_DIGEST_FILE" | tr -d '[:space:]')"
+    fi
     rm -f "$SESSION_START_DIGEST_FILE" 2>/dev/null || true
   fi
   rm -f "$SESSION_START_STAGE_FILE" 2>/dev/null || true
@@ -746,6 +757,12 @@ session_start_emit_recall() {
   fi
   item_count=$(session_start_open_items "$backlog_file" | awk 'NF { n++ } END { print n + 0 }')
   if [ "$residual" -eq 0 ] || [ "$item_count" -eq 0 ]; then
+    if [ -n "${SESSION_STATUS_EMITTED:-}" ] && [ -f "$SESSION_STATUS_EMITTED" ]; then
+      SESSION_RECALL_IDENTITIES=$(
+        python3 -B "$SCRIPT_DIR/fm-recall.py" --root "$DATA" --extract-identities \
+          < "$SESSION_STATUS_EMITTED" 2>/dev/null | awk 'NF && !seen[$0]++'
+      ) || SESSION_RECALL_IDENTITIES=""
+    fi
     SESSION_RECALL_RECEIPT_STATUS=zero
     SESSION_RECALL_STATS="$allocated 0 $item_count 0 $missing $truncation 0"
     rm -f "$backlog_file"
@@ -802,8 +819,8 @@ PY
   FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-recall.sh" "${recall_args[@]}" \
     > "$result_file" 2>/dev/null || rc=$?
   if [ "$rc" -ne 0 ] || [ ! -s "$result_file" ]; then
-    printf '%s' "$heading"
     printf 'Recall is unavailable for this session; prior pointers were not looked up.\n'
+    SESSION_RECALL_IDENTITIES=$(awk 'NF && !seen[$0]++' "$ident_file")
     SESSION_RECALL_RECEIPT_STATUS=unavailable
     SESSION_RECALL_STATS="$allocated 0 $item_count 0 recall $truncation 0"
     rm -f "$queries_file" "$result_file" "$ident_file" "$items_file" "$backlog_file"
@@ -821,6 +838,9 @@ PY
 )"
   rendered=$(python3 -c 'import json,sys; sys.stdout.write(json.load(open(sys.argv[1],encoding="utf-8")).get("rendered") or "")' "$result_file")
   SESSION_RECALL_IDENTITIES=$(python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1],encoding="utf-8")).get("identities") or []))' "$result_file")
+  SESSION_RECALL_IDENTITIES=$(
+    printf '%s\n' "$SESSION_RECALL_IDENTITIES" | cat - "$ident_file" | awk 'NF && !seen[$0]++'
+  )
   if [ "${omitted:-0}" -gt 0 ]; then
     truncation='token-cap'
   fi
@@ -1218,7 +1238,11 @@ for meta in "$STATE"/*.meta; do
   META_FOUND=1
   id=$(basename "$meta" .meta)
   printf '\n--- %s ---\n' "$id"
-  cat "$meta"
+  if [ -n "${SESSION_STATUS_EMITTED:-}" ]; then
+    tee -a "$SESSION_STATUS_EMITTED" < "$meta"
+  else
+    cat "$meta"
+  fi
 
   window=$(fm_meta_get "$meta" window)
   target=$(fm_backend_target_of_meta "$meta")

@@ -67,23 +67,23 @@ for line in open(tsv, encoding="utf-8"):
             os.makedirs(os.path.dirname(path), exist_ok=True)
             if slug not in seen:
                 seen[slug] = query
-            title = seen[slug]
+            body = seen[slug]
             with open(path, "w", encoding="utf-8") as handle:
-                handle.write("# %s\n" % title)
+                handle.write("# %s\n" % slug.replace("-", " "))
                 handle.write("date: %s\n" % date)
                 handle.write("status: decided\n")
-                handle.write("%s\n" % query)
+                handle.write("%s\n" % body)
         else:
             path = os.path.join(root, "data", raw, "report.md")
             os.makedirs(os.path.dirname(path), exist_ok=True)
             if raw not in seen:
                 seen[raw] = query
-            title = seen[raw]
+            body = seen[raw]
             with open(path, "w", encoding="utf-8") as handle:
-                handle.write("# %s\n" % title)
+                handle.write("# %s\n" % raw.replace("-", " "))
                 handle.write("date: %s\n" % date)
                 handle.write("status: reported\n")
-                handle.write("%s\n" % query)
+                handle.write("%s\n" % body)
 PY
 }
 
@@ -567,6 +567,167 @@ assert -(-len(text.encode("utf-8"))//3) <= 108, (len(text), text)
   pass "fm-recall.sh: a tight session budget keeps a shorter lower-ranked pointer"
 }
 
+test_exact_fit_cap_emits_the_single_pointer() {
+  local home queries out cost
+  home="$TMP_ROOT/exact-fit"
+  mkdir -p "$home/data"
+  write_report "$home" solo "Widget" 2026-09-01 reported
+  queries="$TMP_ROOT/exact-fit.json"
+  printf '%s\n' '[{"id":"i","title":"widget","body":""}]' > "$queries"
+  cost=$(recall_json "$home" --session-batch "$queries" | python3 -c '
+import json,sys
+p=json.load(sys.stdin)
+print(p["estimated_tokens"])
+')
+  out=$(recall_json "$home" --session-batch "$queries" --token-budget "$cost")
+  printf '%s\n' "$out" | python3 -c '
+import json,sys
+p=json.load(sys.stdin)
+assert [h["id"] for h in p.get("hits") or []]==["solo"], p
+assert p["omitted"]==0, p
+'
+  pass "fm-recall.sh: a block that costs exactly the cap is still emitted"
+}
+
+test_rejection_for_one_item_does_not_block_another() {
+  local home queries out long
+  home="$TMP_ROOT/per-item"
+  mkdir -p "$home/data"
+  write_report "$home" solo "Widget" 2026-09-01 reported
+  long=$(python3 -c 'print("q"*120)')
+  queries="$TMP_ROOT/per-item.json"
+  python3 -c '
+import json,sys
+json.dump([{"id":sys.argv[1],"title":"widget","body":""},{"id":"r","title":"widget","body":""}],
+          open(sys.argv[2],"w",encoding="utf-8"))
+' "$long" "$queries"
+  out=$(recall_json "$home" --session-batch "$queries" --token-budget 90)
+  printf '%s\n' "$out" | python3 -c '
+import json,sys
+p=json.load(sys.stdin)
+ids=[h["id"] for h in p.get("hits") or []]
+assert ids==["solo"], p
+assert "### r" in p["rendered"], p["rendered"]
+assert -(-len(p["rendered"].encode("utf-8"))//3) <= 90, p["rendered"]
+'
+  pass "fm-recall.sh: an item that cannot fit a pointer never blocks another item"
+}
+
+test_batch_field_types_are_validated() {
+  local home queries status out
+  home="$TMP_ROOT/batch-types"
+  mkdir -p "$home/data"
+  write_report "$home" solo "Widget" 2026-09-01 reported
+  queries="$TMP_ROOT/batch-types.json"
+  printf '%s\n' '[{"id":"i","title":42,"body":""}]' > "$queries"
+  set +e
+  out=$(recall_json "$home" --session-batch "$queries" 2>&1)
+  status=$?
+  set -e
+  [ "$status" -ne 0 ] || fail "a numeric session title was accepted"
+  assert_contains "$out" "must be a string" "a numeric session title had no structured reason"
+  assert_not_contains "$out" "Traceback" "a numeric session title crashed the recall owner"
+  pass "fm-recall.sh: malformed session batch field types are a structured unavailable result"
+}
+
+test_session_partial_input_reaches_the_payload() {
+  local home queries out
+  home="$TMP_ROOT/batch-partial"
+  mkdir -p "$home/data"
+  write_report "$home" solo "Widget" 2026-09-01 reported
+  queries="$TMP_ROOT/batch-partial.json"
+  python3 -c '
+import json,sys
+json.dump([{"id":"i","title":"widget "*12000,"body":"widget "*12000}], open(sys.argv[1],"w",encoding="utf-8"))
+' "$queries"
+  out=$(FM_HOME="$home" FM_DATA_OVERRIDE="$home/data" FM_RECALL_TIMEOUT=10 \
+    "$RECALL" --json --now 2026-09-06 --session-batch "$queries")
+  printf '%s\n' "$out" | python3 -c '
+import json,sys
+p=json.load(sys.stdin)
+assert p["partial_input"] is True, p
+assert any("partial-input" in d for d in p.get("diagnostics") or []), p
+'
+  pass "fm-recall.sh: session query truncation reaches partial_input, not only diagnostics"
+}
+
+test_oversized_first_archive_row_still_ranks() {
+  local home out
+  home="$TMP_ROOT/big-row"
+  mkdir -p "$home/data"
+  python3 -c '
+import sys
+root = sys.argv[1]
+with open(root + "/data/done-archive.md", "w", encoding="utf-8") as handle:
+    handle.write("- [x] alpha - Widget sprocket alpha " + "z" * 20000 + "\n")
+    handle.write("- [x] beta - Widget sprocket beta\n")
+' "$home"
+  out=$(recall_json "$home" --title "widget sprocket" --surface pointers)
+  printf '%s\n' "$out" | python3 -c '
+import json,sys
+p=json.load(sys.stdin)
+ids=[h["id"] for h in p.get("hits") or []]
+assert "alpha" in ids, p
+assert "beta" in ids, p
+assert p["partial_input"] is True, p
+'
+  pass "fm-recall.sh: an oversized first archive row keeps its bounded prefix and still ranks"
+}
+
+test_metadata_status_does_not_change_rank() {
+  local home out
+  home="$TMP_ROOT/meta-rank"
+  mkdir -p "$home/data"
+  write_report "$home" alpha "Widget report" 2026-09-01 reported
+  write_report "$home" beta "Widget report" 2026-09-01 held
+  out=$(recall_json "$home" --title "widget held" --surface pointers)
+  printf '%s\n' "$out" | python3 -c '
+import json,sys
+p=json.load(sys.stdin)
+ids=[h["id"] for h in p.get("hits") or []]
+assert ids[:2]==["alpha","beta"], p
+scores={h["id"]: h["score"] for h in p["hits"]}
+assert scores["alpha"]==scores["beta"], p
+'
+  pass "fm-recall.sh: declared status metadata never changes relevance order"
+}
+
+test_alias_identity_exclusion_resolves_canonical() {
+  local home out
+  home="$TMP_ROOT/alias-exclude"
+  mkdir -p "$home/data/z"
+  write_report "$home" a "Widget alias target" 2026-09-01 reported
+  printf '%s\n' 'target: data/a/report.md' > "$home/data/z/POINTER.md"
+  out=$(recall_json "$home" --title "widget alias target" --surface pointers \
+    --exclude-identity task:z)
+  printf '%s\n' "$out" | python3 -c '
+import json,sys
+p=json.load(sys.stdin)
+ids=[h["id"] for h in p.get("hits") or []]
+assert "a" not in ids, p
+'
+  pass "fm-recall.sh: an alias identity exclusion removes its canonical document"
+}
+
+test_parent_directory_swap_never_leaves_the_record() {
+  local home out
+  home="$TMP_ROOT/dir-swap"
+  mkdir -p "$home/data" "$home/outside/alpha"
+  write_report "$home" alpha "Widget sprocket inside" 2026-09-01 reported
+  printf '# OUTSIDE_RACE_MARKER widget sprocket\ndate: 2026-09-01\nstatus: reported\nwidget sprocket\n' \
+    > "$home/outside/alpha/report.md"
+  rm -rf "$home/data/alpha"
+  ln -s "$home/outside/alpha" "$home/data/alpha"
+  out=$(recall_json "$home" --title "widget sprocket" --surface pointers)
+  printf '%s\n' "$out" | python3 -c '
+import json,sys
+p=json.load(sys.stdin)
+assert "OUTSIDE_RACE_MARKER" not in json.dumps(p), p
+assert p["status"] in ("ok","empty"), p
+'
+  pass "fm-recall.sh: a swapped task directory never renders an outside report"
+}
+
 test_corrupted_expectation_exits_nonzero() {
   local bad status
   bad="$TMP_ROOT/probe-bad.tsv"
@@ -598,6 +759,14 @@ test_malformed_metadata_is_diagnosed
 test_alias_cycle_terminates_with_one_pointer
 test_flat_archive_row_is_indexed
 test_tight_session_budget_takes_the_shorter_hit
+test_exact_fit_cap_emits_the_single_pointer
+test_rejection_for_one_item_does_not_block_another
+test_batch_field_types_are_validated
+test_session_partial_input_reaches_the_payload
+test_oversized_first_archive_row_still_ranks
+test_metadata_status_does_not_change_rank
+test_alias_identity_exclusion_resolves_canonical
+test_parent_directory_swap_never_leaves_the_record
 test_corrupted_expectation_exits_nonzero
 
 echo "# all fm-recall tests passed"

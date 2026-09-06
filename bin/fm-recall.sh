@@ -7,7 +7,7 @@
 #                [--exclude-id <id>]... [--exclude-path <path>]...
 #                [--exclude-identity <id-or-path>]... [--exclude-file <path>]...
 #                [--token-budget N] [--as-of YYYY-MM-DD] [--now YYYY-MM-DD]
-#                [--deadline-ms N] [--json] [--root <dir>]
+#                [--deadline-ms N] [--json]
 #                [--session-batch <queries.json>] [--extract-identities]
 #   fm-recall.sh --help
 #
@@ -35,7 +35,9 @@
 # and the check-freshness mark only.
 #
 # Limits. Each title or body input is capped at 64 KiB. Each archive document
-# is capped at 16 KiB. Each report or decision ranking head is capped at 16 KiB.
+# is capped at 16 KiB. The ranking head is the first ten lines of a report and
+# the first five lines of a decision, and each of those heads is also capped at
+# 16 KiB.
 # A truncated read emits a partial-input diagnostic and still ranks the bytes
 # that were read. The internal ranking deadline defaults to 750 ms and is
 # checked between directory entries and archive blocks. A deadline or safety
@@ -164,19 +166,19 @@ case "$DEADLINE_MS" in
   ''|*[!0-9]*) echo "recall: unavailable: FM_RECALL_DEADLINE_MS must be a non-negative integer" >&2; exit 1 ;;
 esac
 
-have_root=0
 have_deadline=0
 for arg in "$@"; do
   case "$arg" in
-    --root|--root=*) have_root=1 ;;
+    --root|--root=*)
+      echo "error: --root is not a public option; select the corpus with FM_HOME and FM_DATA_OVERRIDE" >&2
+      exit 2
+      ;;
     --deadline-ms|--deadline-ms=*) have_deadline=1 ;;
   esac
 done
 
 args=()
-if [ "$have_root" -eq 0 ]; then
-  args+=(--root "$DATA")
-fi
+args+=(--root "$DATA")
 if [ "$have_deadline" -eq 0 ]; then
   args+=(--deadline-ms "$DEADLINE_MS")
 fi

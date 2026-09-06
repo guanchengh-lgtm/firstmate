@@ -864,6 +864,66 @@ test_direct_pr_requires_internal_only_surface() {
   pass "fm-brief.sh: product/mixed/uncertain/omitted + direct-PR refuse; internal-only and no-mistakes product still work"
 }
 
+test_generated_boundary_owns_every_brief_consumer() {
+  local home task brief out
+  home="$TMP_ROOT/recall-boundary-home"
+  mkdir -p "$home/data/zebra-prior" "$home/data/named-prior" "$home/config"
+  printf '7500\n' > "$home/config/startup-memory-budget"
+  printf '%s\n' '# Zebraonly study' 'date: 2026-01-01' 'status: reported' \
+    'Zebraonly study body.' > "$home/data/zebra-prior/report.md"
+  printf '%s\n' '# Named prior study' 'date: 2026-01-01' 'status: reported' \
+    'Named prior study body.' > "$home/data/named-prior/report.md"
+
+  task="$home/task-headings.md"
+  printf '%s\n' 'ordinary task' '' '# Named sources' '- data/named-prior/report.md' \
+    '' 'zebraonly' > "$task"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-boundary firstmate --mode no-mistakes \
+    --task-file "$task" >/dev/null 2>&1 || fail "ship --task-file should scaffold"
+  brief="$home/data/brief-boundary/brief.md"
+  assert_grep "data/zebra-prior/report.md" "$brief" \
+    "a task-owned named-source heading truncated the recall query"
+  assert_no_grep "data/named-prior/report.md - " "$brief" \
+    "a task-owned named-source list was treated as the generated manifest"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --check-worker ship "$brief" 2>&1) || true
+  assert_not_contains "$out" "REFUSED" "the boundary check refused a clean brief"
+
+  cat > "$home/data/brief-boundary/legacy.md" <<'EOF'
+You are a crewmate.
+
+# Task
+KEEP THIS TASK TEXT about zebraonly work.
+
+# Recalled pointers
+This heading belongs to the task author.
+
+# Herdr lifecycle declaration - NOT ENABLED
+gate
+
+# Setup
+setup
+EOF
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall ship \
+    "$home/data/brief-boundary/legacy.md" >/dev/null 2>&1 \
+    || fail "refresh-recall should succeed on a legacy brief"
+  assert_grep "KEEP THIS TASK TEXT" "$home/data/brief-boundary/legacy.md" \
+    "refresh deleted task text under a task-owned recall heading"
+  assert_grep "This heading belongs to the task author." \
+    "$home/data/brief-boundary/legacy.md" \
+    "refresh replaced the task-owned recalled-pointers section"
+  assert_grep "data/zebra-prior/report.md" "$home/data/brief-boundary/legacy.md" \
+    "the legacy refresh emitted no generated recall block"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-empty-flag firstmate \
+    --mode no-mistakes --task-file= 2>&1) || true
+  assert_contains "$out" "--task-file requires a path" \
+    "an explicitly empty --task-file value was accepted"
+  [ ! -e "$home/data/brief-empty-flag/brief.md" ] \
+    || fail "an explicitly empty --task-file still scaffolded a brief"
+
+  pass "fm-brief.sh: one generated boundary serves task, source, refresh, and validation paths"
+}
+
 test_recall_refresh_manifest_and_status_contracts() {
   local home task brief out count receipt i
   home="$TMP_ROOT/recall-contracts-home"
@@ -1014,3 +1074,4 @@ test_scout_and_secondmate_load_decision_hold_policy
 test_scout_and_secondmate_scaffold
 test_task_file_and_refresh_recall_routes
 test_recall_refresh_manifest_and_status_contracts
+test_generated_boundary_owns_every_brief_consumer
