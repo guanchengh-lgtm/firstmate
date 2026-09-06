@@ -125,19 +125,27 @@ task_section() {  # <brief>
   ' "$1"
 }
 
-# Finalized task body for recall. Stop at the first scaffold section that this
-# script owns and always writes after the task, so a task that carries its own
-# Markdown headings remains the query. A brief without any of those anchors
-# falls back to the conservative rule that any later heading ends the task.
+# Finalized task body for recall. This script always writes the named-source,
+# recall, and Herdr sections after the task, so the generated boundary is the
+# earliest of the last occurrence of each of those headings. A task that
+# carries headings of its own therefore keeps them as query text. A brief
+# without any generated anchor falls back to the conservative rule that any
+# later heading ends the task.
 brief_finalized_task_section() {  # <brief>
   awk '
     FNR == NR {
-      if ($0 ~ /^# (Named sources|Recalled pointers)[[:space:]]*$/ || $0 ~ /^# Herdr /) anchored = 1
+      if ($0 ~ /^# (Named sources|Recalled pointers)[[:space:]]*$/) last_named[$0] = FNR
+      else if ($0 ~ /^# Herdr /) last_named["herdr"] = FNR
       next
     }
+    FNR == 1 {
+      for (key in last_named) {
+        if (boundary == 0 || last_named[key] < boundary) boundary = last_named[key]
+      }
+    }
     /^# Task[[:space:]]*$/ { in_task = 1; next }
-    in_task && anchored && ($0 ~ /^# (Named sources|Recalled pointers)[[:space:]]*$/ || $0 ~ /^# Herdr /) { exit }
-    in_task && !anchored && /^# / { exit }
+    in_task && boundary > 0 && FNR >= boundary { exit }
+    in_task && boundary == 0 && /^# / { exit }
     in_task { print }
   ' "$1" "$1"
 }
@@ -408,18 +416,20 @@ if start is not None:
 else:
     text = "".join(lines[:insert_at]) + block + "".join(lines[insert_at:])
 directory = os.path.dirname(brief) or "."
-fd, tmp = tempfile.mkstemp(prefix=".brief-recall.", dir=directory)
+tmp = None
 try:
+    fd, tmp = tempfile.mkstemp(prefix=".brief-recall.", dir=directory)
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         handle.write(text)
         if not text.endswith("\n"):
             handle.write("\n")
     os.replace(tmp, brief)
 except Exception:
-    try:
-        os.unlink(tmp)
-    except OSError:
-        pass
+    if tmp is not None:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
     raise SystemExit(3)
 
 payload = {}
@@ -448,29 +458,46 @@ receipt = {
     "estimated_tokens": payload.get("estimated_tokens", 0),
     "Related": [],
 }
-os.makedirs(os.path.dirname(receipt_path), exist_ok=True)
-fd, tmp = tempfile.mkstemp(prefix=".recall-receipt.", dir=os.path.dirname(receipt_path))
+tmp = None
 try:
+    os.makedirs(os.path.dirname(receipt_path), exist_ok=True)
+    fd, tmp = tempfile.mkstemp(
+        prefix=".recall-receipt.", dir=os.path.dirname(receipt_path)
+    )
     with os.fdopen(fd, "w", encoding="utf-8") as handle:
         json.dump(receipt, handle, indent=2, sort_keys=True)
         handle.write("\n")
     os.replace(tmp, receipt_path)
 except Exception:
-    try:
-        os.unlink(tmp)
-    except OSError:
-        pass
+    if tmp is not None:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
     raise SystemExit(4)
 PY
   }
 
+  splice_branch() {  # <block-file> <result-file> <status>
+    local branch_rc=0
+    splice_and_receipt "$1" "$2" "$3" || branch_rc=$?
+    if [ "$branch_rc" -eq 0 ]; then
+      return 0
+    fi
+    if [ "$branch_rc" -eq 3 ]; then
+      echo "error: could not replace the recalled-pointers section" >&2
+      return 2
+    fi
+    echo "warning: recall receipt was not published; metrics coverage is incomplete" >&2
+    return 0
+  }
+
   if brief_task_is_pending "$task_tmp"; then
     pending_block > "$block_tmp"
-    if ! splice_and_receipt "$block_tmp" "" pending; then
-      echo "warning: recall receipt was not published; metrics coverage is incomplete" >&2
-    fi
+    rc=0
+    splice_branch "$block_tmp" "" pending || rc=$?
     rm -f "$task_tmp" "$result_tmp" "$pre_tmp" "$block_tmp"
-    return 0
+    return "$rc"
   fi
 
   title=$(brief_backlog_title "$task_id")
@@ -511,11 +538,10 @@ PY
       cat "$result_tmp.err" >&2
     fi
     unavailable_block > "$block_tmp"
-    if ! splice_and_receipt "$block_tmp" "$result_tmp" unavailable; then
-      echo "warning: recall receipt was not published; metrics coverage is incomplete" >&2
-    fi
+    rc=0
+    splice_branch "$block_tmp" "$result_tmp" unavailable || rc=$?
     rm -f "$task_tmp" "$result_tmp" "$result_tmp.err" "$pre_tmp" "$block_tmp"
-    return 0
+    return "$rc"
   fi
   rendered=$(python3 - "$result_tmp" <<'PY'
 import json, sys
@@ -528,21 +554,10 @@ PY
   else
     printf '%s' "$rendered" > "$block_tmp"
   fi
-  if splice_and_receipt "$block_tmp" "$result_tmp" emitted; then
-    rc=0
-  else
-    rc=$?
-  fi
-  if [ "$rc" -ne 0 ]; then
-    if [ "$rc" -eq 3 ]; then
-      echo "error: could not replace the recalled-pointers section" >&2
-      rm -f "$task_tmp" "$result_tmp" "$result_tmp.err" "$pre_tmp" "$block_tmp"
-      return 2
-    fi
-    echo "warning: recall receipt was not published; metrics coverage is incomplete" >&2
-  fi
+  rc=0
+  splice_branch "$block_tmp" "$result_tmp" emitted || rc=$?
   rm -f "$task_tmp" "$result_tmp" "$result_tmp.err" "$pre_tmp" "$block_tmp"
-  return 0
+  return "$rc"
 }
 
 case "${1:-}" in
