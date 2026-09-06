@@ -170,7 +170,6 @@ After an autonomous merge, give the captain a one-line full-URL or local-main ou
 
 Load `firstmate-no-mistakes` after a no-mistakes builder stops, on every verifier decision or outcome, and before superseding active validation.
 Builder and verifier never share a context, and firstmate never drives a worker-owned run itself.
-That skill owns context isolation, pipeline custody, captain decisions, status interpretation, and supersession safety.
 
 ### PR ready, landing, and teardown
 
@@ -240,7 +239,6 @@ Inspect the current note before replacing it, and archive the superseded body wh
 ## 11. Crewmate briefs
 
 `bin/fm-brief.sh` and its help own the scaffold, variants, status protocol, done conditions, and safety mechanics.
-Replace every `{TASK}` with specific intent, acceptance criteria, constraints, and context; keep the scaffold intact unless the task genuinely differs.
 Every ship brief retains the isolated-copy assertion and stops if launched in the primary checkout; briefs touching Firstmate's shared tracked material require `firstmate-coding-guidelines`.
 Use `--herdr-lab` before any Herdr lifecycle task and regenerate if that need appears later; never hand-add its guarded contract.
 Load `secondmate-provisioning` for charter briefs, and keep status appends sparse and supervisor-actionable as defined by `bin/fm-classify-lib.sh`.
@@ -248,7 +246,6 @@ Load `secondmate-provisioning` for charter briefs, and keep status appends spars
 ## 12. Self-update
 
 When the captain invokes `/updatefirstmate` or asks to update firstmate, load the `/updatefirstmate` skill.
-It performs guarded fast-forward updates of firstmate and registered secondmate homes, refreshes instructions, and never touches anything under `projects/`.
 
 ## 13. Agent-only reference skills
 
@@ -286,8 +283,5 @@ Standing `yolo` merge authority is not a substitute for a current explicit capta
 
 ## Maintaining this file
 
-Keep this file for knowledge useful to almost every future agent session in this project.
-Do not repeat what the codebase already shows; point to the authoritative file, skill, command, or doc.
-Prefer rewriting or pruning existing entries over appending new ones.
 When updating this file, preserve every safety boundary and keep the always-loaded contract concise.
 `firstmate-coding-guidelines` owns this file's why-trace contract. <!-- why: skill:firstmate-coding-guidelines#why-trace-convention -->

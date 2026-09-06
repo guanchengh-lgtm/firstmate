@@ -358,13 +358,14 @@ test_herdr_lab_omission_is_loud_for_ship_and_scout() {
   pass "fm-brief.sh: ship and scout scaffolds make omitted Herdr intent fail-visible"
 }
 
-# Regression (issue #2575): AGENTS.md section 11 and this script's own help tell
-# firstmate to replace EVERY `{TASK}` placeholder. The unguarded Herdr gate used
-# to quote `{TASK}` in its own prose, so that documented global replace spliced
-# the whole task body into the middle of the gate's sentence - silently
-# destroying the one contract that exists precisely because the scaffold cannot
-# see the task text. The placeholder must exist only at the genuine fill site,
-# so the documented fill leaves the gate intact and the body appears once.
+# Regression (issue #2575): bin/fm-brief.sh's own header and help own the fill
+# contract and tell firstmate to replace EVERY `{TASK}` placeholder. The
+# unguarded Herdr gate used to quote `{TASK}` in its own prose, so that
+# documented global replace spliced the whole task body into the middle of the
+# gate's sentence - silently destroying the one contract that exists precisely
+# because the scaffold cannot see the task text. The placeholder must exist only
+# at the genuine fill site, so the documented fill leaves the gate intact and the
+# body appears once.
 test_documented_global_replace_leaves_the_herdr_gate_intact() {
   local home id brief kind count content filled body
   home="$TMP_ROOT/task-fill-site-home"
