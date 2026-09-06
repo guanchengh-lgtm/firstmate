@@ -92,9 +92,6 @@ The literal pattern gh[pousr]_[A-Za-z0-9]{36,255} is documentation.
 MD
   run_scan tree "$dir"
   expect_code 0 "$RC" 'lookalikes'
-  run_scan class "$dir/safe.md"
-  expect_code 0 "$RC" 'lookalike class'
-  assert_contains "$OUT" 'none' 'lookalike classified as a key'
   pass "fm-record-scan: lookalikes stay clean"
 }
 

@@ -73,6 +73,7 @@ GIT_DIR_ABS=
 RECORD_WORK=
 CAND_WORK=
 CAND_INDEX=
+HEALTH_TMP=
 
 usage() {
   awk '
@@ -120,15 +121,15 @@ require_hash_tool() {
 sha256_file() {
   local out
   if [ "$HASH_TOOL" = shasum ]; then
-    out=$(shasum -a 256 -- "$1") || return 1
+    out=$(shasum -a 256 -- "$1" 2>/dev/null) || return 1
   else
-    out=$(sha256sum -- "$1") || return 1
+    out=$(sha256sum -- "$1" 2>/dev/null) || return 1
   fi
   printf '%s\n' "${out%% *}"
 }
 
 physical_dir() {
-  cd -P -- "$1" && pwd -P
+  cd -P -- "$1" 2>/dev/null && pwd -P
 }
 
 # shellcheck disable=SC2329 # Invoked from the EXIT trap.
@@ -141,10 +142,13 @@ release_lock() {
 
 # shellcheck disable=SC2329 # Invoked from trap EXIT.
 on_exit() {
+  if [ -n "$HEALTH_TMP" ]; then
+    rm -f "$HEALTH_TMP"
+  fi
   if [ "$INDEX_LOCK_HELD" -eq 1 ]; then
     rm -f "$GIT_DIR_ABS/index.lock"
   fi
-  if [ -n "${CAND_WORK:-}" ] && [ -d "${CAND_WORK:-}" ]; then
+  if [ -n "${CAND_WORK:-}" ] && [ -d "${CAND_WORK%/*}" ]; then
     rm -rf "${CAND_WORK%/*}"
   fi
   if [ -n "${CAND_INDEX:-}" ]; then
@@ -171,6 +175,7 @@ write_health() { # <state> [k=v...]
   [ -n "$GIT_DIR_ABS" ] && [ -d "$GIT_DIR_ABS" ] || return 0
   dest="$GIT_DIR_ABS/record-health"
   tmp="$dest.tmp.$$"
+  HEALTH_TMP=$tmp
   {
     printf 'state=%s\n' "$state"
     printf 'updated_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
@@ -180,7 +185,8 @@ write_health() { # <state> [k=v...]
       esac
     done
   } > "$tmp"
-  mv -f "$tmp" "$dest"
+  mv -f "$tmp" "$dest" || return 1
+  HEALTH_TMP=
 }
 
 read_health_file() {
@@ -198,6 +204,32 @@ binding_state() {
   printf 'present\n'
 }
 
+validate_lfs_destinations() {
+  local source rc routing_keys config_args=(--includes)
+  routing_keys='^(lfs\.(url|pushurl|gitprotocol|remote\.(autodetect|searchall)|standalonetransferagent|customtransfer\..*|transfer\.enablehrefrewrite)|remote\.(lfsdefault|lfspushdefault|.*\.(lfsurl|lfspushurl)))$'
+  for source in git lfsconfig; do
+    if [ "$source" = lfsconfig ]; then
+      if [ -e "$RECORD_WORK/.lfsconfig" ] || [ -L "$RECORD_WORK/.lfsconfig" ]; then
+        config_args=(--file "$RECORD_WORK/.lfsconfig")
+      elif git --git-dir="$GIT_DIR_ABS" cat-file -e :.lfsconfig 2>/dev/null; then
+        config_args=(--blob :.lfsconfig)
+      elif git --git-dir="$GIT_DIR_ABS" cat-file -e HEAD:.lfsconfig 2>/dev/null; then
+        config_args=(--blob HEAD:.lfsconfig)
+      else
+        continue
+      fi
+    fi
+    rc=0
+    git --git-dir="$GIT_DIR_ABS" config "${config_args[@]}" --name-only --get-regexp "$routing_keys" \
+      >/dev/null 2>&1 || rc=$?
+    case "$rc" in
+      1) ;;
+      0) die 8 "LFS destination overrides are unsupported; use the bound origin" ;;
+      *) die 8 "cannot validate the Record LFS destination" ;;
+    esac
+  done
+}
+
 validate_push_destinations() {
   local origin_url push_urls url
   origin_url=$(sed -n '1p' "$GIT_DIR_ABS/record-origin")
@@ -207,6 +239,7 @@ validate_push_destinations() {
   while IFS= read -r url; do
     [ "$url" = "$origin_url" ] || die 8 "push URL does not match the Record binding"
   done <<< "$push_urls"
+  validate_lfs_destinations
 }
 
 validate_hook_path() {
@@ -219,11 +252,11 @@ validate_hook_path() {
 
 validate_binding() {
   local toplevel physical_data physical_home physical_top origin_url remotes branch
-  [ ! -L "$DATA" ] || die 8 "Record root $DATA must not be a symlink"
-  [ -d "$DATA" ] || die 8 "Record root $DATA is not a directory"
-  [ ! -L "$DATA/.git" ] || die 8 "$DATA/.git must not be a symlink"
-  [ -d "$DATA/.git" ] || die 8 "$DATA/.git must be a directory"
-  GIT_DIR_ABS=$(physical_dir "$DATA/.git") || die 8 "cannot resolve $DATA/.git"
+  [ ! -L "$DATA" ] || die 8 "Record root must not be a symlink"
+  [ -d "$DATA" ] || die 8 "Record root is not a directory"
+  [ ! -L "$DATA/.git" ] || die 8 "Record Git directory must not be a symlink"
+  [ -d "$DATA/.git" ] || die 8 "Record Git metadata must be a directory"
+  GIT_DIR_ABS=$(physical_dir "$DATA/.git") || die 8 "cannot resolve the Record Git directory"
   physical_data=$(physical_dir "$DATA") || die 8 "cannot resolve Record root"
   physical_home=$(physical_dir "$FM_HOME") || die 8 "cannot resolve FM_HOME"
   [ "$physical_data" = "$physical_home/data" ] \
@@ -233,7 +266,7 @@ validate_binding() {
     || die 8 "Record root is not a Git repository"
   physical_top=$(physical_dir "$toplevel") || die 8 "cannot resolve Git top level"
   [ "$physical_top" = "$physical_data" ] \
-    || die 8 "Git top level $physical_top is not the Record root $physical_data"
+    || die 8 "Git top level is not the Record root"
   [ -f "$GIT_DIR_ABS/record-origin" ] || die 8 "Record origin binding is missing"
   [ -f "$GIT_DIR_ABS/record-branch" ] || die 8 "Record branch binding is missing"
   origin_url=$(sed -n '1p' "$GIT_DIR_ABS/record-origin")
@@ -309,7 +342,7 @@ is_ignored() { # <abs-path>
 
 list_data_relpaths() {
   local out=$1 path rel rc
-  find "$RECORD_WORK" \( -name .git -type d -prune \) -o \( -print0 \) > "$out.raw" || return 1
+  find "$RECORD_WORK" \( -name .git -type d -prune \) -o \( -print0 \) > "$out.raw" 2>/dev/null || return 1
   while IFS= read -r -d '' path; do
     rel=${path#"$RECORD_WORK"/}
     [ "$rel" != "$path" ] || continue
@@ -329,14 +362,14 @@ list_state_sources() {
   : > "$out" || return 1
   [ -d "$STATE" ] || return 0
   find "$STATE" -mindepth 1 -maxdepth 1 \( -name '*.status' -o -name '*.meta' -o -name '*.inbox' \) \
-    -print0 > "$out.raw" || return 1
+    -print0 > "$out.raw" 2>/dev/null || return 1
   while IFS= read -r -d '' path; do
     case "$path" in
       *.inbox)
         [ -d "$path" ] && [ ! -L "$path" ] || return 1
         find "$path" \( -name .seq.lock -o -name '.seq.lock.owner.*' \) -prune -o \
-          \( -type f -o -type l \) -print > "$out.inbox" || return 1
-        cat "$out.inbox" || return 1
+          \( -type f -o -type l \) -print > "$out.inbox" 2>/dev/null || return 1
+        cat "$out.inbox" 2>/dev/null || return 1
         ;;
       *)
         [ -f "$path" ] && [ ! -L "$path" ] || return 1
@@ -348,22 +381,22 @@ list_state_sources() {
 
 path_mode() {
   if stat -f %Lp "$1" >/dev/null 2>&1; then
-    stat -f %Lp "$1"
+    stat -f %Lp "$1" 2>/dev/null
   else
-    stat -c %a "$1"
+    stat -c %a "$1" 2>/dev/null
   fi
 }
 
 inventory_line() { # <kind> <abs> <rel>
   local kind=$1 abs=$2 rel=$3 mode digest target
   if [ -L "$abs" ]; then
-    target=$(readlink "$abs") || return 1
+    target=$(readlink "$abs" 2>/dev/null) || return 1
     mode=$(path_mode "$abs") || return 1
     printf 'l\t%s\t-\t%s\t%s\n' "$mode" "$target" "$rel"
     return 0
   fi
   if [ -f "$abs" ]; then
-    [ ! -p "$abs" ] || die 8 "special file is not a Record candidate: $rel"
+    [ ! -p "$abs" ] || die 8 "special file is not a Record candidate"
     mode=$(path_mode "$abs") || return 1
     digest=$(sha256_file "$abs") || return 1
     printf 'f\t%s\t%s\t-\t%s\n' "$mode" "$digest" "$rel"
@@ -372,14 +405,13 @@ inventory_line() { # <kind> <abs> <rel>
   if [ -d "$abs" ]; then
     return 0
   fi
-  die 8 "unsupported file type for $rel"
+  die 8 "unsupported Record file type"
 }
 
 build_inventory() { # <outfile>
   local out=$1 rel abs path
   if ! list_data_relpaths "$out.data" || ! list_state_sources "$out.state" ||
     ! LC_ALL=C sort -o "$out.data" "$out.data" || ! LC_ALL=C sort -o "$out.state" "$out.state"; then
-    rm -f "$out.data" "$out.data.raw" "$out.state" "$out.state.raw" "$out.state.inbox"
     return 4
   fi
   : > "$out" || return 4
@@ -387,48 +419,45 @@ build_inventory() { # <outfile>
     [ -n "$rel" ] || continue
     abs="$RECORD_WORK/$rel"
     if [ -L "$abs" ]; then
-      validate_symlink "$abs" "$rel"
+      validate_symlink "$abs"
     fi
-    inventory_line data "$abs" "data:$rel" >> "$out" || die 4 "cannot inventory $rel"
+    inventory_line data "$abs" "data:$rel" >> "$out" || die 4 "cannot inventory Record content"
   done < "$out.data"
   while IFS= read -r path; do
     [ -n "$path" ] || continue
     rel=${path#"$STATE"/}
-    inventory_line state "$path" "state:$rel" >> "$out" || die 4 "cannot inventory state $rel"
+    inventory_line state "$path" "state:$rel" >> "$out" || die 4 "cannot inventory state content"
   done < "$out.state"
-  rm -f "$out.data" "$out.data.raw" "$out.state" "$out.state.raw" "$out.state.inbox"
 }
 
-validate_symlink() { # <abs> <rel>
-  local abs=$1 rel=$2 target resolved
-  target=$(readlink "$abs") || die 8 "cannot read symlink $rel"
+validate_symlink() { # <abs>
+  local abs=$1 target resolved
+  target=$(readlink "$abs" 2>/dev/null) || die 8 "cannot read Record symlink"
   case "$target" in
-    /*) die 8 "absolute symlink is not portable: $rel" ;;
+    /*) die 8 "absolute symlink is not portable" ;;
   esac
-  [ -e "$abs" ] || die 8 "broken symlink: $rel"
-  resolved=$(cd "$(dirname "$abs")" && cd -P -- "$(dirname "$target")" && pwd -P) \
-    || die 8 "symlink $rel resolves outside the Record"
+  [ -e "$abs" ] || die 8 "broken Record symlink"
+  resolved=$(cd "$(dirname "$abs")" && cd -P -- "$(dirname "$target")" && pwd -P) 2>/dev/null \
+    || die 8 "symlink resolves outside the Record"
   case "$resolved" in
     "$RECORD_WORK" | "$RECORD_WORK"/*) ;;
-    *) die 8 "symlink $rel resolves outside the Record" ;;
+    *) die 8 "symlink resolves outside the Record" ;;
   esac
 }
 
 settle_inventory() {
   local first second
-  first=$(mktemp "${TMPDIR:-/tmp}/fm-record-inv1.XXXXXX")
-  second=$(mktemp "${TMPDIR:-/tmp}/fm-record-inv2.XXXXXX")
-  build_inventory "$first" || { rm -f "$first" "$second"; return 4; }
+  first="$CAND_WORK/../inventory.first"
+  second="$CAND_WORK/../inventory.second"
+  build_inventory "$first" || return 4
   if [ "$SETTLE_SECONDS" -gt 0 ]; then
     sleep "$SETTLE_SECONDS"
   fi
-  build_inventory "$second" || { rm -f "$first" "$second"; return 4; }
+  build_inventory "$second" || return 4
   if ! cmp -s "$first" "$second"; then
-    rm -f "$first" "$second"
     return 4
   fi
   mv -f "$second" "$1"
-  rm -f "$first"
   return 0
 }
 
@@ -444,14 +473,14 @@ copy_file_atomic() { # <src> <dest>
     rm -f "$tmp" || return 1
     return 0
   fi
-  cp -p -- "$src" "$tmp" || return 1
-  mv -f "$tmp" "$dest"
-}
+  if ! cp -p -- "$src" "$tmp" || ! mv -f "$tmp" "$dest"; then
+    rm -f "$tmp"
+    return 1
+  fi
+} 2>/dev/null
 
 freeze_candidate() { # <inventory>
   local inv=$1 kind mode digest target rel abs dest actual expected
-  CAND_WORK="$GIT_DIR_ABS/record-candidate/work"
-  rm -rf "$GIT_DIR_ABS/record-candidate" || return 4
   mkdir -p "$CAND_WORK/.record-state" || return 4
   while IFS=$(printf '\t') read -r kind mode digest target rel; do
     [ -n "$rel" ] || continue
@@ -513,7 +542,7 @@ existing_literal_lfs_rules() {
 
 update_lfs_attributes() {
   local attr="$CAND_WORK/.gitattributes" tmp rel size ext path
-  tmp=$(mktemp "${TMPDIR:-/tmp}/fm-record-attr.XXXXXX") || return 1
+  tmp="$CAND_WORK/../attributes"
   existing_literal_lfs_rules "$attr" > "$tmp" || return 1
   binary_attr_lines >> "$tmp" || return 1
   find "$CAND_WORK" \( -name .git -type d -prune \) -o -type f -print0 > "$tmp.paths" || return 1
@@ -531,7 +560,6 @@ update_lfs_attributes() {
   done < "$tmp.paths"
   LC_ALL=C sort -u -o "$tmp" "$tmp" || return 1
   mv -f "$tmp" "$attr" || return 1
-  rm -f "$tmp.paths"
 }
 
 stage_candidate() {
@@ -672,15 +700,16 @@ run_transaction() { # tick|checkpoint <reason> try|wait|required
     9) finish 9 configuration-error detail=required-lock-timeout ;;
     *) finish 8 configuration-error detail=lock ;;
   esac
-  inv=$(mktemp "${TMPDIR:-/tmp}/fm-record-inv.XXXXXX")
+  CAND_WORK="$GIT_DIR_ABS/record-candidate/work"
+  rm -rf "${CAND_WORK%/*}" || finish 4 unsettled
+  mkdir -p "$CAND_WORK" || finish 4 unsettled
+  inv="$CAND_WORK/../inventory"
   rc=0
   settle_inventory "$inv" || rc=$?
   if [ "$rc" -eq 4 ]; then
-    rm -f "$inv"
     finish 4 unsettled
   fi
   if ! freeze_candidate "$inv"; then
-    rm -f "$inv"
     finish 4 unsettled
   fi
   update_lfs_attributes
@@ -688,13 +717,11 @@ run_transaction() { # tick|checkpoint <reason> try|wait|required
   rc=0
   scan_candidate || rc=$?
   if [ "$rc" -eq 5 ]; then
-    rm -f "$inv"
     finish 5 scan-blocked
   fi
   rc=0
   commit_candidate "$reason" || rc=$?
   if [ "$rc" -gt 1 ]; then
-    rm -f "$inv"
     if [ "$lock_mode" = required ]; then
       finish 9 configuration-error detail=commit-publication
     fi
@@ -702,7 +729,6 @@ run_transaction() { # tick|checkpoint <reason> try|wait|required
   fi
   sha=$(git --git-dir="$GIT_DIR_ABS" rev-parse --short HEAD)
   if [ "$mode" != tick ]; then
-    rm -f "$inv"
     if [ "$rc" -eq 1 ]; then
       delivery=$(read_health_file | sed -n 's/^state=//p')
       case "$delivery" in
@@ -718,7 +744,6 @@ run_transaction() { # tick|checkpoint <reason> try|wait|required
   if [ "$rc" -eq 1 ]; then
     pending=$(pending_commit_count)
     if [ "$pending" = 0 ]; then
-      rm -f "$inv"
       finish 0 unchanged commit="$sha"
     fi
   fi
@@ -727,7 +752,6 @@ run_transaction() { # tick|checkpoint <reason> try|wait|required
   validate_push_destinations
   class=$(push_once) || rc=$?
   pending=$(pending_commit_count)
-  rm -f "$inv"
   case "$rc" in
     0) finish 0 pushed commit="$sha" ;;
     7) finish 7 diverged commit="$sha" ;;
@@ -799,7 +823,7 @@ cmd_setup() {
       --branch) branch=$2; shift 2 ;;
       --code-root) code_root=$2; shift 2 ;;
       -h | --help) usage; exit 0 ;;
-      *) die 2 "unknown setup argument '$1'" ;;
+      *) die 2 "unknown setup argument" ;;
     esac
   done
   refuse_git_overrides
@@ -859,7 +883,7 @@ write_record_plist() {
   plist=${FM_RECORD_PLIST:-$HOME/Library/LaunchAgents/com.firstmate.record-tick.plist}
   logdir=${FM_RECORD_LOG_DIR:-$HOME/Library/Logs}
   if [ -f "$plist" ] && ! grep -Fq 'firstmate-record-tick-v1' "$plist"; then
-    die 8 "existing LaunchAgent at $plist is not the Record job; leaving it untouched"
+    die 8 "existing LaunchAgent is not the Record job; leaving it untouched"
   fi
   mkdir -p "$(dirname "$plist")" "$logdir"
   script=$(printf '%s' "$code_root/bin/fm-record.sh" | xml_escape | sed_replacement)
@@ -990,7 +1014,7 @@ cmd_checkpoint() {
         required=1
         shift
         ;;
-      *) die 2 "unknown checkpoint argument '$1'" ;;
+      *) die 2 "unknown checkpoint argument" ;;
     esac
   done
   case "$reason" in
@@ -1045,6 +1069,6 @@ case "${1:-}" in
     exit 2
     ;;
   *)
-    die 2 "unknown argument '$1'; run --help"
+    die 2 "unknown argument; run --help"
     ;;
 esac

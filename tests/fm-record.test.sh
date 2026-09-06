@@ -206,6 +206,68 @@ test_effective_push_destinations_must_match_binding() {
   pass 'fm-record: every effective push destination must match the binding'
 }
 
+test_lfs_uploads_require_the_bound_origin() {
+  local home origin other key global before
+  IFS=$(printf '\t') read -r home origin < <(new_home lfs-destinations)
+  setup_record "$home" "$origin"
+  other="$TMP_ROOT/lfs-destinations/other.git"
+  git init --quiet --bare --initial-branch=main "$other"
+  mkdir "$home/data/raw"
+  printf 'private fixture image\n' > "$home/data/raw/photo.png"
+  for key in lfs.url lfs.pushurl remote.origin.lfsurl remote.origin.lfspushurl; do
+    git -C "$home/data" config "$key" "file://$other"
+    run_rec "$home" tick
+    expect_code 8 "$RC" "LFS redirect through $key"
+    assert_contains "$OUT" 'LFS destination overrides' 'LFS redirect refusal'
+    assert_not_contains "$OUT" "$other" 'LFS refusal exposed its URL'
+    git -C "$home/data" config --unset "$key"
+  done
+  global="$home/global.gitconfig"
+  git config --file "$global" lfs.url "file://$other"
+  GIT_CONFIG_GLOBAL="$global" run_rec "$home" tick
+  expect_code 8 "$RC" 'global LFS redirect'
+  for key in lfs.url lfs.pushurl remote.origin.lfsurl; do
+    git config --file "$home/data/.lfsconfig" "$key" "file://$other"
+    run_rec "$home" tick
+    expect_code 8 "$RC" "working .lfsconfig redirect through $key"
+    rm "$home/data/.lfsconfig"
+  done
+  printf '[lfs\n' > "$home/data/.lfsconfig"
+  run_rec "$home" tick
+  expect_code 8 "$RC" 'malformed LFS configuration'
+  assert_contains "$OUT" 'cannot validate the Record LFS destination' 'invalid LFS configuration message'
+  rm "$home/data/.lfsconfig"
+  git config --file "$home/data/.lfsconfig" lfs.url "file://$other"
+  git -C "$home/data" add .lfsconfig
+  rm "$home/data/.lfsconfig"
+  run_rec "$home" tick
+  expect_code 8 "$RC" 'indexed .lfsconfig redirect'
+  assert_contains "$OUT" 'LFS destination overrides' 'indexed LFS configuration was ignored'
+  git -C "$home/data" commit --quiet --no-verify -m 'Unsupported LFS configuration fixture'
+  before=$(git -C "$home/data" rev-parse HEAD)
+  git -C "$home/data" read-tree --empty
+  run_rec "$home" tick
+  expect_code 8 "$RC" 'committed .lfsconfig redirect'
+  assert_contains "$OUT" 'LFS destination overrides' 'committed LFS configuration was ignored'
+  [ "$(git -C "$home/data" rev-parse HEAD)" = "$before" ] || fail 'LFS refusal advanced HEAD'
+  [ -z "$(git --git-dir="$origin" for-each-ref)" ] || fail 'LFS refusal pushed Git history'
+  git -C "$home/data" read-tree HEAD
+  printf '[lfs]\nfetchinclude = raw/*\n' > "$home/data/.lfsconfig"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'default LFS destination with harmless configuration'
+  [ "$(git --git-dir="$origin" rev-parse main)" = "$(git -C "$home/data" rev-parse HEAD)" ] \
+    || fail 'bound origin did not receive Git history'
+  python3 - "$other" "$origin" <<'PYTEST' || fail 'LFS objects reached the wrong remote'
+from pathlib import Path
+import sys
+assert not list((Path(sys.argv[1]) / "lfs" / "objects").rglob("*"))
+objects = [p for p in (Path(sys.argv[2]) / "lfs" / "objects").rglob("*") if p.is_file()]
+assert len(objects) == 1
+assert objects[0].read_bytes() == b"private fixture image\n"
+PYTEST
+  pass 'fm-record: LFS configuration cannot redirect uploads from the bound origin'
+}
+
 test_redirected_hooks_refuse_setup_and_transactions() {
   local home origin hooks global
   IFS=$(printf '\t') read -r home origin < <(new_home hook-path)
@@ -379,7 +441,7 @@ test_special_names_and_outside_symlink_refuse() {
   ln -s /etc/passwd "$home/data/outside.link"
   run_rec "$home" checkpoint --reason stow
   expect_code 8 "$RC" 'outside symlink'
-  assert_contains "$OUT" 'outside' 'outside symlink message'
+  assert_contains "$OUT" 'absolute symlink is not portable' 'absolute symlink message'
   pass "fm-record: special names commit and outside links refuse"
 }
 
@@ -393,6 +455,69 @@ assert_lfs_blob() {
   oid=$(awk '/^oid sha256:/ {sub(/^oid sha256:/, ""); print}' "$pointer")
   [ "$oid" = "$(shasum -a 256 "$home/data/$path" | cut -d ' ' -f1)" ] \
     || fail "$path points at the wrong LFS payload"
+}
+
+test_validation_omits_paths_and_cleans_transaction_files() {
+  local home origin token path kind fakebin
+  IFS=$(printf '\t') read -r home origin < <(new_home validation-cleanup)
+  setup_record "$home" "$origin"
+  mkdir "$home/tmp"
+  token=$(secret_fixture github-classic)
+  path="$home/data/$token"
+  printf 'outside fixture\n' > "$home/outside.md"
+  for kind in absolute broken outside special; do
+    case "$kind" in
+      absolute) ln -s "$home/outside.md" "$path" ;;
+      broken) ln -s missing-target "$path" ;;
+      outside) ln -s ../outside.md "$path" ;;
+      special) mkfifo "$path" ;;
+    esac
+    TMPDIR="$home/tmp" run_rec "$home" tick
+    expect_code 8 "$RC" "invalid $kind path"
+    assert_not_contains "$OUT" "$token" 'validation exposed a credential-shaped filename'
+    assert_contains "$OUT" 'fm-record:' 'validation did not give a safe diagnostic'
+    [ ! -e "$home/data/.git/record-candidate" ] || fail 'validation retained its candidate files'
+    [ ! -e "$home/data/.git/firstmate-record.lock" ] || fail 'validation retained its transaction lock'
+    [ -z "$(find "$home/tmp" -mindepth 1 -print)" ] || fail 'validation retained inventory files'
+    rm "$path"
+  done
+  printf 'safe content\n' > "$home/data/captain.md"
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/sort" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */attributes | */fm-record-attr.*) exit 1 ;;
+  esac
+done
+exec "$FM_TEST_REAL_SORT" "$@"
+SH
+  chmod +x "$fakebin/sort"
+  FM_TEST_REAL_SORT=$(command -v sort) TMPDIR="$home/tmp" PATH="$fakebin:$PATH" \
+    run_rec "$home" checkpoint --reason stow
+  [ "$RC" -ne 0 ] || fail 'attribute write failure was accepted'
+  [ ! -e "$home/data/.git/record-candidate" ] || fail 'attribute failure retained candidate files'
+  [ -z "$(find "$home/tmp" -mindepth 1 -print)" ] || fail 'attribute failure retained temporary files'
+  rm "$fakebin/sort"
+  cat > "$fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  [ "$arg" != "$FM_HOME/data/.git/record-health" ] || exit 1
+done
+exec "$FM_TEST_REAL_MV" "$@"
+SH
+  chmod +x "$fakebin/mv"
+  FM_TEST_REAL_MV=$(command -v mv) TMPDIR="$home/tmp" PATH="$fakebin:$PATH" \
+    run_rec "$home" checkpoint --reason stow
+  [ "$RC" -ne 0 ] || fail 'health write failure was accepted'
+  [ ! -e "$home/data/.git/record-candidate" ] || fail 'health failure retained candidate files'
+  [ -z "$(find "$home/data/.git" -name 'record-health.tmp.*' -print)" ] \
+    || fail 'health failure retained its temporary file'
+  TMPDIR="$home/tmp" run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'checkpoint after validation failures'
+  [ ! -e "$home/data/.git/record-candidate" ] || fail 'successful checkpoint retained candidate files'
+  [ -z "$(find "$home/tmp" -mindepth 1 -print)" ] || fail 'successful checkpoint retained temporary files'
+  pass 'fm-record: validation omits untrusted paths and cleans transaction files on every exit'
 }
 
 test_lfs_text_threshold_and_no_oscillation() {
@@ -1078,6 +1203,7 @@ test_setup_and_first_tick_commit_and_push
 test_unchanged_ticks_make_no_new_commit
 test_git_overrides_and_wrong_root_refuse
 test_effective_push_destinations_must_match_binding
+test_lfs_uploads_require_the_bound_origin
 test_redirected_hooks_refuse_setup_and_transactions
 test_busy_tick_when_lock_is_held
 test_abandoned_lock_is_recovered
@@ -1085,6 +1211,7 @@ test_unsettled_candidate_is_not_committed
 test_scan_blocks_commit_and_prints_no_secret
 test_mirror_state_subset_and_removal
 test_special_names_and_outside_symlink_refuse
+test_validation_omits_paths_and_cleans_transaction_files
 test_lfs_text_threshold_and_no_oscillation
 test_push_failure_keeps_local_commit
 test_divergence_does_not_force

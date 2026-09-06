@@ -18,7 +18,6 @@
 #
 # When executed:
 #   fm-record-scan.sh tree <dir>...
-#   fm-record-scan.sh class <file>
 #   fm-record-scan.sh gitleaks --dir <dir>
 #   fm-record-scan.sh chain --dir <dir>
 #   fm-record-scan.sh archive-preflight --dir <dir>
@@ -380,15 +379,6 @@ fm_record_scan_cli() {
       [ "$#" -ge 1 ] || fm_record_scan_die 3 "tree requires at least one directory"
       FM_RECORD_SCAN_HIT_CODE=2
       scan_tree_for_secrets "$@"
-      ;;
-    class)
-      [ "$#" -eq 1 ] || fm_record_scan_die 3 "class requires one file"
-      [ -f "$1" ] || die 1 "class file is missing: $1"
-      if secret_pattern_matches "$SECRET_COMBINED" "$1"; then
-        secret_class_of "$1"
-        exit 2
-      fi
-      printf 'none\n'
       ;;
     gitleaks)
       dir=
