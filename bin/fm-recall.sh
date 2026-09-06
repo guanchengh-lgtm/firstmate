@@ -8,6 +8,7 @@
 #                [--exclude-identity <id-or-path>]... [--exclude-file <path>]...
 #                [--token-budget N] [--as-of YYYY-MM-DD] [--now YYYY-MM-DD]
 #                [--deadline-ms N] [--json] [--root <dir>]
+#                [--session-batch <queries.json>] [--extract-identities]
 #   fm-recall.sh --help
 #
 # This command is the public recall entry point. bin/fm-recall.py is the only

@@ -56,11 +56,16 @@
 #   9. context digest - data/projects.md, data/secondmates.md, data/captain.md,
 #                       data/captain-shared.md, data/learnings.md: read-only,
 #                       always safe, always runs.
-#  10. closing reminder - prints the context-specific watcher next step; this
+#  10. recalled pointers - at most five open items, three pointers each, under
+#                       the residual startup-memory budget after memory files
+#                       and the prior-session fold. bin/fm-recall.sh owns
+#                       ranking and rendering. Optional; absent when no
+#                       residual budget remains.
+#  11. closing reminder - prints the context-specific watcher next step; this
 #                       script points back to the emitted harness supervision
 #                       block and deliberately never arms the watcher itself.
 #
-# Those ten names are also the runtime-bound stage list below, so a truncated
+# Those eleven names are also the runtime-bound stage list below, so a truncated
 # startup can name exactly which of them never ran.
 #
 # NO NETWORK ON THE BLOCKING PATH. This digest runs on a session-open hook that
@@ -287,7 +292,7 @@ done
 # The ordered stage list is the contract behind the truncation banner: the child
 # names the stage it is entering, and the parent reports every stage at or after
 # that one as never emitted. Keep it in the exact order the digest prints.
-SESSION_START_STAGES='lock bootstrap wake-queue supervision-instructions read-once prior-session fleet-state network-checks context next-step'
+SESSION_START_STAGES='lock bootstrap wake-queue supervision-instructions read-once prior-session fleet-state network-checks context recalled-pointers next-step'
 
 stage() {  # <stage-name>: breadcrumb for the parent's truncation banner
   [ -n "${FM_SESSION_START_STAGE_FILE:-}" ] || return 0
@@ -373,6 +378,8 @@ PRIMARY_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-line-cap-lib.sh
 . "$SCRIPT_DIR/fm-line-cap-lib.sh"
+# shellcheck source=bin/fm-startup-memory-budget-lib.sh
+. "$SCRIPT_DIR/fm-startup-memory-budget-lib.sh"
 
 # One tasks-axi compatibility verdict per session start. The probe costs three
 # tasks-axi subprocesses and this digest needs the same answer twice - here for
@@ -388,6 +395,10 @@ case "$STATUS_TAIL" in ''|*[!0-9]*) STATUS_TAIL=5 ;; esac
 QUEUED_LIMIT=${FM_SESSION_START_QUEUED_LIMIT:-20}
 case "$QUEUED_LIMIT" in ''|*[!0-9]*|0) QUEUED_LIMIT=20 ;; esac
 BACKLOG_FIELDS=blocked_by,hold_kind,hold_reason
+SESSION_STATUS_EMITTED=$(mktemp "${TMPDIR:-/tmp}/fm-session-status-emitted.XXXXXX" 2>/dev/null || true)
+SESSION_RECALL_IDENTITIES=""
+SESSION_RECALL_RECEIPT_STATUS=skipped
+SESSION_RECALL_STATS="0 0 0 0 none none 0"
 
 RULE='================================================================================'
 SUBRULE='--------------------------------------------------------------------------------'
@@ -563,7 +574,311 @@ print_status_tail() {
   # and the full log path above reaches the rest.
   while IFS= read -r line || [ -n "$line" ]; do
     fm_cap_line "$line"
+    if [ -n "${SESSION_STATUS_EMITTED:-}" ]; then
+      printf '%s\n' "$line" >> "$SESSION_STATUS_EMITTED"
+    fi
   done < <(tail -n "$STATUS_TAIL" "$status")
+}
+
+session_start_open_items() {
+  local path=$DATA/backlog.md
+  [ -f "$path" ] && [ ! -L "$path" ] || return 0
+  awk '
+    function state_for_heading(line, heading) {
+      heading = line
+      sub(/^##[[:space:]]+/, "", heading)
+      sub(/[[:space:]]+$/, "", heading)
+      if (heading == "In flight") return "in_flight"
+      if (heading == "Queued") return "queued"
+      if (heading == "Done") return "done"
+      return ""
+    }
+    function take(line,    id, title) {
+      if (line !~ /^[-*][[:space:]]+\[/) return
+      id = line
+      sub(/^[-*][[:space:]]+\[[ xX]\][[:space:]]+/, "", id)
+      title = id
+      sub(/[[:space:]].*$/, "", id)
+      sub(/^[^[:space:]]+[[:space:]]+-[[:space:]]+/, "", title)
+      sub(/ \(repo:.*$/, "", title)
+      sub(/ \(kind:.*$/, "", title)
+      sub(/ \(since .*$/, "", title)
+      sub(/ \(hold:.*$/, "", title)
+      sub(/ blocked-by:.*$/, "", title)
+      if (id != "" && !seen[id]++) {
+        order[++n] = id
+        titles[id] = title
+      }
+    }
+    /^##[[:space:]]+/ { state = state_for_heading($0); next }
+    state == "in_flight" && /^[-*][[:space:]]+/ { take($0); next }
+    state == "queued" && /^[-*][[:space:]]+/ {
+      if ($0 ~ /[(]hold|blocked-by:/) take($0)
+      else ready[++nr] = $0
+      next
+    }
+    END {
+      for (i = 1; i <= nr && n < 5; i++) take(ready[i])
+      limit = (n < 5) ? n : 5
+      for (i = 1; i <= limit; i++) printf "%s\t%s\n", order[i], titles[order[i]]
+    }
+  ' "$path"
+}
+
+session_start_status_overrides() {
+  local path=$DATA/backlog.md
+  [ -f "$path" ] && [ ! -L "$path" ] || return 0
+  awk '
+    function state_for_heading(line, heading) {
+      heading = line
+      sub(/^##[[:space:]]+/, "", heading)
+      sub(/[[:space:]]+$/, "", heading)
+      if (heading == "In flight") return "in_flight"
+      if (heading == "Queued") return "queued"
+      if (heading == "Done") return "done"
+      return ""
+    }
+    function emit(line, fallback,    id, state) {
+      if (line !~ /^[-*][[:space:]]+\[/) return
+      id = line
+      sub(/^[-*][[:space:]]+\[[ xX]\][[:space:]]+/, "", id)
+      sub(/[[:space:]].*$/, "", id)
+      if (id == "") return
+      state = fallback
+      if (line ~ /hold-kind:[[:space:]]*parked/) state = "parked"
+      else if (line ~ /[(]hold|hold-kind:/) state = "held"
+      printf "%s=%s\n", id, state
+    }
+    /^##[[:space:]]+/ { state = state_for_heading($0); next }
+    state == "in_flight" && /^[-*][[:space:]]+/ { emit($0, "in_flight"); next }
+    state == "queued" && /^[-*][[:space:]]+/ { emit($0, "queued"); next }
+  ' "$path"
+}
+
+session_start_printed_ids() {
+  local path=$DATA/backlog.md
+  [ -f "$path" ] && [ ! -L "$path" ] || return 0
+  awk -v max="$QUEUED_LIMIT" '
+    function state_for_heading(line, heading) {
+      heading = line
+      sub(/^##[[:space:]]+/, "", heading)
+      sub(/[[:space:]]+$/, "", heading)
+      if (heading == "In flight") return "in_flight"
+      if (heading == "Queued") return "queued"
+      if (heading == "Done") return "done"
+      return ""
+    }
+    function emit(line,    id) {
+      if (line !~ /^[-*][[:space:]]+\[/) return
+      id = line
+      sub(/^[-*][[:space:]]+\[[ xX]\][[:space:]]+/, "", id)
+      sub(/[[:space:]].*$/, "", id)
+      if (id != "" && !seen[id]++) print id
+    }
+    /^##[[:space:]]+/ { state = state_for_heading($0); next }
+    state == "in_flight" && /^[-*][[:space:]]+/ { emit($0); next }
+    state == "queued" && /^[-*][[:space:]]+/ {
+      if ($0 ~ /[(]hold|blocked-by:/) emit($0)
+      else if (plain++ < max) emit($0)
+      next
+    }
+  ' "$path"
+}
+
+session_start_emit_recall() {
+  local budget memory_tokens=0 fold_bytes=0 fold_tokens=0 residual=0 allocated=0
+  local queries_file result_file ident_file items_file missing=none truncation=none
+  local item_count=0 pointer_count=0 recall_bytes=0 recall_tokens=0 omitted=0
+  local heading heading_bytes heading_tokens rendered rc
+  SESSION_RECALL_IDENTITIES=""
+  SESSION_RECALL_RECEIPT_STATUS=skipped
+
+  if ! fm_startup_memory_budget_read "$CONFIG" >/dev/null; then
+    SESSION_RECALL_RECEIPT_STATUS=zero
+    SESSION_RECALL_STATS="0 0 0 0 budget $truncation 0"
+    return 0
+  fi
+  budget=$FM_STARTUP_MEMORY_BUDGET_VALUE
+  for memory_file in captain.md captain-shared.md learnings.md; do
+    if fm_startup_memory_measure_file "$DATA/$memory_file" >/dev/null; then
+      memory_tokens=$((memory_tokens + FM_STARTUP_MEMORY_MEASURE_TOKENS))
+    else
+      missing=memory
+    fi
+  done
+  fold_bytes=$(printf '%s' "${PRIOR_FOLD_OUT:-}" | wc -c | tr -d '[:space:]')
+  fold_tokens=$(fm_startup_memory_estimated_tokens_for_bytes "$fold_bytes") || fold_tokens=0
+  residual=$((budget - memory_tokens - fold_tokens))
+  if [ "$residual" -lt 0 ]; then
+    residual=0
+  fi
+  if [ "$residual" -gt 450 ]; then
+    residual=450
+  fi
+  allocated=$residual
+  heading=$(printf '\n%s\n%s\n%s\n' "$RULE" "RECALLED POINTERS" "$RULE")
+  heading_bytes=$(printf '%s' "$heading" | wc -c | tr -d '[:space:]')
+  heading_tokens=$(fm_startup_memory_estimated_tokens_for_bytes "$heading_bytes") || heading_tokens=0
+  if [ "$residual" -le "$heading_tokens" ]; then
+    residual=0
+  else
+    residual=$((residual - heading_tokens))
+  fi
+  item_count=$(session_start_open_items | awk 'NF { n++ } END { print n + 0 }')
+  if [ "$residual" -eq 0 ] || [ "$item_count" -eq 0 ]; then
+    SESSION_RECALL_RECEIPT_STATUS=zero
+    SESSION_RECALL_STATS="$allocated 0 $item_count 0 $missing $truncation 0"
+    return 0
+  fi
+
+  queries_file=$(mktemp "${TMPDIR:-/tmp}/fm-session-recall-q.XXXXXX") || return 0
+  result_file=$(mktemp "${TMPDIR:-/tmp}/fm-session-recall-r.XXXXXX") || { rm -f "$queries_file"; return 0; }
+  ident_file=$(mktemp "${TMPDIR:-/tmp}/fm-session-recall-i.XXXXXX") || { rm -f "$queries_file" "$result_file"; return 0; }
+  items_file=$(mktemp "${TMPDIR:-/tmp}/fm-session-recall-items.XXXXXX") || {
+    rm -f "$queries_file" "$result_file" "$ident_file"
+    return 0
+  }
+  if [ -n "${SESSION_STATUS_EMITTED:-}" ] && [ -f "$SESSION_STATUS_EMITTED" ]; then
+    python3 -B "$SCRIPT_DIR/fm-recall.py" --root "$DATA" --extract-identities \
+      < "$SESSION_STATUS_EMITTED" > "$ident_file" || true
+  fi
+  session_start_open_items > "$items_file"
+  python3 - "$queries_file" "$items_file" <<'PY'
+import json, sys
+items = []
+with open(sys.argv[2], encoding="utf-8") as handle:
+    for line in handle:
+        line = line.rstrip("\n")
+        if not line:
+            continue
+        if "\t" in line:
+            task_id, title = line.split("\t", 1)
+        else:
+            task_id, title = line, line
+        items.append({"id": task_id, "title": title, "body": ""})
+json.dump(items, open(sys.argv[1], "w", encoding="utf-8"))
+PY
+
+  recall_args=(--session-batch "$queries_file" --json --token-budget "$residual")
+  while IFS= read -r identity; do
+    [ -n "$identity" ] || continue
+    recall_args+=(--exclude-identity "$identity")
+  done < "$ident_file"
+  for context_file in projects.md secondmates.md captain.md captain-shared.md learnings.md; do
+    [ -f "$DATA/$context_file" ] || continue
+    recall_args+=(--exclude-file "data/$context_file")
+  done
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    recall_args+=(--exclude-id "$id")
+  done < <(session_start_printed_ids)
+  while IFS= read -r override; do
+    [ -n "$override" ] || continue
+    recall_args+=(--status "$override")
+  done < <(session_start_status_overrides)
+
+  rc=0
+  FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-recall.sh" "${recall_args[@]}" \
+    > "$result_file" 2>/dev/null || rc=$?
+  if [ "$rc" -ne 0 ] || [ ! -s "$result_file" ]; then
+    SESSION_RECALL_RECEIPT_STATUS=unavailable
+    SESSION_RECALL_STATS="$allocated 0 $item_count 0 recall $truncation 0"
+    rm -f "$queries_file" "$result_file" "$ident_file" "$items_file"
+    return 0
+  fi
+  eval "$(python3 - "$result_file" <<'PY'
+import json, sys
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+print("pointer_count=%s" % int(payload.get("pointer_count") or 0))
+print("recall_bytes=%s" % int(payload.get("bytes") or 0))
+print("recall_tokens=%s" % int(payload.get("estimated_tokens") or 0))
+print("omitted=%s" % int(payload.get("omitted") or 0))
+PY
+)"
+  rendered=$(python3 -c 'import json,sys; sys.stdout.write(json.load(open(sys.argv[1],encoding="utf-8")).get("rendered") or "")' "$result_file")
+  SESSION_RECALL_IDENTITIES=$(python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1],encoding="utf-8")).get("identities") or []))' "$result_file")
+  if [ "${omitted:-0}" -gt 0 ]; then
+    truncation='token-cap'
+  fi
+  if [ -n "$rendered" ]; then
+    printf '%s' "$heading"
+    printf '%s' "$rendered"
+    case "$rendered" in
+      *$'\n') ;;
+      *) printf '\n' ;;
+    esac
+    recall_bytes=$((recall_bytes + heading_bytes))
+    recall_tokens=$((recall_tokens + heading_tokens))
+    SESSION_RECALL_RECEIPT_STATUS=emitted
+  else
+    SESSION_RECALL_RECEIPT_STATUS=zero
+  fi
+  SESSION_RECALL_STATS="$allocated $pointer_count $item_count $recall_bytes $missing $truncation $recall_tokens"
+  rm -f "$queries_file" "$result_file" "$ident_file" "$items_file"
+}
+
+session_start_publish_recall_artifacts() {
+  local pid=$1 manifest receipt tmp
+  [ -n "$pid" ] || return 0
+  [ "$READ_ONLY" -eq 0 ] || return 0
+  mkdir -p "$STATE" 2>/dev/null || return 0
+  manifest=$STATE/.session-recall-identities
+  receipt=$STATE/.session-recall-receipt.json
+  tmp=$(mktemp "$STATE/.session-recall-identities.XXXXXX" 2>/dev/null) || {
+    echo "warning: session recall manifest was not published" >&2
+    return 0
+  }
+  {
+    printf 'home=%s\n' "$FM_HOME"
+    printf 'session=%s\n' "$pid"
+    printf '%s\n' "$SESSION_RECALL_IDENTITIES"
+  } > "$tmp"
+  if ! mv -f "$tmp" "$manifest" 2>/dev/null; then
+    rm -f "$tmp"
+    echo "warning: session recall manifest was not published" >&2
+  fi
+  tmp=$(mktemp "$STATE/.session-recall-receipt.XXXXXX" 2>/dev/null) || {
+    echo "warning: session recall receipt was not published; metrics coverage is incomplete" >&2
+    return 0
+  }
+  SESSION_RECALL_STATS=$SESSION_RECALL_STATS SESSION_RECALL_RECEIPT_STATUS=$SESSION_RECALL_RECEIPT_STATUS \
+    SESSION_RECALL_PID=$pid SESSION_RECALL_HOME=$FM_HOME python3 - "$tmp" <<'PY'
+import json, os, sys
+from datetime import datetime, timezone
+parts = (os.environ.get("SESSION_RECALL_STATS") or "").split()
+residual = int(parts[0]) if len(parts) > 0 and parts[0].isdigit() else 0
+pointer_count = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else 0
+item_count = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+recall_bytes = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 0
+missing = parts[4] if len(parts) > 4 else "none"
+truncation = parts[5] if len(parts) > 5 else "none"
+recall_tokens = int(parts[6]) if len(parts) > 6 and parts[6].isdigit() else 0
+now = datetime.now(timezone.utc)
+payload = {
+    "id": "session-%s" % os.environ.get("SESSION_RECALL_PID", ""),
+    "date": now.strftime("%Y-%m-%d"),
+    "type": "session-recall-receipt",
+    "status": os.environ.get("SESSION_RECALL_RECEIPT_STATUS") or "skipped",
+    "surface": "session-start",
+    "timestamp_utc": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+    "session": os.environ.get("SESSION_RECALL_PID", ""),
+    "home": os.environ.get("SESSION_RECALL_HOME", ""),
+    "residual_tokens": residual,
+    "pointer_count": pointer_count,
+    "selected_item_count": item_count,
+    "bytes": recall_bytes,
+    "estimated_tokens": recall_tokens,
+    "missing_input": missing,
+    "truncation": truncation,
+    "Related": [],
+}
+json.dump(payload, open(sys.argv[1], "w", encoding="utf-8"), indent=2, sort_keys=True)
+open(sys.argv[1], "a", encoding="utf-8").write("\n")
+PY
+  if ! mv -f "$tmp" "$receipt" 2>/dev/null; then
+    rm -f "$tmp"
+    echo "warning: session recall receipt was not published; metrics coverage is incomplete" >&2
+  fi
 }
 
 hash_file_sha256() {
@@ -770,6 +1085,9 @@ else
   DRAIN_OUT=$("$SCRIPT_DIR/fm-wake-drain.sh" 2>&1)
   if [ -n "$DRAIN_OUT" ]; then
     printf '%s\n' "$DRAIN_OUT"
+    if [ -n "${SESSION_STATUS_EMITTED:-}" ]; then
+      printf '%s\n' "$DRAIN_OUT" >> "$SESSION_STATUS_EMITTED"
+    fi
   else
     printf '(no queued wakes)\n'
   fi
@@ -817,6 +1135,8 @@ Everything below provides a required PRIOR SESSION retrieve, every state/*.meta,
 compact data/backlog.md listing, a bounded tail of every state/*.status,
 data/projects.md, data/secondmates.md, data/captain.md, data/captain-shared.md,
 and data/learnings.md.
+Recalled pointers after CONTEXT are references, not proof that those bodies
+were read.
 Do NOT re-read any of them after reading this digest, and do NOT bulk-read
 data/backlog.md or state/*.status: re-reading everything defeats the entire
 point of this command.
@@ -843,14 +1163,22 @@ EOF
 # Exit 2 is already rendered as a loud INCOMPLETE section and never stops this
 # reporting command from reaching the durable fleet-state sources below.
 stage prior-session
-"$SCRIPT_DIR/fm-prior-session-fold.sh" || true
+PRIOR_FOLD_OUT=$("$SCRIPT_DIR/fm-prior-session-fold.sh" || true)
+printf '%s\n' "$PRIOR_FOLD_OUT"
+if [ -n "${SESSION_STATUS_EMITTED:-}" ]; then
+  printf '%s\n' "$PRIOR_FOLD_OUT" >> "$SESSION_STATUS_EMITTED"
+fi
 
 # --- 7. fleet-state digest ---------------------------------------------
 # Before CONTEXT: see this file's ORDERING note. Live fleet identity is what a
 # truncated tail must never take.
 stage fleet-state
 section "FLEET STATE"
-print_backlog_compact "$DATA/backlog.md" "data/backlog.md"
+if [ -n "${SESSION_STATUS_EMITTED:-}" ]; then
+  print_backlog_compact "$DATA/backlog.md" "data/backlog.md" | tee -a "$SESSION_STATUS_EMITTED"
+else
+  print_backlog_compact "$DATA/backlog.md" "data/backlog.md"
+fi
 
 subsection "Work under way (state/*.meta)"
 META_FOUND=0
@@ -952,7 +1280,11 @@ print_file_or_absent "$DATA/captain.md" "data/captain.md"
 print_file_or_absent "$DATA/captain-shared.md" "data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)"
 print_file_or_absent "$DATA/learnings.md" "data/learnings.md"
 
-# --- 10. closing reminder ----------------------------------------------
+# --- 10. recalled pointers ---------------------------------------------
+stage recalled-pointers
+session_start_emit_recall
+
+# --- 11. closing reminder ----------------------------------------------
 stage next-step
 section "NEXT STEP"
 if [ "$READ_ONLY" -eq 1 ]; then
@@ -999,6 +1331,7 @@ if [ "$READ_ONLY" -eq 0 ] && [ "$REEMIT" -eq 0 ]; then
     && printf '%s\n' "$COMPLETION_PID" > "$COMPLETION_TMP" 2>/dev/null \
     && mv -f "$COMPLETION_TMP" "$COMPLETION_FILE" 2>/dev/null; then
     COMPLETION_RECORDED=1
+    session_start_publish_recall_artifacts "$COMPLETION_PID"
   else
     [ -z "$COMPLETION_TMP" ] || rm -f "$COMPLETION_TMP" 2>/dev/null || true
     printf '\nSESSION_START_COMPLETION: not recorded - the next clear or compact will run a full startup.\n'
@@ -1009,5 +1342,6 @@ if [ "$READ_ONLY" -eq 0 ] && [ "$REEMIT" -eq 0 ]; then
     fi
   fi
 fi
+[ -z "${SESSION_STATUS_EMITTED:-}" ] || rm -f "$SESSION_STATUS_EMITTED" 2>/dev/null || true
 
 exit 0
