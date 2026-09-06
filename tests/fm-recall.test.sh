@@ -428,25 +428,27 @@ PY
 }
 
 test_extracted_identity_excludes_the_same_canonical_token() {
-  local home token out
+  local home token out reference
   home="$TMP_ROOT/exclude-token"
   mkdir -p "$home/data"
   write_report "$home" prior-widget "Prior widget archive" 2026-01-01 reported
   write_report "$home" other-sprocket "Other sprocket notes" 2026-01-02 reported
-  token=$(
-    printf 'status: working: see data/prior-widget/report.md\n' \
-      | FM_HOME="$home" FM_DATA_OVERRIDE="$home/data" "$RECALL" --extract-identities
-  )
-  [ "$token" = "task:prior-widget" ] \
-    || fail "extract-identities did not emit the task token"$'\n'"got: $token"
-  out=$(recall_json "$home" --title "prior widget archive" --exclude-identity "$token")
-  printf '%s\n' "$out" | python3 -c '
+  for reference in 'data/prior-widget/report.md' '`data/prior-widget/report.md`' \
+    '``data/prior-widget/report.md``' "\`$home/data/prior-widget/report.md\`"; do
+    token=$(
+      printf 'status: working: see %s.\n' "$reference" \
+        | FM_HOME="$home" FM_DATA_OVERRIDE="$home/data" "$RECALL" --extract-identities
+    )
+    [ "$token" = "task:prior-widget" ] \
+      || fail "extract-identities did not emit the task token"$'\n'"got: $token"
+    out=$(recall_json "$home" --title "prior widget archive sprocket" --surface pointers --exclude-identity "$token")
+    printf '%s\n' "$out" | python3 -c '
 import json,sys
 p=json.load(sys.stdin)
 ids=[hit["id"] for hit in p.get("hits") or []]
-assert "prior-widget" not in ids, p
-assert "other-sprocket" in ids or p.get("status") in ("ok","empty"), p
+assert ids == ["other-sprocket"], p
 ' || fail "recall output assertion failed"
+  done
   pass "fm-recall.sh: extracted identities exclude the same canonical token"
 }
 
@@ -951,22 +953,32 @@ PY
 }
 
 test_alias_cycle_exclusion_uses_corpus_identity() {
-  local home option identity
+  local home option identity id
   home="$TMP_ROOT/cycle-exclusions"
   write_report "$home" a 'Widget' 2026-01-01 reported
-  mkdir -p "$home/data/b"
+  write_report "$home" b 'Widget' 2026-01-01 reported
+  mkdir -p "$home/data/c"
   printf 'target: b\n' > "$home/data/a/POINTER.md"
-  printf 'target: a\n' > "$home/data/b/POINTER.md"
-  for option in --exclude-id --exclude-identity --exclude-path; do
-    identity=b
-    [ "$option" != --exclude-identity ] || identity=task:b
-    [ "$option" != --exclude-path ] || identity=data/b/report.md
-    recall_json "$home" --title widget --surface pointers "$option" "$identity" > "$home/result.json"
-    python3 - "$home/result.json" <<'PY' || fail "alias-cycle exclusion disagreed with corpus loading"
+  printf 'target: c\n' > "$home/data/b/POINTER.md"
+  printf 'target: b\n' > "$home/data/c/POINTER.md"
+  recall_json "$home" --title widget --surface pointers > "$home/result.json"
+  python3 - "$home/result.json" <<'PY' || fail "a prefix changed the canonical cycle identity"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert [h["id"] for h in p["hits"]] == ["b"], p
+PY
+  for id in a b c; do
+    for option in --exclude-id --exclude-identity --exclude-path; do
+      identity=$id
+      [ "$option" != --exclude-identity ] || identity=task:$id
+      [ "$option" != --exclude-path ] || identity=data/$id/report.md
+      recall_json "$home" --title widget --surface pointers "$option" "$identity" > "$home/result.json"
+      python3 - "$home/result.json" <<'PY' || fail "alias-cycle exclusion disagreed with corpus loading"
 import json, sys
 p = json.load(open(sys.argv[1], encoding="utf-8"))
 assert p["hits"] == [], p
 PY
+    done
   done
   pass "alias-cycle exclusions use the corpus canonical identity"
 }

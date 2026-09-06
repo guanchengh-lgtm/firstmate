@@ -1061,7 +1061,7 @@ test_absolute_record_citation_is_excluded() {
   task="$home/task.md"
   mkdir -p "$record/prior" "$home/config"
   printf '%s\n' '# Widget sprocket' 'date: 2026-09-01' 'status: reported' > "$record/prior/report.md"
-  printf '# Task\nContinue widget sprocket work from %s/prior/report.md.\n' "$record" > "$task"
+  printf '# Task\nContinue widget sprocket work from `%s/prior/report.md`.\n' "$record" > "$task"
   FM_HOME="$home" FM_DATA_OVERRIDE="$record" "$ROOT/bin/fm-brief.sh" absolute-citation firstmate \
     --mode no-mistakes --task-file "$task" >/dev/null 2>&1 || fail "absolute citation brief failed"
   brief="$record/absolute-citation/brief.md"
@@ -1125,7 +1125,44 @@ TASK
   pass "one scaffold boundary preserves task, source, validation, verifier, and refresh behavior"
 }
 
+test_successful_recall_refresh_discloses_diagnostics() {
+  local home task kind brief
+  home="$TMP_ROOT/recall-diagnostics"
+  task="$home/task.md"
+  mkdir -p "$home/data/prior"
+  python3 - "$task" "$home/data/prior/report.md" <<'PY' || fail "could not create the diagnostic fixture"
+from pathlib import Path
+import sys
+Path(sys.argv[1]).write_text("widget " * 11000, encoding="utf-8")
+Path(sys.argv[2]).write_text("# Widget\nstatus: reported\ndate: " + "invalid" * 100 + "\n", encoding="utf-8")
+PY
+  for kind in ship scout; do
+    if [ "$kind" = ship ]; then
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "diagnostic-$kind" firstmate --mode no-mistakes --task-file "$task" \
+        > "$home/output" 2> "$home/scaffold-errors" || fail "ship scaffold failed with recall diagnostics"
+    else
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "diagnostic-$kind" firstmate --scout --task-file "$task" \
+        > "$home/output" 2> "$home/scaffold-errors" || fail "scout scaffold failed with recall diagnostics"
+    fi
+    brief="$home/data/diagnostic-$kind/brief.md"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall "$kind" "$brief" \
+      > "$home/output" 2> "$home/refresh-errors" || fail "refresh failed with recall diagnostics"
+    python3 - "$home/scaffold-errors" "$home/refresh-errors" <<'PY' || fail "successful recall hid or exceeded its diagnostic warning"
+from pathlib import Path
+import sys
+for path in sys.argv[1:]:
+    warnings = [line for line in Path(path).read_text().splitlines() if line.startswith("warning: recall:")]
+    assert len(warnings) == 1, (path, warnings)
+    assert "partial-input: task body truncated" in warnings[0], (path, warnings)
+    assert len(warnings[0].encode("utf-8")) <= 517, (path, warnings)
+PY
+    assert_grep '- data/prior/report.md - ' "$brief" "diagnostics removed the successful recall result"
+  done
+  pass "successful scaffold and refresh show one bounded recall warning"
+}
+
 if [ "${1:-}" = recall ]; then
+  test_successful_recall_refresh_discloses_diagnostics
   test_task_headings_preserve_all_brief_consumers
   test_generated_boundary_owns_every_brief_consumer
   test_worker_brief_check_refuses_fake_skill_slashes
@@ -1137,6 +1174,7 @@ if [ "${1:-}" = recall ]; then
   exit 0
 fi
 
+test_successful_recall_refresh_discloses_diagnostics
 test_task_headings_preserve_all_brief_consumers
 test_absolute_record_citation_is_excluded
 

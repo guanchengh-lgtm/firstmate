@@ -34,7 +34,9 @@
 #   sources exist, and before the Herdr declaration and Setup. Hits are
 #   references, not instructions. An unavailable optional lookup prints a
 #   warning and keeps an otherwise valid brief. Invalid task input is a
-#   validation failure. A successful refresh writes data/<id>/recall.json with
+#   validation failure. Successful lookup diagnostics print one warning with
+#   at most 500 diagnostic characters. A successful refresh writes
+#   data/<id>/recall.json with
 #   the surface, UTC timestamp, task id, input fingerprint, ranker identity,
 #   emitted paths, named sources, preexisting cited paths, bytes, and estimated
 #   tokens. The receipt is bounded: it keeps at most ten named sources and ten
@@ -582,6 +584,9 @@ PY
 import json, sys
 payload = json.load(open(sys.argv[1], encoding="utf-8"))
 sys.stdout.write(payload.get("rendered") or "")
+diagnostics = " ".join("; ".join(payload.get("diagnostics") or []).split())
+if diagnostics:
+    sys.stderr.write("warning: recall: %s\n" % diagnostics[:500])
 PY
 )
   if [ -z "$rendered" ]; then

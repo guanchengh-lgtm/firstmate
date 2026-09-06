@@ -565,7 +565,7 @@ class Corpus(object):
         while current in self.alias_to:
             if current in seen:
                 self.note("alias-cycle", " -> ".join(seen + [current]))
-                return min(seen)
+                return min(seen[seen.index(current) :])
             seen.append(current)
             current = self.alias_to[current]
         return current
@@ -1213,13 +1213,13 @@ def extract_identities(text, root):
         seen.add(token)
         found.append(token)
 
-    for match in re.finditer(r"data/[^\s\)\]\"'<>]+", text):
+    for match in re.finditer(r"data/[^\s\)\]\"'`<>]+", text):
         reference = match.group(0).rstrip(".,;:")
         add(
             archive_row_identity(reference, root) or identity_from_path(reference, root)
         )
     if root is not None:
-        for match in re.finditer(r"/[^\s\)\]\"'<>]+", text):
+        for match in re.finditer(r"/[^\s\)\]\"'`<>]+", text):
             reference = match.group(0).rstrip(".,;:")
             display = normalize_record_path(reference, root)
             if not display:
