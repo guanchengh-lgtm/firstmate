@@ -1,0 +1,40 @@
+Scenario: Run each state-reading command from an unmarked linked worktree.
+
+$ copy/bin/fm-session-start.sh
+exit=1
+REFUSED: fm-session-start.sh self-located its home to linked worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/copy; that copy's state/ is not a firstmate home. Set FM_HOME=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/repo or start firstmate from /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/repo, then retry.
+
+$ copy/bin/fm-lock.sh
+exit=1
+REFUSED: fm-lock.sh self-located its home to linked worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/copy; that copy's state/ is not a firstmate home. Set FM_HOME=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/repo or start firstmate from /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/repo, then retry.
+
+$ copy/bin/fm-guard.sh
+exit=0
+REFUSED: fm-guard.sh self-located its home to linked worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/copy; that copy's state/ is not a firstmate home. Set FM_HOME=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/repo or start firstmate from /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/repo, then retry.
+
+$ copy/bin/fm-watch.sh
+exit=1
+REFUSED: fm-watch.sh self-located its home to linked worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/copy; that copy's state/ is not a firstmate home. Set FM_HOME=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/repo or start firstmate from /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/repo, then retry.
+
+$ copy/bin/fm-teardown.sh
+exit=1
+REFUSED: fm-teardown.sh self-located its home to linked worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/copy; that copy's state/ is not a firstmate home. Set FM_HOME=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/repo or start firstmate from /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/repo, then retry.
+
+$ copy/bin/fm-merge-local.sh
+exit=1
+REFUSED: fm-merge-local.sh self-located its home to linked worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/copy; that copy's state/ is not a firstmate home. Set FM_HOME=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/repo or start firstmate from /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/repo, then retry.
+
+$ copy/bin/fm-pr-merge.sh
+exit=1
+REFUSED: fm-pr-merge.sh self-located its home to linked worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/copy; that copy's state/ is not a firstmate home. Set FM_HOME=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/repo or start firstmate from /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-linked-cli-evidence.gIo1xI/repo, then retry.
+
+Observed safety state:
+session-lock-created=no
+watch-lock-created=no
+process-scan-called=no
+linked-worktree-preserved=yes
+
+Divergence: Mark the same worktree as a secondmate home.
+$ FM_HOME=copy copy/bin/fm-lock.sh status
+exit=0
+lock: free

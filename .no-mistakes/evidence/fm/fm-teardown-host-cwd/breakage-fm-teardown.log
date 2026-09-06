@@ -1,0 +1,2 @@
+ok - missing roots need no lsof check before task retirement
+not ok - host-session-spared: teardown did not refuse the unsafe worktree return

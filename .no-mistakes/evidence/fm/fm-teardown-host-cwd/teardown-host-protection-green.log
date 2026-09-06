@@ -1,0 +1,5 @@
+ok - missing roots need no lsof check before task retirement
+ok - a live session host blocks treehouse return while task-owned processes are reaped
+ok - a live session host under tasktmp receives the matching relocation remedy
+ok - a missing task worktree does not bypass protection for a live tasktmp host
+ok - a live session host blocks Orca worktree removal

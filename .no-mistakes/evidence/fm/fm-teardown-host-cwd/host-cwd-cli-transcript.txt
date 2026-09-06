@@ -1,0 +1,4 @@
+Mode: locked
+HOST_CWD: process 51977 (codex) in this session's ancestry has cwd /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1V927GH2NB7CAFFZJMT4PKN, a task copy; teardown of that copy will refuse while this session lives. Relocate: exit this session, cd /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-host-cwd-evidence.gqdYjm/home, relaunch the harness, then rerun teardown.
+Mode: read-only
+HOST_CWD: process 54778 (codex) in this session's ancestry has cwd /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1V927GH2NB7CAFFZJMT4PKN, a task copy; teardown of that copy will refuse while this session lives. Relocate: exit this session, cd /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-host-cwd-evidence.gqdYjm/home, relaunch the harness, then rerun teardown.

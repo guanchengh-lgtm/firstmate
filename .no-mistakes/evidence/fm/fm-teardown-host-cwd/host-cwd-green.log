@@ -1,0 +1,10 @@
+ok - locked bootstrap reports ancestor cwd for copy with failed tool none
+ok - read-only bootstrap reports ancestor cwd for copy with failed tool none
+ok - locked bootstrap reports ancestor cwd for outside with failed tool none
+ok - read-only bootstrap reports ancestor cwd for outside with failed tool none
+ok - locked bootstrap reports ancestor cwd for copy with failed tool ps
+ok - read-only bootstrap reports ancestor cwd for copy with failed tool ps
+ok - locked bootstrap reports ancestor cwd for copy with failed tool lsof
+ok - read-only bootstrap reports ancestor cwd for copy with failed tool lsof
+ok - locked bootstrap reports ancestor cwd for nested with failed tool git
+ok - read-only bootstrap reports ancestor cwd for nested with failed tool git

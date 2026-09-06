@@ -1,0 +1,4 @@
+warning: You appear to have cloned an empty repository.
+not ok - force-arg: refusal lost its wording (missing: 'never take --force')
+--- output ---
+

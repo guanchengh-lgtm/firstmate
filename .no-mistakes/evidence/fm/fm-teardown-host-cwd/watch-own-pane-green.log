@@ -1,0 +1,6 @@
+ok - herdr own-pane selection preserves unrelated worker stale escalation
+ok - collision own-pane selection preserves unrelated worker stale escalation
+ok - override own-pane selection preserves unrelated worker stale escalation
+ok - tmux own-pane selection preserves unrelated worker stale escalation
+ok - fallback own-pane selection preserves unrelated worker stale escalation
+ok - event subscription excludes only the own pane

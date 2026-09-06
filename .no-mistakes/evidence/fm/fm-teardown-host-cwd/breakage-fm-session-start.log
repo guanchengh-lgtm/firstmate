@@ -1,0 +1,4 @@
+not ok - locked bootstrap omitted the real worktree-rooted parent (missing: 'HOST_CWD: process 76305 (')
+--- output ---
+MISSING: tasks-axi (install: npm install -g tasks-axi)
+MISSING: quota-axi (install: npm install -g quota-axi)
