@@ -547,6 +547,7 @@ run_teardown() {
   # home's backlog item itself; without it $DATA would resolve to the real
   # repo's own home and a test could mutate live records.
   FM_ROOT_OVERRIDE="$ROOT" \
+  FM_HOME="$case_dir" \
   FM_DATA_OVERRIDE="$case_dir/data" \
   FM_STATE_OVERRIDE="$case_dir/state" \
   FM_CONFIG_OVERRIDE="$case_dir/config" \
@@ -2743,6 +2744,48 @@ EOF
   pass "a live session host blocks treehouse return while task-owned processes are reaped"
 }
 
+test_host_session_under_tasktmp_is_spared() {
+  local case_dir rc host_pid child_pid i=0
+  case_dir=$(make_case host-session-tasktmp-spared)
+  write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' "tasktmp=$case_dir/tasktmp" >> "$case_dir/state/task-x1.meta"
+  mkdir -p "$case_dir/tasktmp"
+  land_shippable_commit "$case_dir"
+
+  (
+    cd "$case_dir/tasktmp" || exit 1
+    sleep 300 &
+    printf '%s\n' "$!" > "$case_dir/child.pid"
+    wait
+  ) &
+  host_pid=$!
+  disown
+  while [ "$i" -lt 50 ]; do
+    [ -s "$case_dir/child.pid" ] && break
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ -s "$case_dir/child.pid" ] || fail "host-session-tasktmp-spared: host child pid was never recorded"
+  child_pid=$(tr -d '[:space:]' < "$case_dir/child.pid")
+  case "$child_pid" in ''|*[!0-9]*) fail "host-session-tasktmp-spared: host child pid was not numeric" ;; esac
+  printf '%s\n' "$child_pid" > "$case_dir/state/.lock"
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if ! kill -0 "$host_pid" 2>/dev/null || ! kill -0 "$child_pid" 2>/dev/null; then
+    kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
+    fail "host-session-tasktmp-spared: live session host or child was reaped"
+  fi
+  kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
+  expect_code 1 "$rc" "host-session-tasktmp-spared: teardown should refuse the tasktmp removal"
+  assert_grep "cwd=$case_dir/tasktmp" "$case_dir/stderr" "host-session-tasktmp-spared: cwd missing"
+  assert_grep "Clear it: exit that session or relocate its host shell out of $case_dir/tasktmp" "$case_dir/stderr" \
+    "host-session-tasktmp-spared: remedy named the wrong protected root"
+  assert_present "$case_dir/state/task-x1.meta" "host-session-tasktmp-spared: teardown removed task metadata"
+  pass "a live session host under tasktmp receives the matching relocation remedy"
+}
+
 test_malformed_lock_records_do_not_form_a_pid() {
   local case_dir rc sleeper_pid first_record second_record
   case_dir=$(make_case malformed-lock-records)
@@ -4038,6 +4081,7 @@ test_leftover_then_sync_retains_unique_gone_branch() {
 
 if [ "${1:-}" = host-cwd ]; then
   test_host_session_under_worktree_is_spared
+  test_host_session_under_tasktmp_is_spared
   exit 0
 fi
 
@@ -4101,6 +4145,7 @@ test_lsof_error_refuses_before_removal
 test_reused_pid_identity_is_not_force_killed
 test_exec_changed_process_is_still_reaped
 test_host_session_under_worktree_is_spared
+test_host_session_under_tasktmp_is_spared
 test_malformed_lock_records_do_not_form_a_pid
 test_live_lock_identity_failure_refuses
 test_protected_identity_recheck_failure_spares_pid

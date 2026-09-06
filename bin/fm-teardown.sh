@@ -1751,6 +1751,27 @@ ${TASK_SPARED_PIDS:-}
 EOF
 }
 
+task_render_spared_roots() {  # <dir>...
+  local dir pid cwd separator=
+  for dir in "$@"; do
+    [ -n "$dir" ] || continue
+    while IFS= read -r pid; do
+      [ -n "$pid" ] || continue
+      cwd=${TASK_PID_CWDS[pid]:-}
+      case "$cwd" in
+        "$dir"|"$dir"/*)
+          printf '%s%s' "$separator" "$dir"
+          separator=' and '
+          break
+          ;;
+      esac
+    done <<EOF
+${TASK_SPARED_PIDS:-}
+EOF
+  done
+  [ -n "$separator" ] || printf '<protected root>'
+}
+
 task_report_spared_hosts() {  # <root>
   local root=$1 rendered
   [ -n "${TASK_SPARED_PIDS:-}" ] || return 0
@@ -1759,7 +1780,7 @@ task_report_spared_hosts() {  # <root>
 }
 
 task_refuse_treehouse_return_with_protected_roots() {  # <dir>...
-  local rendered
+  local rendered roots
   TASK_SPARED_PIDS=
   if ! command -v lsof >/dev/null 2>&1; then
     if ! task_load_protected_set; then
@@ -1773,7 +1794,8 @@ task_refuse_treehouse_return_with_protected_roots() {  # <dir>...
   reap_task_pids_or_refuse "$@" || return 1
   [ -n "${TASK_SPARED_PIDS:-}" ] || return 0
   rendered=$(task_render_spared_hosts)
-  echo "REFUSED: protected process(es) for $ID remain rooted in the worktree/tasktmp: $rendered; preserving the worktree/tasktmp for manual inspection or retry. Clear it: exit that session or relocate its host shell out of ${1:-<root>} (start the next firstmate from $FM_HOME), then rerun bin/fm-teardown.sh $ID." >&2
+  roots=$(task_render_spared_roots "$@")
+  echo "REFUSED: protected process(es) for $ID remain rooted in the worktree/tasktmp: $rendered; preserving the worktree/tasktmp for manual inspection or retry. Clear it: exit that session or relocate its host shell out of $roots (start the next firstmate from $FM_HOME), then rerun bin/fm-teardown.sh $ID." >&2
   return 1
 }
 

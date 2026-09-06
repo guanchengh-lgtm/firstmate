@@ -27,8 +27,6 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 BASE_PATH=${FM_TEST_BASE_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}
-# Generic bootstrap fixtures must not inherit the runner's real harness cwd.
-export FM_BOOTSTRAP_HOST_CWD_PID_OVERRIDE=1
 TMP_ROOT=$(fm_test_tmproot fm-bootstrap-tests)
 export FM_BACKEND_CMUX_BUNDLE_BIN="$TMP_ROOT/no-bundled-cmux"
 
@@ -47,6 +45,8 @@ make_fake_toolchain() {
   local dir=$1 fakebin
   fakebin=$(fm_fakebin "$dir")
   fm_fake_exit0 "$fakebin" tmux node chrome-devtools-axi
+  printf '#!/bin/sh\nexit 1\n' > "$fakebin/ps"
+  chmod +x "$fakebin/ps"
   fm_fake_version_tool "$fakebin" lavish-axi FM_FAKE_LAVISH_AXI_VERSION 0.1.46
   cat > "$fakebin/gh-axi" <<'SH'
 #!/usr/bin/env bash

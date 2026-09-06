@@ -106,6 +106,11 @@ fi
 exit 0
 SH
   chmod +x "$fakebin/no-mistakes"
+  cat > "$fakebin/lsof" <<'SH'
+#!/usr/bin/env bash
+printf 'p%s\nfcwd\nn%s\n' "${FM_FAKE_LSOF_PID:-$$}" "$FM_HOME"
+SH
+  chmod +x "$fakebin/lsof"
   printf '%s\n' manual > "${fakebin%/*}/home-placeholder" 2>/dev/null || true
 }
 
@@ -227,6 +232,10 @@ for argument in "$@"; do
   previous=$argument
 done
 case "$*" in
+  *"ppid="*"comm="*)
+    printf '1 /usr/local/bin/%s\n' "$harness"
+    exit 0
+    ;;
   *"comm="*)
     if [ -z "${FM_FAKE_HARNESS_PID:-}" ] || [ "$pid" = "$FM_FAKE_HARNESS_PID" ] \
       || [ "$pid" = "${FM_FAKE_LIVE_HOLDER_PID:-}" ]; then
@@ -2595,6 +2604,7 @@ test_bootstrap_host_cwd() {
 $rec
 EOF
   make_fake_toolchain "$fakebin"
+  rm -f "$fakebin/lsof"
   printf '%s\n' manual > "$home/config/tasks-backend"
   printf '%s\n' tmux > "$home/config/backend"
   worktree="${root%/*}/copy"

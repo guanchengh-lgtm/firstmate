@@ -44,7 +44,6 @@ status=0
 PATH="$TMP_ROOT/fakebin:$PATH" fm_ancestor_cwd_in_linked_worktree "$$" >/dev/null || status=$?
 [ "$status" = 2 ] || fail 'ps failure not unknown'
 status=0
-# The explicit start-pid seam gives bootstrap fixtures a bounded empty chain.
 fm_ancestor_cwd_in_linked_worktree 1 >/dev/null || status=$?
 [ "$status" = 1 ] || fail 'empty ancestor chain not clean'
 printf '#!/bin/sh\nprintf "1 bash\\n"\n' > "$TMP_ROOT/fakebin/ps"

@@ -154,8 +154,6 @@
 #          restore a tangled primary checkout itself, while an unlocked one is
 #          told to leave that work to the lock holder. Unset/0 (the default)
 #          keeps detect-only meaning unlocked, exactly as before.
-#          FM_BOOTSTRAP_HOST_CWD_PID_OVERRIDE selects the HOST_CWD start pid;
-#          unset detects the harness, while pid 1 selects an empty chain.
 #        fm-bootstrap.sh install <tool>...
 #          Install the named tools (only ones the captain approved).
 set -u
@@ -1437,10 +1435,7 @@ detect_local_tools() {
 # A failed walk names its tool and never claims the ancestry is clean.
 detect_host_cwd() {
   local host result status pid comm cwd
-  host=${FM_BOOTSTRAP_HOST_CWD_PID_OVERRIDE:-}
-  if [ -z "$host" ]; then
-    host=$(fm_harness_ancestry_pid 2>/dev/null) || return 0
-  fi
+  host=$(fm_harness_ancestry_pid 2>/dev/null) || return 0
   status=0
   result=$(fm_ancestor_cwd_in_linked_worktree "$host") || status=$?
   case "$status" in
