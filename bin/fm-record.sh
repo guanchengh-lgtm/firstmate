@@ -67,6 +67,7 @@ require_lock_libs() {
 
 LOCK_PATH=
 LOCK_HELD=0
+INDEX_LOCK_HELD=0
 HASH_TOOL=
 GIT_DIR_ABS=
 RECORD_WORK=
@@ -140,6 +141,9 @@ release_lock() {
 
 # shellcheck disable=SC2329 # Invoked from trap EXIT.
 on_exit() {
+  if [ "$INDEX_LOCK_HELD" -eq 1 ]; then
+    rm -f "$GIT_DIR_ABS/index.lock"
+  fi
   if [ -n "${CAND_WORK:-}" ] && [ -d "${CAND_WORK:-}" ]; then
     rm -rf "${CAND_WORK%/*}"
   fi
@@ -194,6 +198,25 @@ binding_state() {
   printf 'present\n'
 }
 
+validate_push_destinations() {
+  local origin_url push_urls url
+  origin_url=$(sed -n '1p' "$GIT_DIR_ABS/record-origin")
+  push_urls=$(git --git-dir="$GIT_DIR_ABS" remote get-url --push --all origin) \
+    || die 8 "cannot resolve the Record push destination"
+  [ -n "$push_urls" ] || die 8 "Record push destination is empty"
+  while IFS= read -r url; do
+    [ "$url" = "$origin_url" ] || die 8 "push URL does not match the Record binding"
+  done <<< "$push_urls"
+}
+
+validate_hook_path() {
+  local hook_dir
+  hook_dir=$(git -C "$RECORD_WORK" --git-dir="$GIT_DIR_ABS" rev-parse --path-format=absolute --git-path hooks) \
+    || die 8 "cannot resolve the Record hook directory"
+  [ "$hook_dir" = "$GIT_DIR_ABS/hooks" ] && [ ! -L "$hook_dir" ] \
+    || die 8 "Record hooks must use the repository's .git/hooks directory"
+}
+
 validate_binding() {
   local toplevel physical_data physical_home physical_top origin_url remotes branch
   [ ! -L "$DATA" ] || die 8 "Record root $DATA must not be a symlink"
@@ -219,6 +242,8 @@ validate_binding() {
   [ "$remotes" = origin ] || die 8 "Record must have exactly one remote named origin"
   [ "$(git --git-dir="$GIT_DIR_ABS" remote get-url origin)" = "$origin_url" ] \
     || die 8 "origin URL does not match the Record binding"
+  validate_push_destinations
+  validate_hook_path
   if [ -f "$GIT_DIR_ABS/MERGE_HEAD" ]; then
     die 8 "Record has an incomplete merge"
   fi
@@ -309,7 +334,8 @@ list_state_sources() {
     case "$path" in
       *.inbox)
         [ -d "$path" ] && [ ! -L "$path" ] || return 1
-        find "$path" \( -type f -o -type l \) -print > "$out.inbox" || return 1
+        find "$path" \( -name .seq.lock -o -name '.seq.lock.owner.*' \) -prune -o \
+          \( -type f -o -type l \) -print > "$out.inbox" || return 1
         cat "$out.inbox" || return 1
         ;;
       *)
@@ -537,20 +563,28 @@ real_index_is_clean() {
 }
 
 commit_candidate() { # <reason>
-  local reason=$1 branch expected message
+  local reason=$1 branch expected message tree
   expected=$(sed -n '1p' "$GIT_DIR_ABS/record-branch")
   branch=$(git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" symbolic-ref -q --short HEAD) \
     || die 8 "Record HEAD changed during the transaction"
   [ "$branch" = "$expected" ] || die 8 "Record branch changed during the transaction"
+  (set -C; : > "$GIT_DIR_ABS/index.lock") 2>/dev/null || return 8
+  INDEX_LOCK_HELD=1
   real_index_is_clean || die 8 "unexpected user staging is present; refusing to overwrite the index"
   if trees_equal; then
+    rm -f "$GIT_DIR_ABS/index.lock" || return 8
+    INDEX_LOCK_HELD=0
     publish_owned_live_files || return 8
     return 1
   fi
+  tree=$(GIT_INDEX_FILE="$CAND_INDEX" git --git-dir="$GIT_DIR_ABS" write-tree) || return 8
+  GIT_INDEX_FILE="$CAND_WORK/../publish.index" git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" \
+    read-tree --index-output="$GIT_DIR_ABS/index.lock" "$tree" || return 8
   message="record: ${reason}"
   GIT_INDEX_FILE="$CAND_INDEX" git --git-dir="$GIT_DIR_ABS" --work-tree="$CAND_WORK" \
     commit --quiet --no-verify -m "$message" || return 8
-  git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" read-tree HEAD || return 8
+  mv -f "$GIT_DIR_ABS/index.lock" "$GIT_DIR_ABS/index" || return 8
+  INDEX_LOCK_HELD=0
   publish_owned_live_files || return 8
   return 0
 }
@@ -690,6 +724,7 @@ run_transaction() { # tick|checkpoint <reason> try|wait|required
   fi
   class=
   rc=0
+  validate_push_destinations
   class=$(push_once) || rc=$?
   pending=$(pending_commit_count)
   rm -f "$inv"
@@ -740,6 +775,19 @@ EOF
   chmod 755 "$hook_dir/pre-commit"
 }
 
+validate_job_prerequisites() {
+  local code_root=$1 tool toplevel
+  for tool in gitleaks git-lfs restic rclone; do
+    command -v "$tool" >/dev/null 2>&1 || die 8 "Record job requires $tool on PATH"
+  done
+  [ -x "$code_root/bin/fm-record.sh" ] || die 8 "Record code root must contain executable bin/fm-record.sh"
+  [ -d "$code_root/.git" ] && [ ! -L "$code_root/.git" ] \
+    || die 8 "Record job requires a primary code checkout, not a disposable worktree"
+  toplevel=$(git -C "$code_root" rev-parse --show-toplevel 2>/dev/null) \
+    || die 8 "Record code root is not a Git checkout"
+  [ "$toplevel" = "$code_root" ] || die 8 "Record code root must be the checkout root"
+}
+
 cmd_setup() {
   local init=0 write_plist=0 bootstrap=0 origin='' branch=$EXPECTED_BRANCH code_root=$FM_ROOT attr_tmp
   while [ "$#" -gt 0 ]; do
@@ -755,6 +803,10 @@ cmd_setup() {
     esac
   done
   refuse_git_overrides
+  if [ "$write_plist" -eq 1 ] || [ "$bootstrap" -eq 1 ]; then
+    code_root=$(physical_dir "$code_root") || die 8 "cannot resolve the Record code root"
+    validate_job_prerequisites "$code_root"
+  fi
   [ -d "$DATA" ] || mkdir -p "$DATA"
   if [ "$init" -eq 1 ]; then
     [ -n "$origin" ] || die 2 "setup --init requires --origin"
@@ -769,6 +821,7 @@ cmd_setup() {
   esac
   GIT_DIR_ABS=$(physical_dir "$DATA/.git")
   RECORD_WORK=$(physical_dir "$DATA")
+  validate_hook_path
   printf '%s\n' "${origin:-$(git --git-dir="$GIT_DIR_ABS" remote get-url origin)}" > "$GIT_DIR_ABS/record-origin"
   printf '%s\n' "$branch" > "$GIT_DIR_ABS/record-branch"
   write_gitignore "$RECORD_WORK/.gitignore"
@@ -779,11 +832,14 @@ cmd_setup() {
   mv -f "$attr_tmp" "$RECORD_WORK/.gitattributes"
   git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" lfs install --local --force >/dev/null
   install_hooks "$GIT_DIR_ABS/hooks" "$(physical_dir "$code_root")"
+  if [ "$write_plist" -eq 1 ] || [ "$bootstrap" -eq 1 ]; then
+    validate_binding
+  fi
   if [ "$write_plist" -eq 1 ]; then
     write_record_plist "$(physical_dir "$code_root")"
   fi
   if [ "$bootstrap" -eq 1 ]; then
-    bootstrap_record_job
+    bootstrap_record_job "$code_root"
   fi
   emit unchanged detail=setup
   exit 0
@@ -822,9 +878,24 @@ write_record_plist() {
 }
 
 bootstrap_record_job() {
-  local plist=${FM_RECORD_PLIST:-$HOME/Library/LaunchAgents/com.firstmate.record-tick.plist}
+  local code_root=$1 plist=${FM_RECORD_PLIST:-$HOME/Library/LaunchAgents/com.firstmate.record-tick.plist}
   [ -f "$plist" ] || die 8 "Record LaunchAgent plist is missing; pass --write-plist"
   grep -Fq 'firstmate-record-tick-v1' "$plist" || die 8 "Record LaunchAgent plist is not owned by setup"
+  python3 - "$plist" "$code_root" "$(physical_dir "$FM_HOME")" <<'PY' \
+    || die 8 "Record LaunchAgent does not match the validated setup; use --write-plist"
+import os
+import plistlib
+import sys
+try:
+    with open(sys.argv[1], "rb") as source:
+        job = plistlib.load(source)
+    if (job["ProgramArguments"] != [sys.argv[2] + "/bin/fm-record.sh", "tick"]
+            or job["EnvironmentVariables"]["FM_HOME"] != sys.argv[3]
+            or job["EnvironmentVariables"]["PATH"] != os.environ["PATH"]):
+        sys.exit(1)
+except Exception:
+    sys.exit(1)
+PY
   launchctl bootout "gui/$UID/com.firstmate.record-tick" >/dev/null 2>&1 || true
   launchctl bootstrap "gui/$UID" "$plist"
 }

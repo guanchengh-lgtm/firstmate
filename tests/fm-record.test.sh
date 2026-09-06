@@ -169,6 +169,72 @@ test_git_overrides_and_wrong_root_refuse() {
   pass "fm-record: inherited Git overrides and a wrong root refuse"
 }
 
+test_effective_push_destinations_must_match_binding() {
+  local home origin other mode before
+  IFS=$(printf '\t') read -r home origin < <(new_home push-destinations)
+  setup_record "$home" "$origin"
+  printf 'before\n' > "$home/data/captain.md"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'push destination seed'
+  before=$(git -C "$home/data" rev-parse HEAD)
+  printf 'private fixture\n' > "$home/data/captain.md"
+  other="$TMP_ROOT/push-destinations/other.git"
+  git init --quiet --bare --initial-branch=main "$other"
+  for mode in pushurl multiple rewrite; do
+    case "$mode" in
+      pushurl) git -C "$home/data" config remote.origin.pushurl "file://$other" ;;
+      multiple)
+        git -C "$home/data" config --add remote.origin.pushurl "file://$origin"
+        git -C "$home/data" config --add remote.origin.pushurl "file://$other"
+        ;;
+      rewrite) git -C "$home/data" config "url.file://$other.pushInsteadOf" "file://$origin" ;;
+    esac
+    run_rec "$home" tick
+    expect_code 8 "$RC" "redirected push $mode"
+    assert_contains "$OUT" 'push URL does not match' "redirected push $mode message"
+    [ "$(git -C "$home/data" rev-parse HEAD)" = "$before" ] || fail 'redirected push advanced HEAD'
+    [ -z "$(git --git-dir="$other" for-each-ref)" ] || fail 'unbound remote received Record contents'
+    case "$mode" in
+      rewrite) git -C "$home/data" config --remove-section "url.file://$other" ;;
+      *) git -C "$home/data" config --unset-all remote.origin.pushurl ;;
+    esac
+  done
+  git -C "$home/data" config remote.origin.pushurl "file://$origin"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'bound explicit push URL'
+  [ "$(git --git-dir="$origin" show main:captain.md)" = 'private fixture' ] || fail 'bound push failed'
+  pass 'fm-record: every effective push destination must match the binding'
+}
+
+test_redirected_hooks_refuse_setup_and_transactions() {
+  local home origin hooks global
+  IFS=$(printf '\t') read -r home origin < <(new_home hook-path)
+  git init --quiet --initial-branch=main "$home/data"
+  git -C "$home/data" remote add origin "file://$origin"
+  hooks="$home/redirected-hooks"
+  mkdir -p "$hooks"
+  git -C "$home/data" config core.hooksPath "$hooks"
+  run_rec "$home" setup --code-root "$ROOT"
+  expect_code 8 "$RC" 'setup with redirected hooks'
+  [ ! -e "$home/data/.git/hooks/pre-commit" ] || fail 'refused setup installed a hook'
+  [ ! -e "$hooks/pre-push" ] || fail 'refused setup installed LFS in redirected hooks'
+  git -C "$home/data" config --unset core.hooksPath
+  run_rec "$home" setup --code-root "$ROOT"
+  expect_code 0 "$RC" 'setup with default hooks'
+  printf 'safe\n' > "$home/data/captain.md"
+  git -C "$home/data" config core.hooksPath "$hooks"
+  run_rec "$home" tick
+  expect_code 8 "$RC" 'tick with redirected local hooks'
+  git -C "$home/data" config --unset core.hooksPath
+  global="$home/global.gitconfig"
+  git config --file "$global" core.hooksPath "$hooks"
+  GIT_CONFIG_GLOBAL="$global" run_rec "$home" checkpoint --reason stow
+  expect_code 8 "$RC" 'checkpoint with redirected global hooks'
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'checkpoint after restoring hook path'
+  pass 'fm-record: setup and transactions refuse redirected hook directories'
+}
+
 test_busy_tick_when_lock_is_held() {
   local home origin lock pid
   IFS=$(printf '\t') read -r home origin < <(new_home busy)
@@ -259,7 +325,7 @@ test_scan_blocks_commit_and_prints_no_secret() {
 }
 
 test_mirror_state_subset_and_removal() {
-  local home origin
+  local home origin inbox owner
   IFS=$(printf '\t') read -r home origin < <(new_home mirror)
   setup_record "$home" "$origin"
   printf 'working: start\n' > "$home/state/task-a.status"
@@ -267,6 +333,13 @@ test_mirror_state_subset_and_removal() {
   mkdir -p "$home/state/task-a.inbox/handled"
   printf 'hello\n' > "$home/state/task-a.inbox/001.msg"
   printf 'ack\n' > "$home/state/task-a.inbox/handled/001.msg"
+  inbox="$home/state/task-a.inbox"
+  owner="$inbox/.seq.lock.owner.fixture"
+  mkdir -p "$owner" "$inbox/.seq.lock.owner.orphan"
+  printf '99999999\n' > "$owner/pid"
+  printf '99999998\n' > "$inbox/.seq.lock.owner.orphan/pid"
+  ln -s "$owner" "$inbox/.seq.lock"
+  printf 'durable\n' > "$inbox/.seq.lock-not-runtime.msg"
   printf 'pid\n' > "$home/state/.watch.lock-not-a-lock"
   run_rec "$home" checkpoint --reason session-start
   expect_code 0 "$RC" 'mirror checkpoint'
@@ -274,6 +347,13 @@ test_mirror_state_subset_and_removal() {
     || fail 'status was not mirrored'
   git --git-dir="$home/data/.git" --work-tree="$home/data" cat-file -e HEAD:.record-state/task-a.inbox/handled/001.msg \
     || fail 'handled inbox was not mirrored'
+  [ "$(git -C "$home/data" ls-tree -r --name-only HEAD -- .record-state/task-a.inbox)" = ".record-state/task-a.inbox/.seq.lock-not-runtime.msg
+.record-state/task-a.inbox/001.msg
+.record-state/task-a.inbox/handled/001.msg" ] || fail 'mirror included runtime locks or omitted durable messages'
+  [ -L "$inbox/.seq.lock" ] && [ -f "$owner/pid" ] || fail 'checkpoint changed live lock objects'
+  rm "$inbox/.seq.lock"
+  mkdir "$inbox/.seq.lock"
+  printf '99999997\n' > "$inbox/.seq.lock/pid"
   rm -f "$home/state/task-a.status"
   run_rec "$home" checkpoint --reason stow
   expect_code 0 "$RC" 'mirror removal'
@@ -418,16 +498,31 @@ test_divergence_does_not_force() {
 }
 
 test_job_plist_has_sixty_seconds_and_no_keepalive() {
-  local home origin plist
+  local home origin plist code_root fakebin tool
   IFS=$(printf '\t') read -r home origin < <(new_home job)
   setup_record "$home" "$origin"
   plist="$TMP_ROOT/job/record.plist"
   mkdir -p "$(dirname "$plist")" "$TMP_ROOT/job/logs"
-  HOME="$TMP_ROOT/empty-home" \
-    FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
-    FM_RECORD_PLIST="$plist" FM_RECORD_LOG_DIR="$TMP_ROOT/job/logs" \
-    "$RECORD" setup --write-plist --code-root "$ROOT" >/dev/null
-  python3 - "$plist" "$ROOT" "$home" "$TMP_ROOT/job/logs" <<'PYTEST' || fail 'incorrect LaunchAgent configuration'
+  code_root="$TMP_ROOT/job/code"
+  mkdir -p "$code_root"
+  cp -R "$ROOT/bin" "$code_root/bin"
+  git init --quiet --initial-branch=main "$code_root"
+  fakebin=$(fm_fakebin "$home")
+  for tool in restic rclone; do
+    printf '#!/bin/sh\nexit 0\n' > "$fakebin/$tool"
+    chmod +x "$fakebin/$tool"
+  done
+  cat > "$fakebin/launchctl" <<'SH'
+#!/bin/sh
+printf '%s\n' "$*" >> "$FM_TEST_LAUNCHCTL_LOG"
+SH
+  chmod +x "$fakebin/launchctl"
+  FM_RECORD_PLIST="$plist" FM_RECORD_LOG_DIR="$TMP_ROOT/job/logs" \
+    FM_TEST_LAUNCHCTL_LOG="$home/launchctl.log" PATH="$fakebin:$PATH" \
+    run_rec "$home" setup --write-plist --bootstrap --code-root "$code_root"
+  expect_code 0 "$RC" 'validated job setup and bootstrap'
+  assert_contains "$(cat "$home/launchctl.log")" "bootstrap gui/$UID $plist" 'explicit bootstrap'
+  python3 - "$plist" "$code_root" "$home" "$TMP_ROOT/job/logs" <<'PYTEST' || fail 'incorrect LaunchAgent configuration'
 import plistlib
 import sys
 with open(sys.argv[1], "rb") as stream:
@@ -441,7 +536,78 @@ assert job["RunAtLoad"] is True
 assert job["StandardOutPath"] == sys.argv[4] + "/firstmate-record-tick.stdout.log"
 assert job["StandardErrorPath"] == sys.argv[4] + "/firstmate-record-tick.stderr.log"
 PYTEST
-  pass "fm-record: the LaunchAgent plist is a 60-second sibling job"
+  cp "$home/launchctl.log" "$home/launchctl.before"
+  python3 - "$plist" <<'PYTEST'
+import plistlib
+import sys
+with open(sys.argv[1], "rb") as source:
+    job = plistlib.load(source)
+job["ProgramArguments"][0] += ".missing"
+with open(sys.argv[1], "wb") as dest:
+    dest.write(plistlib.dumps(job).replace(b"<plist", b"<!-- firstmate-record-tick-v1 -->\n<plist", 1))
+PYTEST
+  FM_RECORD_PLIST="$plist" FM_RECORD_LOG_DIR="$TMP_ROOT/job/logs" \
+    FM_TEST_LAUNCHCTL_LOG="$home/launchctl.log" PATH="$fakebin:$PATH" \
+    run_rec "$home" setup --bootstrap --code-root "$code_root"
+  expect_code 8 "$RC" 'bootstrap with changed executable'
+  cmp -s "$home/launchctl.before" "$home/launchctl.log" || fail 'invalid job reached launchctl'
+  pass "fm-record: the LaunchAgent plist is a validated 60-second sibling job"
+}
+
+test_job_preflight_refuses_missing_tools_and_disposable_code() {
+  local home origin code_root plist fakebin missing tool flag linked
+  IFS=$(printf '\t') read -r home origin < <(new_home job-preflight)
+  setup_record "$home" "$origin"
+  code_root="$TMP_ROOT/job-preflight/code"
+  mkdir -p "$code_root/bin"
+  cp "$RECORD" "$code_root/bin/fm-record.sh"
+  git init --quiet --initial-branch=main "$code_root"
+  plist="$home/record.plist"
+  for missing in gitleaks git-lfs restic rclone; do
+    fakebin="$home/path-$missing"
+    mkdir -p "$fakebin"
+    for tool in bash dirname git gitleaks git-lfs restic rclone; do
+      [ "$tool" != "$missing" ] || continue
+      case "$tool" in
+        restic | rclone)
+          printf '#!/bin/sh\nexit 0\n' > "$fakebin/$tool"
+          chmod +x "$fakebin/$tool"
+          ;;
+        *) ln -s "$(command -v "$tool")" "$fakebin/$tool" ;;
+      esac
+    done
+    for flag in --write-plist --bootstrap; do
+      FM_RECORD_PLIST="$plist" FM_RECORD_LOG_DIR="$home/logs" PATH="$fakebin" \
+        run_rec "$home" setup "$flag" --code-root "$code_root"
+      expect_code 8 "$RC" "job without $missing $flag"
+      assert_contains "$OUT" "requires $missing on PATH" 'missing job dependency'
+      [ ! -e "$plist" ] || fail 'missing dependency still wrote a job'
+    done
+  done
+  fakebin=$(fm_fakebin "$home")
+  for tool in restic rclone; do
+    printf '#!/bin/sh\nexit 0\n' > "$fakebin/$tool"
+    chmod +x "$fakebin/$tool"
+  done
+  mkdir "$home/empty-code"
+  FM_RECORD_PLIST="$plist" PATH="$fakebin:$PATH" \
+    run_rec "$home" setup --write-plist --code-root "$home/empty-code"
+  expect_code 8 "$RC" 'job without executable'
+  assert_contains "$OUT" 'must contain executable' 'missing job executable'
+  git -C "$code_root" add bin/fm-record.sh
+  git -C "$code_root" commit --quiet -m 'Record job fixture'
+  linked="$TMP_ROOT/job-preflight/linked"
+  git -C "$code_root" worktree add --quiet --detach "$linked"
+  FM_RECORD_PLIST="$plist" PATH="$fakebin:$PATH" \
+    run_rec "$home" setup --write-plist --code-root "$linked"
+  expect_code 8 "$RC" 'job with disposable code'
+  assert_contains "$OUT" 'primary code checkout' 'disposable job code'
+  git -C "$home/data" remote add extra "file://$origin"
+  FM_RECORD_PLIST="$plist" PATH="$fakebin:$PATH" \
+    run_rec "$home" setup --write-plist --code-root "$code_root"
+  expect_code 8 "$RC" 'job with invalid Record binding'
+  [ ! -e "$plist" ] || fail 'invalid setup wrote a job'
+  pass 'fm-record: job preflight requires tools, stable code, and a valid binding'
 }
 
 test_old_data_prefix_history_stays_an_ancestor() {
@@ -542,7 +708,64 @@ SH
   FM_TEST_REAL_GIT=$(command -v git) PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason teardown --required
   expect_code 9 "$RC" 'required index publication failure'
   assert_not_contains "$OUT" 'committed-local' 'failed publication reported success'
+  [ "$(git -C "$home/data" rev-parse HEAD)" = "$before" ] || fail 'failed index preparation advanced HEAD'
+  [ ! -e "$home/data/.git/index.lock" ] || fail 'failed checkpoint retained its index lock'
   pass "fm-record: required checkpoints refuse commit and publication failures"
+}
+
+test_index_lock_protects_commit_and_publication() {
+  local home origin before fakebin
+  IFS=$(printf '\t') read -r home origin < <(new_home index-lock)
+  setup_record "$home" "$origin"
+  printf 'before\n' > "$home/data/captain.md"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'index lock seed'
+  before=$(git -C "$home/data" rev-parse HEAD)
+  cp "$home/data/.git/index" "$home/index.before"
+  printf 'foreign lock\n' > "$home/data/.git/index.lock"
+  printf 'after\n' > "$home/data/captain.md"
+  run_rec "$home" checkpoint --reason teardown --required
+  expect_code 9 "$RC" 'checkpoint with foreign index lock'
+  [ "$(git -C "$home/data" rev-parse HEAD)" = "$before" ] || fail 'locked index allowed HEAD advancement'
+  cmp -s "$home/index.before" "$home/data/.git/index" || fail 'locked index changed'
+  [ "$(cat "$home/data/.git/index.lock")" = 'foreign lock' ] || fail 'foreign index lock changed'
+  rm "$home/data/.git/index.lock"
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/git" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [ "$arg" = commit ]; then
+    printf 'later edit\n' > "$FM_HOME/data/later.md"
+    env -u GIT_INDEX_FILE "$FM_TEST_REAL_GIT" -C "$FM_HOME/data" add later.md >/dev/null 2>&1
+    printf '%s\n' "$?" > "$FM_HOME/competing-add.status"
+  fi
+done
+exec "$FM_TEST_REAL_GIT" "$@"
+SH
+  cat > "$fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [ "$arg" = "$FM_HOME/data/.git/index.lock" ]; then
+    "$FM_TEST_REAL_GIT" -C "$FM_HOME/data" add later.md >/dev/null 2>&1
+    printf '%s\n' "$?" > "$FM_HOME/publication-add.status"
+  fi
+done
+exec "$FM_TEST_REAL_MV" "$@"
+SH
+  chmod +x "$fakebin/git" "$fakebin/mv"
+  FM_TEST_REAL_GIT=$(command -v git) FM_TEST_REAL_MV=$(command -v mv) PATH="$fakebin:$PATH" \
+    run_rec "$home" checkpoint --reason teardown --required
+  expect_code 0 "$RC" 'checkpoint after foreign lock release'
+  [ "$(cat "$home/competing-add.status")" != 0 ] || fail 'manual staging raced the commit'
+  [ "$(cat "$home/publication-add.status")" != 0 ] || fail 'manual staging raced index publication'
+  [ ! -e "$home/data/.git/index.lock" ] || fail 'checkpoint retained its index lock'
+  git -C "$home/data" diff --cached --quiet || fail 'published index differs from HEAD'
+  [ "$(git -C "$home/data" show HEAD:captain.md)" = after ] || fail 'checkpoint lost the snapshot'
+  [ "$(cat "$home/data/later.md")" = 'later edit' ] || fail 'checkpoint lost later work'
+  if git -C "$home/data" cat-file -e HEAD:later.md 2>/dev/null; then
+    fail 'checkpoint included work created after scanning'
+  fi
+  pass 'fm-record: the Git index lock protects the commit and index publication'
 }
 
 test_inventory_failures_refuse_partial_snapshots() {
@@ -854,6 +1077,8 @@ test_disabled_home_does_not_need_hash_tools
 test_setup_and_first_tick_commit_and_push
 test_unchanged_ticks_make_no_new_commit
 test_git_overrides_and_wrong_root_refuse
+test_effective_push_destinations_must_match_binding
+test_redirected_hooks_refuse_setup_and_transactions
 test_busy_tick_when_lock_is_held
 test_abandoned_lock_is_recovered
 test_unsettled_candidate_is_not_committed
@@ -864,10 +1089,12 @@ test_lfs_text_threshold_and_no_oscillation
 test_push_failure_keeps_local_commit
 test_divergence_does_not_force
 test_job_plist_has_sixty_seconds_and_no_keepalive
+test_job_preflight_refuses_missing_tools_and_disposable_code
 test_old_data_prefix_history_stays_an_ancestor
 test_pre_commit_hook_blocks_manual_commit
 test_required_checkpoint_times_out_when_lock_is_live
 test_commit_and_publication_failures_refuse
+test_index_lock_protects_commit_and_publication
 test_inventory_failures_refuse_partial_snapshots
 test_frozen_bytes_must_match_the_settled_inventory
 test_cleanup_keeps_the_lock_until_candidates_are_removed
