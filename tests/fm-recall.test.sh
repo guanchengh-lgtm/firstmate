@@ -48,22 +48,6 @@ write_decision() {
   } > "$root/data/decisions/$slug.md"
 }
 
-expected_key() {
-  local raw=$1
-  case "$raw" in
-    decisions/*.md) printf '%s\n' "${raw#decisions/}"; printf '%s\n' "${raw%.md}" | sed 's#^decisions/##' ;;
-    *) printf '%s\n' "$raw" ;;
-  esac
-}
-
-probe_expected_id() {
-  local raw=$1
-  case "$raw" in
-    decisions/*.md) printf '%s\n' "$(basename "$raw" .md)" ;;
-    *) printf '%s\n' "$raw" ;;
-  esac
-}
-
 seed_probe_corpus() {
   local root=$1
   mkdir -p "$root/data/decisions"
@@ -276,7 +260,8 @@ test_deadline_is_unavailable_not_empty_success() {
     printf '%s\n' "$out" | python3 -c '
 import json,sys
 p=json.load(sys.stdin)
-assert p["status"] in ("ok","empty","unavailable"), p
+assert p["status"] == "ok", p
+assert any(h["id"] == "real" for h in p.get("hits") or []), p
 '
   fi
   pass "fm-recall.sh: a tight deadline stays bounded and never pretends to be empty success"
@@ -296,22 +281,6 @@ p=json.load(sys.stdin)
 assert p.get("partial_input") is True or any("partial-input" in d for d in p.get("diagnostics") or []), p
 '
   pass "fm-recall.sh: oversized task body emits a partial-input diagnostic"
-}
-
-expected_ids_for_row() {
-  local mode=$1 disp=$2 prior=$3 raw ids=""
-  if [ "$mode" = A ]; then
-    raw="$disp,$prior"
-  else
-    raw="$prior"
-  fi
-  IFS=,
-  for item in $raw; do
-    [ -n "$item" ] || continue
-    ids="$ids $(probe_expected_id "$item")"
-  done
-  unset IFS
-  printf '%s\n' "$ids"
 }
 
 test_thirteen_probe_floors() {

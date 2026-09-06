@@ -691,7 +691,7 @@ def load_archive(corpus):
         corpus.apply_status_rules(
             doc, corpus.statuses.get(canonical), meta_status, sidecar, done_status
         )
-        corpus.add(doc)
+        doc = corpus.add(doc)
         if task_id != canonical:
             doc.aliases.append(task_id)
 
@@ -848,7 +848,7 @@ def load_orphan_reports(corpus):
         corpus.apply_status_rules(
             doc, corpus.statuses.get(canonical), meta_status, sidecar, None
         )
-        corpus.add(doc)
+        doc = corpus.add(doc)
         if name != canonical:
             doc.aliases.append(name)
 
@@ -1085,7 +1085,10 @@ def extract_identities(text, root):
 def render_session_batch(queries, ranked, token_cap, now):
     chosen = [[] for _ in queries]
     used = set()
-    omitted = 0
+    rejected = set()
+
+    def omitted_count():
+        return len(rejected - used)
 
     def block_text():
         lines = [
@@ -1100,10 +1103,11 @@ def render_session_batch(queries, ranked, token_cap, now):
             lines.append("### %s" % query["id"])
             for _score, doc in hits:
                 lines.append(format_pointer(doc, now=now))
-        if omitted:
+        dropped = omitted_count()
+        if dropped:
             lines.append(
                 "(omitted %s lowest-ranked pointer(s) to stay within the token cap)"
-                % omitted
+                % dropped
             )
         text = "\n".join(lines)
         if text:
@@ -1129,13 +1133,13 @@ def render_session_batch(queries, ranked, token_cap, now):
             text = block_text()
             if token_cap is not None and estimated_tokens(text) > token_cap:
                 chosen[index] = previous
-                omitted += 1
+                rejected.add(pick[1].identity.token())
                 continue
             used.add(pick[1].identity.token())
             progressed = True
         if not progressed:
             break
-    return block_text(), chosen, omitted
+    return block_text(), chosen, omitted_count()
 
 
 def run_session_batch_main(args, root, statuses, now, diagnostics):
@@ -1439,7 +1443,7 @@ def main(argv=None):
         "hits": [hit_payload(score, doc, now) for score, doc in used_hits],
         "rendered": rendered,
         "pointer_count": kept_count,
-        "omitted": omitted + max(0, len(hits) - kept_count),
+        "omitted": omitted,
         "bytes": len(rendered.encode("utf-8")),
         "estimated_tokens": estimated_tokens(rendered),
         "partial_input": corpus.partial,

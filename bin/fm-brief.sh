@@ -389,7 +389,11 @@ while i < len(lines):
             i += 1
         end = i
         continue
-    if start is None and (stripped.startswith("# Herdr ") or stripped == "# Setup"):
+    if (
+        start is None
+        and insert_at == len(lines)
+        and (stripped.startswith("# Herdr ") or stripped == "# Setup")
+    ):
         insert_at = i
     i += 1
 if start is not None:
@@ -517,8 +521,12 @@ PY
   else
     printf '%s' "$rendered" > "$block_tmp"
   fi
-  if ! splice_and_receipt "$block_tmp" "$result_tmp" emitted; then
+  if splice_and_receipt "$block_tmp" "$result_tmp" emitted; then
+    rc=0
+  else
     rc=$?
+  fi
+  if [ "$rc" -ne 0 ]; then
     if [ "$rc" -eq 3 ]; then
       echo "error: could not replace the recalled-pointers section" >&2
       rm -f "$task_tmp" "$result_tmp" "$result_tmp.err" "$pre_tmp" "$block_tmp"

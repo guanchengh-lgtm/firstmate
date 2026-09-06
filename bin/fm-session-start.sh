@@ -580,7 +580,7 @@ print_status_tail() {
   while IFS= read -r line || [ -n "$line" ]; do
     fm_cap_line "$line"
     if [ -n "${SESSION_STATUS_EMITTED:-}" ]; then
-      printf '%s\n' "$line" >> "$SESSION_STATUS_EMITTED"
+      printf '%s\n' "$FM_LINE_CAP_LINE" >> "$SESSION_STATUS_EMITTED"
     fi
   done < <(tail -n "$STATUS_TAIL" "$status")
 }
