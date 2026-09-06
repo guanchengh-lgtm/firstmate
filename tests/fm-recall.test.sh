@@ -455,10 +455,11 @@ assert ids == ["other-sprocket"], p
 test_symlinked_report_is_skipped_without_traceback() {
   local home mode=${1:-file}
   home="$TMP_ROOT/rename-race-$mode"
-  mkdir -p "$home/data/swapped" "$home/data/dangling" "$home/outside"
+  mkdir -p "$home/data/swapped" "$home/data/dangling" "$home/outside/swapped"
   write_report "$home" real "Widget sprocket real report" 2026-01-01 reported
   write_report "$home" swapped "Widget sprocket inside report" 2026-01-01 reported
   printf '# OUTSIDE_RACE_MARKER widget sprocket\nstatus: reported\n' > "$home/outside/report.md"
+  cp "$home/outside/report.md" "$home/outside/swapped/report.md"
   ln -s "$home/data/dangling/missing.md" "$home/data/dangling/report.md"
   python3 - "$home" "$RECALL" "$mode" <<'PY' || fail "a replacement during recall escaped the Record"
 import json, os, subprocess, sys, time
@@ -479,6 +480,10 @@ def delayed_open(path, flags, *args, **kwargs):
     target = os.fspath(path) == os.environ["RACE_REPORT"]
     if os.fspath(path) == "report.md" and parent is not None:
         target = os.fstat(parent).st_ino == int(os.environ["RACE_PARENT_INODE"])
+    if os.environ["RACE_MODE"] == "root":
+        target = os.fspath(path) == os.path.dirname(os.environ["RACE_REPORT"])
+        if os.fspath(path) == "swapped" and parent is not None:
+            target = os.fstat(parent).st_ino == int(os.environ["RACE_ROOT_INODE"])
     if armed and target:
         armed = False
         Path(os.environ["RACE_READY"]).touch()
@@ -493,7 +498,8 @@ os.open = delayed_open
 ready, resume = home / "ready", home / "resume"
 env = dict(os.environ, FM_HOME=str(home), FM_DATA_OVERRIDE=str(home / "data"),
            FM_RECALL_TIMEOUT="10", PYTHONPATH=str(hook), RACE_REPORT=str(report),
-           RACE_PARENT_INODE=str(report.parent.stat().st_ino),
+           RACE_PARENT_INODE=str(report.parent.stat().st_ino), RACE_MODE=mode,
+           RACE_ROOT_INODE=str((home / "data").stat().st_ino),
            RACE_READY=str(ready), RACE_RESUME=str(resume))
 process = subprocess.Popen([command, "--json", "--title", "widget sprocket", "--surface", "pointers",
                             "--deadline-ms", "5000"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -505,6 +511,9 @@ try:
     if mode == "file":
         report.rename(report.with_suffix(".moved"))
         report.symlink_to(home / "outside/report.md")
+    elif mode == "root":
+        (home / "data").rename(home / "saved-root")
+        (home / "data").symlink_to(home / "outside", target_is_directory=True)
     else:
         report.parent.rename(home / "saved-parent")
         report.parent.symlink_to(home / "outside", target_is_directory=True)
@@ -983,11 +992,74 @@ PY
   pass "alias-cycle exclusions use the corpus canonical identity"
 }
 
+test_archive_body_keeps_contiguous_byte_prefix() {
+  local home filler query
+  home="$TMP_ROOT/archive-body-prefix"
+  mkdir -p "$home/data"
+  for filler in x é; do
+    python3 - "$home/data/done-archive.md" "$filler" <<'PYPREFIX' || fail "could not create the archive prefix fixture"
+from pathlib import Path
+import sys
+Path(sys.argv[1]).write_text("- [x] entry - Widget\nneedle " + sys.argv[2] * 17000 + "\nlateword\n- [x] next - Lateword\n", encoding="utf-8")
+PYPREFIX
+    for query in needle lateword; do
+      recall_json "$home" --title "$query" --surface pointers > "$home/result.json"
+      python3 - "$home/result.json" "$query" <<'PYPREFIX' || fail "archive ranking lost its contiguous prefix"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert [h["id"] for h in p["hits"]] == (["entry"] if sys.argv[2] == "needle" else ["next"]), p
+assert p["partial_input"], p
+PYPREFIX
+    done
+  done
+  pass "archive bodies preserve their contiguous byte prefix and stop at the limit"
+}
+
+test_foreign_citations_do_not_exclude_local_reports() {
+  local home reference token out
+  home="$TMP_ROOT/foreign-citations"
+  write_report "$home" prior Widget 2026-01-01 reported
+  for reference in "$home/other/data/prior/report.md" \
+    "\`$home/other/data/prior/report.md\`" \
+    "[prior]($home/other/data/prior/report.md)" \
+    'https://example.test/data/prior/report.md'; do
+    token=$(printf 'See %s.\n' "$reference" | FM_HOME="$home" "$RECALL" --extract-identities)
+    [ -z "$token" ] || fail "a foreign reference acquired a local identity: $token"
+    out=$(recall_json "$home" --title widget --exclude-identity "$token")
+    printf '%s\n' "$out" | python3 -c '
+import json, sys
+p = json.load(sys.stdin)
+assert [h["id"] for h in p["hits"]] == ["prior"], p
+' || fail "a foreign reference excluded a local report"
+  done
+  pass "complete foreign references never become local exclusions"
+}
+
+test_brief_limit_is_clamped_to_five() {
+  local home id surface
+  home="$TMP_ROOT/brief-limit"
+  for id in a b c d e f; do
+    write_report "$home" "$id" Widget 2026-01-01 held
+  done
+  for surface in brief pointers; do
+    recall_json "$home" --title widget --surface "$surface" --limit 6 --token-budget 1000 > "$home/result.json"
+    python3 - "$home/result.json" "$surface" <<'PYLIMIT' || fail "the brief limit exceeded five"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert len(p["hits"]) == (5 if sys.argv[2] == "brief" else 6), p
+PYLIMIT
+  done
+  pass "brief limits stop at five while pointer limits remain configurable"
+}
+
 if [ "${1:-}" = probes ]; then
   test_thirteen_probe_floors
   exit 0
 fi
 
+test_archive_body_keeps_contiguous_byte_prefix
+test_foreign_citations_do_not_exclude_local_reports
+test_brief_limit_is_clamped_to_five
 test_ranking_head_and_footer_use_byte_bounds
 test_decision_filename_dates_do_not_change_scores
 test_plain_output_discloses_diagnostics
@@ -1024,6 +1096,7 @@ test_oversized_first_archive_row_still_ranks
 test_metadata_status_does_not_change_rank
 test_alias_identity_exclusion_resolves_canonical
 test_parent_directory_swap_never_leaves_the_record
+test_symlinked_report_is_skipped_without_traceback root
 test_corrupted_expectation_exits_nonzero
 
 echo "# all fm-recall tests passed"

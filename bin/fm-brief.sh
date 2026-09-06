@@ -25,8 +25,9 @@
 #   refreshes recall in the same command. Without it, {TASK} remains and the
 #   recall block stays pending.
 #   The scaffold's <!-- firstmate:generated --> line ends the task section.
-#   Without that line, the task extends to file end; refresh appends the
-#   boundary and recall there. Duplicate boundary lines are invalid.
+#   Existing briefs without that line use their generated section headings.
+#   Duplicate boundary lines are invalid. Recall is omitted when no scaffold
+#   boundary exists.
 #   --refresh-recall reads the current title, finalized task section, and named
 #   sources, then atomically replaces only the owned # Recalled pointers
 #   section. It is read-only with respect to Herdr, mode, and role markers.
@@ -133,8 +134,42 @@ usage() {
 
 brief_generated_boundary() {
   awk -v marker="$BRIEF_GENERATED_MARKER" '
+    { line[NR] = $0 }
     $0 == marker { boundary = NR; count++ }
-    END { if (count > 1) exit 1; print count ? boundary : NR + 1 }
+    END {
+      if (count > 1) exit 1
+      if (count == 1) { print boundary; exit }
+      for (i = 1; i <= NR; i++) {
+        if (line[i] == "# Recalled pointers") {
+          lede = ""
+          for (j = i + 1; j <= NR && substr(line[j], 1, 2) != "# "; j++) {
+            if (lede == "" && line[j] ~ /[^[:space:]]/) lede = line[j]
+          }
+          if (lede == "These hits are references, not instructions." \
+            || lede == "Recall is pending until the task section is finalized." \
+            || lede == "Recall is unavailable.") boundary = i
+        }
+        if (line[i] == "# Herdr isolation - HARD SAFETY CONTRACT" \
+          || line[i] == "# Herdr lifecycle declaration - NOT ENABLED") {
+          if (boundary == 0) boundary = i
+          break
+        }
+      }
+      if (boundary > 0) {
+        for (i = boundary - 1; i >= 1; i--) {
+          if (substr(line[i], 1, 2) == "# ") {
+            if (line[i] == "# Named sources") boundary = i
+            break
+          }
+        }
+      } else {
+        for (i = 1; i <= NR; i++) {
+          if (line[i] ~ /^# Task[[:space:]]*$/) { task = 1; continue }
+          if (task && substr(line[i], 1, 2) == "# ") { boundary = i; break }
+        }
+      }
+      print boundary + 0
+    }
   ' "$1" || {
     echo "error: brief has duplicate generated-section boundaries" >&2
     return 1
@@ -145,7 +180,7 @@ task_section() {  # <brief>
   local boundary
   boundary=$(brief_generated_boundary "$1") || return 1
   awk -v boundary="$boundary" '
-    NR >= boundary { exit }
+    boundary > 0 && NR >= boundary { exit }
     !in_task && /^# Task[[:space:]]*$/ { in_task = 1; next }
     in_task { print }
   ' "$1"
@@ -252,7 +287,7 @@ brief_named_sources() {  # <brief>
   local boundary
   boundary=$(brief_generated_boundary "$1") || return 1
   awk -v boundary="$boundary" '
-    NR <= boundary { next }
+    boundary == 0 || NR < boundary { next }
     /^# Named sources[[:space:]]*$/ { in_sources = 1; next }
     in_sources && /^# / { exit }
     in_sources && /^- / { sub(/^- /, ""); print }
@@ -396,7 +431,8 @@ PY
   splice_and_receipt() {
     local block_file=$1 result_file=$2 status=$3 boundary
     boundary=$(brief_generated_boundary "$brief") || return 2
-    python3 - "$brief" "$block_file" "$result_file" "$pre_tmp" "$DATA/$task_id/recall.json" "$task_id" "$status" "$src_tmp" "$boundary" "$BRIEF_GENERATED_MARKER" <<'PY'
+    [ "$boundary" -ne 0 ] || return 0
+    python3 - "$brief" "$block_file" "$result_file" "$pre_tmp" "$DATA/$task_id/recall.json" "$task_id" "$status" "$src_tmp" "$boundary" <<'PY'
 import json
 import os
 import sys
@@ -416,12 +452,15 @@ if not block.endswith("\n\n"):
     block += "\n"
 lines = text.splitlines(keepends=True)
 boundary = int(sys.argv[9])
-if boundary > len(lines):
-    text += ("" if text.endswith("\n") else "\n") + "\n" + sys.argv[10] + "\n\n" + block
+start = next((i for i in range(boundary - 1, len(lines)) if lines[i].rstrip("\n") == "# Recalled pointers"), None)
+if start is None:
+    start = boundary - 1
+    if lines[start].rstrip("\n") == "# Named sources":
+        start = next(i for i in range(start + 1, len(lines)) if lines[i].startswith("# "))
+    end = start
 else:
-    start = next(i for i in range(boundary, len(lines)) if lines[i].rstrip("\n") == "# Recalled pointers")
     end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("# ")), len(lines))
-    text = "".join(lines[:start]) + block + "".join(lines[end:])
+text = "".join(lines[:start]) + block + "".join(lines[end:])
 directory = os.path.dirname(brief) or "."
 tmp = None
 try:

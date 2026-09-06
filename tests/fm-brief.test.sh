@@ -915,10 +915,12 @@ EOF
 from pathlib import Path
 import sys
 before, after = [Path(path).read_bytes() for path in sys.argv[1:]]
-assert after.startswith(before)
+task, scaffold = before.split(b"# Herdr lifecycle declaration - NOT ENABLED", 1)
+assert after.startswith(task)
+assert after.endswith(b"# Herdr lifecycle declaration - NOT ENABLED" + scaffold)
 PY
   assert_grep "data/zebra-prior/report.md" "$home/data/brief-boundary/legacy.md" \
-    "refresh did not append recall to the manually written brief"
+    "refresh did not place recall before the existing scaffold"
 
   out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-empty-flag firstmate \
     --mode no-mistakes --task-file= 2>&1) || true
@@ -1161,7 +1163,78 @@ PY
   pass "successful scaffold and refresh show one bounded recall warning"
 }
 
+test_legacy_generated_briefs_keep_their_boundary() {
+  local home kind brief receipt
+  home="$TMP_ROOT/legacy-generated"
+  mkdir -p "$home/data/named" "$home/data/prior" "$home/data/scaffold"
+  printf '# Widget\nstatus: reported\n' > "$home/data/named/report.md"
+  printf '# Zebraonly\nstatus: reported\n' > "$home/data/prior/report.md"
+  printf '# Scaffoldonly\nstatus: reported\n' > "$home/data/scaffold/report.md"
+  printf 'Read data/named/report.md and assess zebraonly.\n' > "$home/task.md"
+  for kind in ship scout; do
+    if [ "$kind" = ship ]; then
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "legacy-$kind" firstmate --mode no-mistakes \
+        --source data/named/report.md --task-file "$home/task.md" >/dev/null 2>&1 || fail "legacy ship fixture failed"
+    else
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "legacy-$kind" firstmate --scout \
+        --source data/named/report.md --task-file "$home/task.md" >/dev/null 2>&1 || fail "legacy scout fixture failed"
+    fi
+    brief="$home/data/legacy-$kind/brief.md"
+    receipt="$home/data/legacy-$kind/recall.json"
+    python3 - "$brief" "$kind" <<'PYLEGACY' || fail "could not create the legacy generated brief"
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+text = path.read_text().replace("<!-- firstmate:generated -->\n", "")
+text = text.replace("# Setup\n", "# Setup\nScaffoldonly.\n")
+if sys.argv[2] == "scout":
+    start = text.index("# Recalled pointers\n")
+    end = text.index("# Herdr", start)
+    text = text[:start] + text[end:]
+path.write_text(text)
+PYLEGACY
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --check-worker "$kind" "$brief" >/dev/null 2>&1 \
+      || fail "legacy generated brief failed worker validation"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall "$kind" "$brief" >/dev/null 2>&1 \
+      || fail "legacy generated brief failed recall refresh"
+    python3 - "$brief" "$receipt" <<'PYLEGACY' || fail "legacy scaffold content became task input"
+import json, sys
+from pathlib import Path
+text = Path(sys.argv[1]).read_text()
+p = json.loads(Path(sys.argv[2]).read_text())
+assert p["named_sources"] == ["data/named/report.md"], p
+assert "data/prior/report.md" in p["emitted_paths"], p
+assert "data/named/report.md" not in p["emitted_paths"], p
+assert "data/scaffold/report.md" not in p["emitted_paths"], p
+assert text.count("# Recalled pointers\n") == 1, text
+assert text.index("# Named sources") < text.index("# Recalled pointers") < text.index("# Herdr"), text
+PYLEGACY
+  done
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" legacy-ship --verifier >/dev/null 2>&1 || fail "legacy verifier rendering failed"
+  assert_no_grep 'Scaffoldonly' "$home/data/legacy-ship/verifier-brief.md" "legacy verifier included builder scaffold text"
+  pass "legacy generated briefs preserve task input, named sources, and recall placement"
+}
+
+test_foreign_citation_does_not_hide_local_brief_recall() {
+  local home
+  home="$TMP_ROOT/foreign-brief-citation"
+  mkdir -p "$home/data/prior"
+  printf '# Widget\nstatus: reported\n' > "$home/data/prior/report.md"
+  printf 'Continue widget work described in `%s/other/data/prior/report.md`.\n' "$home" > "$home/task.md"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" foreign-citation firstmate --mode no-mistakes --task-file "$home/task.md" \
+    >/dev/null 2>&1 || fail "foreign-citation brief failed"
+  python3 - "$home/data/foreign-citation/recall.json" <<'PYFOREIGN' || fail "foreign citation suppressed local recall"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert "data/prior/report.md" in p["emitted_paths"], p
+assert "data/prior/report.md" not in p["preexisting_cited_paths"], p
+PYFOREIGN
+  pass "foreign brief citations preserve local recall eligibility"
+}
+
 if [ "${1:-}" = recall ]; then
+  test_legacy_generated_briefs_keep_their_boundary
+  test_foreign_citation_does_not_hide_local_brief_recall
   test_successful_recall_refresh_discloses_diagnostics
   test_task_headings_preserve_all_brief_consumers
   test_generated_boundary_owns_every_brief_consumer
@@ -1174,6 +1247,8 @@ if [ "${1:-}" = recall ]; then
   exit 0
 fi
 
+test_legacy_generated_briefs_keep_their_boundary
+test_foreign_citation_does_not_hide_local_brief_recall
 test_successful_recall_refresh_discloses_diagnostics
 test_task_headings_preserve_all_brief_consumers
 test_absolute_record_citation_is_excluded

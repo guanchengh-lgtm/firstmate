@@ -199,29 +199,29 @@ def resolve_root(path):
     return real
 
 
-def open_regular(path, root=None):
+def open_regular(path, root=None, root_fd=None):
     nofollow = getattr(os, "O_NOFOLLOW", 0)
+    directory = os.O_RDONLY | nofollow | getattr(os, "O_DIRECTORY", 0)
     dir_fd = None
     name = path
-    if root is not None:
-        parent = os.path.dirname(path) or "."
-        if not contained(root, parent):
-            return None
-        try:
-            dir_fd = os.open(
-                parent, os.O_RDONLY | nofollow | getattr(os, "O_DIRECTORY", 0)
-            )
-        except OSError:
-            return None
-        name = os.path.basename(path)
     try:
+        if root is not None:
+            relative = os.path.relpath(path, root)
+            parts = relative.split(os.sep)
+            if any(part in ("", ".", "..") for part in parts):
+                return None
+            dir_fd = os.dup(root_fd) if root_fd is not None else os.open(root, directory)
+            for part in parts[:-1]:
+                child_fd = os.open(part, directory, dir_fd=dir_fd)
+                os.close(dir_fd)
+                dir_fd = child_fd
+            name = parts[-1]
         fd = os.open(name, os.O_RDONLY | nofollow, dir_fd=dir_fd)
     except OSError:
+        return None
+    finally:
         if dir_fd is not None:
             os.close(dir_fd)
-        return None
-    if dir_fd is not None:
-        os.close(dir_fd)
     try:
         if not stat.S_ISREG(os.fstat(fd).st_mode):
             os.close(fd)
@@ -232,8 +232,8 @@ def open_regular(path, root=None):
     return os.fdopen(fd, "rb")
 
 
-def read_bounded(path, limit, root=None):
-    handle = open_regular(path, root)
+def read_bounded(path, limit, root=None, root_fd=None):
+    handle = open_regular(path, root, root_fd)
     if handle is None:
         return None, False
     try:
@@ -263,8 +263,8 @@ def read_capped_line(handle, limit):
     return chunk, dropped
 
 
-def read_head_lines(path, limit, root=None):
-    handle = open_regular(path, root)
+def read_head_lines(path, limit, root=None, root_fd=None):
+    handle = open_regular(path, root, root_fd)
     if handle is None:
         return None, False, ""
     try:
@@ -456,13 +456,13 @@ def parse_pointer_target(text, fallback, root):
     return identity_from_ref(fallback, root)
 
 
-def load_status_sidecar(root, dir_path):
+def load_status_sidecar(root, dir_path, root_fd=None):
     path = os.path.join(dir_path, "status")
     if not os.path.isfile(path) or os.path.islink(path):
         return None
     if not contained(root, path):
         return None
-    text, _partial = read_bounded(path, 4096, root)
+    text, _partial = read_bounded(path, 4096, root, root_fd)
     if not text:
         return None
     line = text.splitlines()[0].strip()
@@ -519,6 +519,7 @@ def format_pointer(doc, title=None, now=None):
 class Corpus(object):
     def __init__(self, root, deadline, statuses, now, diagnostics):
         self.root = root
+        self.root_fd = None
         self.deadline = deadline
         self.statuses = statuses
         self.now = now
@@ -611,7 +612,7 @@ def doc_path_of(doc):
 
 def load_pointer_aliases(corpus):
     try:
-        names = sorted(os.listdir(corpus.root))
+        names = sorted(os.listdir(corpus.root_fd))
     except OSError as exc:
         raise Unavailable("cannot list corpus root: %s" % exc)
     for name in names:
@@ -628,7 +629,7 @@ def load_pointer_aliases(corpus):
             continue
         if not contained(corpus.root, pointer):
             continue
-        text, partial = read_bounded(pointer, HEAD_LIMIT, corpus.root)
+        text, partial = read_bounded(pointer, HEAD_LIMIT, corpus.root, corpus.root_fd)
         if text is None:
             corpus.note("source", "unreadable POINTER.md for %s" % name)
             continue
@@ -663,7 +664,7 @@ def load_archive(corpus):
     ):
         corpus.note("source", "done-archive.md is not a regular Record file")
         return
-    binary = open_regular(path, corpus.root)
+    binary = open_regular(path, corpus.root, corpus.root_fd)
     if binary is None:
         corpus.note("source", "cannot read done-archive.md")
         return
@@ -713,7 +714,7 @@ def load_archive(corpus):
             and contained(corpus.root, report_path)
         ):
             report_lines, partial, tail = read_head_lines(
-                report_path, HEAD_LIMIT, corpus.root
+                report_path, HEAD_LIMIT, corpus.root, corpus.root_fd
             )
             if report_lines is not None:
                 if partial:
@@ -733,7 +734,9 @@ def load_archive(corpus):
                 meta_date, meta_status, meta_raw_date = None, None, None
         else:
             meta_date, meta_status, meta_raw_date = None, None, None
-        sidecar = load_status_sidecar(corpus.root, os.path.join(corpus.root, canonical))
+        sidecar = load_status_sidecar(
+            corpus.root, os.path.join(corpus.root, canonical), corpus.root_fd
+        )
         title_text = canonical + " " + title + " " + heading
         body_text = "\n".join(rank_lines(DONE_DATE.sub("", body).splitlines()))
         if report_lines:
@@ -790,24 +793,22 @@ def load_archive(corpus):
                 truncated = False
             if entry_line == 0:
                 continue
-            encoded = (line + "\n").encode("utf-8")
-            if block_bytes + len(encoded) > ARCHIVE_LIMIT:
-                if not block_lines:
-                    remain = max(0, ARCHIVE_LIMIT - block_bytes - 1)
-                    prefix = encoded[:remain].decode("utf-8", errors="ignore")
-                    block_lines.append(prefix)
-                    block_bytes += len(prefix.encode("utf-8")) + 1
-                if not truncated:
-                    corpus.partial = True
-                    corpus.note(
-                        "partial-input",
-                        "archive entry at line %s truncated at %s bytes"
-                        % (entry_line, ARCHIVE_LIMIT),
-                    )
-                    truncated = True
+            if truncated:
                 continue
-            block_lines.append(line)
-            block_bytes += len(encoded)
+            encoded = raw.encode("utf-8")
+            remain = ARCHIVE_LIMIT - block_bytes
+            block_lines.append(
+                encoded[:remain].decode("utf-8", errors="ignore").rstrip("\n")
+            )
+            block_bytes += min(len(encoded), remain)
+            if len(encoded) > remain or dropped:
+                corpus.partial = True
+                corpus.note(
+                    "partial-input",
+                    "archive entry at line %s truncated at %s bytes"
+                    % (entry_line, ARCHIVE_LIMIT),
+                )
+                truncated = True
         flush()
     finally:
         handle.close()
@@ -825,7 +826,15 @@ def load_decisions(corpus):
         corpus.note("source", "decisions/ is not a regular Record directory")
         return
     try:
-        names = sorted(os.listdir(ddir))
+        directory_fd = os.open(
+            "decisions",
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_DIRECTORY", 0),
+            dir_fd=corpus.root_fd,
+        )
+        try:
+            names = sorted(os.listdir(directory_fd))
+        finally:
+            os.close(directory_fd)
     except OSError as exc:
         corpus.note("source", "cannot list decisions/: %s" % exc)
         return
@@ -840,7 +849,7 @@ def load_decisions(corpus):
             or not contained(corpus.root, path)
         ):
             continue
-        lines, partial, tail = read_head_lines(path, HEAD_LIMIT, corpus.root)
+        lines, partial, tail = read_head_lines(path, HEAD_LIMIT, corpus.root, corpus.root_fd)
         if lines is None:
             corpus.note("source", "unreadable decision %s" % name)
             continue
@@ -880,7 +889,7 @@ def load_decisions(corpus):
 
 def load_orphan_reports(corpus):
     try:
-        names = sorted(os.listdir(corpus.root))
+        names = sorted(os.listdir(corpus.root_fd))
     except OSError as exc:
         raise Unavailable("cannot list corpus root: %s" % exc)
     for name in names:
@@ -905,7 +914,9 @@ def load_orphan_reports(corpus):
             continue
         if not contained(corpus.root, report_path):
             continue
-        lines, partial, tail = read_head_lines(report_path, HEAD_LIMIT, corpus.root)
+        lines, partial, tail = read_head_lines(
+            report_path, HEAD_LIMIT, corpus.root, corpus.root_fd
+        )
         if lines is None:
             corpus.note("source", "unreadable report %s" % canonical)
             continue
@@ -919,7 +930,9 @@ def load_orphan_reports(corpus):
         meta_date, meta_status, meta_raw_date = parse_metadata(
             "\n".join(lines) + "\n" + tail
         )
-        sidecar = load_status_sidecar(corpus.root, os.path.join(corpus.root, canonical))
+        sidecar = load_status_sidecar(
+            corpus.root, os.path.join(corpus.root, canonical), corpus.root_fd
+        )
         display = "data/%s/report.md" % canonical
         ident = Identity("task", canonical, display)
         doc = Document(
@@ -944,11 +957,22 @@ def load_orphan_reports(corpus):
 
 def load_corpus(root, deadline, statuses, now, diagnostics):
     corpus = Corpus(root, deadline, statuses, now, diagnostics)
-    load_pointer_aliases(corpus)
-    load_archive(corpus)
-    load_decisions(corpus)
-    load_orphan_reports(corpus)
-    return corpus
+    try:
+        corpus.root_fd = os.open(
+            root,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_DIRECTORY", 0),
+        )
+    except OSError as exc:
+        raise Unavailable("cannot open corpus root: %s" % exc)
+    try:
+        load_pointer_aliases(corpus)
+        load_archive(corpus)
+        load_decisions(corpus)
+        load_orphan_reports(corpus)
+        return corpus
+    finally:
+        os.close(corpus.root_fd)
+        corpus.root_fd = None
 
 
 def query_terms(title, body, sources):
@@ -1213,17 +1237,14 @@ def extract_identities(text, root):
         seen.add(token)
         found.append(token)
 
-    for match in re.finditer(r"data/[^\s\)\]\"'`<>]+", text):
-        reference = match.group(0).rstrip(".,;:")
-        add(
-            archive_row_identity(reference, root) or identity_from_path(reference, root)
-        )
-    if root is not None:
-        for match in re.finditer(r"/[^\s\)\]\"'`<>]+", text):
-            reference = match.group(0).rstrip(".,;:")
-            display = normalize_record_path(reference, root)
-            if not display:
-                continue
+    for match in re.finditer(
+        r"(?:^|[\s(\[\"'`<>])((?:(?:\./)?data/|/)[^\s\)\]\"'`<>]+)", text
+    ):
+        reference = match.group(1).rstrip(".,;:")
+        if root is None and reference.startswith("/"):
+            continue
+        display = normalize_record_path(reference, root)
+        if display:
             add(
                 archive_row_identity(reference, root) or identity_from_path(display, root)
             )
@@ -1581,6 +1602,8 @@ def main(argv=None):
     limit = args.limit
     if limit == 0:
         limit = BRIEF_LIMIT
+    if args.surface == "brief":
+        limit = min(limit, BRIEF_LIMIT)
     token_cap = args.token_budget
     if token_cap < 0:
         token_cap = BRIEF_TOKEN_CAP if args.surface == "brief" else None
