@@ -33,6 +33,12 @@ test_list_all_exact_suite_coverage() {
   [ "$(printf '%s\n' "$listed" | uniq | wc -l | tr -d ' ')" = \
     "$(printf '%s\n' "$listed" | wc -l | tr -d ' ')" ] \
     || fail "--list --all must not duplicate scripts"
+  mkdir -p "$ROOT/data/.git/tests"
+  printf '#!/bin/sh\necho nested\n' > "$ROOT/data/.git/tests/foo.test.sh"
+  listed=$("$RUNNER" --list --all | LC_ALL=C sort)
+  rm -rf "$ROOT/data/.git"
+  printf '%s\n' "$listed" | grep -F 'data/.git' >/dev/null \
+    && fail "--list --all discovered a nested Git test file"
   pass "exact suite coverage: --all lists every tests/*.test.sh once"
 }
 

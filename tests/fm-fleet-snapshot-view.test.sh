@@ -896,8 +896,24 @@ EOF
   printf '# verified - home-summary excludes kind=secondmate from child inventory\n'
 }
 
+test_nested_git_report_is_not_discovered() {
+  local home out
+  home=$(make_home nested-git-report)
+  mkdir -p "$home/data/real-scout" "$home/data/.git/objects/aa"
+  printf '# Real Scout\n' > "$home/data/real-scout/report.md"
+  printf '# Nested Git Scout\n' > "$home/data/.git/objects/aa/report.md"
+  out=$(FM_HOME="$home" "$SNAPSHOT" --json)
+  printf '%s' "$out" | jq -e --arg home "$home" '
+    .scout_reports == [
+      {id:"real-scout",path:($home + "/data/real-scout/report.md"),kind:"scout"}
+    ]
+  ' >/dev/null || fail "snapshot walked a nested Git report: $out"
+  pass "snapshot report discovery keeps its depth limit over nested Git metadata"
+}
+
 test_empty_fleet_json
 test_fixture_snapshot_json
+test_nested_git_report_is_not_discovered
 test_home_summary_excludes_secondmate_from_child_inventory
 test_main_inventory_orphan_and_unstructured_disclosure
 test_normalized_roles_and_plural_blocker_readiness

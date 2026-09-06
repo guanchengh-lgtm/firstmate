@@ -171,6 +171,12 @@ test_list_files_reports_the_shell_inventory() {
   expected=$(find bin bin/backends tests -maxdepth 1 -type f -name '*.sh' -print | LC_ALL=C sort)
   [ "$(printf '%s\n' "$listed" | LC_ALL=C sort)" = "$expected" ] \
     || fail "fm-lint.sh --list-files did not return the complete shell inventory"
+  mkdir -p "$ROOT/data/.git/bin"
+  printf '#!/bin/sh\n' > "$ROOT/data/.git/bin/evil.sh"
+  listed=$(CI=true "$LINT" --list-files)
+  rm -rf "$ROOT/data/.git"
+  printf '%s\n' "$listed" | grep -F 'data/.git' >/dev/null \
+    && fail "fm-lint.sh --list-files discovered a nested Git shell file"
   pass "fm-lint.sh --list-files reports the complete shell inventory"
 }
 

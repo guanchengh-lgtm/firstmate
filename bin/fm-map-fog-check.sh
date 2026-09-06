@@ -173,7 +173,7 @@ else
       [ -n "$found" ] || continue
       is_ordinary_file "$found" || continue
       enqueue "$found"
-    done < <(find "$DATA" -name map.md -type f 2>/dev/null || true)
+    done < <(find "$DATA" -name .git -prune -o -name map.md -type f -print 2>/dev/null || true)
   fi
 fi
 
