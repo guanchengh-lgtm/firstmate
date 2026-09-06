@@ -2,7 +2,8 @@
 # Acquire or inspect the per-home firstmate session lock.
 # Writes the durable ancestry PID selected by bin/fm-session-lock-lib.sh.
 # Usage: fm-lock.sh           acquire; exit 1 unless ownership is verified
-#        fm-lock.sh status    print holder and liveness; always exits 0
+#        fm-lock.sh status    print holder and liveness; a linked-worktree home
+#                             exits 1 before inspection, otherwise status exits 0
 #        fm-lock.sh --help    print usage and exit 0; reads and writes nothing
 #        fm-lock.sh --session-replacement
 #                             INTERNAL, granted only by bin/fm-sessionstart-run.sh
@@ -20,6 +21,7 @@
 #                             nested background Claude job) - exits 1 and changes
 #                             nothing, so the mode can never widen ownership the
 #                             way a generic ancestry reclaim would (PR #74).
+# Linked-worktree home refusal is owned by bin/fm-primary-scope-lib.sh.
 set -u
 
 if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
@@ -28,7 +30,9 @@ usage: fm-lock.sh [status | --help | --session-replacement]
 
   (no argument)          acquire the per-home session lock; exit 1 unless
                          ownership is verified
-  status                 print holder and liveness; always exits 0
+  status                 print holder and liveness; exit 1 for a linked-worktree
+                         home, otherwise exit 0
+  Linked-worktree home refusal: bin/fm-primary-scope-lib.sh.
   --help, -h             print this usage and exit 0; reads and writes nothing
   --session-replacement  INTERNAL: granted only by bin/fm-sessionstart-run.sh
                          for a validated native Claude in-place session
@@ -42,6 +46,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+# shellcheck source=bin/fm-primary-scope-lib.sh
+. "$SCRIPT_DIR/fm-primary-scope-lib.sh"
+fm_home_refuse_linked_worktree "$FM_HOME" fm-lock.sh || exit 1
 LOCK="$STATE/.lock"
 LOCK_SESSION="$STATE/.lock.session"
 mkdir -p "$STATE" 2>/dev/null || {

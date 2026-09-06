@@ -3,6 +3,8 @@
 The watcher remains intentionally one-shot: one actionable reason closes one watcher cycle.
 Must-work continuity now lives above that process boundary instead of depending on the model remembering a re-arm step.
 
+The watcher excludes its own pane from stale escalation and event subscriptions, recording one `absorbed own-pane window` triage line for that window.
+
 ## Ownership
 
 Pi's `.pi/extensions/fm-primary-pi-watch.ts` and OpenCode's `.opencode/plugins/fm-primary-watch-arm.js` own continuous re-arm after an actionable child close.

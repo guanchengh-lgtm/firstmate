@@ -35,12 +35,21 @@
 # GitHub, so restoring a GitLab merge arm must first give GitLab an equivalent
 # proof rather than silently exempting it from this invariant.
 # Usage: fm-pr-merge.sh <task-id> <pr-url> [-- <extra gh pr merge args>]
+# Linked-worktree home refusal is owned by bin/fm-primary-scope-lib.sh.
 set -eu
+
+if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
+  sed -n '2,/^set -/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//; $d'
+  exit 0
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+# shellcheck source=bin/fm-primary-scope-lib.sh
+. "$SCRIPT_DIR/fm-primary-scope-lib.sh"
+fm_home_refuse_linked_worktree "$FM_HOME" fm-pr-merge.sh || exit 1
 
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"

@@ -59,7 +59,7 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 fm_git_identity fmtest fmtest@example.invalid
 
-TEARDOWN="$ROOT/bin/fm-teardown.sh"
+TEARDOWN="${FM_TEST_TEARDOWN:-$ROOT/bin/fm-teardown.sh}"
 PR_CHECK="$ROOT/bin/fm-pr-check.sh"
 TMP_ROOT=$(fm_test_tmproot fm-teardown-tests)
 REAL_GIT_FOR_TEST=$(command -v git)
@@ -547,6 +547,7 @@ run_teardown() {
   # home's backlog item itself; without it $DATA would resolve to the real
   # repo's own home and a test could mutate live records.
   FM_ROOT_OVERRIDE="$ROOT" \
+  FM_HOME="$case_dir" \
   FM_DATA_OVERRIDE="$case_dir/data" \
   FM_STATE_OVERRIDE="$case_dir/state" \
   FM_CONFIG_OVERRIDE="$case_dir/config" \
@@ -1746,7 +1747,7 @@ SH
       ;;
   esac
   rc=0
-  FM_ROOT_OVERRIDE="$ROOT" FM_DATA_OVERRIDE="$case_dir/data" FM_STATE_OVERRIDE="$case_dir/state" FM_CONFIG_OVERRIDE="$case_dir/config" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$case_dir" FM_DATA_OVERRIDE="$case_dir/data" FM_STATE_OVERRIDE="$case_dir/state" FM_CONFIG_OVERRIDE="$case_dir/config" \
     FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" \
     FM_FAKE_HERDR_SESSION_LIST_GARBAGE="$([ "$mode" = unresolvable-lock ] && printf 1 || printf 0)" \
     PATH="$case_dir/fakebin:$PATH" \
@@ -1776,14 +1777,15 @@ test_herdr_flat_teardown_preflight_refuses_before_changes() {
 }
 
 configure_secondmate_with_herdr_child() {  # <case-dir>
-  local case_dir=$1 home="$1/secondmate-home"
+  local case_dir=$1 home="$1-secondmate-home" child_wt="$1-child-herdr-wt"
   mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects"
   printf '%s\n' task-x1 > "$home/.fm-secondmate-home"
   printf '%s\n' "home=$home" >> "$case_dir/state/task-x1.meta"
+  git -C "$case_dir/project" worktree add -q -b fm/child-herdr "$child_wt" main
   fm_write_meta "$home/state/child-herdr.meta" \
     "window=childsession:wC:p1" \
     "endpoint_task_id=child-herdr" \
-    "worktree=$case_dir/wt" \
+    "worktree=$child_wt" \
     "project=$case_dir/project" \
     "kind=ship" \
     "mode=local-only" \
@@ -1830,7 +1832,7 @@ test_forced_secondmate_herdr_child_preflight_refuses_before_changes() {
   case_dir=$(make_case herdr-child-preflight)
   write_meta "$case_dir" local-only secondmate
   configure_secondmate_with_herdr_child "$case_dir"
-  home="$case_dir/secondmate-home"
+  home="$case_dir-secondmate-home"
   log="$case_dir/herdr.log"; closed="$case_dir/closed"; thlog="$case_dir/treehouse.log"
   : > "$log"; : > "$thlog"
   cat > "$case_dir/fakebin/treehouse" <<SH
@@ -1856,12 +1858,12 @@ SH
 }
 
 configure_secondmate_with_tmux_children() {  # <case-dir>
-  local case_dir=$1 home="$1/secondmate-home" child child_wt
+  local case_dir=$1 home="$1-secondmate-home" child child_wt
   mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects"
   printf '%s\n' task-x1 > "$home/.fm-secondmate-home"
   printf '%s\n' "home=$home" >> "$case_dir/state/task-x1.meta"
   for child in child-a child-b; do
-    child_wt="$case_dir/$child-wt"
+    child_wt="$case_dir-$child-wt"
     git -C "$case_dir/project" worktree add -q -b "fm/$child" "$child_wt" main
     fm_write_meta "$home/state/$child.meta" \
       "window=firstmate:fm-$child" \
@@ -1879,7 +1881,7 @@ test_forced_secondmate_teardown_holds_descendant_lifecycle_locks() {
   case_dir=$(make_case descendant-locks)
   write_meta "$case_dir" local-only secondmate
   configure_secondmate_with_tmux_children "$case_dir"
-  home="$case_dir/secondmate-home"
+  home="$case_dir-secondmate-home"
   : > "$case_dir/kill.log"
   : > "$case_dir/treehouse.log"
   cat > "$case_dir/fakebin/tmux" <<SH
@@ -1932,7 +1934,7 @@ SH
   [ -e "$case_dir/state/task-x1.meta" ] && [ -d "$home" ] \
     || { : > "$release"; wait "$holder_pid" 2>/dev/null || true; fail "descendant-locks: refusal removed parent state"; }
   for child in child-a child-b; do
-    [ -e "$home/state/$child.meta" ] && [ -d "$case_dir/$child-wt" ] \
+    [ -e "$home/state/$child.meta" ] && [ -d "$case_dir-$child-wt" ] \
       || { : > "$release"; wait "$holder_pid" 2>/dev/null || true; fail "descendant-locks: refusal removed $child state or worktree"; }
   done
 
@@ -1953,7 +1955,7 @@ test_forced_secondmate_herdr_child_retains_records_when_close_unconfirmed() {
   case_dir=$(make_case herdr-child-unconfirmed-close)
   write_meta "$case_dir" local-only secondmate
   configure_secondmate_with_herdr_child "$case_dir"
-  home="$case_dir/secondmate-home"
+  home="$case_dir-secondmate-home"
   log="$case_dir/herdr.log"; closed="$case_dir/closed"; : > "$log"
   rc=0
   FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" FM_FAKE_HERDR_PRESENCE_UNKNOWN=1 \
@@ -1970,16 +1972,19 @@ test_forced_secondmate_herdr_child_retains_records_when_close_unconfirmed() {
 }
 
 configure_nested_secondmate_with_herdr_grandchild() {  # <case-dir>
-  local case_dir=$1 home="$1/secondmate-home" nested_home="$1/secondmate-home/nested-home"
+  local case_dir=$1 home="$1-secondmate-home" nested_home="$1-secondmate-home/nested-home"
+  local nested_wt="$1-nested-sm-wt" grandchild_wt="$1-grandchild-herdr-wt"
   mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects"
   mkdir -p "$nested_home/state" "$nested_home/data" "$nested_home/config" "$nested_home/projects"
   printf '%s\n' task-x1 > "$home/.fm-secondmate-home"
   printf '%s\n' nested-sm > "$nested_home/.fm-secondmate-home"
   printf '%s\n' "home=$home" >> "$case_dir/state/task-x1.meta"
+  git -C "$case_dir/project" worktree add -q -b fm/nested-sm "$nested_wt" main
+  git -C "$case_dir/project" worktree add -q -b fm/grandchild-herdr "$grandchild_wt" main
   fm_write_meta "$home/state/nested-sm.meta" \
     "window=firstmate:fm-nested-sm" \
     "endpoint_task_id=nested-sm" \
-    "worktree=$case_dir/wt" \
+    "worktree=$nested_wt" \
     "project=$case_dir/project" \
     "kind=secondmate" \
     "mode=local-only" \
@@ -1987,7 +1992,7 @@ configure_nested_secondmate_with_herdr_grandchild() {  # <case-dir>
   fm_write_meta "$nested_home/state/grandchild-herdr.meta" \
     "window=grandchildsession:wG:p1" \
     "endpoint_task_id=grandchild-herdr" \
-    "worktree=$case_dir/wt" \
+    "worktree=$grandchild_wt" \
     "project=$case_dir/project" \
     "kind=ship" \
     "mode=local-only" \
@@ -2025,7 +2030,7 @@ test_forced_teardown_retains_nested_secondmate_home_when_grandchild_close_unconf
   case_dir=$(make_case herdr-grandchild-unconfirmed-close)
   write_meta "$case_dir" local-only secondmate
   configure_nested_secondmate_with_herdr_grandchild "$case_dir"
-  home="$case_dir/secondmate-home"; nested_home="$home/nested-home"
+  home="$case_dir-secondmate-home"; nested_home="$home/nested-home"
   log="$case_dir/herdr.log"; closed="$case_dir/closed"; : > "$log"
   rc=0
   FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" \
@@ -2519,6 +2524,36 @@ EOF
   pass "missing lsof falls back to reaping the tmux pane process group"
 }
 
+test_lsof_absent_with_missing_roots_completes() {
+  local case_dir rc lock_pid path_without_lsof
+  case_dir=$(make_case lsof-absent-missing-roots)
+  write_meta "$case_dir" no-mistakes ship
+  git -C "$case_dir/project" worktree remove --force "$case_dir/wt"
+  path_without_lsof=$(make_path_without_lsof "$case_dir")
+  PATH="$path_without_lsof" command -v lsof >/dev/null 2>&1 \
+    && fail "lsof-absent-missing-roots: fixture path unexpectedly exposes lsof"
+
+  sleep 300 &
+  lock_pid=$!
+  disown
+  printf '%s\n' "$lock_pid" > "$case_dir/state/.lock"
+
+  rc=0
+  FM_TEARDOWN_TEST_PATH="$path_without_lsof" \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if ! kill -0 "$lock_pid" 2>/dev/null; then
+    fail "lsof-absent-missing-roots: teardown killed the unrelated lock owner"
+  fi
+  kill -KILL "$lock_pid" 2>/dev/null || true
+  expect_code 0 "$rc" "lsof-absent-missing-roots: teardown should complete"
+  assert_absent "$case_dir/state/task-x1.meta" \
+    "lsof-absent-missing-roots: teardown retained task metadata"
+  assert_no_grep "REFUSED:" "$case_dir/stderr" \
+    "lsof-absent-missing-roots: teardown refused without a protected root"
+  pass "missing roots need no lsof check before task retirement"
+}
+
 test_lsof_error_refuses_before_removal() {
   local case_dir rc
   case_dir=$(make_case lsof-error-refusal)
@@ -2656,7 +2691,7 @@ SH
 }
 
 test_host_session_under_worktree_is_spared() {
-  local case_dir rc host_pid child_pid sleeper_pid i=0
+  local case_dir rc host_pid child_pid sleeper_pid host_comm i=0
   case_dir=$(make_case host-session-spared)
   write_meta "$case_dir" no-mistakes ship
   land_shippable_commit "$case_dir"
@@ -2713,6 +2748,7 @@ exit 0
 EOF
   chmod +x "$case_dir/fakebin/git" "$case_dir/fakebin/treehouse"
 
+  host_comm=$(ps -p "$host_pid" -o comm=)
   rc=0
   run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
@@ -2725,6 +2761,7 @@ EOF
     kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
     fail "host-session-spared: live session host or child was reaped"
   fi
+  kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
   expect_code 1 "$rc" "host-session-spared: teardown should refuse the worktree return"
   assert_grep "reaping leaked worktree process" "$case_dir/stderr" \
     "host-session-spared: teardown did not report reaping the task-owned process"
@@ -2732,11 +2769,132 @@ EOF
     "host-session-spared: teardown did not refuse the unsafe worktree return"
   [ "$(grep -Fc "$host_pid" "$case_dir/stderr")" -eq 1 ] \
     || fail "host-session-spared: refusal did not name the host shell exactly once"
+  assert_grep "$host_pid ($host_comm, cwd=$case_dir/wt)" "$case_dir/stderr" "host-session-spared: cwd missing"
+  assert_grep "Clear it: exit that session or relocate its host shell out of" "$case_dir/stderr" "host-session-spared: remedy missing"
   assert_present "$case_dir/wt" "host-session-spared: teardown removed the worktree"
   assert_present "$case_dir/state/task-x1.meta" "host-session-spared: teardown removed task metadata"
   assert_absent "$case_dir/treehouse.log" "host-session-spared: teardown called treehouse return"
   kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
   pass "a live session host blocks treehouse return while task-owned processes are reaped"
+}
+
+test_host_session_under_tasktmp_is_spared() {
+  local worktree_shape=${1:-present} case_dir case_name physical_tasktmp rc host_pid child_pid i=0
+  case_name="host-session-tasktmp-spared"
+  [ "$worktree_shape" = present ] || case_name="host-session-tasktmp-missing-worktree"
+  case_dir=$(make_case "$case_name")
+  write_meta "$case_dir" no-mistakes ship
+  printf '%s\n' "tasktmp=$case_dir/tasktmp" >> "$case_dir/state/task-x1.meta"
+  mkdir -p "$case_dir/tasktmp-real"
+  ln -s tasktmp-real "$case_dir/tasktmp"
+  physical_tasktmp=$(CDPATH='' cd -- "$case_dir/tasktmp" && pwd -P)
+  [ "$physical_tasktmp" != "$case_dir/tasktmp" ] || fail "host-session-tasktmp-spared: tasktmp alias did not diverge"
+  land_shippable_commit "$case_dir"
+  if [ "$worktree_shape" = missing ]; then
+    git -C "$case_dir/project" worktree remove --force "$case_dir/wt"
+  fi
+
+  (
+    cd "$case_dir/tasktmp" || exit 1
+    sleep 300 &
+    printf '%s\n' "$!" > "$case_dir/child.pid"
+    wait
+  ) &
+  host_pid=$!
+  disown
+  while [ "$i" -lt 50 ]; do
+    [ -s "$case_dir/child.pid" ] && break
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ -s "$case_dir/child.pid" ] || fail "host-session-tasktmp-spared: host child pid was never recorded"
+  child_pid=$(tr -d '[:space:]' < "$case_dir/child.pid")
+  case "$child_pid" in ''|*[!0-9]*) fail "host-session-tasktmp-spared: host child pid was not numeric" ;; esac
+  printf '%s\n' "$child_pid" > "$case_dir/state/.lock"
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if ! kill -0 "$host_pid" 2>/dev/null || ! kill -0 "$child_pid" 2>/dev/null; then
+    kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
+    fail "host-session-tasktmp-spared: live session host or child was reaped"
+  fi
+  kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
+  expect_code 1 "$rc" "host-session-tasktmp-spared: teardown should refuse the tasktmp removal"
+  assert_grep "cwd=$physical_tasktmp" "$case_dir/stderr" "host-session-tasktmp-spared: physical cwd missing"
+  assert_grep "Clear it: exit that session or relocate its host shell out of $case_dir/tasktmp" "$case_dir/stderr" \
+    "host-session-tasktmp-spared: remedy named the wrong protected root"
+  assert_present "$case_dir/state/task-x1.meta" "host-session-tasktmp-spared: teardown removed task metadata"
+  if [ "$worktree_shape" = missing ]; then
+    assert_absent "$case_dir/wt" "host-session-tasktmp-spared: teardown recreated the missing worktree"
+    pass "a missing task worktree does not bypass protection for a live tasktmp host"
+  else
+    pass "a live session host under tasktmp receives the matching relocation remedy"
+  fi
+}
+
+test_orca_host_session_under_worktree_is_spared() {
+  local case_dir rc host_pid child_pid i=0
+  case_dir=$(make_case orca-host-session-spared)
+  fm_write_meta "$case_dir/state/task-x1.meta" \
+    "window=fm-task-x1" \
+    "endpoint_task_id=task-x1" \
+    "terminal=term-1" \
+    "worktree=$case_dir/wt" \
+    "project=$case_dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes" \
+    "spawn_gen=teardown-test-task-x1" \
+    "backend=orca" \
+    "orca_worktree_id=orca-wt-1"
+  land_shippable_commit "$case_dir"
+  : > "$case_dir/orca.log"
+  cat > "$case_dir/fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_FAKE_ORCA_LOG"
+if [ "${1:-} ${2:-}" = "worktree show" ]; then
+  printf '{"ok":true,"result":{"worktree":{"id":"orca-wt-1","path":"%s"}}}\n' "$FM_FAKE_ORCA_WT"
+else
+  printf '{"ok":true}\n'
+fi
+SH
+  chmod +x "$case_dir/fakebin/orca"
+
+  (
+    cd "$case_dir/wt" || exit 1
+    sleep 300 &
+    printf '%s\n' "$!" > "$case_dir/child.pid"
+    wait
+  ) &
+  host_pid=$!
+  disown
+  while [ "$i" -lt 50 ]; do
+    [ -s "$case_dir/child.pid" ] && break
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ -s "$case_dir/child.pid" ] || fail "orca-host-session-spared: host child pid was never recorded"
+  child_pid=$(tr -d '[:space:]' < "$case_dir/child.pid")
+  case "$child_pid" in ''|*[!0-9]*) fail "orca-host-session-spared: host child pid was not numeric" ;; esac
+  printf '%s\n' "$child_pid" > "$case_dir/state/.lock"
+
+  rc=0
+  FM_FAKE_ORCA_LOG="$case_dir/orca.log" FM_FAKE_ORCA_WT="$case_dir/wt" \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if ! kill -0 "$host_pid" 2>/dev/null || ! kill -0 "$child_pid" 2>/dev/null; then
+    kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
+    fail "orca-host-session-spared: live session host or child was reaped"
+  fi
+  kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
+  expect_code 1 "$rc" "orca-host-session-spared: teardown should refuse the Orca worktree removal"
+  assert_grep "REFUSED: protected process(es) for task-x1 remain rooted in the worktree/tasktmp" "$case_dir/stderr" \
+    "orca-host-session-spared: teardown did not refuse the unsafe Orca removal"
+  assert_no_grep "worktree rm" "$case_dir/orca.log" \
+    "orca-host-session-spared: teardown called Orca worktree removal"
+  assert_present "$case_dir/wt" "orca-host-session-spared: teardown removed the worktree"
+  assert_present "$case_dir/state/task-x1.meta" "orca-host-session-spared: teardown removed task metadata"
+  pass "a live session host blocks Orca worktree removal"
 }
 
 test_malformed_lock_records_do_not_form_a_pid() {
@@ -4032,6 +4190,15 @@ test_leftover_then_sync_retains_unique_gone_branch() {
   pass "teardown followed by fleet sync retains a unique [gone] branch"
 }
 
+if [ "${1:-}" = host-cwd ]; then
+  test_lsof_absent_with_missing_roots_completes
+  test_host_session_under_worktree_is_spared
+  test_host_session_under_tasktmp_is_spared
+  test_host_session_under_tasktmp_is_spared missing
+  test_orca_host_session_under_worktree_is_spared
+  exit 0
+fi
+
 test_local_only_fork_remote_allows
 test_help_documents_force_validation_truth_skip
 test_invalid_ship_role_refuses
@@ -4088,10 +4255,14 @@ test_own_autonomous_run_is_left_alone
 test_leaked_worktree_process_is_reaped
 test_leaked_tasktmp_process_is_reaped
 test_lsof_absent_reaps_tmux_process_group
+test_lsof_absent_with_missing_roots_completes
 test_lsof_error_refuses_before_removal
 test_reused_pid_identity_is_not_force_killed
 test_exec_changed_process_is_still_reaped
 test_host_session_under_worktree_is_spared
+test_host_session_under_tasktmp_is_spared
+test_host_session_under_tasktmp_is_spared missing
+test_orca_host_session_under_worktree_is_spared
 test_malformed_lock_records_do_not_form_a_pid
 test_live_lock_identity_failure_refuses
 test_protected_identity_recheck_failure_spares_pid

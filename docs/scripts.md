@@ -50,7 +50,7 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-test-isolation-proof.sh` | Concurrent isolation harness and portable candidate set owner |
 | `fm-ensure-agents-md.sh` | Ensure a project's real `AGENTS.md`, its `CLAUDE.md` `@AGENTS.md` pointer, and the canonical self-governance section |
 | `fm-guard.sh`            | Warn on primary-checkout tangles, pending queued wakes, and unhealthy supervision    |
-| `fm-primary-scope-lib.sh` | Shared marker-or-plain-checkout primary-home predicate for tracked hooks; a valid secondmate marker force-includes treehouse-leased linked homes |
+| `fm-primary-scope-lib.sh` | This library owns the primary-home predicate, linked-worktree refusal, and ancestor-cwd walk; valid secondmate markers include linked homes. |
 | `fm-session-lock-lib.sh` | Shared session-lock identity owner for fm-lock.sh and the Claude Stop auto-arm |
 | `fm-claude-stop-autoarm.sh` | Claude Stop `asyncRewake` hook owning tokenless watcher continuity with single-flight exit-2 rewake (docs/watcher-continuity.md) |
 | `fm-turnend-guard.sh`    | Shared primary turn-end guard: no blind end, no prose-only ready-action idle, and no owner-invoke wait (docs/turnend-guard.md) |

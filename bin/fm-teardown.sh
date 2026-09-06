@@ -168,6 +168,8 @@
 #     root still exists, so the account's healthy LaunchAgent worker and every
 #     live remote secondmate worker are out of scope. Best effort: a sweep
 #     failure never blocks this teardown.
+# Protected-process refusals name the command, cwd, and session relocation remedy.
+# Linked-worktree home refusal is owned by bin/fm-primary-scope-lib.sh.
 set -eu
 
 usage() {
@@ -182,6 +184,10 @@ Options:
   --force  Skip ordinary-task dirty and landed-work checks, skip scout report
            checks, discard secondmate child work, and skip the no-mistakes
            validation-truth gate because discard is not a green claim.
+  A live session host rooted in the task worktree or task temp directory makes
+  teardown refuse.
+  --force does not override this protected-process refusal.
+  Linked-worktree home refusal: bin/fm-primary-scope-lib.sh.
   -h, --help
            Show this help.
 EOF
@@ -198,6 +204,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+# shellcheck source=bin/fm-primary-scope-lib.sh
+. "$SCRIPT_DIR/fm-primary-scope-lib.sh"
+fm_home_refuse_linked_worktree "$FM_HOME" fm-teardown.sh || exit 1
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 SECONDMATE_REG="$DATA/secondmates.md"
@@ -1518,7 +1527,7 @@ pids_with_cwd_under() {  # <dir>
         path=${line#n}
         case "$path" in
           "$dir"|"$dir"/*)
-            [ -n "$pid" ] && [ "$pid" != "$$" ] && printf '%s\n' "$pid"
+            [ -n "$pid" ] && [ "$pid" != "$$" ] && printf '%s\t%s\n' "$pid" "$path"
             ;;
         esac
         ;;
@@ -1679,15 +1688,22 @@ task_pids_under_roots() {  # <dir>...
   TASK_PIDS=
   TASK_PIDS_FAILED_DIR=
   TASK_PIDS_REFUSE_REASON=
-  local dir dir_pids pids="" pid filtered="" protected_status
+  local dir dir_pids pids="" pid cwd filtered="" protected_status
+  TASK_PID_CWDS=()
   for dir in "$@"; do
     [ -n "$dir" ] || continue
     if ! dir_pids=$(pids_with_cwd_under "$dir"); then
       TASK_PIDS_FAILED_DIR=$dir
       return 1
     fi
-    pids="$pids
-$dir_pids"
+    while IFS=$'\t' read -r pid cwd; do
+      [ -n "$pid" ] || continue
+      TASK_PID_CWDS[pid]=$cwd
+      pids="$pids
+$pid"
+    done <<EOF
+$dir_pids
+EOF
   done
   TASK_PIDS=$(printf '%s\n' "$pids" | grep -E '^[0-9]+$' | sort -un || true)
   task_load_protected_set || return 1
@@ -1723,16 +1739,51 @@ reap_task_pids_or_refuse() {  # <dir>...
   return 1
 }
 
-task_report_spared_hosts() {  # <root>
-  local root=$1 rendered
-  [ -n "${TASK_SPARED_PIDS:-}" ] || return 0
-  rendered=$(printf '%s' "$TASK_SPARED_PIDS" | tr '\n' ' ')
-  echo "teardown: sparing host process(es) for $ID still rooted in ${root:-<unknown>}: $rendered" >&2
+# Render each protected pid once using cwd captured by the existing lsof scan.
+task_render_spared_hosts() {
+  local pid comm separator=
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    comm=$(ps -p "$pid" -o comm= 2>/dev/null) || comm='<unknown>'
+    printf '%s%s (%s, cwd=%s)' "$separator" "$pid" "$comm" "${TASK_PID_CWDS[pid]:-<unknown>}"
+    separator=' '
+  done <<EOF
+${TASK_SPARED_PIDS:-}
+EOF
+}
+
+task_render_spared_roots() {  # <dir>...
+  local dir root pid cwd separator=
+  for dir in "$@"; do
+    [ -n "$dir" ] || continue
+    root=$(CDPATH='' cd -- "$dir" 2>/dev/null && pwd -P) || continue
+    while IFS= read -r pid; do
+      [ -n "$pid" ] || continue
+      cwd=${TASK_PID_CWDS[pid]:-}
+      case "$cwd" in
+        "$root"|"$root"/*)
+          printf '%s%s' "$separator" "$dir"
+          separator=' and '
+          break
+          ;;
+      esac
+    done <<EOF
+${TASK_SPARED_PIDS:-}
+EOF
+  done
+  [ -n "$separator" ] || printf '<protected root>'
 }
 
 task_refuse_treehouse_return_with_protected_roots() {  # <dir>...
-  local rendered
+  local rendered roots dir has_root=0
   TASK_SPARED_PIDS=
+  for dir in "$@"; do
+    if [ -n "$dir" ] && [ -d "$dir" ]; then
+      has_root=1
+      break
+    fi
+  done
+  [ "$has_root" -eq 1 ] || return 0
   if ! command -v lsof >/dev/null 2>&1; then
     if ! task_load_protected_set; then
       printf '%s\n' "$TASK_PIDS_REFUSE_REASON" >&2
@@ -1744,8 +1795,9 @@ task_refuse_treehouse_return_with_protected_roots() {  # <dir>...
   fi
   reap_task_pids_or_refuse "$@" || return 1
   [ -n "${TASK_SPARED_PIDS:-}" ] || return 0
-  rendered=$(printf '%s' "$TASK_SPARED_PIDS" | tr '\n' ' ')
-  echo "REFUSED: protected process(es) for $ID remain rooted in the worktree/tasktmp: $rendered; preserving the worktree/tasktmp for manual inspection or retry." >&2
+  rendered=$(task_render_spared_hosts)
+  roots=$(task_render_spared_roots "$@")
+  echo "REFUSED: protected process(es) for $ID remain rooted in the worktree/tasktmp: $rendered; preserving the worktree/tasktmp for manual inspection or retry. Clear it: exit that session or relocate its host shell out of $roots (start the next firstmate from $FM_HOME), then rerun bin/fm-teardown.sh $ID." >&2
   return 1
 }
 
@@ -2875,10 +2927,8 @@ fi
 if [ "$KIND" != secondmate ]; then
   conclude_task_no_mistakes_run "$WT"
   reap_task_worktree_processes worktree "$WT" "$TASK_TMP" || exit 1
-  if [ "$BACKEND" != orca ] && [ -d "$WT" ]; then
-    task_refuse_treehouse_return_with_protected_roots "$WT" "$TASK_TMP" || exit 1
-  else
-    task_report_spared_hosts "$WT"
+  task_refuse_treehouse_return_with_protected_roots "$WT" "$TASK_TMP" || exit 1
+  if [ "$BACKEND" = orca ] || [ ! -d "$WT" ]; then
     fm_lock_release "$SESSION_PUBLICATION_LOCK" || exit 1
     SESSION_PUBLICATION_LOCK_HELD=0
   fi
@@ -2904,6 +2954,7 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
     require_orca_worktree_path_match_if_present "$ORCA_WORKTREE_ID" "$WT" || exit 1
     ORCA_PATH_MATCH_VERIFIED=1
   fi
+  task_refuse_treehouse_return_with_protected_roots "$WT" "$TASK_TMP" || exit 1
   if [ -d "$WT" ]; then
     rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
       "$WT/.opencode/plugins/fm-busy-state.js" \
@@ -3032,7 +3083,12 @@ remove_kimi_turnend_auth "$STATE" "$ID" || exit 1
 fm_backend_clear_transition "$BACKEND" "$STATE" "$T" || true
 # Remove the per-task temp root (/tmp/fm-<id>/, incl. its gotmp/) recorded by spawn.
 # Read before the state-file rm below; empty (pre-fix tasks without tasktmp=) is a no-op.
-[ -n "$TASK_TMP" ] && rm -rf "$TASK_TMP"
+if [ -n "$TASK_TMP" ]; then
+  [ "$KIND" = secondmate ] \
+    || task_refuse_treehouse_return_with_protected_roots "$TASK_TMP" \
+    || exit 1
+  rm -rf "$TASK_TMP"
+fi
 remove_pr_poll_artifacts "$STATE" "$ID" || exit 1
 retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 status_retire_presentation_task "$STATE" "$ID" || exit 1

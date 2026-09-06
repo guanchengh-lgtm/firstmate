@@ -3854,6 +3854,112 @@ test_afk_paused_changed_pane_hands_off_plain_stale() {
   pass "AFK changed paused panes hand off plain stale identities for daemon-owned pause triage"
 }
 
+
+# Exercise the executable with two idle windows so the exclusion cannot pass
+# merely because stale detection stopped working for every task.
+test_own_pane_exclusion() {
+  local shape=$1 dir state fakebin out a b backend pid key window round
+  dir=$(make_case "own-pane-$shape"); state="$dir/state"; fakebin="$dir/fakebin"; out="$dir/watch.out"
+  a=test:fm-a; b=test:fm-b; backend=tmux
+  local identity=()
+  case "$shape" in
+    herdr) a=default:w1:p2; b=default:w1:p3; backend=herdr
+      identity=(HERDR_ENV=1 HERDR_PANE_ID=w1:p2 HERDR_SESSION=default) ;;
+    collision) a=test:fm-a.b; b=test:fm-a/b
+      identity=(FM_SUPERVISOR_TARGET=test:fm-a.b) ;;
+    override) identity=(FM_SUPERVISOR_TARGET=test:fm-a) ;;
+    tmux) identity=(TMUX_PANE=%7)
+      mv "$fakebin/tmux" "$fakebin/tmux-original"
+      cat > "$fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+if [ "$1" = display-message ] && [ "${5:-}" = '#{session_name}:#{window_name}' ]; then
+  printf 'test:fm-a\n'
+  exit 0
+fi
+exec "$(dirname "$0")/tmux-original" "$@"
+SH
+      chmod +x "$fakebin/tmux" ;;
+    fallback) a=firstmate:0 ;;
+  esac
+  cat > "$fakebin/herdr" <<'SH'
+#!/usr/bin/env bash
+case "$1 ${2:-}" in
+  'status --json') printf '{"server":{"running":true}}\n' ;;
+  'pane read') printf 'finished, awaiting review' ;;
+  'agent get') printf '{"result":{"agent":{"agent_status":"idle"}}}\n' ;;
+  *) exit 1 ;;
+esac
+SH
+  chmod +x "$fakebin/herdr"
+  printf 'finished, awaiting review' > "$dir/pane.txt"
+  fm_write_meta "$state/a.meta" "window=$a" "backend=$backend" 'kind=ship'
+  fm_write_meta "$state/b.meta" "window=$b" "backend=$backend" 'kind=ship'
+  for window in "$a" "$b"; do
+    key=$(printf '%s' "$window" | tr ':/.' '___')
+    hash_text 'finished, awaiting review' > "$state/.hash-$key"
+    printf '1\n' > "$state/.count-$key"
+  done
+  watch_bg "$state" "$fakebin" "$out" env -u TMUX_PANE -u HERDR_ENV -u HERDR_PANE_ID \
+    -u HERDR_SESSION -u FM_SUPERVISOR_TARGET FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" ${identity[@]+"${identity[@]}"}
+  pid=$!
+  wait_for_exit "$pid" 200 || { reap "$pid"; fail "$shape did not escalate an idle worker"; }
+  if [ "$shape" = fallback ]; then
+    grep -Fx "stale: $a" "$out" >/dev/null || fail "a guessed default excluded the first worker"
+    ack_stopped_cycle "$state" || fail "could not acknowledge fallback first wake"
+    watch_bg "$state" "$fakebin" "$out" env -u TMUX_PANE -u HERDR_ENV -u HERDR_PANE_ID \
+      -u HERDR_SESSION -u FM_SUPERVISOR_TARGET FM_FAKE_TMUX_CAPTURE="$dir/pane.txt"
+    pid=$!
+    wait_for_exit "$pid" 200 || { reap "$pid"; fail "fallback did not escalate the second worker"; }
+    grep -Fx "stale: $b" "$out" >/dev/null || fail "fallback hid the second worker"
+  else
+    grep -Fx "stale: $b" "$out" >/dev/null || fail "$shape excluded no own pane: $(cat "$out")"
+    grep -F "stale: $b" "$state/.wake-queue" >/dev/null || fail "$shape did not queue the unrelated worker stale wake"
+    grep -F "stale: $a" "$state/.wake-queue" >/dev/null && fail "$shape queued its own pane"
+    ack_stopped_cycle "$state" || fail "could not acknowledge other worker wake"
+    rm "$state/b.meta"
+    watch_bg "$state" "$fakebin" "$out" env -u TMUX_PANE -u HERDR_ENV -u HERDR_PANE_ID \
+      -u HERDR_SESSION -u FM_SUPERVISOR_TARGET FM_FAKE_TMUX_CAPTURE="$dir/pane.txt" ${identity[@]+"${identity[@]}"}
+    pid=$!
+    for round in 1 2 3; do
+      wait_poll_cycle "$state" "$pid" || { reap "$pid"; fail "$shape surfaced its own pane on a later poll"; }
+    done
+    reap "$pid"
+    [ ! -s "$out" ] || fail "$shape printed a wake for its own pane"
+    [ "$(grep -Fc "absorbed own-pane window $a recorded by task a:" "$state/.watch-triage.log")" = 1 ] \
+      || fail "$shape own-pane triage line did not appear exactly once"
+  fi
+  pass "$shape own-pane selection preserves unrelated worker stale escalation"
+}
+
+test_own_pane_event_subscription() {
+  local dir
+  dir=$(make_case own-pane-events)
+  FM_HOME="$dir" FM_STATE_OVERRIDE="$dir/state" FM_SUPERVISOR_TARGET=default:w1:p2 \
+    bash -c '
+      . "$1"
+      recorded_windows() { printf "%s\n" default:w1:p2 default:w1:p3; }
+      window_backend() { printf herdr; }
+      window_kind() { printf ship; }
+      window_to_task() { printf a; }
+      fm_backend_has_push() { return 0; }
+      fm_backend_events_capable() { return 0; }
+      fm_backend_wait_transition() { printf "%s\n" "$@" > "$FM_HOME/subscribed"; return 1; }
+      sleep() { :; }
+      event_wait_or_sleep
+    ' _ "$WATCH" "$dir" || fail "own-pane event subscription failed"
+  grep -Fx default:w1:p3 "$dir/subscribed" >/dev/null || fail "event subscription excluded the unrelated worker"
+  grep -Fx default:w1:p2 "$dir/subscribed" >/dev/null && fail "event subscription included the own pane"
+  pass "event subscription excludes only the own pane"
+}
+
+test_own_pane_exclusion herdr
+test_own_pane_exclusion collision
+test_own_pane_exclusion override
+test_own_pane_exclusion tmux
+test_own_pane_exclusion fallback
+test_own_pane_event_subscription
+[ "${1:-}" != own-pane ] || exit 0
+
 test_status_span_actionable_classifier
 test_status_span_survives_a_later_routine_append
 test_status_span_respects_decision_closure

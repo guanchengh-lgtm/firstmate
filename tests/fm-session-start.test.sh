@@ -106,6 +106,11 @@ fi
 exit 0
 SH
   chmod +x "$fakebin/no-mistakes"
+  cat > "$fakebin/lsof" <<'SH'
+#!/usr/bin/env bash
+printf 'p%s\nfcwd\nn%s\n' "${FM_FAKE_LSOF_PID:-$$}" "$FM_HOME"
+SH
+  chmod +x "$fakebin/lsof"
   printf '%s\n' manual > "${fakebin%/*}/home-placeholder" 2>/dev/null || true
 }
 
@@ -227,6 +232,10 @@ for argument in "$@"; do
   previous=$argument
 done
 case "$*" in
+  *"ppid="*"comm="*)
+    printf '1 /usr/local/bin/%s\n' "$harness"
+    exit 0
+    ;;
   *"comm="*)
     if [ -z "${FM_FAKE_HARNESS_PID:-}" ] || [ "$pid" = "$FM_FAKE_HARNESS_PID" ] \
       || [ "$pid" = "${FM_FAKE_LIVE_HOLDER_PID:-}" ]; then
@@ -1911,7 +1920,16 @@ $rec
 EOF
   make_fake_toolchain "$fakebin"
   make_fake_ps_claude "$fakebin"
-  make_hanging_tool "$fakebin" git
+  # The fixture hangs bootstrap's Git work, after the home refusal preflight.
+  cat > "$fakebin/git" <<SH
+#!/usr/bin/env bash
+if [ "\${1:-}" = -C ] && [ "\${2:-}" = "$home" ]; then
+  exec /usr/bin/git "\$@"
+fi
+trap '' TERM
+sleep 600
+SH
+  chmod +x "$fakebin/git"
 
   mechanism=$(FM_TIMEOUT_MECHANISM_OVERRIDE=bash bash -c '. "$1"; fm_timeout_mechanism' \
     _ "$ROOT/bin/fm-timeout-lib.sh")
@@ -1951,6 +1969,28 @@ EOF
   expect_code 137 "$status" "pure-Bash natural command exit 137"
 
   pass "the pure-Bash watchdog bounds session start, kills its hung grandchild, and emits the truncation contract"
+}
+
+test_home_preflight_is_bounded() {
+  local rec root home fakebin out status=0
+  rec=$(new_world home-preflight-bound)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  make_hanging_tool "$fakebin" git
+  # An outer watchdog makes a regression fail without stranding this test.
+  # shellcheck source=bin/fm-timeout-lib.sh
+  . "$ROOT/bin/fm-timeout-lib.sh"
+  out=$(fm_run_timed 12 env FM_TIMEOUT_MECHANISM_OVERRIDE=bash \
+    FM_SESSION_START_TIMEOUT=2 FM_HOME="$home" FM_ROOT_OVERRIDE="$root" \
+    PATH="$fakebin:$BASE_PATH" "$SESSION_START" 2>&1) || status=$?
+  expect_code 0 "$status" "the inner startup bound did not contain the home preflight"
+  assert_contains "$out" "RUNTIME BOUND" "the hung preflight omitted timeout advice"
+  assert_absent "$home/state/.lock" "the hung preflight wrote a session lock"
+  assert_absent "$home/state/.session-start-complete" "the hung preflight claimed completion"
+  pass "the session deadline bounds a hung home preflight before any lock write"
 }
 
 test_portable_timeout_escalates_term_resistant_process() {
@@ -2555,6 +2595,144 @@ EOF
   pass "session start rejects Pi loaded markers from previous sessions"
 }
 
+# HOST_CWD uses real cwd evidence; only the fixture parent's harness name is fake.
+# The negative case bounds its ancestry at that parent to avoid the test runner's cwd.
+test_bootstrap_host_cwd() {
+  local mode=$1 location=$2 failed_tool=${3:-none} rec root home fakebin worktree host_dir out status host_pid
+  rec=$(new_world "host-cwd-$mode-$location-$failed_tool")
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  rm -f "$fakebin/lsof"
+  printf '%s\n' manual > "$home/config/tasks-backend"
+  printf '%s\n' tmux > "$home/config/backend"
+  worktree="${root%/*}/copy"
+  git -C "$root" worktree add -q --detach "$worktree"
+  worktree=$(cd "$worktree" && pwd -P)
+  case "$location" in
+    copy) host_dir=$worktree ;;
+    nested)
+      mkdir -p "$worktree/subdir"
+      host_dir="$worktree/subdir"
+      ;;
+    *) host_dir=$home ;;
+  esac
+  cat > "$fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+set -u
+pid=
+previous=
+for argument in "$@"; do
+  [ "$previous" = -p ] && pid=$argument
+  previous=$argument
+done
+case "$*" in
+  *ppid=*comm=*)
+    [ "${FM_HOST_CWD_FAILED_TOOL:-none}" != ps ] || exit 1
+    if [ "${FM_HOST_CWD_BOUND_PARENT:-0}" = 1 ] && [ "$pid" = "$FM_HOST_CWD_PARENT" ]; then
+      identity=$(/bin/ps "$@") || exit $?
+      read -r parent comm <<< "$identity"
+      printf '1 %s\n' "$comm"
+    else
+      exec /bin/ps "$@"
+    fi
+    ;;
+  *comm=*)
+    if [ "$pid" = "$FM_HOST_CWD_PARENT" ]; then
+      printf 'codex\n'
+    else
+      exec /bin/ps "$@"
+    fi
+    ;;
+  *args=*)
+    if [ "$pid" = "$FM_HOST_CWD_PARENT" ]; then
+      printf 'codex\n'
+    else
+      exec /bin/ps "$@"
+    fi
+    ;;
+  *) exec /bin/ps "$@" ;;
+esac
+SH
+  chmod +x "$fakebin/ps"
+  # The wrapper remains the live parent while bootstrap runs from the real home.
+  # Positive cases keep real lsof; failure cases exercise its public error path.
+  if [ "$failed_tool" = lsof ]; then
+    printf '#!/bin/sh\nexit 1\n' > "$fakebin/lsof"
+    chmod +x "$fakebin/lsof"
+  elif [ "$failed_tool" = git ]; then
+    printf '#!/bin/sh\nexit 1\n' > "$fakebin/git"
+    chmod +x "$fakebin/git"
+  fi
+  status=0
+  # shellcheck disable=SC2016
+  out=$(env -u FM_STATE_OVERRIDE -u FM_DATA_OVERRIDE -u FM_CONFIG_OVERRIDE \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
+    FM_BOOTSTRAP_NETWORK=skip FM_BOOTSTRAP_DETECT_ONLY="$([ "$mode" = read-only ] && echo 1 || echo 0)" \
+    FM_BOOTSTRAP_LOCKED="$([ "$mode" = locked ] && echo 1 || echo 0)" \
+    FM_HOST_CWD_BOUND_PARENT="$([ "$location" = copy ] && echo 0 || echo 1)" \
+    FM_HOST_CWD_FAILED_TOOL="$failed_tool" \
+    bash -c '
+      cd "$1" || exit 1
+      export FM_HOST_CWD_PARENT=$$
+      printf "%s\n" "$$" > "$2/host-pid"
+      (cd "$2" && "$3")
+      result=$?
+      exit "$result"
+    ' _ "$host_dir" "$home" "$ROOT/bin/fm-bootstrap.sh" 2>&1) || status=$?
+  expect_code 0 "$status" "$mode bootstrap failed during HOST_CWD detection"
+  host_pid=$(cat "$home/host-pid")
+  if [ "$failed_tool" != none ]; then
+    assert_contains "$out" "HOST_CWD: could not verify ancestor working directories ($failed_tool failed); treat teardown refusals naming this session as genuine." \
+      "$mode bootstrap failed to name $failed_tool uncertainty"
+    assert_not_contains "$out" 'HOST_CWD: process' "$mode bootstrap falsely reported a verified ancestor after $failed_tool failed"
+    [ "$(printf '%s\n' "$out" | grep -c '^HOST_CWD:')" -eq 1 ] \
+      || fail "$mode bootstrap repeated the verification failure"
+  elif [ "$location" = copy ]; then
+    assert_contains "$out" "HOST_CWD: process $host_pid (" "$mode bootstrap omitted the real worktree-rooted parent"
+    assert_contains "$out" "has cwd $worktree, a task copy" "$mode bootstrap omitted the real ancestor cwd"
+    assert_contains "$out" "Relocate: exit this session, cd $home, relaunch the harness, then rerun teardown." \
+      "$mode bootstrap omitted the relocation advice"
+    [ "$(printf '%s\n' "$out" | grep -c '^HOST_CWD:')" -eq 1 ] \
+      || fail "$mode bootstrap repeated the host warning"
+  else
+    assert_not_contains "$out" 'HOST_CWD:' "$mode bootstrap warned when the bounded ancestry was outside a copy"
+  fi
+  pass "$mode bootstrap reports ancestor cwd for $location with failed tool $failed_tool"
+}
+
+if [ "${1:-}" = runtime-bound ]; then
+  test_home_preflight_is_bounded
+  test_runtime_bound_truncates_loudly_and_exits_zero
+  exit 0
+fi
+
+if [ "${1:-}" = host-cwd ]; then
+  test_bootstrap_host_cwd locked copy
+  test_bootstrap_host_cwd read-only copy
+  test_bootstrap_host_cwd locked outside
+  test_bootstrap_host_cwd read-only outside
+  test_bootstrap_host_cwd locked copy ps
+  test_bootstrap_host_cwd read-only copy ps
+  test_bootstrap_host_cwd locked copy lsof
+  test_bootstrap_host_cwd read-only copy lsof
+  test_bootstrap_host_cwd locked nested git
+  test_bootstrap_host_cwd read-only nested git
+  exit 0
+fi
+
+test_bootstrap_host_cwd locked copy
+test_bootstrap_host_cwd read-only copy
+test_bootstrap_host_cwd locked outside
+test_bootstrap_host_cwd read-only outside
+test_bootstrap_host_cwd locked copy ps
+test_bootstrap_host_cwd read-only copy ps
+test_bootstrap_host_cwd locked copy lsof
+test_bootstrap_host_cwd read-only copy lsof
+test_bootstrap_host_cwd locked nested git
+test_bootstrap_host_cwd read-only nested git
+
 test_context_digest_absent_empty_present
 test_lock_refusal_read_only_path
 test_lock_write_failure_read_only_path
@@ -2595,6 +2773,7 @@ test_pi_diagnostic_rejects_stale_loaded_marker
 test_pi_diagnostic_accepts_prelock_loaded_marker
 test_pi_diagnostic_rejects_missing_turnend_guard_marker
 test_pi_diagnostic_rejects_previous_session_loaded_marker
+test_home_preflight_is_bounded
 test_runtime_bound_truncates_loudly_and_exits_zero
 test_portable_timeout_escalates_term_resistant_process
 test_runtime_bound_leaves_a_healthy_digest_untouched

@@ -21,7 +21,7 @@
 #                 "HOME_SUMMARY: <ledger never published|not republished since
 #                 <stamp>>; <n> failed attempt(s) ... last: <recorded failure>",
 #                 "BACKLOG_RECONCILE: <id>: <what this home could not reconcile>",
-#                 "TANGLE: <remediation>",
+#                 "TANGLE: <remediation>", "HOST_CWD: <host or verification advice>",
 #                 "SECONDMATE_SYNC: secondmate <id>: skipped: <reason>",
 #                 "NUDGE_SECONDMATES: secondmate <id>: send failed: <reason>",
 #                 "BOOTSTRAP_INFO: nudged fm-<id> with '<message>'",
@@ -171,6 +171,10 @@ DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 . "$SCRIPT_DIR/fm-backlog-transition-lib.sh"
 # shellcheck source=bin/fm-quota-axi-lib.sh disable=SC1091
 . "$SCRIPT_DIR/fm-quota-axi-lib.sh"
+# shellcheck source=bin/fm-primary-scope-lib.sh
+. "$SCRIPT_DIR/fm-primary-scope-lib.sh"
+# shellcheck source=bin/fm-session-lock-lib.sh
+. "$SCRIPT_DIR/fm-session-lock-lib.sh"
 # shellcheck source=bin/fm-tangle-lib.sh disable=SC1091
 . "$SCRIPT_DIR/fm-tangle-lib.sh"
 # shellcheck source=bin/fm-ff-lib.sh disable=SC1091
@@ -1427,7 +1431,27 @@ detect_local_tools() {
   fi
 }
 
+# HOST_CWD is advisory in both locked and read-only detection modes.
+# A failed walk names its tool and never claims the ancestry is clean.
+detect_host_cwd() {
+  local host result status pid comm cwd
+  host=$(fm_harness_ancestry_pid 2>/dev/null) || return 0
+  status=0
+  result=$(fm_ancestor_cwd_in_linked_worktree "$host") || status=$?
+  case "$status" in
+    0)
+      IFS=$'\t' read -r pid comm cwd <<< "$result"
+      printf "HOST_CWD: process %s (%s) in this session's ancestry has cwd %s, a task copy; teardown of that copy will refuse while this session lives. Relocate: exit this session, cd %s, relaunch the harness, then rerun teardown.\n" "$pid" "$comm" "$cwd" "$FM_HOME"
+      ;;
+    2)
+      printf 'HOST_CWD: could not verify ancestor working directories (%s failed); treat teardown refusals naming this session as genuine.\n' "$result"
+      ;;
+  esac
+  return 0
+}
+
 detect_local_config() {
+  detect_host_cwd
   # Worktree-tangle check: the firstmate primary checkout (FM_ROOT) must sit on its
   # default branch, not a feature branch (see fm-tangle-lib.sh). Scoped to the
   # primary only; detached-HEAD worktrees and secondmate homes never trip it.
