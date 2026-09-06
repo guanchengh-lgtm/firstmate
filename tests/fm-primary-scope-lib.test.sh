@@ -27,7 +27,8 @@ cat > "$TMP_ROOT/probe" <<'SH'
 . "$1/bin/fm-primary-scope-lib.sh"
 fm_ancestor_cwd_in_linked_worktree "$PPID"
 SH
-out=$(bash -c 'cd "$1"; printf "%s\n" "$$" > "$2/parent"; bash "$2/probe" "$3"; :' _ "$TMP_ROOT/copy" "$TMP_ROOT" "$ROOT")
+# shellcheck disable=SC2016
+out=$(bash -c 'cd "$1"; sleep 300 & sleeper=$!; trap "kill $sleeper 2>/dev/null || true" EXIT; printf "%s\n" "$$" > "$2/parent"; bash "$2/probe" "$3"; :' _ "$TMP_ROOT/copy" "$TMP_ROOT" "$ROOT")
 case "$out" in *$'\t'"$TMP_ROOT/copy") ;; *) fail "real parent cwd absent: $out" ;; esac
 pid=${out%%$'\t'*}
 [ "$pid" = "$(cat "$TMP_ROOT/parent")" ] || fail 'ancestor probe did not name parent'
@@ -43,6 +44,12 @@ status=0
 PATH="$TMP_ROOT/fakebin:$PATH" fm_ancestor_cwd_in_linked_worktree "$$" >/dev/null || status=$?
 [ "$status" = 2 ] || fail 'ps failure not unknown'
 status=0
+# The explicit start-pid seam gives bootstrap fixtures a bounded empty chain.
 fm_ancestor_cwd_in_linked_worktree 1 >/dev/null || status=$?
 [ "$status" = 1 ] || fail 'empty ancestor chain not clean'
+printf '#!/bin/sh\nprintf "1 bash\\n"\n' > "$TMP_ROOT/fakebin/ps"
+printf '#!/bin/sh\nprintf "n%%s\\n" "%s"\n' "$TMP_ROOT/plain" > "$TMP_ROOT/fakebin/lsof"
+status=0
+PATH="$TMP_ROOT/fakebin:$PATH" fm_ancestor_cwd_in_linked_worktree "$$" >/dev/null || status=$?
+[ "$status" = 1 ] || fail 'verified non-worktree ancestry not clean'
 pass 'ancestor walk finds real cwd and distinguishes tool failures'

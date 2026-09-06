@@ -87,6 +87,9 @@
 # For normal supervision, resume the session-start primary-harness protocol
 # after each printed reason. Direct duplicate invocations of this script still
 # no-op through the watcher singleton lock.
+# The watcher excludes the confirmed firstmate pane from stale escalation and
+# push subscriptions, using bin/fm-supervisor-target-lib.sh for discovery.
+# A guessed default excludes nothing; one hash marker records the quiet exclusion.
 # Linked-worktree home refusal is owned by bin/fm-primary-scope-lib.sh.
 set -u
 
@@ -113,6 +116,14 @@ mkdir -p "$STATE"
 # runtime can exceed the bounded CI lint worker while adding no uncovered file.
 # shellcheck source=/dev/null
 . "$SCRIPT_DIR/fm-push-transition-lib.sh"
+# shellcheck source=bin/fm-supervisor-target-lib.sh
+. "$SCRIPT_DIR/fm-supervisor-target-lib.sh"
+
+# Resolve once: a guessed default must never hide a real worker.
+own_pane_target=$(discover_supervisor_target) || own_pane_target=
+case "$own_pane_target" in
+  %*) own_pane_target=$(tmux display-message -p -t "$own_pane_target" '#{session_name}:#{window_name}' 2>/dev/null) || own_pane_target= ;;
+esac
 # shellcheck source=bin/fm-pr-lib.sh
 . "$SCRIPT_DIR/fm-pr-lib.sh"
 # Single owner of durable merge-outcome publication, shared with
@@ -593,6 +604,19 @@ signal_turnend_panes_churned() {  # <file> ...
       return 1
     fi
   done
+  return 0
+}
+
+window_is_own_pane() {  # <window>
+  local w=$1 key task marker
+  [ -n "$own_pane_target" ] && [ "$w" = "$own_pane_target" ] || return 1
+  key=$(window_key "$w")
+  marker="$STATE/.hash-$key"
+  if [ "$(cat "$marker" 2>/dev/null || true)" != own-pane ]; then
+    task=$(window_to_task "$w" "$STATE")
+    triage_log "absorbed own-pane window $w recorded by task $task: the live firstmate occupies it; teardown will name the host"
+    printf '%s' own-pane > "$marker"
+  fi
   return 0
 }
 
@@ -1275,6 +1299,7 @@ event_wait_or_sleep() {
   local w b session first_backend="" first_session="" rec rc
   local windows=()
   while IFS= read -r w; do
+    window_is_own_pane "$w" && continue
     b=$(window_backend "$w")
     fm_backend_has_push "$b" || continue
     # Secondmate endpoints are supervised via status writes, not pane/agent
@@ -1774,6 +1799,7 @@ EOF
   # remembers the hash already classified, or the declaration a busy pane's
   # crossed turn bound already handed to the away-mode daemon).
   while IFS= read -r w; do
+    window_is_own_pane "$w" && continue
     kind=$(window_kind "$w")
     task=$(window_to_task "$w" "$STATE")
     # Steering-inbox loss detection runs before the secondmate stale

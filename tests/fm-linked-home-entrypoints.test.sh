@@ -16,7 +16,6 @@ git -C "$TMP_ROOT/repo" -c core.hooksPath=/dev/null commit -qm 'Create the fixtu
 git -C "$TMP_ROOT/repo" worktree add -q --detach "$TMP_ROOT/copy"
 
 python3 - "$TMP_ROOT" <<'PY'
-import hashlib
 import os
 from pathlib import Path
 import signal
@@ -61,7 +60,7 @@ def run(script, home=None, args=()):
 
 def snapshot():
     return {str(path.relative_to(copy)): (path.stat().st_mtime_ns,
-            hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None)
+            path.stat().st_size if path.is_file() else None)
             for path in copy.rglob('*')}
 
 

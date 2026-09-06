@@ -2656,7 +2656,7 @@ SH
 }
 
 test_host_session_under_worktree_is_spared() {
-  local case_dir rc host_pid child_pid sleeper_pid i=0
+  local case_dir rc host_pid child_pid sleeper_pid host_comm i=0
   case_dir=$(make_case host-session-spared)
   write_meta "$case_dir" no-mistakes ship
   land_shippable_commit "$case_dir"
@@ -2713,6 +2713,7 @@ exit 0
 EOF
   chmod +x "$case_dir/fakebin/git" "$case_dir/fakebin/treehouse"
 
+  host_comm=$(ps -p "$host_pid" -o comm=)
   rc=0
   run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
@@ -2733,7 +2734,7 @@ EOF
     "host-session-spared: teardown did not refuse the unsafe worktree return"
   [ "$(grep -Fc "$host_pid" "$case_dir/stderr")" -eq 1 ] \
     || fail "host-session-spared: refusal did not name the host shell exactly once"
-  assert_grep "cwd=$case_dir/wt)" "$case_dir/stderr" "host-session-spared: cwd missing"
+  assert_grep "$host_pid ($host_comm, cwd=$case_dir/wt)" "$case_dir/stderr" "host-session-spared: cwd missing"
   assert_grep "Clear it: exit that session or relocate its host shell out of" "$case_dir/stderr" "host-session-spared: remedy missing"
   assert_present "$case_dir/wt" "host-session-spared: teardown removed the worktree"
   assert_present "$case_dir/state/task-x1.meta" "host-session-spared: teardown removed task metadata"
