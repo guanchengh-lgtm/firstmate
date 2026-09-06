@@ -2776,8 +2776,8 @@ EOF
 
 test_host_session_under_tasktmp_is_spared() {
   local worktree_shape=${1:-present} case_dir case_name physical_tasktmp rc host_pid child_pid i=0
-  case_name=host-session-tasktmp-spared
-  [ "$worktree_shape" = present ] || case_name=host-session-tasktmp-missing-worktree
+  case_name="host-session-tasktmp-spared"
+  [ "$worktree_shape" = present ] || case_name="host-session-tasktmp-missing-worktree"
   case_dir=$(make_case "$case_name")
   write_meta "$case_dir" no-mistakes ship
   printf '%s\n' "tasktmp=$case_dir/tasktmp" >> "$case_dir/state/task-x1.meta"
