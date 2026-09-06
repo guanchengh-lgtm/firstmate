@@ -186,7 +186,7 @@ write_health() { # <state> [k=v...]
   dest="$GIT_DIR_ABS/record-health"
   tmp="$dest.tmp.$$"
   HEALTH_TMP=$tmp
-  python3 - "$dest" "$state" "$(pending_commit_count)" "$@" > "$tmp" <<'PYHEALTH' || return 1
+  python3 - "$dest" "$state" "$(pending_commits --count)" "$@" > "$tmp" <<'PYHEALTH' || return 1
 import datetime, pathlib, sys, time
 path, state, pending = sys.argv[1:4]
 old = {}
@@ -217,12 +217,33 @@ PYHEALTH
   HEALTH_TMP=
 }
 
-read_health_file() {
-  local dest="$GIT_DIR_ABS/record-health"
-  if [ -f "$dest" ]; then
-    cat "$dest"
-  fi
-}
+read_health_file() (
+  set -o pipefail
+  pending_commits --timestamp | python3 -c '
+import pathlib, sys, time
+path = pathlib.Path(sys.argv[1])
+values = dict(line.split("=", 1) for line in path.read_text().splitlines() if "=" in line) if path.is_file() else {"state": "unchanged"}
+now = int(time.time())
+pending, oldest = 0, now
+for line in sys.stdin:
+    pending += 1
+    oldest = min(oldest, int(line.split()[0]))
+values["pending"] = str(pending)
+since = int(values.get("pending_since", "0"))
+if pending:
+    since = since or oldest
+    if values.get("delivery") not in ("push-pending", "diverged"):
+        values["delivery"] = "pending"
+    if values.get("state") == "pushed":
+        values["state"] = "committed-local"
+else:
+    since = 0
+values["pending_since"] = str(since)
+values["pending_age_seconds"] = str(max(0, now - since) if since else 0)
+for key, value in values.items():
+    print(key + "=" + value)
+' "$GIT_DIR_ABS/record-health"
+)
 
 binding_state() {
   if [ ! -e "$DATA/.git" ] && [ ! -L "$DATA/.git" ] &&
@@ -691,7 +712,7 @@ real_index_is_clean() {
 }
 
 commit_candidate() { # <reason>
-  local reason=$1 branch expected message tree journal before_index
+  local reason=$1 branch expected message tree journal
   expected=$(sed -n '1p' "$GIT_DIR_ABS/record-branch")
   branch=$(git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" symbolic-ref -q --short HEAD) \
     || die 8 "Record HEAD changed during the transaction"
@@ -716,9 +737,7 @@ commit_candidate() { # <reason>
     rm -rf "$journal"
     return 8
   fi
-  before_index=missing
-  [ ! -f "$GIT_DIR_ABS/index" ] || before_index=$(sha256_file "$GIT_DIR_ABS/index") || return 8
-  printf '%s\n' "$START_HEAD" "$tree" "$before_index" > "$journal/before" || return 8
+  printf '%s\n' "$START_HEAD" "$tree" > "$journal/before" || return 8
   python3 - "$GIT_DIR_ABS/index.lock" > "$journal/lock-id" <<'PYLOCK' || return 8
 import os, sys
 info = os.stat(sys.argv[1])
@@ -736,7 +755,7 @@ PYLOCK
 }
 
 recover_index_publication() {
-  local journal="$GIT_DIR_ABS/record-publication" head before tree digest current parent lock_id
+  local journal="$GIT_DIR_ABS/record-publication" head before tree current parent lock_id publish=0
   [ -d "$journal" ] || return 0
   if [ ! -f "$journal/before" ] || [ ! -f "$journal/lock-id" ]; then
     [ ! -e "$GIT_DIR_ABS/index.lock" ] || return 8
@@ -745,21 +764,6 @@ recover_index_publication() {
   fi
   before=$(sed -n '1p' "$journal/before")
   tree=$(sed -n '2p' "$journal/before")
-  digest=$(sed -n '3p' "$journal/before")
-  head=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD 2>/dev/null || true)
-  if [ "$head" != "$before" ]; then
-    [ "$(git --git-dir="$GIT_DIR_ABS" rev-parse 'HEAD^{tree}')" = "$tree" ] || return 8
-    parent=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD^ 2>/dev/null || true)
-    [ "$parent" = "$before" ] || return 8
-    [ "$(GIT_INDEX_FILE="$journal/index" git --git-dir="$GIT_DIR_ABS" write-tree)" = "$tree" ] || return 8
-    current=missing
-    [ ! -f "$GIT_DIR_ABS/index" ] || current=$(sha256_file "$GIT_DIR_ABS/index") || return 8
-    if [ "$current" = "$(sha256_file "$journal/index")" ]; then
-      rm -rf "$journal"
-      return 0
-    fi
-    [ "$current" = "$digest" ] || return 8
-  fi
   if [ -e "$GIT_DIR_ABS/index.lock" ]; then
     lock_id=$(python3 - "$GIT_DIR_ABS/index.lock" <<'PYLOCK'
 import os, sys
@@ -772,7 +776,23 @@ PYLOCK
     (set -C; : > "$GIT_DIR_ABS/index.lock") 2>/dev/null || return 8
   fi
   INDEX_LOCK_HELD=1
+  head=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD 2>/dev/null || true)
   if [ "$head" != "$before" ]; then
+    [ "$(git --git-dir="$GIT_DIR_ABS" rev-parse 'HEAD^{tree}')" = "$tree" ] || return 8
+    parent=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD^ 2>/dev/null || true)
+    [ "$parent" = "$before" ] || return 8
+    [ "$(GIT_INDEX_FILE="$journal/index" git --git-dir="$GIT_DIR_ABS" write-tree)" = "$tree" ] || return 8
+    if ! git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" diff --cached --quiet --ita-visible-in-index "$tree" --; then
+      if [ -n "$before" ]; then
+        git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" diff --cached --quiet --ita-visible-in-index "$before" -- || return 8
+      else
+        current=$(git --git-dir="$GIT_DIR_ABS" ls-files --stage) || return 8
+        [ -z "$current" ] || return 8
+      fi
+      publish=1
+    fi
+  fi
+  if [ "$publish" -eq 1 ]; then
     cp "$journal/index" "$GIT_DIR_ABS/index.lock" || return 8
     mv -f "$GIT_DIR_ABS/index.lock" "$GIT_DIR_ABS/index" || return 8
   else
@@ -838,15 +858,15 @@ push_once() {
   esac
 }
 
-pending_commit_count() {
+pending_commits() {
   local remote_ref
   remote_ref="origin/$(sed -n '1p' "$GIT_DIR_ABS/record-branch")"
   if ! git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD >/dev/null 2>&1; then
-    printf '0\n'
+    if [ "${1:-}" = --count ]; then printf '0\n'; fi
   elif git --git-dir="$GIT_DIR_ABS" rev-parse --verify "$remote_ref" >/dev/null 2>&1; then
-    git --git-dir="$GIT_DIR_ABS" rev-list --count "$remote_ref..HEAD"
+    git --git-dir="$GIT_DIR_ABS" rev-list "$@" "$remote_ref..HEAD"
   else
-    git --git-dir="$GIT_DIR_ABS" rev-list --count HEAD
+    git --git-dir="$GIT_DIR_ABS" rev-list "$@" HEAD
   fi
 }
 
@@ -938,7 +958,7 @@ run_transaction() { # tick|checkpoint <reason> try|wait|required
     finish 0 committed-local commit="$sha"
   fi
   if [ "$rc" -eq 1 ]; then
-    pending=$(pending_commit_count)
+    pending=$(pending_commits --count)
     if [ "$pending" = 0 ]; then
       finish 0 unchanged commit="$sha"
     fi
@@ -949,7 +969,7 @@ run_transaction() { # tick|checkpoint <reason> try|wait|required
   scan_outgoing_commits || finish 5 scan-blocked
   validate_push_destinations
   class=$(push_once) || rc=$?
-  pending=$(pending_commit_count)
+  pending=$(pending_commits --count)
   case "$rc" in
     0) finish 0 pushed commit="$sha" ;;
     7) finish 7 diverged commit="$sha" ;;
@@ -959,6 +979,7 @@ run_transaction() { # tick|checkpoint <reason> try|wait|required
 }
 
 cmd_health() {
+  local health state
   case "$(binding_state)" in
     absent)
       emit disabled
@@ -966,13 +987,10 @@ cmd_health() {
       ;;
   esac
   validate_binding
-  if [ -f "$GIT_DIR_ABS/record-health" ]; then
-    state=$(sed -n 's/^state=//p' "$GIT_DIR_ABS/record-health" | head -1)
-    emit "${state:-unchanged}"
-    read_health_file
-  else
-    emit unchanged
-  fi
+  health=$(read_health_file) || die 8 "cannot read Record health"
+  state=$(printf '%s\n' "$health" | sed -n 's/^state=//p' | head -1)
+  emit "${state:-unchanged}"
+  printf '%s\n' "$health"
   exit 0
 }
 

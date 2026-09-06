@@ -1462,6 +1462,154 @@ SH
   pass 'fm-record: restart recovers prepared publication while preserving competing staging'
 }
 
+test_index_recovery_locks_before_comparing_staged_content() {
+  local home origin fakebin after
+  IFS=$(printf '\t') read -r home origin < <(new_home recovery-race)
+  setup_record "$home" "$origin"
+  printf 'before\n' > "$home/data/captain.md"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'recovery race seed'
+  printf 'after\n' > "$home/data/captain.md"
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  [ "$arg" != "$FM_HOME/data/.git/index.lock" ] || exit 1
+done
+exec "$FM_TEST_REAL_MV" "$@"
+SH
+  chmod +x "$fakebin/mv"
+  FM_TEST_REAL_MV=$(command -v mv) PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason teardown --required
+  expect_code 9 "$RC" 'recovery race publication failure'
+  after=$(git -C "$home/data" rev-parse HEAD)
+  rm "$fakebin/mv"
+  cat > "$fakebin/stage-race" <<'SH'
+#!/usr/bin/env bash
+[ ! -e "$FM_HOME/add-code" ] || exit 0
+printf 'staged bytes\n' > "$FM_HOME/data/user.md"
+"$FM_TEST_REAL_GIT" -C "$FM_HOME/data" add user.md > "$FM_HOME/add-output" 2>&1
+printf '%s\n' "$?" > "$FM_HOME/add-code"
+printf 'working bytes\n' > "$FM_HOME/data/user.md"
+ln -s missing "$FM_HOME/data/broken"
+SH
+  cat > "$fakebin/shasum" <<'SH'
+#!/usr/bin/env bash
+output=$("$FM_TEST_REAL_SHASUM" "$@") || exit 1
+for arg in "$@"; do
+  if [ "$arg" = "$FM_HOME/data/.git/index" ]; then stage-race; fi
+done
+printf '%s\n' "$output"
+SH
+  cat > "$fakebin/git" <<'SH'
+#!/usr/bin/env bash
+if [ -d "$FM_HOME/data/.git/record-publication" ] && [ -z "${GIT_INDEX_FILE:-}" ]; then
+  for arg in "$@"; do
+    if [ "$arg" = --cached ]; then
+      output=$("$FM_TEST_REAL_GIT" "$@")
+      rc=$?
+      stage-race
+      printf '%s' "$output"
+      exit "$rc"
+    fi
+  done
+fi
+exec "$FM_TEST_REAL_GIT" "$@"
+SH
+  chmod +x "$fakebin/stage-race" "$fakebin/shasum" "$fakebin/git"
+  FM_TEST_REAL_SHASUM=$(command -v shasum) FM_TEST_REAL_GIT=$(command -v git) \
+    PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason stow
+  expect_code 8 "$RC" 'broken source after recovery'
+  [ -s "$home/add-code" ] || fail 'fixture did not race recovery with git add'
+  [ "$(cat "$home/add-code")" -ne 0 ] || fail 'git add succeeded inside the recovery comparison and publication window'
+  [ "$(git -C "$home/data" rev-parse HEAD)" = "$after" ] || fail 'recovery race changed the committed snapshot'
+  git -C "$home/data" diff --cached --quiet || fail 'recovery race left an inconsistent index'
+  [ "$(cat "$home/data/user.md")" = 'working bytes' ] || fail 'recovery changed the competing working bytes'
+  pass 'fm-record: recovery holds the index lock throughout staged-content checks and publication'
+}
+
+test_index_recovery_accepts_a_status_refresh() {
+  local home origin fakebin fault target after entries
+  for fault in mv rm; do
+    IFS=$(printf '\t') read -r home origin < <(new_home "recovery-refresh-$fault")
+    setup_record "$home" "$origin"
+    printf 'before\n' > "$home/data/captain.md"
+    run_rec "$home" checkpoint --reason stow
+    expect_code 0 "$RC" 'refresh recovery seed'
+    printf 'after\n' > "$home/data/captain.md"
+    fakebin=$(fm_fakebin "$home")
+    if [ "$fault" = mv ]; then target=index.lock; else target=record-publication; fi
+    cat > "$fakebin/$fault" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  [ "$arg" != "$FM_HOME/data/.git/$FM_TEST_FAULT_TARGET" ] || exit 1
+done
+exec "$FM_TEST_REAL_COMMAND" "$@"
+SH
+    chmod +x "$fakebin/$fault"
+    FM_TEST_REAL_COMMAND=$(command -v "$fault") FM_TEST_FAULT_TARGET=$target \
+      PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason teardown --required
+    expect_code 9 "$RC" "interrupted index publication at $fault"
+    after=$(git -C "$home/data" rev-parse HEAD)
+    [ -d "$home/data/.git/record-publication" ] || fail 'publication interruption lost its recovery journal'
+    cp "$home/data/.git/index" "$home/index.before-refresh"
+    entries=$(git -C "$home/data" ls-files --stage)
+    GIT_OPTIONAL_LOCKS=1 git -C "$home/data" status --porcelain >/dev/null
+    if cmp -s "$home/index.before-refresh" "$home/data/.git/index"; then fail 'status did not refresh the index cache'; fi
+    [ "$(git -C "$home/data" ls-files --stage)" = "$entries" ] || fail 'status changed the staged entries'
+    run_rec "$home" checkpoint --reason teardown --required
+    expect_code 0 "$RC" "recovery after status at $fault"
+    [ "$(git -C "$home/data" rev-parse HEAD)" = "$after" ] || fail 'recovery repeated the committed snapshot'
+    git -C "$home/data" diff --cached --quiet || fail 'recovery did not reconcile the index'
+    [ ! -e "$home/data/.git/record-publication" ] || fail 'recovery retained the completed journal'
+    [ "$(cat "$home/data/captain.md")" = after ] || fail 'recovery changed the source bytes'
+  done
+  pass 'fm-record: recovery accepts stat refreshes before and after index publication'
+}
+
+test_health_reads_current_pending_commits_and_age() {
+  local home origin receipt before age first_age
+  IFS=$(printf '\t') read -r home origin < <(new_home current-health)
+  setup_record "$home" "$origin"
+  printf 'seed\n' > "$home/data/captain.md"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'current health seed push'
+  receipt="$home/data/.git/record-health"
+  cp "$receipt" "$home/pushed-health"
+  printf 'manual note\n' > "$home/data/manual.md"
+  git -C "$home/data" add manual.md
+  before=$(($(date +%s) - 120))
+  HOME="$TMP_ROOT/empty-home" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_DATA_OVERRIDE="$home/data" FM_STATE_OVERRIDE="$home/state" \
+    GIT_AUTHOR_DATE="$before +0000" GIT_COMMITTER_DATE="$before +0000" \
+    git -C "$home/data" commit -qm 'Manual checkpoint'
+  cp "$home/data/.git/index" "$home/index.before-health"
+  run_rec "$home" health
+  expect_code 0 "$RC" 'health after manual commit'
+  assert_contains "$OUT" 'state=committed-local' 'health claimed the manual commit was pushed'
+  assert_contains "$OUT" 'pending=1' 'health missed the outgoing manual commit'
+  assert_contains "$OUT" 'delivery=pending' 'health missed pending delivery'
+  assert_contains "$OUT" "last_push_at=$(sed -n 's/^last_push_at=//p' "$home/pushed-health")" 'health lost the last push receipt'
+  first_age=$(printf '%s\n' "$OUT" | sed -n 's/^pending_age_seconds=//p')
+  [ "$first_age" -ge 120 ] || fail 'health omitted elapsed age after the manual commit'
+  cmp -s "$receipt" "$home/pushed-health" || fail 'health rewrote the saved push receipt'
+  cmp -s "$home/data/.git/index" "$home/index.before-health" || fail 'health changed the index'
+  mv "$origin" "$origin.away"
+  run_rec "$home" tick
+  expect_code 6 "$RC" 'current health pending push'
+  cp "$receipt" "$home/pending-health"
+  sleep 2
+  run_rec "$home" health
+  expect_code 0 "$RC" 'current health pending age'
+  assert_contains "$OUT" 'state=push-pending' 'health lost the delivery failure'
+  assert_contains "$OUT" 'failure_class=offline' 'health lost the sanitized failure class'
+  assert_contains "$OUT" "last_push_at=$(sed -n 's/^last_push_at=//p' "$home/pushed-health")" 'pending health lost the push receipt'
+  age=$(printf '%s\n' "$OUT" | sed -n 's/^pending_age_seconds=//p')
+  first_age=$(sed -n 's/^pending_age_seconds=//p' "$home/pending-health")
+  [ "$age" -ge "$((first_age + 2))" ] || fail 'health did not advance the elapsed pending age'
+  cmp -s "$receipt" "$home/pending-health" || fail 'health rewrote pending delivery health'
+  pass 'fm-record: read-only health reports current commits and age while retaining delivery receipts'
+}
+
 test_outer_repository_stays_clean() {
   local after
   after=$(git -C "$ROOT" status --short --untracked-files=all)
@@ -1510,5 +1658,8 @@ test_scope_ignores_only_record_exclusions_and_refuses_separators
 test_quiet_ticks_skip_copy_hash_and_scan_work
 test_head_race_preserves_the_competing_commit
 test_index_publication_restart_preserves_user_staging
+test_index_recovery_locks_before_comparing_staged_content
+test_index_recovery_accepts_a_status_refresh
+test_health_reads_current_pending_commits_and_age
 
 test_outer_repository_stays_clean
