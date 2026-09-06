@@ -2520,6 +2520,36 @@ EOF
   pass "missing lsof falls back to reaping the tmux pane process group"
 }
 
+test_lsof_absent_with_missing_roots_completes() {
+  local case_dir rc lock_pid path_without_lsof
+  case_dir=$(make_case lsof-absent-missing-roots)
+  write_meta "$case_dir" no-mistakes ship
+  git -C "$case_dir/project" worktree remove --force "$case_dir/wt"
+  path_without_lsof=$(make_path_without_lsof "$case_dir")
+  PATH="$path_without_lsof" command -v lsof >/dev/null 2>&1 \
+    && fail "lsof-absent-missing-roots: fixture path unexpectedly exposes lsof"
+
+  sleep 300 &
+  lock_pid=$!
+  disown
+  printf '%s\n' "$lock_pid" > "$case_dir/state/.lock"
+
+  rc=0
+  FM_TEARDOWN_TEST_PATH="$path_without_lsof" \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if ! kill -0 "$lock_pid" 2>/dev/null; then
+    fail "lsof-absent-missing-roots: teardown killed the unrelated lock owner"
+  fi
+  kill -KILL "$lock_pid" 2>/dev/null || true
+  expect_code 0 "$rc" "lsof-absent-missing-roots: teardown should complete"
+  assert_absent "$case_dir/state/task-x1.meta" \
+    "lsof-absent-missing-roots: teardown retained task metadata"
+  assert_no_grep "REFUSED:" "$case_dir/stderr" \
+    "lsof-absent-missing-roots: teardown refused without a protected root"
+  pass "missing roots need no lsof check before task retirement"
+}
+
 test_lsof_error_refuses_before_removal() {
   local case_dir rc
   case_dir=$(make_case lsof-error-refusal)
@@ -4157,6 +4187,7 @@ test_leftover_then_sync_retains_unique_gone_branch() {
 }
 
 if [ "${1:-}" = host-cwd ]; then
+  test_lsof_absent_with_missing_roots_completes
   test_host_session_under_worktree_is_spared
   test_host_session_under_tasktmp_is_spared
   test_host_session_under_tasktmp_is_spared missing
@@ -4220,6 +4251,7 @@ test_own_autonomous_run_is_left_alone
 test_leaked_worktree_process_is_reaped
 test_leaked_tasktmp_process_is_reaped
 test_lsof_absent_reaps_tmux_process_group
+test_lsof_absent_with_missing_roots_completes
 test_lsof_error_refuses_before_removal
 test_reused_pid_identity_is_not_force_killed
 test_exec_changed_process_is_still_reaped

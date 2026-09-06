@@ -2610,8 +2610,14 @@ EOF
   worktree="${root%/*}/copy"
   git -C "$root" worktree add -q --detach "$worktree"
   worktree=$(cd "$worktree" && pwd -P)
-  host_dir=$worktree
-  [ "$location" = copy ] || host_dir=$home
+  case "$location" in
+    copy) host_dir=$worktree ;;
+    nested)
+      mkdir -p "$worktree/subdir"
+      host_dir="$worktree/subdir"
+      ;;
+    *) host_dir=$home ;;
+  esac
   cat > "$fakebin/ps" <<'SH'
 #!/usr/bin/env bash
 set -u
@@ -2655,6 +2661,9 @@ SH
   if [ "$failed_tool" = lsof ]; then
     printf '#!/bin/sh\nexit 1\n' > "$fakebin/lsof"
     chmod +x "$fakebin/lsof"
+  elif [ "$failed_tool" = git ]; then
+    printf '#!/bin/sh\nexit 1\n' > "$fakebin/git"
+    chmod +x "$fakebin/git"
   fi
   status=0
   # shellcheck disable=SC2016
@@ -2708,6 +2717,8 @@ if [ "${1:-}" = host-cwd ]; then
   test_bootstrap_host_cwd read-only copy ps
   test_bootstrap_host_cwd locked copy lsof
   test_bootstrap_host_cwd read-only copy lsof
+  test_bootstrap_host_cwd locked nested git
+  test_bootstrap_host_cwd read-only nested git
   exit 0
 fi
 
@@ -2719,6 +2730,8 @@ test_bootstrap_host_cwd locked copy ps
 test_bootstrap_host_cwd read-only copy ps
 test_bootstrap_host_cwd locked copy lsof
 test_bootstrap_host_cwd read-only copy lsof
+test_bootstrap_host_cwd locked nested git
+test_bootstrap_host_cwd read-only nested git
 
 test_context_digest_absent_empty_present
 test_lock_refusal_read_only_path

@@ -1774,8 +1774,15 @@ EOF
 }
 
 task_refuse_treehouse_return_with_protected_roots() {  # <dir>...
-  local rendered roots
+  local rendered roots dir has_root=0
   TASK_SPARED_PIDS=
+  for dir in "$@"; do
+    if [ -n "$dir" ] && [ -d "$dir" ]; then
+      has_root=1
+      break
+    fi
+  done
+  [ "$has_root" -eq 1 ] || return 0
   if ! command -v lsof >/dev/null 2>&1; then
     if ! task_load_protected_set; then
       printf '%s\n' "$TASK_PIDS_REFUSE_REASON" >&2

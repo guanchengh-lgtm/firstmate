@@ -35,12 +35,22 @@ fm_primary_scope_matches() {
 # Plain checkouts, marked secondmates, and non-git fixtures return 1.
 # Return 2 when Git cannot classify a repository-shaped home.
 fm_home_is_linked_worktree() {
-  local home=$1 inside git_dir git_common_dir
+  local home=$1 inside git_dir git_common_dir probe
   fm_root_is_secondmate_home "$home" && return 1
   command -v git >/dev/null 2>&1 || return 2
   if ! inside=$(git -C "$home" rev-parse --is-inside-work-tree 2>/dev/null); then
-    [ -e "$home/.git" ] || [ -L "$home/.git" ] || return 1
-    return 2
+    probe=$(CDPATH='' cd -- "$home" 2>/dev/null && pwd -P) || {
+      [ -e "$home" ] && return 2
+      return 1
+    }
+    while :; do
+      if [ -e "$probe/.git" ] || [ -L "$probe/.git" ]; then
+        return 2
+      fi
+      [ "$probe" != / ] || return 1
+      probe=${probe%/*}
+      [ -n "$probe" ] || probe=/
+    done
   fi
   [ "$inside" = true ] || return 1
   git_dir=$(git -C "$home" rev-parse --git-dir 2>/dev/null) || return 2
