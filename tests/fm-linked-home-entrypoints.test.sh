@@ -19,6 +19,7 @@ python3 - "$TMP_ROOT" <<'PY'
 import os
 from pathlib import Path
 import signal
+import shutil
 import subprocess
 import sys
 
@@ -103,6 +104,20 @@ try:
         assert sleeper.poll() is None, script + ' killed the worktree sleeper'
         assert copy.is_dir(), script + ' removed the worktree'
         print('ok - ' + script + ' refuses the linked home before state or process changes')
+
+    state = copy / 'state'
+    shutil.rmtree(state)
+    (fakebin / 'git').write_text('#!/bin/sh\nexit 127\n')
+    (fakebin / 'git').chmod(0o755)
+    before = snapshot()
+    code, out, err = run('fm-lock.sh')
+    expected_line = (f"REFUSED: fm-lock.sh cannot verify whether home {copy} is a linked "
+                     "worktree because Git classification failed; restore Git access, then retry.\n")
+    assert code == 1 and not out and err == expected_line, (code, out, err)
+    assert snapshot() == before, 'fm-lock.sh changed the linked home after Git failed'
+    assert not state.exists(), 'fm-lock.sh created state after Git failed'
+    (fakebin / 'git').unlink()
+    print('ok - fm-lock.sh refuses before writes when Git classification fails')
 
     # Both allowed-home cases must demonstrably reach each executable's next gate.
     plain = root / 'plain-home'
