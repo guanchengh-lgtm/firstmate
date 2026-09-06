@@ -125,14 +125,21 @@ task_section() {  # <brief>
   ' "$1"
 }
 
-# Finalized task body for recall. Stop at owned scaffold headings only, so a
-# task that starts with its own Markdown heading remains the query.
+# Finalized task body for recall. Stop at the first scaffold section that this
+# script owns and always writes after the task, so a task that carries its own
+# Markdown headings remains the query. A brief without any of those anchors
+# falls back to the conservative rule that any later heading ends the task.
 brief_finalized_task_section() {  # <brief>
   awk '
+    FNR == NR {
+      if ($0 ~ /^# (Named sources|Recalled pointers)[[:space:]]*$/ || $0 ~ /^# Herdr /) anchored = 1
+      next
+    }
     /^# Task[[:space:]]*$/ { in_task = 1; next }
-    in_task && /^# (Named sources|Recalled pointers|Herdr |Setup|Rules|Firstmate instruction inbox|Project memory|Definition of done)([[:space:]]|$)/ { exit }
+    in_task && anchored && ($0 ~ /^# (Named sources|Recalled pointers)[[:space:]]*$/ || $0 ~ /^# Herdr /) { exit }
+    in_task && !anchored && /^# / { exit }
     in_task { print }
-  ' "$1"
+  ' "$1" "$1"
 }
 
 frontmatter_is_firstmate_only() {  # <skill-file>
@@ -704,6 +711,10 @@ if [ -n "$TASK_FILE" ]; then
   fi
   [ -f "$TASK_FILE" ] && [ ! -L "$TASK_FILE" ] || {
     echo "error: --task-file is not a regular non-symlink file: $TASK_FILE" >&2
+    exit 1
+  }
+  grep -q '[^[:space:]]' "$TASK_FILE" || {
+    echo "error: --task-file is empty; a finalized task is required" >&2
     exit 1
   }
 fi

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Rank prior Record work and print recalled pointers.
 # Usage:
-#   fm-recall.sh [--surface brief|session-item|pointers] [--limit N]
+#   fm-recall.sh [--surface brief|pointers] [--limit N]
 #                [--task-id <id>] [--title <title>] [--body-file <path>]
 #                [--source <literal>]... [--status <id>=<state>]...
 #                [--exclude-id <id>]... [--exclude-path <path>]...
@@ -45,8 +45,7 @@
 # claim that process cleanup can never exceed the exact millisecond boundary.
 #
 # Surfaces. brief renders at most five pointers under a 150-token hard cap.
-# session-item renders at most three pointers and honors --token-budget when
-# set. pointers renders ranked lines only. The token estimate is
+# pointers renders ranked lines only. The token estimate is
 # ceil(UTF-8 bytes / 3), the same conservative local estimate as
 # config/startup-memory-budget, and is never a provider-exact token count.
 # The brief block starts with "# Recalled pointers" and the statement that

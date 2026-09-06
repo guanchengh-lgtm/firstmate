@@ -609,13 +609,13 @@ def load_archive(corpus):
         return
     lineno = 0
     header_date = None
-    header_line = 0
+    entry_line = 0
     block_lines = []
     block_bytes = 0
     truncated = False
 
     def flush():
-        if header_date is None or not block_lines:
+        if entry_line == 0 or not block_lines:
             return
         corpus.deadline.check()
         first = next((line for line in block_lines if line.strip()), "")
@@ -640,7 +640,7 @@ def load_archive(corpus):
         body = "\n".join(block_lines)
         report_rel = os.path.join(canonical, "report.md")
         report_path = os.path.join(corpus.root, report_rel)
-        display = "data/done-archive.md:%s" % header_line
+        display = "data/done-archive.md:%s" % entry_line
         src = "archive"
         heading = ""
         report_lines = []
@@ -703,12 +703,18 @@ def load_archive(corpus):
             if match:
                 flush()
                 header_date = match.group(1)
-                header_line = lineno
+                entry_line = 0
                 block_lines = []
                 block_bytes = 0
                 truncated = False
                 continue
-            if header_date is None:
+            if ARCH_FIRST.match(line):
+                flush()
+                entry_line = lineno
+                block_lines = []
+                block_bytes = 0
+                truncated = False
+            if entry_line == 0:
                 continue
             encoded = (line + "\n").encode("utf-8")
             if block_bytes + len(encoded) > ARCHIVE_LIMIT:
@@ -717,7 +723,7 @@ def load_archive(corpus):
                     corpus.note(
                         "partial-input",
                         "archive entry at line %s truncated at %s bytes"
-                        % (header_line, ARCHIVE_LIMIT),
+                        % (entry_line, ARCHIVE_LIMIT),
                     )
                     truncated = True
                 continue
@@ -945,8 +951,6 @@ def render_block(hits, surface, token_cap, now, omitted_start=0):
             text += "\n"
         return text, 0
     lines = ["# Recalled pointers", BRIEF_INTRO]
-    if surface == "session-item":
-        lines = []
     working = []
     for score, doc in hits:
         working.append((score, doc, TITLE_CUT))
@@ -998,27 +1002,17 @@ def read_query_inputs(title, body_file, sources, diagnostics):
     body = ""
     partial = False
     if body_file:
-        if body_file != "-" and (
-            os.path.islink(body_file) or not os.path.isfile(body_file)
-        ):
+        if os.path.islink(body_file) or not os.path.isfile(body_file):
             raise Unavailable("task body is not a regular file")
-        if body_file == "-":
-            data = sys.stdin.read(INPUT_LIMIT + 1)
-            if len(data) > INPUT_LIMIT:
-                body = data[:INPUT_LIMIT]
-                partial = True
-            else:
-                body = data
-        else:
-            text, truncated = read_bounded(body_file, INPUT_LIMIT)
-            if text is None:
-                raise Unavailable("task body cannot be read")
-            body = text
-            partial = truncated
-            if truncated:
-                diagnostics.append(
-                    "partial-input: task body truncated at %s bytes" % INPUT_LIMIT
-                )
+        text, truncated = read_bounded(body_file, INPUT_LIMIT)
+        if text is None:
+            raise Unavailable("task body cannot be read")
+        body = text
+        partial = truncated
+        if truncated:
+            diagnostics.append(
+                "partial-input: task body truncated at %s bytes" % INPUT_LIMIT
+            )
     chosen_title = title or first_meaningful_heading(body)
     if sources:
         for source in sources:
@@ -1070,7 +1064,7 @@ def extract_identities(text, root):
         found.append(token)
 
     for match in re.finditer(r"data/[A-Za-z0-9._/-]+(?:\.md)?(?::\d+)?", text):
-        add(identity_from_path(match.group(0), root))
+        add(identity_from_path(match.group(0).rstrip(".,;:"), root))
     for match in MD_LINK.finditer(text):
         add(identity_from_ref(match.group(1), root))
     for match in re.finditer(r"^- \[[ xX]\] (\S+) - ", text, re.M):
@@ -1139,6 +1133,16 @@ def render_session_batch(queries, ranked, token_cap, now):
             progressed = True
         if not progressed:
             break
+    while token_cap is not None and estimated_tokens(block_text()) > token_cap:
+        index = next(
+            (i for i in reversed(range(len(chosen))) if chosen[i]),
+            None,
+        )
+        if index is None:
+            break
+        dropped = chosen[index].pop()
+        used.discard(dropped[1].identity.token())
+        rejected.add(dropped[1].identity.token())
     return block_text(), chosen, omitted_count()
 
 
@@ -1279,7 +1283,7 @@ def build_parser():
     )
     parser.add_argument(
         "--surface",
-        choices=("brief", "session-item", "pointers"),
+        choices=("brief", "pointers"),
         default="pointers",
     )
     parser.add_argument("--limit", type=int, default=0)
@@ -1365,11 +1369,7 @@ def main(argv=None):
     )
     limit = args.limit
     if limit == 0:
-        limit = (
-            BRIEF_LIMIT
-            if args.surface == "brief"
-            else (SESSION_ITEM_LIMIT if args.surface == "session-item" else BRIEF_LIMIT)
-        )
+        limit = BRIEF_LIMIT
     token_cap = args.token_budget
     if token_cap < 0:
         token_cap = BRIEF_TOKEN_CAP if args.surface == "brief" else None
