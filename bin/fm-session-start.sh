@@ -12,10 +12,11 @@
 # belong in a script, not in N agent turns.
 #
 # COMPOSITION, NOT DUPLICATION: this script calls fm-lock.sh, fm-bootstrap.sh,
-# fm-wake-drain.sh, fm-prior-session-fold.sh, and fm-startup-network.sh as real
-# subprocesses and prints their real output. It never re-implements their logic;
+# fm-wake-drain.sh, fm-prior-session-fold.sh, fm-startup-network.sh, and
+# fm-recall.sh as real subprocesses and prints their real output. It never
+# re-implements their logic;
 # all sequencing/formatting logic added here stays local to this file. Those
-# five scripts remain fully working
+# composed scripts remain fully working
 # standalone with unchanged default behavior - other flows (fm-bootstrap.sh
 # install <tools> after consent, /updatefirstmate, the afk daemon, existing
 # tests) still call them directly. The one seam this script needed -
@@ -58,9 +59,11 @@
 #                       always safe, always runs.
 #  10. recalled pointers - at most five open items, three pointers each, under
 #                       the residual startup-memory budget after memory files
-#                       and the prior-session fold. bin/fm-recall.sh owns
-#                       ranking and rendering. Optional; absent when no
-#                       residual budget remains.
+#                       and the prior-session fold. Exact identities already
+#                       printed earlier in the digest are excluded. Receipts
+#                       publish only after a successful locked digest. An
+#                       absent budget file omits recall and never invents a
+#                       default. bin/fm-recall.sh owns ranking and rendering.
 #  11. closing reminder - prints the context-specific watcher next step; this
 #                       script points back to the emitted harness supervision
 #                       block and deliberately never arms the watcher itself.
@@ -105,7 +108,9 @@
 # read; live fleet identity - which tasks exist, their windows, worktrees,
 # backends, and endpoint liveness - changes every session and is exactly what
 # recovery depends on. So fleet state goes first and the memory files absorb the
-# truncation. The prior-session fold sits ahead of fleet state as a bounded
+# truncation. Recalled pointers sit after those memory files so a truncated
+# tail drops pointers before live fleet identity.
+# The prior-session fold sits ahead of fleet state as a bounded
 # targeted resume input, not a second fleet-state reader. The read-once contract
 # moves ahead of the fold and both digests for the same reason: a contract that
 # only arrives after the payload it governs is the first thing a truncated
