@@ -50,8 +50,9 @@
 # Explicit paths always bypass this file-set selection and lint exactly the
 # given paths, matching the same config, without either companion gate.
 # The exact relative path bin/fm-recall.py selects the Python gate; every
-# other explicit path goes to ShellCheck. --list-files includes the Python
-# target as well as the selected shell roots.
+# other explicit path goes to ShellCheck. --list-files prints only the
+# selected shell roots, because its consumers treat it as the shell inventory
+# and feed every listed path to a shell parser.
 #
 # Canonical lint defaults to two bounded workers over two stable logical shards.
 # Each shard writes separate diagnostics, and the parent replays those outputs in
@@ -69,7 +70,7 @@
 #   fm-lint.sh --telemetry <path> ...  write a quiet metrics snapshot
 #   fm-lint.sh --required-version      print the ShellCheck pin
 #   fm-lint.sh --required-ruff-version print the Ruff pin
-#   fm-lint.sh --list-files            print the file set that would be linted
+#   fm-lint.sh --list-files            print the shell file set that would be linted
 #   fm-lint.sh --help                  print this usage
 set -u
 
@@ -1017,7 +1018,6 @@ if [ "$LIST_FILES" -eq 1 ]; then
     exit 2
   }
   [ "$ROOT_COUNT" -eq 0 ] || printf '%s\n' ${ROOTS[@]+"${ROOTS[@]}"}
-  [ "${#PYTHON_ROOTS[@]}" -eq 0 ] || printf '%s\n' ${PYTHON_ROOTS[@]+"${PYTHON_ROOTS[@]}"}
   exit 0
 fi
 
