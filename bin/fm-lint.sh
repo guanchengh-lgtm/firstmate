@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # fm-lint.sh - the single owner of firstmate's lint definition.
 #
-# Runs its file set with ShellCheck's default severity, extended analysis,
+# Runs its shell file set with ShellCheck's default severity, extended analysis,
 # ambient configuration disabled, and one exact ShellCheck version. CI and
 # no-mistakes both invoke this script with no arguments, so the rule set,
 # version, bounded execution, and diagnostics ordering cannot drift.
@@ -36,7 +36,7 @@
 # dependency only; the shipped recall executable still uses the standard
 # library alone. A missing or different Ruff version is a lint failure.
 #
-# With no explicit paths, the file set depends on context:
+# With no explicit paths, the shell file set depends on context:
 #   - In CI (GITHUB_ACTIONS=true or CI=true), on the main branch, or when no
 #     merge-base against origin/main (or local main) can be found, it lints
 #     the full canonical set: bin/*.sh bin/backends/*.sh tests/*.sh. This is
@@ -49,6 +49,9 @@
 #     gate and both companion gates.
 # Explicit paths always bypass this file-set selection and lint exactly the
 # given paths, matching the same config, without either companion gate.
+# The exact relative path bin/fm-recall.py selects the Python gate; every
+# other explicit path goes to ShellCheck. --list-files includes the Python
+# target as well as the selected shell roots.
 #
 # Canonical lint defaults to two bounded workers over two stable logical shards.
 # Each shard writes separate diagnostics, and the parent replays those outputs in
@@ -146,9 +149,7 @@ fm_lint_usage() {
   ' "$SELF"
 }
 
-# Default no-args lint also validates GitHub workflows. Explicit paths stay a
-# ShellCheck-only override so callers can target one shell root, unless those
-# paths are Python files for the recall owner.
+# This companion follows the explicit-path policy in this file's header.
 fm_lint_run_workflows() {
   [ "$EXPLICIT_PATHS" -eq 0 ] || return 0
   "$SELF_DIR/fm-lint-workflows.sh"

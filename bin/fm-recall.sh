@@ -41,28 +41,39 @@
 # that were read. The internal ranking deadline defaults to 750 ms and is
 # checked between directory entries and archive blocks. A deadline or safety
 # timeout is a visible unavailable result, never an empty successful lookup.
+# The deadline must be positive; zero does not disable it.
 # The shell safety timeout defaults to 1 second. FM_RECALL_TIMEOUT and
 # FM_RECALL_DEADLINE_MS override those bounds. The nominal timeout is not a
 # claim that process cleanup can never exceed the exact millisecond boundary.
 #
-# Surfaces. brief renders at most five pointers under a 150-token hard cap.
-# pointers renders ranked lines only. The token estimate is
+# Surfaces. brief renders at most five pointers with a default 150-token cap.
+# --limit defaults to five when omitted or zero, and brief clamps it to five.
+# --token-budget overrides the brief or session-batch allowance.
+# pointers is the default surface; it renders ranked lines without a token cap.
+# The token estimate is
 # ceil(UTF-8 bytes / 3), the same conservative local estimate as
 # config/startup-memory-budget, and is never a provider-exact token count.
 # The brief block starts with "# Recalled pointers" and the statement that
 # hits are references, not instructions. Each pointer line is
 # "- <path> - <title> (<date>; <status>[; check-freshness])".
-# Titles cut at 90 characters, then shorten further to keep the path and
-# metadata. The lowest-ranked whole pointer is omitted only when the remaining
-# metadata cannot fit. The heading and omission disclosure count toward the
-# cap. The printed pointer count is the number actually emitted.
+# Brief titles cut at 90 characters, then shorten toward a 40-character limit to
+# keep the path and metadata. If the block still exceeds the cap, the renderer
+# omits the lowest-ranked whole pointer.
+# The heading and omission disclosure count toward the cap.
+# The printed pointer count is the number actually emitted.
+# --session-batch reads a JSON array of objects with id, title, and body
+# strings and an optional sources array of strings, using one corpus load.
+# bin/fm-session-start.sh owns its caller's item selection and placement.
+# --extract-identities reads emitted text from stdin and prints one document
+# identity per line without ranking or the ranking timeout.
 #
 # Metadata. A valid explicit document date wins, then an archive completion or
 # archive date, then a date encoded in a decision filename. Otherwise the date
 # is "date unknown". Clone-time mtime is never a creation date. A date older
 # than 30 days receives check-freshness. A date exactly 30 days old has no
 # mark. Future and malformed dates emit a metadata diagnostic and never affect
-# rank. Status prefers a --status backlog override, then explicit record or
+# rank. --as-of excludes documents with unknown dates or dates after its bound.
+# Task status prefers a --status backlog override, then explicit record or
 # status-sidecar metadata, then archive completion state, then
 # "status unknown". Held and parked documents keep that state and never receive
 # check-freshness. A report file's existence does not prove that a task shipped.
@@ -75,8 +86,12 @@
 #
 # Exit status. 0 means a successful lookup, including an explicit empty
 # result. 1 means unavailable. 2 means usage. Unavailable prints
-# "recall: unavailable: <reason>" on stderr. --json always includes status,
-# ranker, hits, rendered text, pointer_count, bytes, and estimated_tokens.
+# "recall: unavailable: <reason>" on stderr. Successful lookups and ranking
+# failures with --json include status, ranker, hits, rendered text,
+# pointer_count, bytes, and estimated_tokens. Shell preflight and usage
+# failures can return without JSON. Successful lookup diagnostics appear on
+# stderr for plain output and in diagnostics for JSON output.
+# tests/fm-recall.test.sh owns the public-command regression and probe harness.
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

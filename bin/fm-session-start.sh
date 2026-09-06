@@ -57,14 +57,8 @@
 #   9. context digest - data/projects.md, data/secondmates.md, data/captain.md,
 #                       data/captain-shared.md, data/learnings.md: read-only,
 #                       always safe, always runs.
-#  10. recalled pointers - at most five open items, three pointers each, under
-#                       the residual startup-memory budget after memory files
-#                       and the prior-session fold. Exact identities already
-#                       printed earlier in the digest are excluded. Receipts
-#                       publish after a successful locked digest to
-#                       state/.session-recall-receipt.<session-pid>.json.
-#                       An absent budget file omits recall and never invents a
-#                       default. bin/fm-recall.sh owns ranking and rendering.
+#  10. recalled pointers - optional prior-work references, governed by RECALL
+#                       below and ranked and rendered by bin/fm-recall.sh.
 #  11. closing reminder - prints the context-specific watcher next step; this
 #                       script points back to the emitted harness supervision
 #                       block and deliberately never arms the watcher itself.
@@ -187,6 +181,31 @@
 # may be. Both bounds are safe because the section prints every task's full
 # status log path, and AGENTS.md section 8 treats a status line as a wake EVENT
 # rather than current state - bin/fm-crew-state.sh owns current state.
+#
+# RECALL: select at most five distinct open task ids from one backlog snapshot.
+# In-flight and queued held or blocked rows take priority in backlog order;
+# other queued rows fill the remaining slots. Their current titles form the
+# queries, and bin/fm-backlog-state-lib.sh supplies live status overrides.
+# The shared lookup allocates up to three pointers per item in rounds and
+# deduplicates across items. It excludes exact document identities extracted
+# from the captured digest output, including only the backlog rows actually
+# printed. A pointer never proves that its body has been read.
+# docs/configuration.md owns the shared startup-memory allowance and recall cap.
+# Recall is omitted when the budget is invalid, no open item is selected, no
+# match remains, or no pointer fits. A failed lookup prints one unavailable
+# notice line without a section heading.
+# A completed digest that owns the session lock atomically publishes
+# state/.session-recall-identities with the home, session pid, and identities
+# from both the earlier digest and newly recalled pointers. Brief refresh
+# consumes this manifest through bin/fm-brief.sh.
+# It also publishes state/.session-recall-receipt.<session-pid>.json with the
+# residual allocation, selected-item and pointer counts, recalled bytes and
+# estimated tokens, and missing-input or truncation indicators.
+# The parent records complete digest bytes in that newly published receipt.
+# A completed locked --reemit replaces this session's receipt and manifest;
+# receipts for earlier sessions remain. A lock-refused digest can render
+# recall but never publishes or changes either artifact.
+# tests/fm-session-start.test.sh owns the session placement regressions.
 #
 # RUNTIME BOUND: the digest is now executed through a native session-open
 # adapter (see bin/fm-sessionstart-run.sh), which blocks either hook-driven

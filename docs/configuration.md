@@ -268,10 +268,10 @@ A secondmate does not create an independent default and instead receives the pri
 The file must be one positive base-10 integer followed by exactly one newline in a regular, single-linked file beneath a non-symlinked `config/` directory.
 Malformed, multi-line, symlinked, hardlinked, special, or otherwise unsafe values are rejected rather than treated as a default.
 Use `bin/fm-startup-memory-budget.sh read` to validate and print the effective value, or `bin/fm-startup-memory-budget.sh report` to account for the three memory files.
-The stable local estimate is `ceil(UTF-8 bytes / 3)`, a conservative portable approximation rather than a provider-exact tokenizer.
+The stable local estimate is `ceil(UTF-8 bytes / 3)` for each accounted component, including each memory file, rather than a provider-exact tokenizer.
 An inherited `data/captain-shared.md` counts in a secondmate's total but remains primary-owned and read-only there.
 Session start charges the three memory files first, then the prior-session fold, then recalled pointers from the leftover residual.
-Recall itself is hard-capped at 450 estimated tokens, including its heading, and is omitted when that residual is exhausted.
+Session-start recall is hard-capped at 450 estimated tokens, including its heading, and is omitted when that residual is exhausted.
 An absent or unreadable budget file does not invent the 7500 default at session start; recalled pointers are omitted instead.
 The full session-start digest is measured, not capped, and may exceed the allowance.
 There is no full-digest overflow policy and no new targeted-recovery path for an oversized digest.
