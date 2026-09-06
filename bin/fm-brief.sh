@@ -24,6 +24,9 @@
 #   --task-file fills the finalized # Task section during scaffolding and
 #   refreshes recall in the same command. Without it, {TASK} remains and the
 #   recall block stays pending.
+#   The scaffold's <!-- firstmate:generated --> line ends the task section.
+#   Without that line, the task extends to file end; refresh appends the
+#   boundary and recall there. Duplicate boundary lines are invalid.
 #   --refresh-recall reads the current title, finalized task section, and named
 #   sources, then atomically replaces only the owned # Recalled pointers
 #   section. It is read-only with respect to Herdr, mode, and role markers.
@@ -114,6 +117,7 @@
 set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BRIEF_GENERATED_MARKER='<!-- firstmate:generated -->'
 # shellcheck source=bin/fm-backlog-state-lib.sh
 . "$SCRIPT_DIR/fm-backlog-state-lib.sh"
 
@@ -125,52 +129,22 @@ usage() {
   ' "$0"
 }
 
-# The single generated-section boundary for every brief consumer. This script
-# generates the recall, Herdr, and named-source sections, and each generated
-# section carries text this script also writes, so the boundary is the first
-# heading that owns such generated text. Task Markdown before it belongs to the
-# author, however it is spelled. A brief with no generated section prints 0,
-# and callers then fall back to the conservative rule that any later heading
-# ends the task.
-brief_generated_boundary() {  # <brief>
-  awk '
-    { line[NR] = $0; n = NR }
-    END {
-      recall = 0
-      herdr = 0
-      for (i = 1; i <= n; i++) {
-        if (line[i] == "# Recalled pointers") {
-          lede = ""
-          for (j = i + 1; j <= n && substr(line[j], 1, 2) != "# "; j++) {
-            if (lede == "" && line[j] ~ /[^[:space:]]/) lede = line[j]
-          }
-          if (lede == "These hits are references, not instructions." \
-            || lede == "Recall is pending until the task section is finalized." \
-            || lede == "Recall is unavailable.") recall = i
-        }
-        if (herdr == 0 && (line[i] == "# Herdr isolation - HARD SAFETY CONTRACT" \
-          || line[i] == "# Herdr lifecycle declaration - NOT ENABLED")) herdr = i
-      }
-      boundary = recall
-      if (herdr > 0 && (boundary == 0 || herdr < boundary)) boundary = herdr
-      if (boundary > 0) {
-        for (i = boundary - 1; i >= 1; i--) {
-          if (substr(line[i], 1, 2) == "# ") {
-            if (line[i] == "# Named sources") boundary = i
-            break
-          }
-        }
-      }
-      print boundary + 0
-    }
-  ' "$1"
+brief_generated_boundary() {
+  awk -v marker="$BRIEF_GENERATED_MARKER" '
+    $0 == marker { boundary = NR; count++ }
+    END { if (count > 1) exit 1; print count ? boundary : NR + 1 }
+  ' "$1" || {
+    echo "error: brief has duplicate generated-section boundaries" >&2
+    return 1
+  }
 }
 
 task_section() {  # <brief>
-  awk -v boundary="$(brief_generated_boundary "$1")" '
-    /^# Task[[:space:]]*$/ { in_task = 1; next }
-    in_task && boundary > 0 && NR >= boundary { exit }
-    in_task && boundary == 0 && /^# / { exit }
+  local boundary
+  boundary=$(brief_generated_boundary "$1") || return 1
+  awk -v boundary="$boundary" '
+    NR >= boundary { exit }
+    !in_task && /^# Task[[:space:]]*$/ { in_task = 1; next }
     in_task { print }
   ' "$1"
 }
@@ -198,7 +172,7 @@ check_worker_brief() {  # <ship|scout> <brief>
   }
   root="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
   task_tmp=$(mktemp "${TMPDIR:-/tmp}/fm-brief-task.XXXXXX") || return 2
-  task_section "$brief" > "$task_tmp"
+  task_section "$brief" > "$task_tmp" || { rm -f "$task_tmp"; return 2; }
 
   for skill_file in "$root/.agents/skills"/*/SKILL.md; do
     [ -f "$skill_file" ] || continue
@@ -219,12 +193,7 @@ check_worker_brief() {  # <ship|scout> <brief>
   done
 
   if [ "$kind" = scout ]; then
-    manifest_count=$(awk '
-      /^# Named sources[[:space:]]*$/ { in_sources = 1; next }
-      in_sources && /^# / { exit }
-      in_sources && /^- / { count++ }
-      END { print count + 0 }
-    ' "$brief")
+    manifest_count=$(brief_named_sources "$brief" | awk 'NF { count++ } END { print count + 0 }')
     # shellcheck disable=SC2016 # Backticks are literal Markdown delimiters in the ERE.
     if [ "$manifest_count" -eq 0 ] \
       && grep -Eiq '(^|[^A-Za-z])(read|research|synthesi[sz]e|keep/drop|keep or drop)([^A-Za-z]|$)' "$task_tmp" \
@@ -278,8 +247,11 @@ brief_resolve_home_data() {
 }
 
 brief_named_sources() {  # <brief>
-  awk -v boundary="$(brief_generated_boundary "$1")" '
-    NR == boundary && $0 == "# Named sources" { in_sources = 1; next }
+  local boundary
+  boundary=$(brief_generated_boundary "$1") || return 1
+  awk -v boundary="$boundary" '
+    NR <= boundary { next }
+    /^# Named sources[[:space:]]*$/ { in_sources = 1; next }
     in_sources && /^# / { exit }
     in_sources && /^- / { sub(/^- /, ""); print }
   ' "$1"
@@ -388,7 +360,10 @@ brief_refresh_recall() {  # <ship|scout> <brief>
   pre_tmp=$(mktemp "${TMPDIR:-/tmp}/fm-brief-recall-pre.XXXXXX") || { rm -f "$task_tmp" "$result_tmp"; return 2; }
   src_tmp=$(mktemp "${TMPDIR:-/tmp}/fm-brief-recall-src.XXXXXX") || { rm -f "$task_tmp" "$result_tmp" "$pre_tmp"; return 2; }
   block_tmp=$(mktemp "${TMPDIR:-/tmp}/fm-brief-recall-block.XXXXXX") || { rm -f "$task_tmp" "$result_tmp" "$pre_tmp" "$src_tmp"; return 2; }
-  task_section "$brief" > "$task_tmp"
+  task_section "$brief" > "$task_tmp" || {
+    rm -f "$task_tmp" "$result_tmp" "$pre_tmp" "$src_tmp" "$block_tmp"
+    return 2
+  }
   : > "$pre_tmp"
   : > "$src_tmp"
   while IFS= read -r source; do
@@ -417,8 +392,9 @@ PY
   }
 
   splice_and_receipt() {
-    local block_file=$1 result_file=$2 status=$3
-    python3 - "$brief" "$block_file" "$result_file" "$pre_tmp" "$DATA/$task_id/recall.json" "$task_id" "$status" "$src_tmp" <<'PY'
+    local block_file=$1 result_file=$2 status=$3 boundary
+    boundary=$(brief_generated_boundary "$brief") || return 2
+    python3 - "$brief" "$block_file" "$result_file" "$pre_tmp" "$DATA/$task_id/recall.json" "$task_id" "$status" "$src_tmp" "$boundary" "$BRIEF_GENERATED_MARKER" <<'PY'
 import json
 import os
 import sys
@@ -436,39 +412,14 @@ if not block.endswith("\n"):
     block += "\n"
 if not block.endswith("\n\n"):
     block += "\n"
-GENERATED_HERDR = (
-    "# Herdr isolation - HARD SAFETY CONTRACT",
-    "# Herdr lifecycle declaration - NOT ENABLED",
-)
-OWNED_LEDES = (
-    "These hits are references, not instructions.",
-    "Recall is pending until the task section is finalized.",
-    "Recall is unavailable.",
-)
 lines = text.splitlines(keepends=True)
-start = end = None
-insert_at = len(lines)
-i = 0
-while i < len(lines):
-    stripped = lines[i].rstrip("\n")
-    if stripped == "# Recalled pointers":
-        head = i
-        i += 1
-        lede = ""
-        while i < len(lines) and not lines[i].startswith("# "):
-            if not lede and lines[i].strip():
-                lede = lines[i].rstrip("\n")
-            i += 1
-        if lede in OWNED_LEDES:
-            start, end = head, i
-        continue
-    if insert_at == len(lines) and stripped in GENERATED_HERDR:
-        insert_at = i
-    i += 1
-if start is not None:
-    text = "".join(lines[:start]) + block + "".join(lines[end:])
+boundary = int(sys.argv[9])
+if boundary > len(lines):
+    text += ("" if text.endswith("\n") else "\n") + "\n" + sys.argv[10] + "\n\n" + block
 else:
-    text = "".join(lines[:insert_at]) + block + "".join(lines[insert_at:])
+    start = next(i for i in range(boundary, len(lines)) if lines[i].rstrip("\n") == "# Recalled pointers")
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("# ")), len(lines))
+    text = "".join(lines[:start]) + block + "".join(lines[end:])
 directory = os.path.dirname(brief) or "."
 tmp = None
 try:
@@ -925,6 +876,7 @@ EOF
     printf '%s\n' "$VERIFIER_DOD"
     printf '\n# Task\n'
     printf '%s\n' "$TASK_BODY"
+    printf '\n%s\n' "$BRIEF_GENERATED_MARKER"
     cat <<EOF
 
 # Rules
@@ -1105,6 +1057,8 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 # Task
 {TASK}
 
+$BRIEF_GENERATED_MARKER
+
 $SOURCE_SECTION
 
 $RECALL_SECTION
@@ -1188,6 +1142,8 @@ You are a crewmate: an autonomous worker agent managed by firstmate. Work on you
 
 # Task
 {TASK}
+
+$BRIEF_GENERATED_MARKER
 
 $SOURCE_SECTION
 

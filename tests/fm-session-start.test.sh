@@ -2743,8 +2743,8 @@ EOF
   [ ! -s "$home/stderr" ] || fail "session recall emitted errors: $(cat "$home/stderr")"
   assert_contains "$out" "ready-three" "the seventh open row was dropped from the live listing"
   assert_contains "$out" "RECALLED POINTERS" "session start did not emit recalled pointers"
-  assert_present "$home/state/.session-recall-receipt.json" "locked session start did not write a recall receipt"
-  python3 - "$home/state/.session-recall-receipt.json" <<'PY' || fail "session recall receipt assertion failed"
+  assert_present "$home/state/.session-recall-receipt.$(cat "$home/state/.lock").json" "locked session start did not write a recall receipt"
+  python3 - "$home/state/.session-recall-receipt.$(cat "$home/state/.lock").json" <<'PY' || fail "session recall receipt assertion failed"
 import json,sys
 p=json.load(open(sys.argv[1],encoding="utf-8"))
 assert p["selected_item_count"]==5, p
@@ -2825,7 +2825,7 @@ EOF
   kill "$holder_pid" 2>/dev/null || true
   wait "$holder_pid" 2>/dev/null || true
   assert_contains "$out" "READ-ONLY SESSION" "foreign lock did not force read-only mode"
-  assert_absent "$home/state/.session-recall-receipt.json" \
+  assert_absent "$home/state/.session-recall-receipt.$(cat "$home/state/.lock").json" \
     "read-only session wrote a recall receipt"
   assert_absent "$home/state/.session-recall-identities" \
     "read-only session wrote a recall identity manifest"
@@ -2833,7 +2833,7 @@ EOF
 }
 
 test_session_recall_preserves_existing_owner_receipt() {
-  local rec root home fakebin out holder_pid option
+  local rec root home fakebin out holder_pid option receipt
   rec=$(new_world recall-existing-owner)
   IFS='|' read -r root home fakebin <<EOF
 $rec
@@ -2842,17 +2842,19 @@ EOF
   make_fake_ps_claude "$fakebin"
   seed_session_recall_world "$home"
   run_named_harness_session_start claude "$home" "$root" "$fakebin:$BASE_PATH" > "$home/start.txt"
+  receipt="$home/state/.session-recall-receipt.$(cat "$home/state/.lock").json"
   sleep 300 &
   holder_pid=$!
+  mv "$receipt" "$home/state/.session-recall-receipt.$holder_pid.json"
   printf '%s\n' "$holder_pid" > "$home/state/.lock"
-  python3 - "$home/state/.session-recall-receipt.json" "$holder_pid" <<'PYOWNER' || fail "could not seed the owner receipt"
+  python3 - "$home/state/.session-recall-receipt.$(cat "$home/state/.lock").json" "$holder_pid" <<'PYOWNER' || fail "could not seed the owner receipt"
 import json, sys
 path, pid = sys.argv[1:]
 p = json.load(open(path, encoding="utf-8"))
 p["session"] = pid
 json.dump(p, open(path, "w", encoding="utf-8"))
 PYOWNER
-  cp "$home/state/.session-recall-receipt.json" "$home/before.json"
+  cp "$home/state/.session-recall-receipt.$(cat "$home/state/.lock").json" "$home/before.json"
   cp "$home/state/.session-recall-identities" "$home/before-identities"
   for option in start reemit; do
     if [ "$option" = start ]; then
@@ -2861,7 +2863,7 @@ PYOWNER
       out=$(FM_FAKE_LIVE_HOLDER_PID="$holder_pid" run_named_harness_session_start claude "$home" "$root" "$fakebin:$BASE_PATH" --reemit)
     fi
     assert_contains "$out" 'READ-ONLY SESSION' "a foreign session did not refuse the lock"
-    cmp -s "$home/before.json" "$home/state/.session-recall-receipt.json" || {
+    cmp -s "$home/before.json" "$home/state/.session-recall-receipt.$(cat "$home/state/.lock").json" || {
       kill "$holder_pid" 2>/dev/null || true
       wait "$holder_pid" 2>/dev/null || true
       fail "a read-only session changed the owner receipt"
@@ -2920,7 +2922,7 @@ EOF
   run_named_harness_session_start claude "$home" "$root" "$fakebin:$BASE_PATH" --reemit > "$home/reemit.txt"
   assert_grep data/new-citation/report.md "$home/reemit.txt" "reemit did not print the new citation"
   assert_grep task:new-citation "$home/state/.session-recall-identities" "reemit left the identity manifest stale"
-  python3 - "$home/state/.session-recall-receipt.json" "$home/reemit.txt" <<'PY' || fail "reemit receipt size was stale"
+  python3 - "$home/state/.session-recall-receipt.$(cat "$home/state/.lock").json" "$home/reemit.txt" <<'PY' || fail "reemit receipt size was stale"
 import json, sys
 p = json.load(open(sys.argv[1], encoding="utf-8"))
 assert p["digest_bytes"] == len(open(sys.argv[2], "rb").read()), p
@@ -2955,7 +2957,107 @@ EOF
   pass "holdout titles retain ready queue priority"
 }
 
+test_session_recall_returns_before_slow_network() {
+  local rec root home fakebin out
+  rec=$(new_world recall-slow-network)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  seed_session_recall_world "$home"
+  install_slow_gh "$fakebin" 30 "$home/network-finished"
+  out=$(run_named_harness_session_start claude "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" 'NEXT STEP' "the local digest did not complete"
+  assert_absent "$home/network-finished" "the digest waited for detached network work"
+  wait_for_network_stage "$home" "$root" 45 || fail "the deferred network stage did not complete"
+  pass "saved digest output does not wait for detached network work"
+}
+
+test_invalid_budget_reemit_preserves_printed_identities() {
+  local rec root home fakebin out
+  rec=$(new_world recall-invalid-budget)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  seed_session_recall_world "$home"
+  run_named_harness_session_start claude "$home" "$root" "$fakebin:$BASE_PATH" >/dev/null
+  printf 'See data/prior-widget/report.md for the widget history.\n' > "$home/data/captain.md"
+  printf 'invalid\n' > "$home/config/startup-memory-budget"
+  out=$(run_named_harness_session_start claude "$home" "$root" "$fakebin:$BASE_PATH" --reemit)
+  assert_contains "$out" data/prior-widget/report.md "reemit did not show the citation"
+  assert_grep task:prior-widget "$home/state/.session-recall-identities" "invalid budget erased emitted identities"
+  printf '# Task\nContinue widget work.\n' > "$home/task.md"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" invalid-budget-brief firstmate --mode no-mistakes --task-file "$home/task.md" \
+    >/dev/null 2>&1 || fail "brief refresh after invalid budget failed"
+  assert_no_grep '- data/prior-widget/report.md - ' "$home/data/invalid-budget-brief/brief.md" "the brief repeated an emitted citation"
+  pass "invalid-budget reemit retains the exact printed identities"
+}
+
+test_session_recall_retains_each_session_receipt() {
+  local rec root home fakebin first second
+  rec=$(new_world recall-receipt-history)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  seed_session_recall_world "$home"
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
+    bash -c 'FM_FAKE_HARNESS_PID=$$ "$1"; :' _ "$SESSION_START" > "$home/first.txt"
+  first="$home/state/.session-recall-receipt.$(cat "$home/state/.lock").json"
+  assert_present "$first" "the first session receipt was not stored by session"
+  cp "$first" "$home/first-receipt.json"
+  FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
+    bash -c 'FM_FAKE_HARNESS_PID=$$ "$1"; :' _ "$SESSION_START" > "$home/second.txt"
+  second="$home/state/.session-recall-receipt.$(cat "$home/state/.lock").json"
+  [ "$first" != "$second" ] || fail "two sessions shared a receipt path"
+  assert_present "$second" "the second session receipt was not stored by session"
+  cmp -s "$first" "$home/first-receipt.json" || fail "the second session changed the first receipt"
+  python3 - "$first" "$second" "$home/first.txt" "$home/second.txt" <<'PY' || fail "session receipt history has incorrect metrics"
+import json, sys
+from pathlib import Path
+for receipt, digest in zip(sys.argv[1:3], sys.argv[3:]):
+    p = json.loads(Path(receipt).read_text())
+    assert p["session"] in Path(receipt).name, p
+    assert p["digest_bytes"] == len(Path(digest).read_bytes()), p
+PY
+  assert_absent "$home/state/.session-recall-receipt.json" "startup still published a shared receipt"
+  pass "each session retains its own measured receipt"
+}
+
+test_session_excludes_only_rendered_backlog_identities() {
+  local rec root home fakebin out recalled
+  rec=$(new_world recall-backlog-snapshot)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  seed_session_recall_world "$home"
+  printf 'Context remains available.\n' > "$home/data/captain.md"
+  cat > "$fakebin/cat" <<'CAT'
+#!/usr/bin/env bash
+if [ "${1:-}" = "$FM_HOME/data/captain.md" ]; then
+  printf '%s\n' '- [ ] prior-widget - Widget sprocket (repo: firstmate) (kind: ship)' >> "$FM_HOME/data/backlog.md"
+fi
+exec /bin/cat "$@"
+CAT
+  chmod +x "$fakebin/cat"
+  out=$(run_named_harness_session_start claude "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" '- [ ] prior-widget - ' "the changed backlog row was already printed"
+  recalled=$(printf '%s\n' "$out" | awk '/^RECALLED POINTERS$/{flag=1;next}/^NEXT STEP$/{flag=0}flag')
+  assert_contains "$recalled" data/prior-widget/report.md "an unprinted backlog row excluded a valid pointer"
+  pass "session recall excludes only identities in the captured digest"
+}
+
 if [ "${1:-}" = recall ]; then
+  test_session_recall_returns_before_slow_network
+  test_invalid_budget_reemit_preserves_printed_identities
+  test_session_recall_retains_each_session_receipt
+  test_session_excludes_only_rendered_backlog_identities
   test_session_recall_selects_five_open_items
   test_session_recall_dedupes_emitted_identities
   test_session_recall_skips_when_budget_is_exhausted
@@ -3054,6 +3156,10 @@ test_session_recall_preserves_existing_owner_receipt
 test_session_recall_captures_public_commitment
 test_session_reemit_refreshes_recall_artifacts
 test_session_recall_keeps_holdout_in_ready_order
+test_session_recall_returns_before_slow_network
+test_invalid_budget_reemit_preserves_printed_identities
+test_session_recall_retains_each_session_receipt
+test_session_excludes_only_rendered_backlog_identities
 test_session_recall_selects_five_open_items
 test_session_recall_dedupes_emitted_identities
 test_session_recall_skips_when_budget_is_exhausted

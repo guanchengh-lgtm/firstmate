@@ -35,9 +35,8 @@
 # and the check-freshness mark only.
 #
 # Limits. Each title or body input is capped at 64 KiB. Each archive document
-# is capped at 16 KiB. The ranking head is the first ten lines of a report and
-# the first five lines of a decision, and each of those heads is also capped at
-# 16 KiB.
+# is capped at 16 KiB. The ranking head is the first 16 KiB of each report or
+# decision. Explicit metadata also reads an independent final 4096-byte tail.
 # A truncated read emits a partial-input diagnostic and still ranks the bytes
 # that were read. The internal ranking deadline defaults to 750 ms and is
 # checked between directory entries and archive blocks. A deadline or safety

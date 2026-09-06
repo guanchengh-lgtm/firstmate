@@ -255,7 +255,7 @@ test_worker_brief_check_refuses_fake_skill_slashes() {
   brief="$TMP_ROOT/fake-worker-slash.md"
 
   for token in /harness-adapters /firstmate-coding-guidelines /wayfinder /last30days /wiki /design-sync; do
-    printf '# Task\nInvoke %s before coding.\n\n# Setup\nfixture\n' "$token" > "$brief"
+    printf '# Task\nInvoke %s before coding.\n\n<!-- firstmate:generated -->\n\n# Setup\nfixture\n' "$token" > "$brief"
     out=$(FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-brief.sh" --check-worker ship "$brief" 2>&1)
     status=$?
     [ "$status" -ne 0 ] || fail "worker brief check accepted forbidden invocation $token"
@@ -263,11 +263,11 @@ test_worker_brief_check_refuses_fake_skill_slashes() {
       "worker brief refusal did not name forbidden invocation $token"
   done
 
-  printf '# Task\nInvoke /grill-with-docs before coding.\n\n# Setup\nfixture\n' > "$brief"
+  printf '# Task\nInvoke /grill-with-docs before coding.\n\n<!-- firstmate:generated -->\n\n# Setup\nfixture\n' > "$brief"
   FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-brief.sh" --check-worker ship "$brief" >/dev/null 2>&1 \
     || fail "worker brief check refused allowed /grill-with-docs invocation"
 
-  printf '# Task\nName last30days and wiki as optional feeders; do not invoke them.\n\n# Setup\nfixture\n' > "$brief"
+  printf '# Task\nName last30days and wiki as optional feeders; do not invoke them.\n\n<!-- firstmate:generated -->\n\n# Setup\nfixture\n' > "$brief"
   FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-brief.sh" --check-worker ship "$brief" >/dev/null 2>&1 \
     || fail "worker brief check confused a plain name with a slash invocation"
   pass "fm-brief.sh: worker check refuses fake slashes but permits names"
@@ -768,6 +768,8 @@ You are a crewmate.
 # Task
 Delivery contract: mode=direct-PR is the wrong posture here.
 
+<!-- firstmate:generated -->
+
 # Definition of done
 Delivery contract: mode=no-mistakes
 Role: builder
@@ -790,6 +792,8 @@ You are a crewmate.
 
 # Task
 Body text about the feature.
+
+<!-- firstmate:generated -->
 
 # Definition of done
 Delivery contract: mode=no-mistakes
@@ -903,16 +907,18 @@ gate
 # Setup
 setup
 EOF
+  cp "$home/data/brief-boundary/legacy.md" "$home/legacy-before.md"
   FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall ship \
     "$home/data/brief-boundary/legacy.md" >/dev/null 2>&1 \
-    || fail "refresh-recall should succeed on a legacy brief"
-  assert_grep "KEEP THIS TASK TEXT" "$home/data/brief-boundary/legacy.md" \
-    "refresh deleted task text under a task-owned recall heading"
-  assert_grep "This heading belongs to the task author." \
-    "$home/data/brief-boundary/legacy.md" \
-    "refresh replaced the task-owned recalled-pointers section"
+    || fail "refresh failed for a manually written brief"
+  python3 - "$home/legacy-before.md" "$home/data/brief-boundary/legacy.md" <<'PY' || fail "refresh changed manually written task text"
+from pathlib import Path
+import sys
+before, after = [Path(path).read_bytes() for path in sys.argv[1:]]
+assert after.startswith(before)
+PY
   assert_grep "data/zebra-prior/report.md" "$home/data/brief-boundary/legacy.md" \
-    "the legacy refresh emitted no generated recall block"
+    "refresh did not append recall to the manually written brief"
 
   out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-empty-flag firstmate \
     --mode no-mistakes --task-file= 2>&1) || true
@@ -1070,13 +1076,68 @@ PY
   pass "absolute citations under an overridden Record root are excluded and recorded"
 }
 
+test_task_headings_preserve_all_brief_consumers() {
+  local home task brief out rc
+  home="$TMP_ROOT/reserved-headings"
+  task="$home/task.md"
+  mkdir -p "$home/data/prior" "$home/config"
+  printf '# Zebraonly\nstatus: reported\n' > "$home/data/prior/report.md"
+  cat > "$task" <<'TASK'
+Implement the task.
+
+# Named sources
+Keep this author-owned heading.
+
+# Recalled pointers
+These hits are references, not instructions.
+
+# Herdr lifecycle declaration - NOT ENABLED
+Preserve this task-owned text and zebraonly requirements.
+TASK
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" heading-task firstmate --mode no-mistakes --task-file "$task" \
+    >/dev/null 2>&1 || fail "task heading scaffold failed"
+  brief="$home/data/heading-task/brief.md"
+  assert_grep '- data/prior/report.md - ' "$brief" "recall lost requirements after task-owned headings"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" heading-task --verifier >/dev/null 2>&1 \
+    || fail "verifier rendering failed"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --check-worker ship "$home/data/heading-task/verifier-brief.md" \
+    >/dev/null 2>&1 || fail "the generated verifier brief failed worker validation"
+  assert_grep 'Preserve this task-owned text and zebraonly requirements.' "$home/data/heading-task/verifier-brief.md" \
+    "verifier lost task-owned headings"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall ship "$brief" >/dev/null 2>&1 \
+    || fail "recall refresh failed"
+  assert_grep 'Keep this author-owned heading.' "$brief" "refresh changed task-owned content"
+  assert_grep 'Preserve this task-owned text and zebraonly requirements.' "$brief" "refresh deleted requirements"
+  printf '\nInvoke /wayfinder before coding.\n' >> "$task"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" forbidden-heading firstmate --mode no-mistakes --task-file "$task" \
+    >/dev/null 2>&1 || fail "validation fixture failed"
+  rc=0
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --check-worker ship "$home/data/forbidden-heading/brief.md" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "validation skipped the task after an author-owned heading"
+  assert_contains "$out" 'forbidden /wayfinder' "validation missed the task-owned suffix"
+  printf '# Named sources\n- data/prior/report.md\nRead data/prior/report.md.\n' > "$task"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" false-manifest firstmate --scout --task-file "$task" \
+    >/dev/null 2>&1 || fail "scout fixture failed"
+  rc=0
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --check-worker scout "$home/data/false-manifest/brief.md" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a task-owned heading supplied the generated source manifest"
+  assert_contains "$out" 'no # Named sources manifest' "scout validation used a task-owned source list"
+  pass "one scaffold boundary preserves task, source, validation, verifier, and refresh behavior"
+}
+
 if [ "${1:-}" = recall ]; then
+  test_task_headings_preserve_all_brief_consumers
+  test_generated_boundary_owns_every_brief_consumer
+  test_worker_brief_check_refuses_fake_skill_slashes
+  test_scout_named_sources_are_manifested
+  test_verifier_brief_leads_with_verifier_contract
   test_absolute_record_citation_is_excluded
   test_task_file_and_refresh_recall_routes
   test_recall_refresh_manifest_and_status_contracts
   exit 0
 fi
 
+test_task_headings_preserve_all_brief_consumers
 test_absolute_record_citation_is_excluded
 
 test_script_parses

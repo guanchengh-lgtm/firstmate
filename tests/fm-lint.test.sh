@@ -511,18 +511,21 @@ test_list_files_respects_changed_mode() {
 }
 
 test_python_syntax_and_undefined_name_fail_closed() {
-  local tmp broken out rc fakebin
+  local tmp broken out rc fakebin lint
   tmp=$(fm_test_tmproot fm-lint-python)
-  broken="$tmp/broken.py"
+  mkdir -p "$tmp/bin"
+  cp "$LINT" "$tmp/bin/fm-lint.sh"
+  lint="$tmp/bin/fm-lint.sh"
+  broken="$tmp/bin/fm-recall.py"
   printf 'def (\n' > "$broken"
   rc=0
-  out=$("$LINT" "$broken" 2>&1) || rc=$?
+  out=$("$lint" bin/fm-recall.py 2>&1) || rc=$?
   [ "$rc" -ne 0 ] || fail "syntax-broken Python was accepted"$'\n'"$out"
   assert_contains "$out" "SyntaxError" "Python syntax defect did not fail through fm-lint.sh"
 
   printf 'print(undefined_name_xyz)\n' > "$broken"
   rc=0
-  out=$("$LINT" "$broken" 2>&1) || rc=$?
+  out=$("$lint" bin/fm-recall.py 2>&1) || rc=$?
   [ "$rc" -ne 0 ] || fail "undefined-name Python was accepted"$'\n'"$out"
   assert_contains "$out" "F821" "undefined-name defect did not fail through Ruff"
 
@@ -531,9 +534,9 @@ test_python_syntax_and_undefined_name_fail_closed() {
   for tool in bash dirname python3; do
     ln -s "$(command -v "$tool")" "$fakebin/$tool"
   done
-  printf 'print(1)\n' > "$tmp/ok.py"
+  printf 'print(1)\n' > "$broken"
   rc=0
-  out=$(PATH="$fakebin" "$LINT" "$tmp/ok.py" 2>&1) || rc=$?
+  out=$(PATH="$fakebin" "$lint" bin/fm-recall.py 2>&1) || rc=$?
   [ "$rc" -eq 1 ] || fail "missing Ruff expected exit 1, got $rc"$'\n'"$out"
   assert_contains "$out" "Ruff not found" "missing Ruff did not name the required linter"
   assert_contains "$out" "fm-install-ruff.sh" "missing Ruff did not name the pinned installer"
@@ -1064,6 +1067,11 @@ SH
     || fail "the test boundary re-imported the production-owner diagnostic"
   pass "seeded dispatcher, adapter, production-owner, and test-local diagnostics preserve parity"
 }
+
+if [ "${1:-}" = recall ]; then
+  test_python_syntax_and_undefined_name_fail_closed
+  exit 0
+fi
 
 test_help_reports_the_complete_interface
 test_list_files_reports_the_shell_inventory

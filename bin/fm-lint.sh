@@ -977,7 +977,7 @@ if [ "$#" -gt 0 ]; then
   ROOTS=()
   for path in "$@"; do
     case "$path" in
-      *.py) PYTHON_ROOTS+=("$path") ;;
+      "$PYTHON_LINT_TARGET") PYTHON_ROOTS+=("$path") ;;
       *) ROOTS+=("$path") ;;
     esac
   done

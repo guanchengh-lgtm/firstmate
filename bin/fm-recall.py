@@ -263,42 +263,24 @@ def read_capped_line(handle, limit):
     return chunk, dropped
 
 
-def read_head_lines(path, line_count, limit, root=None):
+def read_head_lines(path, limit, root=None):
     handle = open_regular(path, root)
     if handle is None:
         return None, False, ""
     try:
-        lines = []
-        total = 0
-        hit_limit = False
-        leftover = b""
-        while len(lines) < line_count:
-            chunk = handle.readline(limit - total + 1)
-            if not chunk:
-                break
-            if total + len(chunk) > limit:
-                remain = limit - total
-                if remain > 0:
-                    leftover += chunk[:remain]
-                hit_limit = True
-                break
-            lines.append(chunk.decode("utf-8", errors="replace").rstrip("\n"))
-            total += len(chunk)
-        if leftover:
-            lines.append(leftover.decode("utf-8", errors="replace").rstrip("\n"))
-        tail = ""
+        data = handle.read(limit + 1)
+        lines = data[:limit].decode("utf-8", errors="replace").splitlines()
         try:
             handle.seek(0, 2)
-            size = handle.tell()
-            start = max(0, size - 4096)
-            if start > total:
-                handle.seek(start)
-                tail = handle.read().decode("utf-8", errors="replace")
-            elif not hit_limit:
-                tail = "\n".join(lines)
+            start = max(0, handle.tell() - 4096)
+            handle.seek(start)
+            tail = handle.read(4096)
+            if start:
+                tail = tail.partition(b"\n")[2]
+            tail = tail.decode("utf-8", errors="replace")
         except OSError:
             tail = ""
-        return lines, hit_limit, tail
+        return lines, len(data) > limit, tail
     finally:
         handle.close()
 
@@ -731,7 +713,7 @@ def load_archive(corpus):
             and contained(corpus.root, report_path)
         ):
             report_lines, partial, tail = read_head_lines(
-                report_path, 10, HEAD_LIMIT, corpus.root
+                report_path, HEAD_LIMIT, corpus.root
             )
             if report_lines is not None:
                 if partial:
@@ -858,7 +840,7 @@ def load_decisions(corpus):
             or not contained(corpus.root, path)
         ):
             continue
-        lines, partial, tail = read_head_lines(path, 5, HEAD_LIMIT, corpus.root)
+        lines, partial, tail = read_head_lines(path, HEAD_LIMIT, corpus.root)
         if lines is None:
             corpus.note("source", "unreadable decision %s" % name)
             continue
@@ -886,7 +868,7 @@ def load_decisions(corpus):
             None,
             None,
             "decision",
-            slug.replace("-", " ") + " " + heading,
+            DATE_RE.sub("", slug).replace("-", " ") + " " + heading,
             "\n".join(rank_lines(lines)),
             ident,
         )
@@ -923,7 +905,7 @@ def load_orphan_reports(corpus):
             continue
         if not contained(corpus.root, report_path):
             continue
-        lines, partial, tail = read_head_lines(report_path, 10, HEAD_LIMIT, corpus.root)
+        lines, partial, tail = read_head_lines(report_path, HEAD_LIMIT, corpus.root)
         if lines is None:
             corpus.note("source", "unreadable report %s" % canonical)
             continue
@@ -1000,39 +982,22 @@ def rank_docs(docs, terms, exclude_tokens, as_of):
     return scored
 
 
-def collect_exclusions(
-    raw_ids, raw_paths, raw_identities, raw_files, docs, root, alias_to=None
-):
+def collect_exclusions(raw_ids, raw_paths, raw_identities, raw_files, corpus):
     tokens_out = set()
-    alias_to = alias_to or {}
-    for raw in raw_ids:
-        tokens_out.add(Identity("task", raw, "data/%s/report.md" % raw).token())
-        tokens_out.add(Identity("decision", raw, "data/decisions/%s.md" % raw).token())
-        resolved = raw
-        seen = []
-        while resolved in alias_to and resolved not in seen:
-            seen.append(resolved)
-            resolved = alias_to[resolved]
-        if resolved.startswith("decision:"):
-            tokens_out.add(resolved)
-        elif resolved.startswith("data/"):
-            tokens_out.add(identity_from_path(resolved, root).token())
-        elif resolved != raw:
-            tokens_out.add(
-                Identity("task", resolved, "data/%s/report.md" % resolved).token()
-            )
+    root = corpus.root
 
     def canonical_task_token(key):
-        resolved = key
-        seen = []
-        while resolved in alias_to and resolved not in seen:
-            seen.append(resolved)
-            resolved = alias_to[resolved]
+        resolved = corpus.resolve_alias(key)
         if resolved.startswith("decision:"):
             return resolved
         if resolved.startswith("data/"):
             return identity_from_path(resolved, root).token()
         return Identity("task", resolved, "data/%s/report.md" % resolved).token()
+
+    for raw in raw_ids:
+        tokens_out.add(Identity("task", raw, "data/%s/report.md" % raw).token())
+        tokens_out.add(Identity("decision", raw, "data/decisions/%s.md" % raw).token())
+        tokens_out.add(canonical_task_token(raw))
 
     for raw in raw_identities:
         reference = archive_reference(raw)
@@ -1063,7 +1028,7 @@ def collect_exclusions(
             tokens_out.add(ident.token())
             if ident.kind == "task":
                 tokens_out.add(canonical_task_token(ident.key))
-    for doc in docs:
+    for doc in corpus.docs:
         path = strip_locator(doc.path)
         if path in files:
             tokens_out.add(doc.identity.token())
@@ -1267,7 +1232,7 @@ def extract_identities(text, root):
             archive_row_identity(match.group(1), root)
             or identity_from_ref(match.group(1), root)
         )
-    for match in re.finditer(r"^- \[[ xX]\] (\S+) - ", text, re.M):
+    for match in re.finditer(r"^[-*]\s+\[[ xX]\]\s+(\S+)\s+- ", text, re.M):
         add(Identity("task", match.group(1), "data/%s/report.md" % match.group(1)))
     for match in re.finditer(
         r"^\s{2}([A-Za-z0-9._-]+),(in_flight|queued|held)", text, re.M
@@ -1301,14 +1266,15 @@ def render_session_batch(queries, ranked, token_cap, now):
                     if token in used or token in dropped or token in rejected[index]:
                         continue
                     chosen[index] = previous + [(score, doc)]
+                    used.add(token)
                     if (
                         token_cap is not None
                         and estimated_tokens(block_text()) > token_cap
                     ):
                         chosen[index] = previous
+                        used.remove(token)
                         rejected[index].add(token)
                         continue
-                    used.add(token)
                     allocation_order.append(index)
                     progressed = True
                     break
@@ -1425,6 +1391,9 @@ def run_session_batch_main(args, root, statuses, now, diagnostics):
         payload.update(extras)
         if args.json:
             sys.stdout.write(json.dumps(payload, indent=1) + "\n")
+        else:
+            for diagnostic in diagnostics:
+                sys.stderr.write("recall: %s\n" % diagnostic)
         return 0
     deadline = Deadline(args.deadline_ms)
     try:
@@ -1435,9 +1404,7 @@ def run_session_batch_main(args, root, statuses, now, diagnostics):
             args.exclude_path,
             args.exclude_identity,
             args.exclude_file,
-            corpus.docs,
-            root,
-            corpus.alias_to,
+            corpus,
         )
         ranked = []
         for item in cleaned:
@@ -1482,8 +1449,11 @@ def run_session_batch_main(args, root, statuses, now, diagnostics):
     payload["diagnostics"] = diagnostics
     if args.json:
         sys.stdout.write(json.dumps(payload, indent=1) + "\n")
-    elif rendered and hits:
-        sys.stdout.write(rendered)
+    else:
+        if hits:
+            sys.stdout.write(rendered)
+        for diagnostic in diagnostics:
+            sys.stderr.write("recall: %s\n" % diagnostic)
     return 0
 
 
@@ -1642,8 +1612,10 @@ def main(argv=None):
         payload.update(extras)
         if args.json:
             sys.stdout.write(json.dumps(payload, indent=1) + "\n")
-        elif rendered:
+        else:
             sys.stdout.write(rendered)
+            for diagnostic in diagnostics:
+                sys.stderr.write("recall: %s\n" % diagnostic)
         return 0
 
     deadline = Deadline(args.deadline_ms)
@@ -1655,9 +1627,7 @@ def main(argv=None):
             args.exclude_path,
             args.exclude_identity,
             args.exclude_file,
-            corpus.docs,
-            root,
-            corpus.alias_to,
+            corpus,
         )
         ranked = rank_docs(corpus.docs, terms, exclude, args.as_of or None)
         deadline.check()
@@ -1693,8 +1663,10 @@ def main(argv=None):
     payload["diagnostics"] = diagnostics
     if args.json:
         sys.stdout.write(json.dumps(payload, indent=1) + "\n")
-    elif rendered:
+    else:
         sys.stdout.write(rendered)
+        for diagnostic in diagnostics:
+            sys.stderr.write("recall: %s\n" % diagnostic)
     return 0
 
 

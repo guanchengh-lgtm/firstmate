@@ -451,35 +451,79 @@ assert "other-sprocket" in ids or p.get("status") in ("ok","empty"), p
 }
 
 test_symlinked_report_is_skipped_without_traceback() {
-  local home out before
-  home="$TMP_ROOT/rename-race"
-  mkdir -p "$home/data/swapped" "$home/outside"
+  local home mode=${1:-file}
+  home="$TMP_ROOT/rename-race-$mode"
+  mkdir -p "$home/data/swapped" "$home/data/dangling" "$home/outside"
   write_report "$home" real "Widget sprocket real report" 2026-01-01 reported
-  write_report "$home" swapped "Widget sprocket regular report" 2026-01-01 reported
-  printf '# Widget sprocket secret outside the Record\nwidget sprocket\n' \
-    > "$home/outside/secret.md"
-  before=$(recall_json "$home" --title "widget sprocket" --surface pointers)
-  printf '%s\n' "$before" | python3 -c '
-import json,sys
-p=json.load(sys.stdin)
-ids=[h["id"] for h in p.get("hits") or []]
-assert "swapped" in ids, p
-'
-  mv "$home/data/swapped/report.md" "$home/data/swapped/report.md.moved"
-  ln -s "$home/outside/secret.md" "$home/data/swapped/report.md"
-  mkdir -p "$home/data/dangling"
+  write_report "$home" swapped "Widget sprocket inside report" 2026-01-01 reported
+  printf '# OUTSIDE_RACE_MARKER widget sprocket\nstatus: reported\n' > "$home/outside/report.md"
   ln -s "$home/data/dangling/missing.md" "$home/data/dangling/report.md"
-  out=$(recall_json "$home" --title "widget sprocket" --surface pointers)
-  printf '%s\n' "$out" | python3 -c '
-import json,sys
-p=json.load(sys.stdin)
-ids=[h["id"] for h in p.get("hits") or []]
-assert "swapped" not in ids, p
-assert "dangling" not in ids, p
-assert "real" in ids, p
-assert "secret" not in json.dumps(p), p
-' || fail "recall output assertion failed"
-  pass "fm-recall.sh: a report replaced by a symlink is skipped, never read through"
+  python3 - "$home" "$RECALL" "$mode" <<'PY' || fail "a replacement during recall escaped the Record"
+import json, os, subprocess, sys, time
+from pathlib import Path
+home, command, mode = sys.argv[1:]
+home = Path(home)
+report = home / "data/swapped/report.md"
+hook = home / "hook"
+hook.mkdir()
+(hook / "sitecustomize.py").write_text('''
+import os, time
+from pathlib import Path
+original_open = os.open
+armed = True
+def delayed_open(path, flags, *args, **kwargs):
+    global armed
+    parent = kwargs.get("dir_fd")
+    target = os.fspath(path) == os.environ["RACE_REPORT"]
+    if os.fspath(path) == "report.md" and parent is not None:
+        target = os.fstat(parent).st_ino == int(os.environ["RACE_PARENT_INODE"])
+    if armed and target:
+        armed = False
+        Path(os.environ["RACE_READY"]).touch()
+        deadline = time.monotonic() + 5
+        while not Path(os.environ["RACE_RESUME"]).exists():
+            if time.monotonic() > deadline:
+                raise RuntimeError("replacement was not released")
+            time.sleep(0.01)
+    return original_open(path, flags, *args, **kwargs)
+os.open = delayed_open
+''', encoding="utf-8")
+ready, resume = home / "ready", home / "resume"
+env = dict(os.environ, FM_HOME=str(home), FM_DATA_OVERRIDE=str(home / "data"),
+           FM_RECALL_TIMEOUT="10", PYTHONPATH=str(hook), RACE_REPORT=str(report),
+           RACE_PARENT_INODE=str(report.parent.stat().st_ino),
+           RACE_READY=str(ready), RACE_RESUME=str(resume))
+process = subprocess.Popen([command, "--json", "--title", "widget sprocket", "--surface", "pointers",
+                            "--deadline-ms", "5000"], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+try:
+    deadline = time.monotonic() + 5
+    while not ready.exists() and process.poll() is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert ready.exists(), "recall never reached the report open before replacement"
+    if mode == "file":
+        report.rename(report.with_suffix(".moved"))
+        report.symlink_to(home / "outside/report.md")
+    else:
+        report.parent.rename(home / "saved-parent")
+        report.parent.symlink_to(home / "outside", target_is_directory=True)
+    resume.touch()
+    output, errors = process.communicate(timeout=12)
+    assert process.returncode == 0, (output, errors)
+    p = json.loads(output)
+    assert "OUTSIDE_RACE_MARKER" not in output, p
+    ids = [h["id"] for h in p["hits"]]
+    assert "real" in ids and "dangling" not in ids, p
+    if mode == "file":
+        assert "swapped" not in ids, p
+    else:
+        assert "swapped" in ids, p
+finally:
+    resume.touch()
+    if process.poll() is None:
+        process.kill()
+        process.communicate()
+PY
+  pass "recall keeps descriptor protection during a $mode replacement"
 }
 
 test_malformed_metadata_is_diagnosed() {
@@ -604,14 +648,14 @@ import json,sys
 json.dump([{"id":sys.argv[1],"title":"widget","body":""},{"id":"r","title":"widget","body":""}],
           open(sys.argv[2],"w",encoding="utf-8"))
 ' "$long" "$queries"
-  out=$(recall_json "$home" --session-batch "$queries" --token-budget 90)
+  out=$(recall_json "$home" --session-batch "$queries" --token-budget 60)
   printf '%s\n' "$out" | python3 -c '
 import json,sys
 p=json.load(sys.stdin)
 ids=[h["id"] for h in p.get("hits") or []]
 assert ids==["solo"], p
 assert "### r" in p["rendered"], p["rendered"]
-assert -(-len(p["rendered"].encode("utf-8"))//3) <= 90, p["rendered"]
+assert -(-len(p["rendered"].encode("utf-8"))//3) <= 60, p["rendered"]
 ' || fail "recall output assertion failed"
   pass "fm-recall.sh: an item that cannot fit a pointer never blocks another item"
 }
@@ -713,22 +757,7 @@ assert "a" not in ids, p
 }
 
 test_parent_directory_swap_never_leaves_the_record() {
-  local home out
-  home="$TMP_ROOT/dir-swap"
-  mkdir -p "$home/data" "$home/outside/alpha"
-  write_report "$home" alpha "Widget sprocket inside" 2026-09-01 reported
-  printf '# OUTSIDE_RACE_MARKER widget sprocket\ndate: 2026-09-01\nstatus: reported\nwidget sprocket\n' \
-    > "$home/outside/alpha/report.md"
-  rm -rf "$home/data/alpha"
-  ln -s "$home/outside/alpha" "$home/data/alpha"
-  out=$(recall_json "$home" --title "widget sprocket" --surface pointers)
-  printf '%s\n' "$out" | python3 -c '
-import json,sys
-p=json.load(sys.stdin)
-assert "OUTSIDE_RACE_MARKER" not in json.dumps(p), p
-assert p["status"] in ("ok","empty"), p
-' || fail "recall output assertion failed"
-  pass "fm-recall.sh: a swapped task directory never renders an outside report"
+  test_symlinked_report_is_skipped_without_traceback directory
 }
 
 test_corrupted_expectation_exits_nonzero() {
@@ -843,10 +872,114 @@ PY
   pass "probe corpus remains independent from the expectations"
 }
 
+test_ranking_head_and_footer_use_byte_bounds() {
+  local home
+  home="$TMP_ROOT/byte-head"
+  mkdir -p "$home/data/report" "$home/data/decisions"
+  python3 - "$home/data" <<'PY'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+for path, lines in [(root / "report/report.md", 10), (root / "decisions/ruling.md", 5)]:
+    path.write_text("# Widget\n" + "neutral\n" * lines + "sprocket\ndate: 2026-01-01\nstatus: held\n", encoding="utf-8")
+PY
+  recall_json "$home" --title sprocket --surface pointers > "$home/result.json"
+  python3 - "$home/result.json" <<'PY' || fail "the ranking head or metadata stopped at a line count"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert {h["id"] for h in p["hits"]} == {"report", "ruling"}, p
+assert all(h["date"] == "2026-01-01" and h["status"] == "held" for h in p["hits"]), p
+PY
+  python3 - "$home/data" <<'PY'
+from pathlib import Path
+import sys
+root = Path(sys.argv[1])
+for path in [root / "report/report.md", root / "decisions/ruling.md"]:
+    path.write_text("# Widget\n" + "neutral\n" * 2500 + "outsidehead\ndate: 2026-01-02\nstatus: parked\n", encoding="utf-8")
+PY
+  recall_json "$home" --title outsidehead --surface pointers > "$home/outside.json"
+  recall_json "$home" --title widget --surface pointers > "$home/metadata.json"
+  python3 - "$home/outside.json" "$home/metadata.json" <<'PY' || fail "ranking or metadata exceeded its byte boundary"
+import json, sys
+outside, metadata = [json.load(open(path, encoding="utf-8")) for path in sys.argv[1:]]
+assert outside["hits"] == [], outside
+assert metadata["partial_input"], metadata
+assert len(metadata["hits"]) == 2, metadata
+assert all(h["date"] == "2026-01-02" and h["status"] == "parked" for h in metadata["hits"]), metadata
+PY
+  pass "ranking reads the 16 KiB head and metadata reads the bounded footer"
+}
+
+test_decision_filename_dates_do_not_change_scores() {
+  local home
+  home="$TMP_ROOT/decision-filename-date"
+  mkdir -p "$home/data/decisions"
+  printf '# Widget\nstatus: decided\n' > "$home/data/decisions/widget-2020-01-01.md"
+  cp "$home/data/decisions/widget-2020-01-01.md" "$home/data/decisions/widget-2026-01-01.md"
+  recall_json "$home" --title 'widget 2026' --surface pointers > "$home/result.json"
+  python3 - "$home/result.json" <<'PY' || fail "the decision filename date changed relevance"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert [h["id"] for h in p["hits"]] == ["widget-2020-01-01", "widget-2026-01-01"], p
+assert p["hits"][0]["score"] == p["hits"][1]["score"], p
+assert [h["date"] for h in p["hits"]] == ["2020-01-01", "2026-01-01"], p
+PY
+  pass "decision filename dates affect display but never scores"
+}
+
+test_plain_output_discloses_diagnostics() {
+  local home surface
+  home="$TMP_ROOT/plain-diagnostics"
+  mkdir -p "$home/data/widget"
+  printf '# Widget\ndate: malformed\nstatus: reported\n' > "$home/data/widget/report.md"
+  python3 - "$home/body.md" <<'PY'
+import sys
+open(sys.argv[1], "w", encoding="utf-8").write("widget " * 20000)
+PY
+  for surface in pointers brief; do
+    FM_HOME="$home" "$RECALL" --title widget --body-file "$home/body.md" --surface "$surface" \
+      > "$home/output" 2> "$home/errors" || fail "plain recall failed"
+    assert_grep data/widget/report.md "$home/output" "plain recall lost the pointer"
+    assert_grep partial-input "$home/errors" "plain recall hid truncated input"
+    assert_grep 'malformed date' "$home/errors" "plain recall hid malformed metadata"
+  done
+  printf '[{"id":"current","title":"widget"}]\n' > "$home/queries.json"
+  FM_HOME="$home" "$RECALL" --session-batch "$home/queries.json" \
+    > "$home/output" 2> "$home/errors" || fail "plain session recall failed"
+  assert_grep 'malformed date' "$home/errors" "plain session recall hid metadata diagnostics"
+  pass "plain recall publishes diagnostics on stderr"
+}
+
+test_alias_cycle_exclusion_uses_corpus_identity() {
+  local home option identity
+  home="$TMP_ROOT/cycle-exclusions"
+  write_report "$home" a 'Widget' 2026-01-01 reported
+  mkdir -p "$home/data/b"
+  printf 'target: b\n' > "$home/data/a/POINTER.md"
+  printf 'target: a\n' > "$home/data/b/POINTER.md"
+  for option in --exclude-id --exclude-identity --exclude-path; do
+    identity=b
+    [ "$option" != --exclude-identity ] || identity=task:b
+    [ "$option" != --exclude-path ] || identity=data/b/report.md
+    recall_json "$home" --title widget --surface pointers "$option" "$identity" > "$home/result.json"
+    python3 - "$home/result.json" <<'PY' || fail "alias-cycle exclusion disagreed with corpus loading"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert p["hits"] == [], p
+PY
+  done
+  pass "alias-cycle exclusions use the corpus canonical identity"
+}
+
 if [ "${1:-}" = probes ]; then
   test_thirteen_probe_floors
   exit 0
 fi
+
+test_ranking_head_and_footer_use_byte_bounds
+test_decision_filename_dates_do_not_change_scores
+test_plain_output_discloses_diagnostics
+test_alias_cycle_exclusion_uses_corpus_identity
 
 test_archive_completion_annotations_do_not_change_rank
 test_unicode_identity_tokens_round_trip

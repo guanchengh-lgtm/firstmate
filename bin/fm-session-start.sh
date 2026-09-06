@@ -61,8 +61,9 @@
 #                       the residual startup-memory budget after memory files
 #                       and the prior-session fold. Exact identities already
 #                       printed earlier in the digest are excluded. Receipts
-#                       publish only after a successful locked digest. An
-#                       absent budget file omits recall and never invents a
+#                       publish after a successful locked digest to
+#                       state/.session-recall-receipt.<session-pid>.json.
+#                       An absent budget file omits recall and never invents a
 #                       default. bin/fm-recall.sh owns ranking and rendering.
 #  11. closing reminder - prints the context-specific watcher next step; this
 #                       script points back to the emitted harness supervision
@@ -310,11 +311,15 @@ stage() {  # <stage-name>: breadcrumb for the parent's truncation banner
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 
 session_start_record_digest_bytes() {
-  local receipt=$STATE/.session-recall-receipt.json publication
-  [ -f "$receipt" ] && [ ! -L "$receipt" ] || return 0
+  local receipt publication session
   publication=$(cat "$SESSION_START_STAGE_FILE" 2>/dev/null) || return 0
-  case "$publication" in published:sha256:*) ;; *) return 0 ;; esac
-  FM_DIGEST_BYTES=$1 python3 - "$receipt" "$STATE/.lock" "${publication#published:sha256:}" <<'PYDIGEST' || true
+  case "$publication" in published:*:sha256:*) ;; *) return 0 ;; esac
+  publication=${publication#published:}
+  session=${publication%%:*}
+  case "$session" in ''|*[!0-9]*) return 0 ;; esac
+  receipt=$STATE/.session-recall-receipt.$session.json
+  [ -f "$receipt" ] && [ ! -L "$receipt" ] || return 0
+  FM_DIGEST_BYTES=$1 python3 - "$receipt" "$STATE/.lock" "${publication##*:}" <<'PYDIGEST' || true
 import hashlib
 import json
 import os
@@ -667,36 +672,6 @@ session_start_open_items() {  # <backlog-file>
   ' "$path"
 }
 
-session_start_printed_ids() {  # <backlog-file>
-  local path=$1
-  [ -f "$path" ] && [ ! -L "$path" ] || return 0
-  awk -v max="$QUEUED_LIMIT" '
-    function state_for_heading(line, heading) {
-      heading = line
-      sub(/^##[[:space:]]+/, "", heading)
-      sub(/[[:space:]]+$/, "", heading)
-      if (heading == "In flight") return "in_flight"
-      if (heading == "Queued") return "queued"
-      if (heading == "Done") return "done"
-      return ""
-    }
-    function emit(line,    id) {
-      if (line !~ /^[-*][[:space:]]+\[/) return
-      id = line
-      sub(/^[-*][[:space:]]+\[[ xX]\][[:space:]]+/, "", id)
-      sub(/[[:space:]].*$/, "", id)
-      if (id != "" && !seen[id]++) print id
-    }
-    /^##[[:space:]]+/ { state = state_for_heading($0); next }
-    state == "in_flight" && /^[-*][[:space:]]+/ { emit($0); next }
-    state == "queued" && /^[-*][[:space:]]+/ {
-      if ($0 ~ /[(]hold(-kind)?:|blocked-by:/) emit($0)
-      else if (plain++ < max) emit($0)
-      next
-    }
-  ' "$path"
-}
-
 session_start_emit_recall() {
   local budget memory_tokens=0 fold_bytes=0 fold_tokens=0 residual=0 allocated=0
   local queries_file result_file ident_file items_file backlog_file missing=none truncation=none
@@ -704,6 +679,12 @@ session_start_emit_recall() {
   local partial_input=0
   local heading heading_bytes heading_tokens rendered rc
   SESSION_RECALL_IDENTITIES=""
+  if [ -n "${SESSION_STATUS_EMITTED:-}" ] && [ -f "$SESSION_STATUS_EMITTED" ]; then
+    SESSION_RECALL_IDENTITIES=$(
+      python3 -B "$SCRIPT_DIR/fm-recall.py" --root "$DATA" --extract-identities \
+        < "$SESSION_STATUS_EMITTED" 2>/dev/null
+    ) || SESSION_RECALL_IDENTITIES=""
+  fi
   SESSION_RECALL_RECEIPT_STATUS=skipped
 
   if ! fm_startup_memory_budget_read "$CONFIG" >/dev/null; then
@@ -748,12 +729,6 @@ session_start_emit_recall() {
   fi
   item_count=$(session_start_open_items "$backlog_file" | awk 'NF { n++ } END { print n + 0 }')
   if [ "$residual" -eq 0 ] || [ "$item_count" -eq 0 ]; then
-    if [ -n "${SESSION_STATUS_EMITTED:-}" ] && [ -f "$SESSION_STATUS_EMITTED" ]; then
-      SESSION_RECALL_IDENTITIES=$(
-        python3 -B "$SCRIPT_DIR/fm-recall.py" --root "$DATA" --extract-identities \
-          < "$SESSION_STATUS_EMITTED" 2>/dev/null | awk 'NF && !seen[$0]++'
-      ) || SESSION_RECALL_IDENTITIES=""
-    fi
     SESSION_RECALL_RECEIPT_STATUS=zero
     SESSION_RECALL_STATS="$allocated 0 $item_count 0 $missing $truncation 0"
     rm -f "$backlog_file"
@@ -767,10 +742,7 @@ session_start_emit_recall() {
     rm -f "$queries_file" "$result_file" "$ident_file"
     return 0
   }
-  if [ -n "${SESSION_STATUS_EMITTED:-}" ] && [ -f "$SESSION_STATUS_EMITTED" ]; then
-    python3 -B "$SCRIPT_DIR/fm-recall.py" --root "$DATA" --extract-identities \
-      < "$SESSION_STATUS_EMITTED" > "$ident_file" || true
-  fi
+  printf '%s\n' "$SESSION_RECALL_IDENTITIES" > "$ident_file"
   session_start_open_items "$backlog_file" > "$items_file"
   python3 - "$queries_file" "$items_file" <<'PY'
 import json, sys
@@ -797,10 +769,6 @@ PY
     [ -f "$DATA/$context_file" ] || continue
     recall_args+=(--exclude-file "data/$context_file")
   done
-  while IFS= read -r id; do
-    [ -n "$id" ] || continue
-    recall_args+=(--exclude-id "$id")
-  done < <(session_start_printed_ids "$backlog_file")
   while IFS= read -r override; do
     [ -n "$override" ] || continue
     recall_args+=(--status "$override")
@@ -865,7 +833,7 @@ session_start_publish_recall_artifacts() {
   fm_session_lock_owned_by_self "$STATE" || return 0
   mkdir -p "$STATE" 2>/dev/null || return 0
   manifest=$STATE/.session-recall-identities
-  receipt=$STATE/.session-recall-receipt.json
+  receipt=$STATE/.session-recall-receipt.$pid.json
   tmp=$(mktemp "$STATE/.session-recall-identities.XXXXXX" 2>/dev/null) || {
     echo "warning: session recall manifest was not published" >&2
     return 0
@@ -923,7 +891,7 @@ PY
     rm -f "$tmp"
     echo "warning: session recall receipt was not published; metrics coverage is incomplete" >&2
   else
-    SESSION_RECALL_PUBLISHED_HASH=$published_hash
+    SESSION_RECALL_PUBLISHED_HASH=$pid:$published_hash
   fi
 }
 
@@ -1074,7 +1042,7 @@ if [ "$READ_ONLY" -eq 0 ]; then
   NETWORK_STAGE_LOCKED=1
   [ "$REEMIT" -eq 0 ] || NETWORK_STAGE_LOCKED=0
   "$SCRIPT_DIR/fm-startup-network.sh" start \
-    --locked "$NETWORK_STAGE_LOCKED" --harvest-pid $$ >/dev/null 2>&1 || true
+    --locked "$NETWORK_STAGE_LOCKED" --harvest-pid $$ >/dev/null 2>&1 3>&- || true
 fi
 
 # --- 2. bootstrap --------------------------------------------------------
