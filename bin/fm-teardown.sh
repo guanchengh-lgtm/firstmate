@@ -184,7 +184,8 @@ Options:
   --force  Skip ordinary-task dirty and landed-work checks, skip scout report
            checks, discard secondmate child work, and skip the no-mistakes
            validation-truth gate because discard is not a green claim.
-  A live session host rooted in the task copy makes teardown refuse.
+  A live session host rooted in the task worktree or task temp directory makes
+  teardown refuse.
   --force does not override this protected-process refusal.
   Linked-worktree home refusal: bin/fm-primary-scope-lib.sh.
   -h, --help
