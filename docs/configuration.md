@@ -13,7 +13,7 @@ The tracked code root contains the shared instruction, skill, documentation, wor
 `data/` holds durable private fleet records such as the project and secondmate registries, captain preferences, optional shared captain preferences, learnings, backlog, briefs, scout reports, and explicitly installed content-addressed extension packages under `data/extensions/packages/`.
 `state/` holds runtime records such as task metadata, append-only status events, endpoint signals, watcher and wake-queue coordination, inactive terminal-outcome receipts under `state/terminal-outcomes/`, enabled extension working namespaces under `state/extensions/`, away-mode state, generated Relay artifacts, parent-side remote ledger copies under `state/secondmate-summary-cache/`, one-shot Bearings reconcile requests under `state/reconcile-notify/`, private secondmate config-reread generations with their retry and quarantine state, per-task steering-inbox records under `state/<id>.inbox/` (`bin/fm-task-inbox-lib.sh`), and parent-owned secondmate pending-reply records under `state/pending-replies/` (`bin/fm-pending-reply-lib.sh`).
 `config/` holds local gitignored operating choices, including explicit extension bindings under `config/extensions.d/`, and `projects/` holds the local project clones that Firstmate reads but changes only through the narrow guarded and concrete captain-approved exceptions in `AGENTS.md`.
-Untracked files and directories whose names begin with `scratchpad` are also gitignored, so temporary scratch does not make porcelain-based secondmate sync guards treat a home as dirty.
+The shared code repository also ignores untracked files and directories whose names begin with `scratchpad`, so temporary scratch does not make porcelain-based secondmate sync guards treat a home as dirty.
 
 `bin/fm-spawn.sh` owns the base task-metadata fields it emits, while the runtime-backend section below owns backend-specific fields and selector interpretation.
 The producing PR and Relay helpers own the fields they append, `bin/fm-classify-lib.sh` owns status-event vocabulary, and `bin/fm-crew-state.sh` owns current-state reconciliation.
@@ -248,14 +248,14 @@ Portable shard evidence and coverage rules are in [fm-test-portable-shards.md](f
 
 ## Captain Preferences (data/captain.md / data/captain-shared.md)
 
-Domain-local preferences for one captain's fleet live locally in each home's `data/captain.md`; it is gitignored and printed in the session-start context digest after `data/projects.md` and optional `data/secondmates.md`.
+Domain-local preferences for one captain's fleet live locally in each home's `data/captain.md`; the shared code repository ignores it, and the session-start context digest prints it after `data/projects.md` and optional `data/secondmates.md`.
 Before changing it, inspect the current file and curate the matching bullet in place under the internal [`stow` skill's](../.agents/skills/stow/SKILL.md) tiering and archive contract; add a new bullet only for a genuinely new durable preference.
 Shared captain preferences that apply across secondmate domains live only in the primary home's optional `data/captain-shared.md`.
 `secondmate-provisioning` owns its propagation contract, including the required header, read-only secondmate copies, quarantine diagnostics, and the rollout rule that existing homes trim `data/captain.md` by hand after first propagation rather than deleting private content automatically.
 
 ## Operational learnings (data/learnings.md)
 
-Fleet-local operational facts and gotchas live locally in `data/learnings.md`; it is gitignored and printed after the captain-preference files in the session-start context digest.
+Fleet-local operational facts and gotchas live locally in `data/learnings.md`; the shared code repository ignores it, and the session-start context digest prints it after the captain-preference files.
 The file is created lazily on first learning and follows the internal [`stow` skill's](../.agents/skills/stow/SKILL.md) aging-tier and cold-archive contract: inspect the current file first and curate it instead of appending forever.
 There is no shared learnings file by captain decision.
 
@@ -300,12 +300,13 @@ Private visibility is re-verified with `gh-axi repo view` before every push, and
 Globs are refused, every entry must name a currently selected source, and an excluded record is omitted whole rather than redacted, so `sot_sha256` always describes the bytes the page carries.
 
 Both files are per home and are not inherited by secondmate homes, because each home mirrors its own records.
-`bin/fm-feeder-export.sh`'s header and `--help` own the page schema, the exact vault layout requirements, the first-known date rule and its limitation, the transaction and recovery mechanics, the secret-scan classes, and the exit codes.
+`bin/fm-feeder-export.sh`'s header and `--help` own the page schema, the exact vault layout requirements, the first-known date rule and its limitation, the transaction and recovery mechanics, and the exit codes.
+[`bin/fm-record-scan.sh`](../bin/fm-record-scan.sh)'s header owns the feeder's credential-scan classes and their boundary with the Record scan chain.
 
 ## Record repository (data/.git)
 
 After a home is activated, `data/` is also the Record repository: one Git snapshot of durable home files plus a mirrored live-state subset.
-`bin/fm-record.sh`'s header and `--help` own the exact flags, exit codes, settle window, lock, scan chain, and LFS rules.
+[`bin/fm-record.sh`](../bin/fm-record.sh)'s header and `--help` own the exact flags, exit codes, settle window, lock, scan entry points, LFS rules, and scheduler prerequisites.
 This section owns only operator setup and recovery.
 
 A home that has never enabled Record returns an explicit disabled no-op for checkpoints, ticks, and health checks.
@@ -313,27 +314,45 @@ An activated home refuses these commands if its Git metadata is missing.
 Do not initialize, commit, or push the live home from a worker checkout.
 Live activation is a separate approved home operation after the shared code has landed.
 
-To prepare a scratch or newly approved home, run `bin/fm-record.sh setup --init --origin <url>` from that home, then `bin/fm-record.sh health` and one `tick`.
+Use a stable shared code checkout and set `FM_HOME` explicitly when the operational home differs from that checkout.
+For an existing Record repository, run `FM_HOME=<home> <code-root>/bin/fm-record.sh setup --branch <branch>` with its existing branch and origin, preserving its history.
+Use `setup --init --origin <url>` only for a scratch or approved new home with no Record repository.
+Then run `health` and one `tick` with the same home and code checkout.
 Setup writes a `.gitignore` that drops Obsidian workspace files, `.DS_Store`, Record temp names, `search-anomaly-signal/.serpapi.env`, and every `.env`.
+Other Git ignore rules do not exclude files from the Record; review its scope before the first tick.
+Setup leaves unknown or changed existing hooks untouched and refuses; resolve their ownership before retrying instead of deleting them blindly.
 `setup --write-plist` renders `com.firstmate.record-tick` next to the existing deadman job.
 `setup --bootstrap` loads that job only after an explicit install consent.
 The job uses `StartInterval=60` and `RunAtLoad`, and it does not use `KeepAlive`.
 Sixty seconds is the attempt cadence while the user is logged in, not a hard off-device recovery bound through logout, sleep, scan refusal, or network loss.
 
-Distinguish three durability states when reading health or a session digest:
+Read the latest transaction `state` together with `delivery` when inspecting health or a session digest:
 
-- `committed-local` means this machine has a scanned Git commit and the files are recoverable here.
-- `pushed` means origin accepted that commit, so another clone can fetch it.
-- `push-pending` or `diverged` means the local commit remains and off-device restore is not yet proven.
+- `state=committed-local` reports a local commit, while `state=unchanged` reports no new commit; neither alone proves delivery.
+- `delivery=pushed` records a successful push to origin, while `delivery=pending` reports local commits awaiting delivery.
+- `delivery=push-pending` or `delivery=diverged` retains the failed delivery result even after a later local checkpoint.
+
+`last_push_at` retains the last successful push time, and `failure_class` retains the latest sanitized push failure category until a successful push clears it.
+`pending` and `pending_age_seconds` are computed when health is read, using the local origin tracking ref without a network check.
+A saved receipt therefore does not prove that the remote is currently reachable or unchanged.
 
 A scan-blocked or configuration-error result leaves earlier commits intact.
 Repair the named class, then run `tick` again.
-Do not force-push, rebase, or `git lfs install` outside the Record repository.
+An earlier outgoing commit can block a push even when the current working tree is clean; preserve the local history for explicit reconciliation.
+Do not force-push or automatically rebase to clear a delivery failure.
+Keep LFS installation local to the Record repository through `setup`.
 The next tick retries one bounded push even when the working tree is clean.
 A diverged origin needs a later reconciliation owner, not an automatic rebase.
 
+After interrupted index publication, the next checkpoint or tick retries the saved journal under the Git index lock.
+A Git status refresh alone does not prevent recovery, but conflicting HEAD or staged content causes an `index-recovery` refusal.
+Preserve `data/.git/record-publication` and user staging while resolving that conflict; deleting the journal or resetting the index can lose recoverable work.
+The recovery cases in [`tests/fm-record.test.sh`](../tests/fm-record.test.sh) cover interrupted publication, concurrent staging, and status refreshes.
+
 Recovery on this machine is `git` plus `git lfs` inside `data/`.
-Restoring onto another machine is a clone of the private Record remote, then `setup` to recreate local hooks and LFS filters, because Git does not clone installed hooks.
+To restore onto another machine, clone the private Record remote into the new home's `data/`, then run `setup` without `--init` to recreate local hooks and LFS filters.
+Git does not clone installed hooks, and setup must use the restored branch and the stable code checkout on that machine.
+Fetch the required LFS objects before checkpointing or ticking; unresolved payloads fail closed even when their pointer files are present.
 `.record-state` in that clone is historical mirror input, not proof that a worker is still alive.
 
 ## Secondmate routes (data/secondmates.md)

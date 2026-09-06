@@ -5,11 +5,12 @@
 # fail-closed messages, hits-file path, and class names. Executed as a public
 # command for Record pre-commit, tick attestation, and tests.
 #
-# Secret boundary. Every scanned snapshot is checked for a fixed set of
-# high-confidence credential shapes. A match refuses the run, naming only a
-# safe locator and the pattern class, never the matched bytes. The classes are
-# deliberately precise and incomplete; there is no generic password or entropy
-# detector, because its false-positive policy is undefined.
+# Secret boundary. The feeder and the tree command use the fixed credential
+# shapes below. That set is deliberately precise and incomplete; it has no
+# generic password or entropy detector because its false-positive policy is
+# undefined. The Record chain adds Gitleaks default rules and archive
+# inspection; the feeder does not run those additional passes. A match refuses
+# the run, naming only a safe locator and the pattern class, never matched bytes.
 #
 # The OpenAI class is exactly
 # `sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,255}`. It deliberately fails
@@ -33,6 +34,10 @@
 # baselines, and GITLEAKS_CONFIG are not inherited. Expanded scan bytes are
 # capped by FM_RECORD_SCAN_MAX_BYTES (default 536870912). Archive inspection
 # and each gitleaks pass use FM_RECORD_SCAN_TIMEOUT_SECONDS (default 60).
+# Archive inspection supports ZIP, TAR, and gzip within that depth, including
+# nested members and path labels. Encrypted, corrupt, unsupported, or overly
+# deep archives refuse the scan. Gitleaks scans both the expanded payload
+# stream and the directory, so its path exclusions cannot hide payload bytes.
 set -u
 
 export LC_ALL=C

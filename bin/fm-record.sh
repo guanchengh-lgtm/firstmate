@@ -15,9 +15,40 @@
 #   fm-record.sh pre-commit
 #
 # Setup records activation in $FM_HOME/.record-enabled. A home with neither
-# this marker nor data/.git is an explicit disabled no-op. After activation, a missing scanner, wrong root, extra remote, detached
+# this marker nor data/.git is an explicit disabled no-op. After activation,
+# missing Git metadata, a missing scanner, wrong root, extra remote, detached
 # HEAD, merge state, missing hook, or missing local LFS setup is a
 # configuration-error refusal, not a disabled success.
+#
+# FM_HOME selects the home; changing the working directory does not select it.
+# Its data/ and state/ roots must be canonical, home-local directories.
+# Setup without --init binds an existing repository without replacing history.
+# --init creates data/.git, requires --origin, and refuses an existing repository.
+# --branch defaults to FM_RECORD_BRANCH (main when unset).
+# --code-root selects the checkout used by installed hooks and the scheduler;
+# its default is FM_ROOT_OVERRIDE or the checkout containing this script.
+# Setup protects .git with mode 700 and installs repository-local LFS filters
+# and hooks. Unknown or changed existing hooks refuse setup without replacement.
+#
+# --write-plist renders the tracked launchd template to FM_RECORD_PLIST
+# (default $HOME/Library/LaunchAgents/com.firstmate.record-tick.plist).
+# Logs use FM_RECORD_LOG_DIR (default $HOME/Library/Logs).
+# --bootstrap loads an existing matching plist; combine it with --write-plist
+# to render and load. Both flags require a primary code checkout with a .git
+# directory and gitleaks, git-lfs, restic, and rclone on PATH.
+# Rendering captures the current PATH and FM_HOME for the job.
+# Operator activation and recovery are owned by docs/configuration.md.
+#
+# is_ignored and is_prohibited below own candidate exclusions and forbidden
+# indexed paths. list_state_sources owns the exact mirror subset.
+# The transaction regenerates .gitattributes from binary_attr_lines plus
+# literal LFS rules for CSV, JSON, TXT, and VTT files of at least 1 MiB.
+# A literal rule survives later file shrinkage and repeated setup.
+# Indexed payloads, including resolved and verified local LFS objects, pass
+# bin/fm-record-scan.sh chain before a checkpoint commits. Tick also scans
+# every outgoing commit before pushing its pinned HEAD; the scanner header
+# owns detection classes and archive limits. The pre-commit hook scans the
+# complete staged tree, so working-tree edits cannot hide staged credentials.
 #
 # Exit codes:
 #   0  disabled, unchanged, committed-local, or pushed
@@ -29,6 +60,8 @@
 #   7  diverged (non-fast-forward; no force or rebase)
 #   8  configuration-error
 #   9  required checkpoint could not obtain a durable local commit
+# The pre-commit entry point instead returns 1 for a blocked scan or an
+# unresolved indexed payload. --required does not remap every refusal to 9.
 #
 # The local lock is $FM_HOME/data/.git/firstmate-record.lock and uses the
 # shared process-owned lock owner. Tick is non-blocking. Checkpoint waits
@@ -36,6 +69,7 @@
 # FM_RECORD_SETTLE_SECONDS (default 2). Tick push uses the shared timeout
 # owner with FM_RECORD_PUSH_TIMEOUT (default 15) and GIT_TERMINAL_PROMPT=0.
 # Health lives under .git/record-health and is not tracked.
+# docs/configuration.md owns the health fields and delivery interpretation.
 set -eu
 export LC_ALL=C
 

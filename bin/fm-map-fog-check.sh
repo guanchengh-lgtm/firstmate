@@ -6,8 +6,8 @@
 #
 # Each map file must be an ordinary readable file. Relative paths resolve from
 # FM_HOME. With no map-file arguments, every ordinary `map.md` under
-# $FM_HOME/data is checked. An empty data tree or no map files is silent
-# success.
+# $FM_HOME/data is checked, excluding .git subtrees during discovery.
+# An empty data tree or no map files is silent success.
 #
 # Fog is live when a bullet is `[open]` or lacks a valid status token.
 # `[parked YYYY-MM-DD]` is not live. `[closed <pointer>]` is not live when the

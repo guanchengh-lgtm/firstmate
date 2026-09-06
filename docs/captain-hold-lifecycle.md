@@ -8,7 +8,7 @@ This document records the deterministic mechanism, structured surfaces, compatib
 A decision is not a separate thing in this system: it is an ordinary backlog task held for the captain, and the task id is the identity every surface and channel uses.
 `bin/fm-captain-hold.sh` is the only lifecycle command layered on that primitive.
 The command runs tasks-axi in the active `FM_HOME`, so the existing backlog remains the only durable work database and a secondmate-owned captain call stays in the secondmate home.
-It never reads report bodies, review artifacts, terminal output, or chat.
+It never infers whether the captain owes an answer from report bodies, review artifacts, terminal output, or chat.
 
 The `hold` subcommand places an existing task under an active captain hold, or creates the task when nothing exists to hold, then verifies the hold through `tasks-axi hold <id> --reason <reason> --kind captain`.
 Repeats are idempotent, a closed task is refused rather than reopened, and `--until` stores the captain's own deferral date through tasks-axi's date gate.
@@ -25,11 +25,12 @@ The resulting metadata carries `ideas_reviewed=1`; repeated completion is idempo
 A post-teardown visual review can complete against the surviving report and durable tasks without recreating volatile task metadata.
 It accepts `--none` as an explicit captain-call inventory result, refused while the origin still has a lifecycle-open keyed status decision, and verifies every listed task against tasks-axi before recording completion.
 With a non-empty inventory it appends a `captain-held [key=<key>]: tracked by <inventory>` transfer event for every still-open keyed status decision, which `bin/fm-classify-lib.sh` recognizes as closing the live status copy without claiming that the captain has answered it.
+`bin/fm-captain-hold.sh`'s header owns the Record checkpoint requirement before the completion receipt and the retry behavior after refusal.
 
 Scout teardown calls the read-only `verify` subcommand after checking for the report and before removing any source state.
 `verify` requires the recorded decision and idea attestations, requires every recorded captain-call inventory entry to still be durable (actively captain-held, or carrying a recorded answer), revalidates every idea id against the ledger, and fails on any keyed status decision that opened after the last `complete`, which makes re-running `complete` the repair.
 Metadata written before product-idea attestation existed remains grandfathered only when it carries the earlier completed decision attestation.
-The `--force` path remains the explicit captain-approved discard escape hatch.
+`bin/fm-teardown.sh`'s header owns the explicit captain-approved `--force` discard path and the Record checkpoint that it cannot bypass.
 
 ## State and later authority
 

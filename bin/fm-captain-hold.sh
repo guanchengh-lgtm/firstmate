@@ -115,6 +115,9 @@
 # data/product-ideas.md; `--no-ideas` creates that private ledger lazily.
 # A post-teardown visual review can complete against the surviving report and
 # tasks without recreating task state.
+# After inventory writes, `complete` calls bin/fm-record.sh checkpoint with
+# reason complete. A refusal exits nonzero without a completion receipt;
+# earlier inventory writes remain available for an idempotent retry.
 # `verify` is read-only and is called by scout teardown, so teardown cannot
 # erase a source before this gate has succeeded: every recorded inventory
 # entry must still be durable and no keyed status decision may be open.

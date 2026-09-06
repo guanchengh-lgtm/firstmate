@@ -62,6 +62,10 @@
 #
 # Those ten names are also the runtime-bound stage list below, so a truncated
 # startup can name exactly which of them never ran.
+# After those stages, a full locked startup calls bin/fm-record.sh checkpoint
+# with reason session-start, before writing the startup completion receipt.
+# Read-only and --reemit paths call health instead. The RECORD section prints
+# the result, and a Record refusal does not abort session start.
 #
 # NO NETWORK ON THE BLOCKING PATH. This digest runs on a session-open hook that
 # blocks session initialization, so anything it waits for is time the captain
@@ -988,9 +992,7 @@ The digest above is complete for this session start. The READ-ONCE CONTRACT
 section near the top of it governs what may still be read from disk.
 EOF
 
-# Full locked startup checkpoints the Record after those mutations and before
-# the completion receipt. Read-only and --reemit paths inspect health only.
-# A Record failure must not abort session start.
+# Record refusal must not suppress the startup completion receipt below.
 if [ "$READ_ONLY" -eq 0 ] && [ "$REEMIT" -eq 0 ]; then
   record_out=$("$SCRIPT_DIR/fm-record.sh" checkpoint --reason session-start 2>&1) || true
 else
