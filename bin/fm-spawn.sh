@@ -38,7 +38,11 @@
 #   flag). Brief prose is never scanned for Role: or Delivery contract: lines, so
 #   task text and recovery appends cannot forge or poison the gate. --role
 #   builder encodes data/<id>/brief.md. --role verifier encodes
-#   data/<id>/verifier-brief.md and refuses if that file is missing. Recovery
+#   data/<id>/verifier-brief.md and refuses if that file is missing.
+#   After worker-brief validation succeeds, a builder or scout spawn refreshes
+#   the owned recalled-pointers section through bin/fm-brief.sh --refresh-recall
+#   before the worker receives its launch payload. Verifier briefs and
+#   secondmate charters skip that refresh. Recovery
 #   reads recorded role= from meta; it does not infer role from git and does not
 #   default an omitted --role to builder. bin/fm-promote.sh records role=builder
 #   (header owns the sibling-marker write) so a scout-to-ship respawn has a role
@@ -2167,6 +2171,9 @@ fi
 [ -f "$BRIEF" ] || { echo "error: no brief at $BRIEF" >&2; exit 1; }
 if [ "$KIND" != secondmate ]; then
   "$FM_ROOT/bin/fm-brief.sh" --check-worker "$KIND" "$BRIEF" || exit $?
+  if [ "$ROLE" != verifier ]; then
+    "$FM_ROOT/bin/fm-brief.sh" --refresh-recall "$KIND" "$BRIEF" || exit $?
+  fi
 fi
 
 delivery_rigor_rank() {  # <mode> -> 3 (most rigor) .. 1 (least); 0 = not a task mode
