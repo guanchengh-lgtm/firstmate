@@ -24,12 +24,21 @@
 #   fm-merge-local.sh <task-id>
 #   fm-merge-local.sh <task-id> --exact-sync --base <40-hex B> --upstream <40-hex U> \
 #     --stage <40-hex S> --remote origin --branch main
+# Linked-worktree home refusal is owned by bin/fm-primary-scope-lib.sh.
 set -eu
+
+if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
+  sed -n '2,/^set -/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//; $d'
+  exit 0
+fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+# shellcheck source=bin/fm-primary-scope-lib.sh
+. "$SCRIPT_DIR/fm-primary-scope-lib.sh"
+fm_home_refuse_linked_worktree "$FM_HOME" fm-merge-local.sh || exit 1
 "$FM_ROOT/bin/fm-guard.sh" || true
 # Role partition: landing local-only work is MAIN-owned; the Pi supervision
 # branch reports readiness and never lands (contract: bin/fm-lease-lib.sh;

@@ -374,6 +374,7 @@ printf 'LEASE_FROM=%s\n' "${BASH_SOURCE[0]}" >> "${FM_HOME}/source.log"
 fm_lease_forbid_branch() { :; }
 SH
   cp "$MERGE_LOCAL" "$foreign/bin/fm-merge-local.sh"
+  cp "$ROOT/bin/fm-primary-scope-lib.sh" "$foreign/bin/fm-primary-scope-lib.sh"
   chmod +x "$foreign/bin/fm-guard.sh" "$foreign/bin/fm-merge-local.sh" \
     "$home/bin/fm-guard.sh"
   : > "$home/source.log"

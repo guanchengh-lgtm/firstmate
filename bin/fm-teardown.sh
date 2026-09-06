@@ -182,6 +182,7 @@ Options:
   --force  Skip ordinary-task dirty and landed-work checks, skip scout report
            checks, discard secondmate child work, and skip the no-mistakes
            validation-truth gate because discard is not a green claim.
+  Linked-worktree home refusal: bin/fm-primary-scope-lib.sh.
   -h, --help
            Show this help.
 EOF
@@ -198,6 +199,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+# shellcheck source=bin/fm-primary-scope-lib.sh
+. "$SCRIPT_DIR/fm-primary-scope-lib.sh"
+fm_home_refuse_linked_worktree "$FM_HOME" fm-teardown.sh || exit 1
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 SECONDMATE_REG="$DATA/secondmates.md"

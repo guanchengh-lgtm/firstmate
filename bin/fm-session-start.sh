@@ -238,12 +238,16 @@
 #             current AGENTS.md to print before the bulky digest. The baseline
 #             remains immutable so every later drifted compaction refreshes
 #             again, while an equal baseline emits no instruction refresh.
+# Linked-worktree home refusal is owned by bin/fm-primary-scope-lib.sh.
 set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 FM_HOME="${FM_HOME:-${FM_ROOT_OVERRIDE:-$FM_ROOT}}"
 STATE="${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+# shellcheck source=bin/fm-primary-scope-lib.sh
+. "$SCRIPT_DIR/fm-primary-scope-lib.sh"
+fm_home_refuse_linked_worktree "$FM_HOME" fm-session-start.sh || exit 1
 DATA="${FM_DATA_OVERRIDE:-$FM_HOME/data}"
 CONFIG="${FM_CONFIG_OVERRIDE:-$FM_HOME/config}"
 COMPLETION_FILE="$STATE/.session-start-complete"
