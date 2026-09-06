@@ -1,0 +1,17 @@
+KS T22 AGENTS.md trim contract verification
+Base: 54f137cf952425eca06f7bcce030fb3166c9683b
+Target: 6b788c4cd60d75b7a98babadc266f02755369212
+
+PASS AGENTS.md byte contract: 28549 bytes
+PASS AGENTS.md edit count: six deletions and zero additions
+PASS F1 exact deletion contract: all six reviewed baseline lines match
+PASS unchanged byte section: section 1
+PASS unchanged byte section: section 8
+PASS unchanged byte section: Captain instruction precedence
+PASS O2 exact header replacement with no appended paragraph
+PASS F2 exact single fallback owner pointer
+PASS F3 reserved bytes: no trigger lines or placeholder skills
+PASS commit contract: no budget override, co-author trailer, or em dash
+PASS changed Markdown line style: full sentence and plain dash
+PASS manufactured-breakage scope: branch changes no test file
+PASS final worktree state: git status --porcelain is empty

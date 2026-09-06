@@ -1,0 +1,43 @@
+KS T22 authored instruction and byte contract verification
+Base: 54f137cf952425eca06f7bcce030fb3166c9683b
+Target: 08a6e09675ccc39b2ef0cb114403eb050b1a469f
+
+User-visible fm-brief help:
+Scaffold a crewmate brief or persistent secondmate charter at
+data/<task-id>/brief.md under the active firstmate home.
+For ordinary tasks, the standard Setup/Rules/Definition-of-done contract is
+filled in. Firstmate then replaces the {TASK} placeholder with the task
+description, acceptance criteria, constraints, and context, and may adjust other sections
+when the task genuinely deviates (e.g. working an existing external PR instead
+of shipping a new one).
+
+Unsupported configured runtime scenario:
+Never dispatch a crewmate or secondmate on an unverified adapter.
+Follow `../../../AGENTS.md` section 4 for an unverified configured adapter or an unavailable requested runtime.
+
+On `unknown`, ask the captain instead of guessing.
+A current captain override beats detection, while a per-task override governs only that dispatch.
+Dispatch only through a validated spawn-capable backend authorized for that task; missing dependencies, authentication, support, or version compatibility are blockers, never reasons to switch silently.
+
+Explicit authorized alternative scenario:
+A current captain override beats detection, while a per-task override governs only that dispatch.
+Dispatch only through a validated spawn-capable backend authorized for that task; missing dependencies, authentication, support, or version compatibility are blockers, never reasons to switch silently.
+
+Exact acceptance checks:
+PASS AGENTS.md byte contract: 28549 bytes
+PASS AGENTS.md edit contract: six deletions and zero additions
+PASS F1 exact deletion contract: all six reviewed lines match
+PASS unchanged byte section: ## 1. Identity and prime directives (f7027110d6d86aad92e90d74789eabecb9889f99c8057d32ab9dad594cd3bdff)
+PASS unchanged byte section: ## 8. Supervision protocol (762e5e3114217c607760f18511b024ce093ca5be4f0557b6387ad731c24b361f)
+PASS unchanged byte section: ## Captain instruction precedence (1f91cd6e76c7cc7180b0d28984cd5c2758cc32727f3cfcb2c3e341c2f8fe1568)
+PASS O2 exact header sentence exists once
+PASS F2 exact single fallback pointer
+PASS F3 has no future trigger or placeholder skill
+PASS commit contract has no budget override, co-author trailer, or em dash
+PASS changed test has red and restored-green evidence
+Changed files from accepted base:
+.agents/skills/harness-adapters/SKILL.md
+AGENTS.md
+bin/fm-brief.sh
+tests/fm-crew-state.test.sh
+Worktree porcelain after restore: empty
