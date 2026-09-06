@@ -199,8 +199,11 @@
 # the digest never runs without the same hard bound and process-group cleanup.
 #
 # Usage: fm-session-start.sh [--reemit] [--source <source>]
-#   Prints the full ordered digest to stdout and always exits 0: this is a
-#   reporting command, not a gate. A lock refusal is reported as a loud
+#   Prints the full ordered digest to stdout and exits 0 after ordinary reports
+#   and lock refusals.
+#   A linked-worktree home refusal exits 1 before any home read or write.
+#   This is a reporting command, not a lock gate.
+#   A lock refusal is reported as a loud
 #   banner inline, never a silent failure or a non-zero exit that would make
 #   an agent skip the rest of the digest.
 #

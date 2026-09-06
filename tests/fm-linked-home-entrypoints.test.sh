@@ -66,6 +66,21 @@ def snapshot():
 
 sleeper = subprocess.Popen(['sleep', '300'], cwd=copy)
 try:
+    help_contracts = {
+        'fm-session-start.sh':
+            'A linked-worktree home refusal exits 1 before any home read or write.',
+        'fm-lock.sh':
+            'status                 print holder and liveness; exit 1 for a linked-worktree\n'
+            '                         home, otherwise exit 0',
+    }
+    for script, contract in help_contracts.items():
+        before = snapshot()
+        code, out, err = run(script, args=('--help',))
+        assert code == 0 and not err, (script, code, out, err)
+        assert contract in out, (script, out)
+        assert snapshot() == before, script + ' help changed the linked home'
+        print('ok - ' + script + ' help states the linked-home exit exception')
+
     for script in scripts:
         state = copy / 'state'
         if script == 'fm-guard.sh':
