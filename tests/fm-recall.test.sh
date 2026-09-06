@@ -284,7 +284,7 @@ assert p.get("partial_input") is True or any("partial-input" in d for d in p.get
 }
 
 test_thirteen_probe_floors() {
-  local home mode n date disp prior query excl
+  local home mode n date disp prior query excl probe_start probe_ms
   local -a extra
   load_probe_expectation "$PROBE_TSV" \
     || fail "the committed probe expectation is not a valid 13-row fixture"
@@ -325,12 +325,14 @@ PY
           excl+=(--exclude-id "$item")
         done < "$TMP_ROOT/probe-excl"
       fi
+      probe_start=$(python3 -c 'import time; print(int(time.monotonic()*1000))')
       FM_HOME="$home" FM_DATA_OVERRIDE="$home/data" FM_RECALL_TIMEOUT=5 \
         "$RECALL" --json --now 2026-09-06 --title "$query" --surface pointers --limit 5 \
         ${excl[@]+"${excl[@]}"} ${extra[@]+"${extra[@]}"} > "$TMP_ROOT/probe.json"
-      python3 - "$mode" "$disp" "$prior" "$TMP_ROOT/probe.json" "$n" <<'PY' > "$TMP_ROOT/probe-acc"
+      probe_ms=$(python3 -c 'import sys,time; print(int(time.monotonic()*1000)-int(sys.argv[1]))' "$probe_start")
+      python3 - "$mode" "$disp" "$prior" "$TMP_ROOT/probe.json" "$n" "$probe_ms" <<'PY' > "$TMP_ROOT/probe-acc"
 import json, sys
-mode, disp, prior, path, n = sys.argv[1:6]
+mode, disp, prior, path, n, elapsed_ms = sys.argv[1:7]
 p = json.load(open(path, encoding="utf-8"))
 ids = [h["id"] for h in p.get("hits") or []]
 raw = (disp + "," + prior) if mode == "A" else prior
@@ -348,6 +350,17 @@ for i, doc_id in enumerate(ids, 1):
     if doc_id in expected:
         rank = i
         break
+print(
+    "metric probe=%s mode=%s elapsed_ms=%s rendered_bytes=%s expected_rank=%s top1=%s"
+    % (
+        n,
+        mode,
+        elapsed_ms,
+        len((p.get("rendered") or "").encode("utf-8")),
+        rank or "miss",
+        ids[0] if ids else "(none)",
+    )
+)
 print("%s %s %s" % (n, mode, rank or "miss"))
 if rank and rank <= 1:
     print("at1")
@@ -358,6 +371,7 @@ if rank and rank <= 5:
 if rank is None:
     print("ids=%s expected=%s status=%s" % (ids, expected, p.get("status")))
 PY
+      grep '^metric ' "$TMP_ROOT/probe-acc" || true
       if grep -qx unscored "$TMP_ROOT/probe-acc"; then
         [ "$mode" != A ] || fail "mode A row $n had no expected set"
         continue
@@ -434,12 +448,21 @@ assert "other-sprocket" in ids or p.get("status") in ("ok","empty"), p
 }
 
 test_symlinked_report_is_skipped_without_traceback() {
-  local home out
+  local home out before
   home="$TMP_ROOT/rename-race"
   mkdir -p "$home/data/swapped" "$home/outside"
   write_report "$home" real "Widget sprocket real report" 2026-01-01 reported
+  write_report "$home" swapped "Widget sprocket regular report" 2026-01-01 reported
   printf '# Widget sprocket secret outside the Record\nwidget sprocket\n' \
     > "$home/outside/secret.md"
+  before=$(recall_json "$home" --title "widget sprocket" --surface pointers)
+  printf '%s\n' "$before" | python3 -c '
+import json,sys
+p=json.load(sys.stdin)
+ids=[h["id"] for h in p.get("hits") or []]
+assert "swapped" in ids, p
+'
+  mv "$home/data/swapped/report.md" "$home/data/swapped/report.md.moved"
   ln -s "$home/outside/secret.md" "$home/data/swapped/report.md"
   mkdir -p "$home/data/dangling"
   ln -s "$home/data/dangling/missing.md" "$home/data/dangling/report.md"
@@ -491,9 +514,10 @@ test_alias_cycle_terminates_with_one_pointer() {
 import json,sys
 p=json.load(sys.stdin)
 ids=[h["id"] for h in p.get("hits") or []]
-assert len(ids)==len(set(ids)), p
-assert len(ids)<=2, p
-assert p["status"] in ("ok","empty"), p
+assert p["status"]=="ok", p
+assert len(ids)==1, p
+assert ids[0] in ("loop-a","loop-b"), p
+assert any("cycle" in d for d in p.get("diagnostics") or []), p
 '
   pass "fm-recall.sh: an alias cycle terminates and never duplicates a pointer"
 }
@@ -523,16 +547,22 @@ test_tight_session_budget_takes_the_shorter_hit() {
     "Widget sprocket with an extremely long descriptive title that consumes the entire session token budget" \
     2026-01-01 reported
   write_report "$home" sm "Widget short" 2026-01-01 reported
+  write_report "$home" o "Carb" 2026-01-01 reported
   queries="$TMP_ROOT/session-tight.json"
-  printf '%s\n' '[{"id":"item1","title":"widget sprocket","body":""}]' > "$queries"
-  out=$(recall_json "$home" --session-batch "$queries" --token-budget 95)
+  printf '%s\n' '[{"id":"item1","title":"widget sprocket","body":""},{"id":"item2","title":"carb","body":""}]' \
+    > "$queries"
+  out=$(recall_json "$home" --session-batch "$queries" --token-budget 108)
   printf '%s\n' "$out" | python3 -c '
 import json,sys
 p=json.load(sys.stdin)
 ids=[h["id"] for h in p.get("hits") or []]
-assert ids==["sm"], p
+assert "big" not in ids, p
+assert ids==["sm","o"], p
+assert p["selected_item_count"]==2, p
+assert p["omitted"]==1, p
 text=p["rendered"]
-assert -(-len(text.encode("utf-8"))//3) <= 95, (len(text), text)
+assert "### item1" in text and "### item2" in text, text
+assert -(-len(text.encode("utf-8"))//3) <= 108, (len(text), text)
 '
   pass "fm-recall.sh: a tight session budget keeps a shorter lower-ranked pointer"
 }

@@ -309,6 +309,29 @@ stage() {  # <stage-name>: breadcrumb for the parent's truncation banner
 # shellcheck source=bin/fm-session-lock-lib.sh
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 
+session_start_record_digest_bytes() {  # <bytes>
+  local receipt=$STATE/.session-recall-receipt.json
+  [ -f "$receipt" ] && [ ! -L "$receipt" ] || return 0
+  FM_DIGEST_BYTES=$1 python3 - "$receipt" <<'PYDIGEST' || true
+import json
+import os
+import sys
+import tempfile
+
+path = sys.argv[1]
+try:
+    payload = json.load(open(path, encoding="utf-8"))
+except (OSError, ValueError):
+    raise SystemExit(0)
+payload["digest_bytes"] = int(os.environ.get("FM_DIGEST_BYTES") or 0)
+fd, tmp = tempfile.mkstemp(prefix=".session-recall-receipt.", dir=os.path.dirname(path))
+with os.fdopen(fd, "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, indent=2, sort_keys=True)
+    handle.write("\n")
+os.replace(tmp, path)
+PYDIGEST
+}
+
 if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
   SESSION_START_BUDGET=${FM_SESSION_START_TIMEOUT:-120}
   # A non-positive or non-numeric budget is not a budget (`timeout 0` disables
@@ -321,26 +344,27 @@ if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
     # is lost, so the child still runs bounded.
     SESSION_START_STAGE_FILE=/dev/null
   fi
-  if [ "$REEMIT" -eq 1 ]; then
-    if [ -n "$SESSION_SOURCE" ]; then
-      fm_run_timed "$SESSION_START_BUDGET" \
-        env FM_SESSION_START_STAGE_FILE="$SESSION_START_STAGE_FILE" \
-        "$SCRIPT_DIR/fm-session-start.sh" --reemit --source "$SESSION_SOURCE"
-    else
-      fm_run_timed "$SESSION_START_BUDGET" \
-        env FM_SESSION_START_STAGE_FILE="$SESSION_START_STAGE_FILE" \
-        "$SCRIPT_DIR/fm-session-start.sh" --reemit
-    fi
-  elif [ -n "$SESSION_SOURCE" ]; then
+  SESSION_START_CHILD_ARGS=()
+  [ "$REEMIT" -eq 0 ] || SESSION_START_CHILD_ARGS+=(--reemit)
+  [ -z "$SESSION_SOURCE" ] || SESSION_START_CHILD_ARGS+=(--source "$SESSION_SOURCE")
+  # Budget option A measures the complete emitted digest without capping it, so
+  # the child's whole stdout streams through one counting copy.
+  SESSION_START_DIGEST_FILE=$(mktemp "${TMPDIR:-/tmp}/fm-session-start-digest.XXXXXX" 2>/dev/null) \
+    || SESSION_START_DIGEST_FILE=
+  if [ -n "$SESSION_START_DIGEST_FILE" ]; then
     fm_run_timed "$SESSION_START_BUDGET" \
       env FM_SESSION_START_STAGE_FILE="$SESSION_START_STAGE_FILE" \
-      "$SCRIPT_DIR/fm-session-start.sh" --source "$SESSION_SOURCE"
+      "$SCRIPT_DIR/fm-session-start.sh" \
+      ${SESSION_START_CHILD_ARGS[@]+"${SESSION_START_CHILD_ARGS[@]}"} \
+      | tee "$SESSION_START_DIGEST_FILE"
+    SESSION_START_RC=${PIPESTATUS[0]}
   else
     fm_run_timed "$SESSION_START_BUDGET" \
       env FM_SESSION_START_STAGE_FILE="$SESSION_START_STAGE_FILE" \
-      "$SCRIPT_DIR/fm-session-start.sh"
+      "$SCRIPT_DIR/fm-session-start.sh" \
+      ${SESSION_START_CHILD_ARGS[@]+"${SESSION_START_CHILD_ARGS[@]}"}
+    SESSION_START_RC=$?
   fi
-  SESSION_START_RC=$?
   if [ "$SESSION_START_RC" -eq 124 ]; then
     SESSION_START_LAST_STAGE=$(cat "$SESSION_START_STAGE_FILE" 2>/dev/null) || SESSION_START_LAST_STAGE=
     [ -n "$SESSION_START_LAST_STAGE" ] || SESSION_START_LAST_STAGE=unknown
@@ -360,6 +384,11 @@ if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
     printf '●  again, raise FM_SESSION_START_TIMEOUT and report the slow stage - a stage that\n'
     printf '●  cannot finish inside the bound is a fleet problem, not a reporting detail.\n'
     printf '%s\n' "$BAR"
+  fi
+  if [ -n "$SESSION_START_DIGEST_FILE" ]; then
+    session_start_record_digest_bytes \
+      "$(wc -c < "$SESSION_START_DIGEST_FILE" | tr -d '[:space:]')"
+    rm -f "$SESSION_START_DIGEST_FILE" 2>/dev/null || true
   fi
   rm -f "$SESSION_START_STAGE_FILE" 2>/dev/null || true
   [ "$SESSION_START_RC" -ne 1 ] || exit 1
@@ -591,8 +620,8 @@ print_status_tail() {
   done < <(tail -n "$STATUS_TAIL" "$status")
 }
 
-session_start_open_items() {
-  local path=$DATA/backlog.md
+session_start_open_items() {  # <backlog-file>
+  local path=$1
   [ -f "$path" ] && [ ! -L "$path" ] || return 0
   awk '
     function state_for_heading(line, heading) {
@@ -636,12 +665,8 @@ session_start_open_items() {
   ' "$path"
 }
 
-session_start_status_overrides() {
-  fm_backlog_status_overrides "$DATA/backlog.md"
-}
-
-session_start_printed_ids() {
-  local path=$DATA/backlog.md
+session_start_printed_ids() {  # <backlog-file>
+  local path=$1
   [ -f "$path" ] && [ ! -L "$path" ] || return 0
   awk -v max="$QUEUED_LIMIT" '
     function state_for_heading(line, heading) {
@@ -672,7 +697,7 @@ session_start_printed_ids() {
 
 session_start_emit_recall() {
   local budget memory_tokens=0 fold_bytes=0 fold_tokens=0 residual=0 allocated=0
-  local queries_file result_file ident_file items_file missing=none truncation=none
+  local queries_file result_file ident_file items_file backlog_file missing=none truncation=none
   local item_count=0 pointer_count=0 recall_bytes=0 recall_tokens=0 omitted=0
   local partial_input=0
   local heading heading_bytes heading_tokens rendered rc
@@ -691,6 +716,7 @@ session_start_emit_recall() {
   for memory_file in captain.md captain-shared.md learnings.md; do
     if fm_startup_memory_measure_file "$DATA/$memory_file" >/dev/null; then
       memory_tokens=$((memory_tokens + FM_STARTUP_MEMORY_MEASURE_TOKENS))
+      [ "$FM_STARTUP_MEMORY_MEASURE_PRESENCE" != absent ] || missing=memory
     else
       missing=memory
     fi
@@ -706,6 +732,7 @@ session_start_emit_recall() {
   fi
   allocated=$residual
   heading=$(printf '\n%s\n%s\n%s\n' "$RULE" "RECALLED POINTERS" "$RULE")
+  heading=$heading$'\n'
   heading_bytes=$(printf '%s' "$heading" | wc -c | tr -d '[:space:]')
   heading_tokens=$(fm_startup_memory_estimated_tokens_for_bytes "$heading_bytes") || heading_tokens=0
   if [ "$residual" -le "$heading_tokens" ]; then
@@ -713,10 +740,15 @@ session_start_emit_recall() {
   else
     residual=$((residual - heading_tokens))
   fi
-  item_count=$(session_start_open_items | awk 'NF { n++ } END { print n + 0 }')
+  backlog_file=$(mktemp "${TMPDIR:-/tmp}/fm-session-recall-b.XXXXXX") || return 0
+  if [ -f "$DATA/backlog.md" ] && [ ! -L "$DATA/backlog.md" ]; then
+    cat "$DATA/backlog.md" > "$backlog_file" 2>/dev/null || : > "$backlog_file"
+  fi
+  item_count=$(session_start_open_items "$backlog_file" | awk 'NF { n++ } END { print n + 0 }')
   if [ "$residual" -eq 0 ] || [ "$item_count" -eq 0 ]; then
     SESSION_RECALL_RECEIPT_STATUS=zero
     SESSION_RECALL_STATS="$allocated 0 $item_count 0 $missing $truncation 0"
+    rm -f "$backlog_file"
     return 0
   fi
 
@@ -731,7 +763,7 @@ session_start_emit_recall() {
     python3 -B "$SCRIPT_DIR/fm-recall.py" --root "$DATA" --extract-identities \
       < "$SESSION_STATUS_EMITTED" > "$ident_file" || true
   fi
-  session_start_open_items > "$items_file"
+  session_start_open_items "$backlog_file" > "$items_file"
   python3 - "$queries_file" "$items_file" <<'PY'
 import json, sys
 items = []
@@ -760,19 +792,21 @@ PY
   while IFS= read -r id; do
     [ -n "$id" ] || continue
     recall_args+=(--exclude-id "$id")
-  done < <(session_start_printed_ids)
+  done < <(session_start_printed_ids "$backlog_file")
   while IFS= read -r override; do
     [ -n "$override" ] || continue
     recall_args+=(--status "$override")
-  done < <(session_start_status_overrides)
+  done < <(fm_backlog_status_overrides "$backlog_file")
 
   rc=0
   FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-recall.sh" "${recall_args[@]}" \
     > "$result_file" 2>/dev/null || rc=$?
   if [ "$rc" -ne 0 ] || [ ! -s "$result_file" ]; then
+    printf '%s' "$heading"
+    printf 'Recall is unavailable for this session; prior pointers were not looked up.\n'
     SESSION_RECALL_RECEIPT_STATUS=unavailable
     SESSION_RECALL_STATS="$allocated 0 $item_count 0 recall $truncation 0"
-    rm -f "$queries_file" "$result_file" "$ident_file" "$items_file"
+    rm -f "$queries_file" "$result_file" "$ident_file" "$items_file" "$backlog_file"
     return 0
   fi
   eval "$(python3 - "$result_file" <<'PY'
@@ -810,7 +844,7 @@ PY
     SESSION_RECALL_RECEIPT_STATUS=zero
   fi
   SESSION_RECALL_STATS="$allocated $pointer_count $item_count $recall_bytes $missing $truncation $recall_tokens"
-  rm -f "$queries_file" "$result_file" "$ident_file" "$items_file"
+  rm -f "$queries_file" "$result_file" "$ident_file" "$items_file" "$backlog_file"
 }
 
 session_start_publish_recall_artifacts() {
@@ -863,6 +897,7 @@ payload = {
     "pointer_count": pointer_count,
     "selected_item_count": item_count,
     "bytes": recall_bytes,
+    "digest_bytes": 0,
     "estimated_tokens": recall_tokens,
     "missing_input": missing,
     "truncation": truncation,

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import os
 import re
@@ -109,8 +110,6 @@ class Deadline(object):
         self.start = time.monotonic()
 
     def expired(self):
-        if self.ms is None or self.ms <= 0:
-            return False
         return (time.monotonic() - self.start) * 1000.0 >= self.ms
 
     def check(self):
@@ -497,13 +496,26 @@ def display_status(doc):
     return doc.status or "status unknown"
 
 
+def safe_text(value):
+    return "".join(
+        ch if ch == " " or (ch.isprintable() and ch not in "\r\n") else "?"
+        for ch in value
+    )
+
+
 def format_pointer(doc, title=None, now=None):
-    shown = cut_title(doc.title if title is None else title)
+    shown = safe_text(cut_title(doc.title if title is None else title))
     date = display_date(doc)
     status = display_status(doc)
     mark = freshness_mark(doc, now) if now else None
     extra = "; " + mark if mark else ""
-    return "- %s - %s (%s; %s%s)" % (doc.path, shown, date, status, extra)
+    return "- %s - %s (%s; %s%s)" % (
+        safe_text(doc.path),
+        shown,
+        safe_text(date),
+        safe_text(status),
+        safe_text(extra),
+    )
 
 
 class Corpus(object):
@@ -555,7 +567,7 @@ class Corpus(object):
         while current in self.alias_to:
             if current in seen:
                 self.note("alias-cycle", " -> ".join(seen + [current]))
-                return None
+                return min(seen)
             seen.append(current)
             current = self.alias_to[current]
         return current
@@ -653,11 +665,11 @@ def load_archive(corpus):
     ):
         corpus.note("source", "done-archive.md is not a regular Record file")
         return
-    try:
-        handle = open(path, encoding="utf-8", errors="replace")
-    except OSError as exc:
-        corpus.note("source", "cannot read done-archive.md: %s" % exc)
+    binary = open_regular(path)
+    if binary is None:
+        corpus.note("source", "cannot read done-archive.md")
         return
+    handle = io.TextIOWrapper(binary, encoding="utf-8", errors="replace")
     lineno = 0
     header_date = None
     entry_line = 0
@@ -992,7 +1004,7 @@ def collect_exclusions(
                 Identity("task", resolved, "data/%s/report.md" % resolved).token()
             )
     for raw in raw_identities:
-        reference = normalize_text(raw).strip()
+        reference = archive_reference(raw)
         if reference.startswith("path:"):
             reference = reference[5:]
         row_identity = archive_row_identity(reference, root)
@@ -1006,7 +1018,7 @@ def collect_exclusions(
                 tokens_out.add(Identity("task", ident.key, ident.path).token())
     files = set()
     for raw in list(raw_paths) + list(raw_files):
-        row_identity = archive_row_identity(normalize_text(raw).strip(), root)
+        row_identity = archive_row_identity(archive_reference(raw), root)
         if row_identity is not None:
             tokens_out.add(row_identity.token())
             continue
@@ -1145,18 +1157,25 @@ def hit_payload(score, doc, now):
     }
 
 
+def archive_reference(raw):
+    text = normalize_text(raw).strip().strip("<>")
+    match = MD_LINK.search(text)
+    if match:
+        text = match.group(1).strip()
+    parts = text.split()
+    return parts[0] if parts else text
+
+
 def archive_row_identity(reference, root):
     match = ARCHIVE_LOCATOR_RE.match(reference)
     if not match or root is None:
         return None
     wanted = int(match.group(1))
     path = os.path.join(root, "done-archive.md")
-    if not os.path.isfile(path) or os.path.islink(path):
+    binary = open_regular(path)
+    if binary is None:
         return None
-    try:
-        handle = open(path, encoding="utf-8", errors="replace")
-    except OSError:
-        return None
+    handle = io.TextIOWrapper(binary, encoding="utf-8", errors="replace")
     row = None
     with handle:
         lineno = 0
@@ -1189,13 +1208,13 @@ def extract_identities(text, root):
         seen.add(token)
         found.append(token)
 
-    for match in re.finditer(r"data/[A-Za-z0-9._/-]+(?:\.md)?(?::\d+)?", text):
+    for match in re.finditer(r"data/[^\s\)\]\"'<>]+", text):
         reference = match.group(0).rstrip(".,;:")
         add(
             archive_row_identity(reference, root) or identity_from_path(reference, root)
         )
     if root is not None:
-        for match in re.finditer(r"/[A-Za-z0-9._/-]+(?:\.md)?(?::\d+)?", text):
+        for match in re.finditer(r"/[^\s\)\]\"'<>]+", text):
             reference = match.group(0).rstrip(".,;:")
             display = normalize_record_path(reference, root)
             if not display:
@@ -1484,8 +1503,10 @@ def main(argv=None):
         return emit_unavailable("invalid --now date", args.json)
     if args.as_of and not parse_iso_date(args.as_of):
         return emit_unavailable("invalid --as-of date", args.json)
-    if args.limit < 0 or args.deadline_ms < 0:
-        return emit_unavailable("limit and deadline must be non-negative", args.json)
+    if args.limit < 0:
+        return emit_unavailable("limit must be non-negative", args.json)
+    if args.deadline_ms <= 0:
+        return emit_unavailable("deadline must be a positive number of ms", args.json)
     try:
         statuses = parse_status_args(args.status)
         root = resolve_root(args.root)

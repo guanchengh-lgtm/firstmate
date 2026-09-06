@@ -1016,6 +1016,7 @@ if [ "$LIST_FILES" -eq 1 ]; then
     exit 2
   }
   [ "$ROOT_COUNT" -eq 0 ] || printf '%s\n' ${ROOTS[@]+"${ROOTS[@]}"}
+  [ "${#PYTHON_ROOTS[@]}" -eq 0 ] || printf '%s\n' ${PYTHON_ROOTS[@]+"${PYTHON_ROOTS[@]}"}
   exit 0
 fi
 

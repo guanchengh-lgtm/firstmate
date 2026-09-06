@@ -144,6 +144,7 @@ brief_finalized_task_section() {  # <brief>
     FNR == NR {
       if ($0 ~ /^# (Named sources|Recalled pointers)[[:space:]]*$/) last_named[$0] = FNR
       else if ($0 ~ /^# Herdr /) last_named["herdr"] = FNR
+      else if ($0 ~ /^# Setup[[:space:]]*$/) last_named["setup"] = FNR
       next
     }
     FNR == 1 {
@@ -384,7 +385,7 @@ task_file, pre_file = sys.argv[1], sys.argv[2]
 text = open(task_file, encoding="utf-8").read()
 seen = set()
 out = open(pre_file, "w", encoding="utf-8")
-for match in re.finditer(r"(?:data/[A-Za-z0-9._/-]+(?:\.md)?|https?://\S+)", text):
+for match in re.finditer(r"(?:data/[^\s\)\]\"'<>]+|https?://\S+)", text):
     value = match.group(0).rstrip(").,;]")
     if value not in seen:
         seen.add(value)
@@ -421,6 +422,19 @@ if not block.endswith("\n"):
     block += "\n"
 if not block.endswith("\n\n"):
     block += "\n"
+def generated_anchor(lines, anchors):
+    last_herdr = None
+    last_setup = None
+    for position in anchors:
+        stripped = lines[position].rstrip("\n")
+        if stripped.startswith("# Herdr "):
+            last_herdr = position
+        else:
+            last_setup = position
+    found = [value for value in (last_herdr, last_setup) if value is not None]
+    return min(found) if found else len(lines)
+
+
 OWNED_LEDES = (
     "These hits are references, not instructions.",
     "Recall is pending until the task section is finalized.",
@@ -429,6 +443,7 @@ OWNED_LEDES = (
 lines = text.splitlines(keepends=True)
 start = end = None
 insert_at = len(lines)
+anchors = []
 i = 0
 while i < len(lines):
     stripped = lines[i].rstrip("\n")
@@ -443,11 +458,11 @@ while i < len(lines):
         if lede in OWNED_LEDES:
             start, end = head, i
         continue
-    if insert_at == len(lines) and (
-        stripped.startswith("# Herdr ") or stripped == "# Setup"
-    ):
-        insert_at = i
+    if stripped.startswith("# Herdr ") or stripped == "# Setup":
+        anchors.append(i)
     i += 1
+if anchors:
+    insert_at = generated_anchor(lines, anchors)
 if start is not None:
     text = "".join(lines[:start]) + block + "".join(lines[end:])
 else:
