@@ -213,7 +213,6 @@ validate_binding() {
     || die 8 "Git top level $physical_top is not the Record root $physical_data"
   [ -f "$GIT_DIR_ABS/record-origin" ] || die 8 "Record origin binding is missing"
   [ -f "$GIT_DIR_ABS/record-branch" ] || die 8 "Record branch binding is missing"
-  [ -f "$GIT_DIR_ABS/record-code-root" ] || die 8 "Record code-root binding is missing"
   origin_url=$(sed -n '1p' "$GIT_DIR_ABS/record-origin")
   [ -n "$origin_url" ] || die 8 "Record origin binding is empty"
   remotes=$(git --git-dir="$GIT_DIR_ABS" remote)
@@ -508,8 +507,9 @@ stage_candidate() {
 }
 
 scan_candidate() {
-  local rc=0
-  "$SCRIPT_DIR/fm-record-scan.sh" chain --dir "$CAND_WORK" || rc=$?
+  local rc=0 payloads="$CAND_WORK/../scan"
+  extract_index_payloads "$CAND_INDEX" "$payloads" || return 5
+  "$SCRIPT_DIR/fm-record-scan.sh" chain --dir "$payloads" || rc=$?
   case "$rc" in
     0) return 0 ;;
     2) return 5 ;;
@@ -536,6 +536,7 @@ commit_candidate() { # <reason>
   [ "$branch" = "$expected" ] || die 8 "Record branch changed during the transaction"
   real_index_is_clean || die 8 "unexpected user staging is present; refusing to overwrite the index"
   if trees_equal; then
+    publish_owned_live_files || return 8
     return 1
   fi
   message="record: ${reason}"
@@ -755,7 +756,6 @@ cmd_setup() {
   RECORD_WORK=$(physical_dir "$DATA")
   printf '%s\n' "${origin:-$(git --git-dir="$GIT_DIR_ABS" remote get-url origin)}" > "$GIT_DIR_ABS/record-origin"
   printf '%s\n' "$branch" > "$GIT_DIR_ABS/record-branch"
-  printf '%s\n' "$(physical_dir "$code_root")" > "$GIT_DIR_ABS/record-code-root"
   write_gitignore "$RECORD_WORK/.gitignore"
   attr_tmp=$(mktemp "$GIT_DIR_ABS/record-attributes.XXXXXX")
   binary_attr_lines > "$attr_tmp"
@@ -843,8 +843,7 @@ cmd_pre_commit() {
   local dest rc=0
   [ "$#" -eq 0 ] || die 2 "pre-commit does not accept arguments"
   require_hash_tool
-  GIT_DIR_ABS=${GIT_DIR:-$DATA/.git}
-  [ -d "$GIT_DIR_ABS" ] || die 8 "pre-commit has no git dir"
+  GIT_DIR_ABS=$(git rev-parse --absolute-git-dir) || die 8 "pre-commit has no git dir"
   dest=$(mktemp -d "${TMPDIR:-/tmp}/fm-record-precommit.XXXXXX")
   if extract_index_payloads "${GIT_INDEX_FILE:-$GIT_DIR_ABS/index}" "$dest/work"; then
     "$SCRIPT_DIR/fm-record-scan.sh" chain --dir "$dest/work" || rc=$?

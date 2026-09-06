@@ -115,10 +115,16 @@ test_credential_shaped_path_is_redacted() {
   assert_contains "$OUT" 'credential-shaped source path redacted' 'gitleaks path-label not redacted'
   assert_not_contains "$OUT" "$token" 'gitleaks path-label leaked the token'
   assert_not_contains "$OUT" "$body" 'gitleaks path-label leaked the body token'
+  printf 'harmless content\n' > "$dir/${token}.md"
+  run_scan tree "$dir"
+  expect_code 0 "$RC" 'feeder filename contract'
+  run_scan chain --dir "$dir"
+  expect_code 2 "$RC" 'credential filename with harmless content'
+  assert_not_contains "$OUT" "$token" 'harmless filename leaked the token'
   rm "$dir/${token}.md"
   printf 'corrupt archive' > "$dir/${token}.zip"
   run_scan chain --dir "$dir"
-  expect_code 1 "$RC" 'archive path-label'
+  expect_code 2 "$RC" 'archive path-label'
   assert_not_contains "$OUT" "$token" 'archive diagnostic leaked the token'
   pass "fm-record-scan: credential-shaped path labels are redacted"
 }
@@ -182,7 +188,18 @@ SH
   set -e
   [ "$RC" -ne 0 ] || fail 'nonzero gitleaks reported clean'
   assert_contains "$OUT" 'gitleaks scan failed' 'nonzero gitleaks message'
-  pass "fm-record-scan: missing and failing gitleaks fail closed"
+  cat > "$TMP_ROOT/gitleaks-nonzero/fakebin/gitleaks" <<'SH'
+#!/usr/bin/env bash
+printf 'WRN incomplete scan with private diagnostic\n' >&2
+exit 0
+SH
+  set +e
+  OUT=$(PATH="$TMP_ROOT/gitleaks-nonzero/fakebin:$PATH" "$SCAN" chain --dir "$dir" 2>&1)
+  RC=$?
+  set -e
+  expect_code 1 "$RC" 'incomplete gitleaks scan'
+  assert_not_contains "$OUT" 'private diagnostic' 'raw diagnostic was exposed'
+  pass "fm-record-scan: missing, failing, and incomplete gitleaks scans fail closed"
 }
 
 test_gitleaks_only_and_feeder_only_each_block() {
@@ -310,6 +327,84 @@ PYTEST
   pass "fm-record-scan: compressed feeder patterns block the archive-aware chain"
 }
 
+test_gitleaks_path_exclusions_do_not_hide_payloads() {
+  local dir secret
+  dir="$TMP_ROOT/excluded-binary"
+  mkdir -p "$dir"
+  secret=$(secret_fixture stripe-test)
+  printf 'token %s\n' "$secret" > "$dir/response.bin"
+  run_scan tree "$dir"
+  expect_code 0 "$RC" 'feeder still misses Stripe test keys'
+  run_scan gitleaks --dir "$dir"
+  expect_code 2 "$RC" 'gitleaks binary payload'
+  assert_not_contains "$OUT" "$secret" 'binary scan exposed the token'
+  run_scan chain --dir "$dir"
+  expect_code 2 "$RC" 'chain binary payload'
+  rm "$dir/response.bin"
+  printf 'harmless content\n' > "$dir/${secret}.txt"
+  run_scan chain --dir "$dir"
+  expect_code 2 "$RC" 'gitleaks-only filename'
+  assert_not_contains "$OUT" "$secret" 'gitleaks-only filename was exposed'
+  rm "$dir/${secret}.txt"
+  python3 - "$dir/archive.zip" "$secret" <<'PY'
+import io
+import sys
+import tarfile
+import zipfile
+inner = io.BytesIO()
+with tarfile.open(fileobj=inner, mode="w") as archive:
+    payload = sys.argv[2].encode()
+    entry = tarfile.TarInfo("response.bin")
+    entry.size = len(payload)
+    archive.addfile(entry, io.BytesIO(payload))
+with zipfile.ZipFile(sys.argv[1], "w", zipfile.ZIP_DEFLATED) as archive:
+    archive.writestr("inner.tar", inner.getvalue())
+PY
+  run_scan chain --dir "$dir"
+  expect_code 2 "$RC" 'nested binary payload'
+  assert_not_contains "$OUT" "$secret" 'nested scan exposed the token'
+  pass "fm-record-scan: Gitleaks exclusions cannot hide payloads or credential filenames"
+}
+
+test_nested_archives_require_complete_scans() {
+  local dir mode
+  dir="$TMP_ROOT/nested-preflight"
+  mkdir -p "$dir"
+  for mode in clean encrypted corrupt depth; do
+    python3 - "$dir/outer.tar" "$mode" <<'PY'
+import io
+import sys
+import tarfile
+import zipfile
+inner = io.BytesIO()
+with zipfile.ZipFile(inner, "w", zipfile.ZIP_DEFLATED) as archive:
+    archive.writestr("safe.txt", "harmless content")
+data = bytearray(inner.getvalue())
+if sys.argv[2] == "encrypted":
+    data[6] |= 1
+    data[data.find(b"PK\x01\x02") + 8] |= 1
+elif sys.argv[2] == "corrupt":
+    data = data[:10]
+elif sys.argv[2] == "depth":
+    wrapper = io.BytesIO()
+    with zipfile.ZipFile(wrapper, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("inner.zip", data)
+    data = wrapper.getvalue()
+with tarfile.open(sys.argv[1], "w") as archive:
+    entry = tarfile.TarInfo("nested.zip")
+    entry.size = len(data)
+    archive.addfile(entry, io.BytesIO(data))
+PY
+    run_scan chain --dir "$dir"
+    if [ "$mode" = clean ]; then
+      expect_code 0 "$RC" 'clean nested archive'
+    else
+      expect_code 1 "$RC" "$mode nested archive"
+    fi
+  done
+  pass "fm-record-scan: nested archives must be readable within the scan depth"
+}
+
 test_chain_clean_tree() {
   local dir
   dir="$TMP_ROOT/chain-clean"
@@ -332,4 +427,6 @@ test_archive_corrupt_and_encrypted_refuse
 test_lfs_pointer_does_not_hide_payload
 test_private_key_headers_refuse_in_serialized_text
 test_compressed_feeder_patterns_block_the_chain
+test_gitleaks_path_exclusions_do_not_hide_payloads
+test_nested_archives_require_complete_scans
 test_chain_clean_tree

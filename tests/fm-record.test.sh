@@ -242,6 +242,19 @@ test_scan_blocks_commit_and_prints_no_secret() {
   assert_not_contains "$OUT" "$secret" 'scan echoed the secret'
   [ "$(git --git-dir="$home/data/.git" rev-parse HEAD)" = "$before" ] \
     || fail 'scan-blocked tick created a commit'
+  rm "$home/data/leaky.md"
+  printf 'harmless content\n' > "$home/data/${secret}.md"
+  run_rec "$home" tick
+  expect_code 5 "$RC" 'credential filename'
+  assert_not_contains "$OUT" "$secret" 'filename scan echoed the secret'
+  [ "$(git -C "$home/data" rev-parse HEAD)" = "$before" ] || fail 'credential filename changed HEAD'
+  rm "$home/data/${secret}.md"
+  secret=$(secret_fixture stripe-test)
+  printf '%s\n' "$secret" > "$home/data/response.bin"
+  run_rec "$home" tick
+  expect_code 5 "$RC" 'binary Gitleaks credential'
+  assert_not_contains "$OUT" "$secret" 'binary scan echoed the secret'
+  [ "$(git -C "$home/data" rev-parse HEAD)" = "$before" ] || fail 'binary credential changed HEAD'
   pass "fm-record: the scan chain blocks the commit without echoing secrets"
 }
 
@@ -429,7 +442,6 @@ test_old_data_prefix_history_stays_an_ancestor() {
   git clone --quiet "file://$origin" "$home/data"
   printf '%s\n' "file://$origin" > "$home/data/.git/record-origin"
   printf 'main\n' > "$home/data/.git/record-branch"
-  printf '%s\n' "$ROOT" > "$home/data/.git/record-code-root"
   HOME="$TMP_ROOT/empty-home" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
     "$RECORD" setup --code-root "$ROOT" >/dev/null
   printf '# schema\n' > "$home/data/RECORD.md"
@@ -448,6 +460,14 @@ test_pre_commit_hook_blocks_manual_commit() {
   setup_record "$home" "$origin"
   printf 'safe\n' > "$home/data/captain.md"
   run_rec "$home" checkpoint --reason session-start
+  printf 'clean manual content\n' > "$home/data/manual.md"
+  git -C "$home/data" add manual.md
+  set +e
+  OUT=$(env -u FM_HOME -u FM_ROOT_OVERRIDE -u FM_DATA_OVERRIDE -u GIT_DIR -u GIT_WORK_TREE \
+    git -C "$home/data" commit -m 'Clean manual snapshot' 2>&1)
+  RC=$?
+  set -e
+  expect_code 0 "$RC" 'manual commit discovers the hook repository'
   secret=$(secret_fixture github-classic)
   printf '%s\n' "$secret" > "$home/data/manual.md"
   git --git-dir="$home/data/.git" --work-tree="$home/data" add manual.md
@@ -676,6 +696,86 @@ test_manual_lfs_commit_requires_resolved_payloads() {
   pass "fm-record: manual LFS commits scan resolved bytes and refuse absent objects"
 }
 
+test_owned_publication_is_retried_without_new_bytes() {
+  local home origin before committed fakebin
+  IFS=$(printf '\t') read -r home origin < <(new_home publication-retry)
+  setup_record "$home" "$origin"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'publication retry seed'
+  before=$(git -C "$home/data" rev-parse HEAD)
+  dd if=/dev/zero of="$home/data/large.txt" bs=1048576 count=1 2>/dev/null
+  printf 'working: saved\n' > "$home/state/task.status"
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  [ "$arg" != "$FM_HOME/data/.record-state/task.status" ] || exit 1
+done
+exec "$FM_TEST_REAL_MV" "$@"
+SH
+  chmod +x "$fakebin/mv"
+  FM_TEST_REAL_MV=$(command -v mv) PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason teardown --required
+  expect_code 9 "$RC" 'owned publication failure'
+  committed=$(git -C "$home/data" rev-parse HEAD)
+  [ "$committed" != "$before" ] || fail 'publication fixture did not commit before failure'
+  git -C "$home/data" diff --cached --quiet || fail 'publication fixture failed before updating the index'
+  [ ! -e "$home/data/.record-state/task.status" ] || fail 'publication fixture did not block the mirror'
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'owned publication retry'
+  assert_contains "$OUT" 'state=unchanged' 'publication retry created another commit'
+  [ "$(git -C "$home/data" rev-parse HEAD)" = "$committed" ] || fail 'publication retry changed HEAD'
+  cmp -s "$home/state/task.status" "$home/data/.record-state/task.status" || fail 'publication retry left the mirror stale'
+  printf 'shrunken\n' > "$home/data/large.txt"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'LFS shrink after publication recovery'
+  assert_lfs_blob "$home" large.txt
+  pass "fm-record: unchanged checkpoints retry owned publication and retain LFS rules"
+}
+
+test_restored_lfs_pointers_require_resolved_payloads() {
+  local home origin restored before oid object command secret
+  IFS=$(printf '\t') read -r home origin < <(new_home restored-lfs)
+  setup_record "$home" "$origin"
+  printf 'clean image payload\n' > "$home/data/image.png"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'restored LFS seed'
+  oid=$(git -C "$home/data" show HEAD:image.png | sed -n 's/^oid sha256://p')
+  object="lfs/objects/${oid:0:2}/${oid:2:2}/$oid"
+  restored="$TMP_ROOT/restored-lfs/clone"
+  mkdir -p "$restored/state" "$restored/config"
+  GIT_LFS_SKIP_SMUDGE=1 git clone --quiet "file://$origin" "$restored/data"
+  run_rec "$restored" setup --code-root "$ROOT"
+  expect_code 0 "$RC" 'restored LFS setup'
+  git lfs pointer --check --file="$restored/data/image.png" || fail 'clone did not retain the pointer'
+  [ ! -f "$restored/data/.git/$object" ] || fail 'clone unexpectedly has the LFS payload'
+  before=$(git -C "$restored/data" rev-parse HEAD)
+  printf 'new snapshot\n' > "$restored/data/captain.md"
+  for command in tick checkpoint; do
+    if [ "$command" = tick ]; then
+      run_rec "$restored" tick
+    else
+      run_rec "$restored" checkpoint --reason stow
+    fi
+    expect_code 5 "$RC" "$command with absent LFS payload"
+    [ "$(git -C "$restored/data" rev-parse HEAD)" = "$before" ] || fail 'missing LFS object changed HEAD'
+  done
+  mkdir -p "$(dirname "$restored/data/.git/$object")"
+  cp "$home/data/.git/$object" "$restored/data/.git/$object"
+  run_rec "$restored" checkpoint --reason stow
+  expect_code 0 "$RC" 'resolved clean LFS payload'
+  before=$(git -C "$restored/data" rev-parse HEAD)
+  secret=$(secret_fixture github-classic)
+  printf '%s\n' "$secret" > "$restored/data/image.png"
+  git -C "$restored/data" add image.png
+  git -C "$restored/data" show :image.png > "$restored/data/image.png"
+  git -C "$restored/data" read-tree HEAD
+  run_rec "$restored" checkpoint --reason stow
+  expect_code 5 "$RC" 'resolved credential LFS payload'
+  assert_not_contains "$OUT" "$secret" 'resolved LFS scan echoed the secret'
+  [ "$(git -C "$restored/data" rev-parse HEAD)" = "$before" ] || fail 'credential LFS pointer changed HEAD'
+  pass "fm-record: ticks and checkpoints scan resolved LFS payloads after a restore"
+}
+
 test_outer_repository_stays_clean() {
   local after
   after=$(git -C "$ROOT" status --short --untracked-files=all)
@@ -709,4 +809,6 @@ test_cleanup_keeps_the_lock_until_candidates_are_removed
 test_first_delivery_is_retried_without_new_bytes
 test_push_retains_credentials_and_classifies_lfs_failure
 test_manual_lfs_commit_requires_resolved_payloads
+test_owned_publication_is_retried_without_new_bytes
+test_restored_lfs_pointers_require_resolved_payloads
 test_outer_repository_stays_clean

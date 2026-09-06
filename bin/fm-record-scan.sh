@@ -165,106 +165,104 @@ TOML
 fm_record_scan_archive_preflight() { # <dir>
   local dir=$1
   [ -d "$dir" ] || die 1 "archive preflight directory is missing: $dir"
-  python3 - "$dir" "$SECRET_COMBINED" <<'PY'
-import re
-import os
-import sys
-import zipfile
+  python3 - "$dir" "$SECRET_COMBINED" "${2:-/dev/null}" <<'PY'
 import gzip
+import os
+import re
+import shutil
+import sys
 import tarfile
+import zipfile
+import zlib
 
 root = sys.argv[1]
 MAX_DEPTH = 2
+pattern = re.compile(sys.argv[2])
 
 
-def is_archive_name(name):
+def fail(message, code=1):
+    print("fm-record-scan: " + message, file=sys.stderr)
+    sys.exit(code)
+
+
+def write_name(name, output):
+    if pattern.search(name):
+        fail("refusing to publish: [credential-shaped source path redacted] matches the credential filename pattern", 2)
+    output.write(name.encode("utf-8", errors="surrogateescape") + b"\n")
+    output.write(re.sub(r"[/.!]", "\n", name).encode("utf-8", errors="surrogateescape") + b"\n")
+
+
+def scan_stream(stream, name, depth, output):
+    write_name(name, output)
+    header = stream.read(512)
+    stream.seek(0)
     lower = name.lower()
-    return lower.endswith((".zip", ".tar", ".tgz", ".tar.gz", ".gz"))
+    if lower.endswith(".zip") or header.startswith((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")):
+        kind = "zip"
+    elif lower.endswith((".tar", ".tgz", ".tar.gz")) or header[257:262] == b"ustar":
+        kind = "tar"
+    elif lower.endswith(".gz") or header.startswith(b"\x1f\x8b"):
+        kind = "tar" if tarfile.is_tarfile(stream) else "gzip"
+        stream.seek(0)
+    else:
+        shutil.copyfileobj(stream, output)
+        output.write(b"\n")
+        return
+    if depth >= MAX_DEPTH:
+        fail("archive exceeds bounded scan depth")
+    if kind == "zip":
+        with zipfile.ZipFile(stream) as archive:
+            for entry in archive.infolist():
+                if entry.flag_bits & 1:
+                    fail("archive is encrypted and cannot be scanned")
+                nested = name + "!" + entry.filename
+                if entry.is_dir():
+                    write_name(nested, output)
+                else:
+                    with archive.open(entry) as payload:
+                        scan_stream(payload, nested, depth + 1, output)
+    elif kind == "tar":
+        with tarfile.open(fileobj=stream, mode="r:*") as archive:
+            for entry in archive:
+                nested = name + "!" + entry.name
+                if entry.isfile():
+                    with archive.extractfile(entry) as payload:
+                        scan_stream(payload, nested, depth + 1, output)
+                else:
+                    write_name(nested, output)
+                    write_name(entry.linkname, output)
+    else:
+        with gzip.GzipFile(fileobj=stream) as payload:
+            scan_stream(payload, name[:-3], depth + 1, output)
 
 
-def fail(msg):
-    if re.search(sys.argv[2], msg):
-        msg = "archive cannot be scanned: [credential-shaped source path redacted]"
-    print("fm-record-scan: " + msg, file=sys.stderr)
-    sys.exit(1)
-
-
-def walk_zip(path, depth):
-    try:
-        zf = zipfile.ZipFile(path)
-    except zipfile.BadZipFile:
-        fail("archive is corrupt or unsupported: " + path)
-    except OSError:
-        fail("archive is unreadable: " + path)
-    for info in zf.infolist():
-        if info.flag_bits & 0x1:
-            fail("archive is encrypted and cannot be scanned: " + path)
-        if depth >= MAX_DEPTH and is_archive_name(info.filename):
-            fail("archive exceeds bounded scan depth: " + path)
-        if is_archive_name(info.filename) and depth < MAX_DEPTH:
-            try:
-                payload = zf.read(info)
-            except RuntimeError:
-                fail("archive is encrypted and cannot be scanned: " + path)
-            except Exception:
-                fail("archive is corrupt or unsupported: " + path)
-            nested = path + "!" + info.filename
-            if info.filename.lower().endswith(".zip"):
-                import io
-                try:
-                    inner = zipfile.ZipFile(io.BytesIO(payload))
-                except zipfile.BadZipFile:
-                    fail("nested archive is corrupt: " + nested)
-                for inner_info in inner.infolist():
-                    if inner_info.flag_bits & 0x1:
-                        fail("nested archive is encrypted: " + nested)
-                    if is_archive_name(inner_info.filename) and depth + 1 >= MAX_DEPTH:
-                        fail("archive exceeds bounded scan depth: " + nested)
-            elif info.filename.lower().endswith((".tar", ".tgz", ".tar.gz")):
-                import io
-                try:
-                    tarfile.open(fileobj=io.BytesIO(payload), mode="r:*")
-                except tarfile.TarError:
-                    fail("nested archive is corrupt: " + nested)
-
-
-def check_gzip(path):
-    try:
-        with gzip.open(path, "rb") as fh:
-            while fh.read(1024 * 1024):
-                pass
-    except (OSError, EOFError):
-        fail("archive is corrupt or unsupported: " + path)
-
-
-def check_tar(path):
-    try:
-        tarfile.open(path, mode="r:*").close()
-    except (tarfile.TarError, OSError):
-        fail("archive is corrupt or unsupported: " + path)
-
-
-for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
-    if ".git" in dirnames:
-        dirnames.remove(".git")
-    for name in filenames:
-        path = os.path.join(dirpath, name)
-        if os.path.islink(path) or not os.path.isfile(path):
-            continue
-        lower = name.lower()
-        if lower.endswith(".zip"):
-            walk_zip(path, 1)
-        elif lower.endswith((".tar", ".tgz", ".tar.gz")):
-            check_tar(path)
-        elif lower.endswith(".gz"):
-            check_gzip(path)
-
-sys.exit(0)
+try:
+    with open(sys.argv[3], "wb") as output:
+        for dirpath, dirnames, filenames in os.walk(root, followlinks=False,
+                onerror=lambda error: fail("cannot enumerate scan directory")):
+            if ".git" in dirnames:
+                dirnames.remove(".git")
+            for name in dirnames:
+                write_name(os.path.relpath(os.path.join(dirpath, name), root), output)
+            for name in filenames:
+                path = os.path.join(dirpath, name)
+                relative = os.path.relpath(path, root)
+                if os.path.islink(path):
+                    write_name(relative, output)
+                    write_name(os.readlink(path), output)
+                elif os.path.isfile(path):
+                    with open(path, "rb") as payload:
+                        scan_stream(payload, relative, 0, output)
+                else:
+                    fail("scan source is not a regular file")
+except (OSError, EOFError, ValueError, RuntimeError, NotImplementedError, zipfile.BadZipFile, tarfile.TarError, zlib.error):
+    fail("archive or scan source is corrupt, unreadable, or unsupported")
 PY
 }
 
 fm_record_scan_gitleaks_dir() { # <dir>
-  local dir=$1 cfg report ignore_dir rc
+  local dir=$1 cfg report ignore_dir rc source
+  local -a scan_args
   [ -d "$dir" ] || die 1 "gitleaks directory is missing: $dir"
   command -v gitleaks >/dev/null 2>&1 \
     || die 1 "gitleaks is missing; refusing to publish"
@@ -276,26 +274,27 @@ fm_record_scan_gitleaks_dir() { # <dir>
     || { rm -f "$cfg" "$report"; die 1 "cannot create the empty gitleaks ignore dir"; }
   fm_record_scan_write_gitleaks_config "$cfg" \
     || { rm -rf "$cfg" "$report" "$ignore_dir"; die 1 "cannot write the explicit gitleaks config"; }
-  set +e
-  env -u GITLEAKS_CONFIG -u GITLEAKS_CONFIG_TOML \
-    gitleaks dir \
-      --no-banner \
-      --redact=100 \
-      --ignore-gitleaks-allow \
-      --gitleaks-ignore-path "$ignore_dir" \
-      --config "$cfg" \
-      --max-archive-depth 2 \
-      --report-format json \
-      --report-path "$report" \
-      -- "$dir" >/dev/null 2>"${report}.err"
-  rc=$?
-  set -e
-  if [ "$rc" -eq 0 ]; then
-    rm -rf "$cfg" "$report" "${report}.err" "$ignore_dir"
-    return 0
+  rc=0
+  fm_record_scan_archive_preflight "$dir" "$ignore_dir/payloads" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    rm -rf "$cfg" "$report" "$ignore_dir"
+    return "$rc"
   fi
-  if [ "$rc" -eq 1 ]; then
-    python3 - "$report" "$SECRET_COMBINED" <<'PY' || true
+  for source in stdin dir; do
+    scan_args=("$source" --no-banner --no-color --log-level warn --redact=100
+      --ignore-gitleaks-allow --gitleaks-ignore-path "$ignore_dir" --config "$cfg"
+      --max-archive-depth 2 --report-format json --report-path "$report")
+    if [ "$source" = dir ]; then
+      scan_args+=(-- "$dir")
+    fi
+    rc=0
+    env -u GITLEAKS_CONFIG -u GITLEAKS_CONFIG_TOML \
+      gitleaks "${scan_args[@]}" < "$ignore_dir/payloads" >/dev/null 2>"${report}.err" || rc=$?
+    if [ "$rc" -eq 0 ] && [ ! -s "${report}.err" ]; then
+      continue
+    fi
+    if [ "$rc" -eq 1 ]; then
+      python3 - "$report" "$SECRET_COMBINED" <<'PY' || true
 import re
 import json
 import sys
@@ -313,16 +312,17 @@ for item in data[:1]:
         file_path = "[credential-shaped source path redacted]"
     print("fm-record-scan: refusing to publish: %s matches the %s credential pattern" % (file_path, rule), file=sys.stderr)
 PY
+      rm -rf "$cfg" "$report" "${report}.err" "$ignore_dir"
+      return 2
+    fi
     rm -rf "$cfg" "$report" "${report}.err" "$ignore_dir"
-    return 2
-  fi
+    die 1 "gitleaks scan failed or was incomplete; refusing to publish"
+  done
   rm -rf "$cfg" "$report" "${report}.err" "$ignore_dir"
-  die 1 "gitleaks scan failed; refusing to publish"
 }
 
 fm_record_scan_chain() { # <dir>
   local dir=$1 rc=0
-  fm_record_scan_archive_preflight "$dir" || return 1
   fm_record_scan_gitleaks_dir "$dir" || rc=$?
   case "$rc" in
     0) ;;
@@ -347,9 +347,9 @@ fm_record_scan_cli() {
   local cmd=${1:-} dir rc=0
   shift || true
   case "$cmd" in
-    -h | --help | help | '')
+    -h | --help | '')
       fm_record_scan_usage
-      [ "$cmd" = help ] || [ "$cmd" = '-h' ] || [ "$cmd" = '--help' ] || exit 3
+      [ "$cmd" = '-h' ] || [ "$cmd" = '--help' ] || exit 3
       exit 0
       ;;
     tree)
