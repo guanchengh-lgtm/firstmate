@@ -2745,8 +2745,10 @@ EOF
 }
 
 test_host_session_under_tasktmp_is_spared() {
-  local case_dir physical_tasktmp rc host_pid child_pid i=0
-  case_dir=$(make_case host-session-tasktmp-spared)
+  local worktree_shape=${1:-present} case_dir case_name physical_tasktmp rc host_pid child_pid i=0
+  case_name=host-session-tasktmp-spared
+  [ "$worktree_shape" = present ] || case_name=host-session-tasktmp-missing-worktree
+  case_dir=$(make_case "$case_name")
   write_meta "$case_dir" no-mistakes ship
   printf '%s\n' "tasktmp=$case_dir/tasktmp" >> "$case_dir/state/task-x1.meta"
   mkdir -p "$case_dir/tasktmp-real"
@@ -2754,6 +2756,9 @@ test_host_session_under_tasktmp_is_spared() {
   physical_tasktmp=$(CDPATH='' cd -- "$case_dir/tasktmp" && pwd -P)
   [ "$physical_tasktmp" != "$case_dir/tasktmp" ] || fail "host-session-tasktmp-spared: tasktmp alias did not diverge"
   land_shippable_commit "$case_dir"
+  if [ "$worktree_shape" = missing ]; then
+    git -C "$case_dir/project" worktree remove --force "$case_dir/wt"
+  fi
 
   (
     cd "$case_dir/tasktmp" || exit 1
@@ -2786,7 +2791,76 @@ test_host_session_under_tasktmp_is_spared() {
   assert_grep "Clear it: exit that session or relocate its host shell out of $case_dir/tasktmp" "$case_dir/stderr" \
     "host-session-tasktmp-spared: remedy named the wrong protected root"
   assert_present "$case_dir/state/task-x1.meta" "host-session-tasktmp-spared: teardown removed task metadata"
-  pass "a live session host under tasktmp receives the matching relocation remedy"
+  if [ "$worktree_shape" = missing ]; then
+    assert_absent "$case_dir/wt" "host-session-tasktmp-spared: teardown recreated the missing worktree"
+    pass "a missing task worktree does not bypass protection for a live tasktmp host"
+  else
+    pass "a live session host under tasktmp receives the matching relocation remedy"
+  fi
+}
+
+test_orca_host_session_under_worktree_is_spared() {
+  local case_dir rc host_pid child_pid i=0
+  case_dir=$(make_case orca-host-session-spared)
+  fm_write_meta "$case_dir/state/task-x1.meta" \
+    "window=fm-task-x1" \
+    "endpoint_task_id=task-x1" \
+    "terminal=term-1" \
+    "worktree=$case_dir/wt" \
+    "project=$case_dir/project" \
+    "kind=ship" \
+    "mode=no-mistakes" \
+    "spawn_gen=teardown-test-task-x1" \
+    "backend=orca" \
+    "orca_worktree_id=orca-wt-1"
+  land_shippable_commit "$case_dir"
+  : > "$case_dir/orca.log"
+  cat > "$case_dir/fakebin/orca" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FM_FAKE_ORCA_LOG"
+if [ "${1:-} ${2:-}" = "worktree show" ]; then
+  printf '{"ok":true,"result":{"worktree":{"id":"orca-wt-1","path":"%s"}}}\n' "$FM_FAKE_ORCA_WT"
+else
+  printf '{"ok":true}\n'
+fi
+SH
+  chmod +x "$case_dir/fakebin/orca"
+
+  (
+    cd "$case_dir/wt" || exit 1
+    sleep 300 &
+    printf '%s\n' "$!" > "$case_dir/child.pid"
+    wait
+  ) &
+  host_pid=$!
+  disown
+  while [ "$i" -lt 50 ]; do
+    [ -s "$case_dir/child.pid" ] && break
+    sleep 0.05
+    i=$((i + 1))
+  done
+  [ -s "$case_dir/child.pid" ] || fail "orca-host-session-spared: host child pid was never recorded"
+  child_pid=$(tr -d '[:space:]' < "$case_dir/child.pid")
+  case "$child_pid" in ''|*[!0-9]*) fail "orca-host-session-spared: host child pid was not numeric" ;; esac
+  printf '%s\n' "$child_pid" > "$case_dir/state/.lock"
+
+  rc=0
+  FM_FAKE_ORCA_LOG="$case_dir/orca.log" FM_FAKE_ORCA_WT="$case_dir/wt" \
+    run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  if ! kill -0 "$host_pid" 2>/dev/null || ! kill -0 "$child_pid" 2>/dev/null; then
+    kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
+    fail "orca-host-session-spared: live session host or child was reaped"
+  fi
+  kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
+  expect_code 1 "$rc" "orca-host-session-spared: teardown should refuse the Orca worktree removal"
+  assert_grep "REFUSED: protected process(es) for task-x1 remain rooted in the worktree/tasktmp" "$case_dir/stderr" \
+    "orca-host-session-spared: teardown did not refuse the unsafe Orca removal"
+  assert_no_grep "worktree rm" "$case_dir/orca.log" \
+    "orca-host-session-spared: teardown called Orca worktree removal"
+  assert_present "$case_dir/wt" "orca-host-session-spared: teardown removed the worktree"
+  assert_present "$case_dir/state/task-x1.meta" "orca-host-session-spared: teardown removed task metadata"
+  pass "a live session host blocks Orca worktree removal"
 }
 
 test_malformed_lock_records_do_not_form_a_pid() {
@@ -4085,6 +4159,8 @@ test_leftover_then_sync_retains_unique_gone_branch() {
 if [ "${1:-}" = host-cwd ]; then
   test_host_session_under_worktree_is_spared
   test_host_session_under_tasktmp_is_spared
+  test_host_session_under_tasktmp_is_spared missing
+  test_orca_host_session_under_worktree_is_spared
   exit 0
 fi
 
@@ -4149,6 +4225,8 @@ test_reused_pid_identity_is_not_force_killed
 test_exec_changed_process_is_still_reaped
 test_host_session_under_worktree_is_spared
 test_host_session_under_tasktmp_is_spared
+test_host_session_under_tasktmp_is_spared missing
+test_orca_host_session_under_worktree_is_spared
 test_malformed_lock_records_do_not_form_a_pid
 test_live_lock_identity_failure_refuses
 test_protected_identity_recheck_failure_spares_pid

@@ -1773,13 +1773,6 @@ EOF
   [ -n "$separator" ] || printf '<protected root>'
 }
 
-task_report_spared_hosts() {  # <root>
-  local root=$1 rendered
-  [ -n "${TASK_SPARED_PIDS:-}" ] || return 0
-  rendered=$(task_render_spared_hosts)
-  echo "teardown: sparing host process(es) for $ID still rooted in ${root:-<unknown>}: $rendered" >&2
-}
-
 task_refuse_treehouse_return_with_protected_roots() {  # <dir>...
   local rendered roots
   TASK_SPARED_PIDS=
@@ -2926,10 +2919,8 @@ fi
 if [ "$KIND" != secondmate ]; then
   conclude_task_no_mistakes_run "$WT"
   reap_task_worktree_processes worktree "$WT" "$TASK_TMP" || exit 1
-  if [ "$BACKEND" != orca ] && [ -d "$WT" ]; then
-    task_refuse_treehouse_return_with_protected_roots "$WT" "$TASK_TMP" || exit 1
-  else
-    task_report_spared_hosts "$WT"
+  task_refuse_treehouse_return_with_protected_roots "$WT" "$TASK_TMP" || exit 1
+  if [ "$BACKEND" = orca ] || [ ! -d "$WT" ]; then
     fm_lock_release "$SESSION_PUBLICATION_LOCK" || exit 1
     SESSION_PUBLICATION_LOCK_HELD=0
   fi
@@ -2955,6 +2946,7 @@ if [ "$BACKEND" = orca ] && [ "$KIND" != secondmate ]; then
     require_orca_worktree_path_match_if_present "$ORCA_WORKTREE_ID" "$WT" || exit 1
     ORCA_PATH_MATCH_VERIFIED=1
   fi
+  task_refuse_treehouse_return_with_protected_roots "$WT" "$TASK_TMP" || exit 1
   if [ -d "$WT" ]; then
     rm -f "$WT/.claude/settings.local.json" "$WT/.opencode/plugins/fm-turn-end.js" \
       "$WT/.opencode/plugins/fm-busy-state.js" \
@@ -3083,7 +3075,12 @@ remove_kimi_turnend_auth "$STATE" "$ID" || exit 1
 fm_backend_clear_transition "$BACKEND" "$STATE" "$T" || true
 # Remove the per-task temp root (/tmp/fm-<id>/, incl. its gotmp/) recorded by spawn.
 # Read before the state-file rm below; empty (pre-fix tasks without tasktmp=) is a no-op.
-[ -n "$TASK_TMP" ] && rm -rf "$TASK_TMP"
+if [ -n "$TASK_TMP" ]; then
+  [ "$KIND" = secondmate ] \
+    || task_refuse_treehouse_return_with_protected_roots "$TASK_TMP" \
+    || exit 1
+  rm -rf "$TASK_TMP"
+fi
 remove_pr_poll_artifacts "$STATE" "$ID" || exit 1
 retire_busy_state "$STATE" "$ID" "$BUSY_GEN" || exit 1
 status_retire_presentation_task "$STATE" "$ID" || exit 1
