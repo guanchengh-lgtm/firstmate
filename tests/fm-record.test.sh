@@ -1144,7 +1144,12 @@ test_restored_lfs_pointers_require_resolved_payloads() {
   object="lfs/objects/${oid:0:2}/${oid:2:2}/$oid"
   restored="$TMP_ROOT/restored-lfs/clone"
   mkdir -p "$restored/state" "$restored/config"
-  GIT_LFS_SKIP_SMUDGE=1 git clone --quiet "file://$origin" "$restored/data"
+  # A machine with global LFS filters, like the CI runner, installs the Git LFS
+  # hooks during the clone itself; setup must accept them as LFS-owned.
+  GIT_CONFIG_GLOBAL="$TMP_ROOT/restored-lfs/gitconfig" git lfs install --skip-repo >/dev/null
+  GIT_CONFIG_GLOBAL="$TMP_ROOT/restored-lfs/gitconfig" GIT_LFS_SKIP_SMUDGE=1 \
+    git clone --quiet "file://$origin" "$restored/data"
+  [ -f "$restored/data/.git/hooks/pre-push" ] || fail 'clone with global LFS filters did not install the LFS hooks'
   run_rec "$restored" setup --code-root "$ROOT"
   expect_code 0 "$RC" 'restored LFS setup'
   git lfs pointer --check --file="$restored/data/image.png" || fail 'clone did not retain the pointer'

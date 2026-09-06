@@ -351,7 +351,7 @@ The recovery cases in [`tests/fm-record.test.sh`](../tests/fm-record.test.sh) co
 
 Recovery on this machine is `git` plus `git lfs` inside `data/`.
 To restore onto another machine, clone the private Record remote into the new home's `data/`, then run `setup` without `--init` to recreate local hooks and LFS filters.
-Git does not clone installed hooks, and setup must use the restored branch and the stable code checkout on that machine.
+Git does not clone the pre-commit hook, a machine with global LFS filters installs the Git LFS hooks during the clone, setup accepts those LFS-owned hooks, and setup must use the restored branch and the stable code checkout on that machine.
 Fetch the required LFS objects before checkpointing or ticking; unresolved payloads fail closed even when their pointer files are present.
 `.record-state` in that clone is historical mirror input, not proof that a worker is still alive.
 

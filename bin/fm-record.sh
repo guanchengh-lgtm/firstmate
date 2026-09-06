@@ -28,7 +28,9 @@
 # --code-root selects the checkout used by installed hooks and the scheduler;
 # its default is FM_ROOT_OVERRIDE or the checkout containing this script.
 # Setup protects .git with mode 700 and installs repository-local LFS filters
-# and hooks. Unknown or changed existing hooks refuse setup without replacement.
+# and hooks. Git LFS owns its four hooks, so hooks it installed during a clone
+# are accepted and upgraded; any other unknown or changed existing hook refuses
+# setup without replacement.
 #
 # --write-plist renders the tracked launchd template to FM_RECORD_PLIST
 # (default $HOME/Library/LaunchAgents/com.firstmate.record-tick.plist).
@@ -1050,16 +1052,16 @@ EOF
 }
 
 validate_setup_hooks() {
-  local hook digest
-  for hook in pre-commit pre-push post-checkout post-commit post-merge; do
-    if [ -e "$GIT_DIR_ABS/hooks/$hook" ] || [ -L "$GIT_DIR_ABS/hooks/$hook" ]; then
-      [ ! -L "$GIT_DIR_ABS/hooks/$hook" ] && [ -f "$GIT_DIR_ABS/record-hook-$hook" ] \
-        || die 8 "existing Record hook is unknown; leaving it untouched"
-      digest=$(sha256_file "$GIT_DIR_ABS/hooks/$hook") || die 8 "cannot validate existing Record hook"
-      [ "$digest" = "$(cat "$GIT_DIR_ABS/record-hook-$hook")" ] \
-        || die 8 "existing Record hook changed; leaving it untouched"
-    fi
-  done
+  local hook=pre-commit digest
+  if [ -e "$GIT_DIR_ABS/hooks/$hook" ] || [ -L "$GIT_DIR_ABS/hooks/$hook" ]; then
+    [ ! -L "$GIT_DIR_ABS/hooks/$hook" ] && [ -f "$GIT_DIR_ABS/record-hook-$hook" ] \
+      || die 8 "existing Record hook is unknown; leaving it untouched"
+    digest=$(sha256_file "$GIT_DIR_ABS/hooks/$hook") || die 8 "cannot validate existing Record hook"
+    [ "$digest" = "$(cat "$GIT_DIR_ABS/record-hook-$hook")" ] \
+      || die 8 "existing Record hook changed; leaving it untouched"
+  fi
+  git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" lfs install --local >/dev/null \
+    || die 8 "existing hook is not a Git LFS hook; leaving it untouched"
 }
 
 validate_job_prerequisites() {
@@ -1076,7 +1078,7 @@ validate_job_prerequisites() {
 }
 
 cmd_setup() {
-  local init=0 write_plist=0 bootstrap=0 origin='' branch=$EXPECTED_BRANCH code_root=$FM_ROOT attr_tmp hook
+  local init=0 write_plist=0 bootstrap=0 origin='' branch=$EXPECTED_BRANCH code_root=$FM_ROOT attr_tmp
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --init) init=1; shift ;;
@@ -1122,11 +1124,8 @@ cmd_setup() {
   existing_literal_lfs_rules "$RECORD_WORK/.gitattributes" >> "$attr_tmp"
   LC_ALL=C sort -u -o "$attr_tmp" "$attr_tmp"
   mv -f "$attr_tmp" "$RECORD_WORK/.gitattributes"
-  git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" lfs install --local >/dev/null
   install_hooks "$GIT_DIR_ABS/hooks" "$(physical_dir "$code_root")"
-  for hook in pre-commit pre-push post-checkout post-commit post-merge; do
-    sha256_file "$GIT_DIR_ABS/hooks/$hook" > "$GIT_DIR_ABS/record-hook-$hook"
-  done
+  sha256_file "$GIT_DIR_ABS/hooks/pre-commit" > "$GIT_DIR_ABS/record-hook-pre-commit"
   [ ! -L "$FM_HOME/.record-enabled" ] || die 8 "Record activation marker must not be a symlink"
   printf 'enabled\n' > "$FM_HOME/.record-enabled"
   if [ "$write_plist" -eq 1 ] || [ "$bootstrap" -eq 1 ]; then
