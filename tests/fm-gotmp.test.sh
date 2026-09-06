@@ -54,6 +54,8 @@ make_fake_root() {
   # Symlink the REAL teardown so the test exercises actual code, not a copy.
   ln -s "$TEARDOWN" "$fake/bin/fm-teardown.sh"
   ln -s "$ROOT/bin/fm-primary-scope-lib.sh" "$fake/bin/fm-primary-scope-lib.sh"
+  # Ship and scout teardown call the Record owner before irreversible cleanup.
+  ln -s "$ROOT/bin/fm-record.sh" "$fake/bin/fm-record.sh"
   # fm-backend.sh + its tmux adapter: symlink the REAL files (teardown sources
   # fm-backend.sh unconditionally, and dispatches the kill call through the
   # tmux adapter; both are unchanged by this suite's fixture, just newly
@@ -167,6 +169,7 @@ test_teardown_skips_gracefully_without_tasktmp() {
   mkdir -p "$fake/bin/backends" "$fake/state" "$fake/data"
   ln -s "$TEARDOWN" "$fake/bin/fm-teardown.sh"
   ln -s "$ROOT/bin/fm-primary-scope-lib.sh" "$fake/bin/fm-primary-scope-lib.sh"
+  ln -s "$ROOT/bin/fm-record.sh" "$fake/bin/fm-record.sh"
   ln -s "$ROOT/bin/fm-backend.sh" "$fake/bin/fm-backend.sh"
   ln -s "$ROOT/bin/backends/tmux.sh" "$fake/bin/backends/tmux.sh"
   ln -s "$ROOT/bin/fm-tmux-lib.sh" "$fake/bin/fm-tmux-lib.sh"

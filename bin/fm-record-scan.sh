@@ -1,0 +1,487 @@
+#!/usr/bin/env bash
+# fm-record-scan.sh - the single owner of the Record and feeder credential scan.
+#
+# Sourced by bin/fm-feeder-export.sh so the exporter keeps its existing
+# fail-closed messages, hits-file path, and class names. Executed as a public
+# command for Record pre-commit, tick attestation, and tests.
+#
+# Secret boundary. The feeder and the tree command use the fixed credential
+# shapes below. That set is deliberately precise and incomplete; it has no
+# generic password or entropy detector because its false-positive policy is
+# undefined. The Record chain adds Gitleaks default rules and archive
+# inspection; the feeder does not run those additional passes. A match refuses
+# the run, naming only a safe locator and the pattern class, never matched bytes.
+#
+# The OpenAI class is exactly
+# `sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,255}`. It deliberately fails
+# closed: a false positive blocks export for review, while a false negative can
+# expose a credential.
+#
+# When executed:
+#   fm-record-scan.sh tree <dir>...
+#   fm-record-scan.sh gitleaks --dir <dir>
+#   fm-record-scan.sh chain --dir <dir>
+#   fm-record-scan.sh archive-preflight --dir <dir>
+#
+# Exit codes (CLI):
+#   0  clean
+#   1  scan error, missing tool, invalid input, or archive refusal
+#   2  credential hit (fail closed; no commit or push)
+#   3  usage
+#
+# Gitleaks is invoked with this script's explicit config, --redact=100,
+# --ignore-gitleaks-allow, and --max-archive-depth 2. Working-tree allowlists,
+# baselines, and GITLEAKS_CONFIG are not inherited. Expanded scan bytes are
+# capped by FM_RECORD_SCAN_MAX_BYTES (default 536870912). Archive inspection
+# and each gitleaks pass use FM_RECORD_SCAN_TIMEOUT_SECONDS (default 60).
+# Archive inspection supports ZIP, TAR, and gzip within that depth, including
+# nested members and path labels. Encrypted, corrupt, unsupported, or overly
+# deep archives refuse the scan. Gitleaks scans both the expanded payload
+# stream and the directory, so its path exclusions cannot hide payload bytes.
+set -u
+
+export LC_ALL=C
+
+OPENAI_SECRET='sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,255}'
+PRIVATE_KEY_HEADER='-----BEGIN ((RSA|EC|DSA|OPENSSH|ENCRYPTED) )?PRIVATE KEY-----'
+SECRET_COMBINED="$PRIVATE_KEY_HEADER|gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{20,255}|(AKIA|ASIA)[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{10,255}|[sr]k_live_[A-Za-z0-9]{16,255}|AIza[A-Za-z0-9_-]{35}|$OPENAI_SECRET"
+
+fm_record_scan_die() { # <exit-code> <message>...
+  local code=$1
+  shift
+  printf 'fm-record-scan: %s\n' "$*" >&2
+  exit "$code"
+}
+
+if ! declare -F die >/dev/null 2>&1; then
+  die() {
+    fm_record_scan_die "$@"
+  }
+fi
+
+secret_pattern_matches() { # <extended-regexp> <file>
+  local rc
+  if LC_ALL=C grep -Eq -- "$1" "$2" 2>/dev/null; then
+    return 0
+  else
+    rc=$?
+  fi
+  [ "$rc" -eq 1 ] && return 1
+  die 1 "credential scan failed while reading staged content; refusing to publish"
+}
+
+secret_text_matches() { # <text>
+  local rc
+  if printf '%s\n' "$1" | LC_ALL=C grep -Eq -- "$SECRET_COMBINED" 2>/dev/null; then
+    return 0
+  else
+    rc=$?
+  fi
+  [ "$rc" -eq 1 ] && return 1
+  die 1 "credential scan failed while checking a source label; refusing to publish"
+}
+
+secret_class_of() { # <file>; prints the first matching class name
+  local file=$1
+  if secret_pattern_matches "$PRIVATE_KEY_HEADER" "$file"; then
+    printf '%s\n' private-key
+    return 0
+  fi
+  if secret_pattern_matches 'gh[pousr]_[A-Za-z0-9]{36,255}' "$file"; then
+    printf '%s\n' github-classic-token
+    return 0
+  fi
+  if secret_pattern_matches 'github_pat_[A-Za-z0-9_]{20,255}' "$file"; then
+    printf '%s\n' github-fine-grained-token
+    return 0
+  fi
+  if secret_pattern_matches '(AKIA|ASIA)[A-Z0-9]{16}' "$file"; then
+    printf '%s\n' aws-access-key-id
+    return 0
+  fi
+  if secret_pattern_matches 'xox[baprs]-[A-Za-z0-9-]{10,255}' "$file"; then
+    printf '%s\n' slack-token
+    return 0
+  fi
+  if secret_pattern_matches '[sr]k_live_[A-Za-z0-9]{16,255}' "$file"; then
+    printf '%s\n' stripe-live-key
+    return 0
+  fi
+  if secret_pattern_matches 'AIza[A-Za-z0-9_-]{35}' "$file"; then
+    printf '%s\n' google-api-key
+    return 0
+  fi
+  if secret_pattern_matches "$OPENAI_SECRET" "$file"; then
+    printf '%s\n' openai-key
+    return 0
+  fi
+  printf 'unclassified\n'
+}
+
+if ! declare -F logical_label_for >/dev/null 2>&1; then
+  logical_label_for() { # <path>
+    printf '%s\n' "$1"
+  }
+fi
+
+# One scan pass over a whole staged tree. Running grep once per file costs a
+# process per record on a corpus of this size, so the scan is batched; it still
+# happens before any live mutation, which is the boundary that matters.
+scan_tree_for_secrets() { # <dir>...
+  local hit class label hits sorted rc
+  [ -n "${STAGE:-}" ] || die 1 "credential scan has no stage directory; refusing to publish"
+  hits="$STAGE/secret-scan-hits"
+  sorted="$STAGE/secret-scan-hits.sorted"
+  exec 4> "$hits" \
+    || die 1 "credential scan could not create its hits file; refusing to publish"
+  if LC_ALL=C grep -REl -- "$SECRET_COMBINED" "$@" >&4 2>/dev/null; then
+    :
+  else
+    rc=$?
+    if [ "$rc" -ne 1 ]; then
+      exec 4>&- || true
+      die 1 "credential scan failed while reading staged content; refusing to publish"
+    fi
+  fi
+  exec 4>&- \
+    || die 1 "credential scan could not close its hits file; refusing to publish"
+  LC_ALL=C sort -o "$sorted" "$hits" \
+    || die 1 "credential scan failed while sorting staged content; refusing to publish"
+  hit=$(sed -n '1p' "$sorted") \
+    || die 1 "credential scan failed while reading its sorted hits; refusing to publish"
+  [ -n "$hit" ] || return 0
+  class=$(secret_class_of "$hit")
+  label=$(logical_label_for "$hit")
+  if secret_text_matches "$label"; then
+    label='[credential-shaped source path redacted]'
+  fi
+  die "${FM_RECORD_SCAN_HIT_CODE:-1}" "refusing to publish: $label matches the $class credential pattern"
+}
+
+fm_record_scan_write_gitleaks_config() { # <path>
+  cat > "$1" <<'TOML'
+title = "firstmate-record"
+
+[extend]
+useDefault = true
+TOML
+  printf "\n[[rules]]\nid = 'firstmate-feeder'\nregex = '%s'\n" "$SECRET_COMBINED" >> "$1"
+}
+
+fm_record_scan_require_timeout() {
+  case "${FM_RECORD_SCAN_TIMEOUT_SECONDS:-60}" in
+    '' | *[!0-9]* | 0) die 1 "scan timeout must be a positive integer" ;;
+  esac
+  [ "${FM_RECORD_SCAN_TIMEOUT_SECONDS:-60}" -gt 0 ] 2>/dev/null || die 1 "scan timeout must be positive"
+  case "${FM_RECORD_SCAN_MAX_BYTES:-536870912}" in
+    '' | *[!0-9]*) die 1 "scan byte limit must be a positive integer" ;;
+  esac
+  [ "${FM_RECORD_SCAN_MAX_BYTES:-536870912}" -gt 0 ] 2>/dev/null || die 1 "scan byte limit must be positive"
+  # shellcheck source=bin/fm-timeout-lib.sh
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-timeout-lib.sh"
+}
+
+fm_record_scan_archive_preflight() { # <dir>
+  local dir=$1
+  [ -d "$dir" ] || die 1 "archive preflight directory is missing: $dir"
+  fm_record_scan_require_timeout
+  fm_run_timed "${FM_RECORD_SCAN_TIMEOUT_SECONDS:-60}" python3 -c "$(cat <<'PY'
+import gzip
+import os
+import re
+import sys
+import tarfile
+import zipfile
+import zlib
+
+root = os.path.realpath(sys.argv[1])
+MAX_DEPTH = 2
+pattern = re.compile(sys.argv[2])
+remaining = int(os.environ.get("FM_RECORD_SCAN_MAX_BYTES", "536870912"))
+
+
+def fail(message, code=1):
+    print("fm-record-scan: " + message, file=sys.stderr)
+    sys.exit(code)
+
+
+def write_bytes(value, output):
+    global remaining
+    remaining -= len(value)
+    if remaining < 0:
+        fail("expanded scan exceeds the byte limit")
+    output.write(value)
+
+
+def write_name(name, output):
+    if pattern.search(name):
+        fail("refusing to publish: [credential-shaped source path redacted] matches the credential filename pattern", 2)
+    write_bytes(name.encode("utf-8", errors="surrogateescape") + b"\n", output)
+    write_bytes(re.sub(r"[/.!]", "\n", name).encode("utf-8", errors="surrogateescape") + b"\n", output)
+
+
+def scan_stream(stream, name, depth, output):
+    write_name(name, output)
+    header = stream.read(512)
+    stream.seek(0)
+    lower = name.lower()
+    if lower.endswith((".xz", ".txz", ".bz2", ".tbz", ".tbz2", ".7z", ".rar", ".zst", ".zstd",
+            ".tzst", ".lz4", ".lz", ".lzma", ".br", ".sz", ".s2", ".z", ".zz")) or header.startswith((
+            b"\xfd7zXZ\x00", b"BZh", b"7z\xbc\xaf\x27\x1c", b"Rar!\x1a\x07", b"\x28\xb5\x2f\xfd",
+            b"\x04\x22\x4d\x18", b"LZIP", b"\xff\x06\x00\x00sNaPpY", b"\x1f\x9d")):
+        fail("archive format is unsupported and cannot be scanned")
+    if lower.endswith(".zip") or header.startswith((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")):
+        kind = "zip"
+    elif lower.endswith((".tar", ".tgz", ".tar.gz")) or header[257:262] == b"ustar":
+        kind = "tar"
+    elif lower.endswith(".gz") or header.startswith(b"\x1f\x8b"):
+        kind = "tar" if tarfile.is_tarfile(stream) else "gzip"
+        stream.seek(0)
+    else:
+        while True:
+            block = stream.read(min(65536, max(1, remaining + 1)))
+            if not block:
+                break
+            write_bytes(block, output)
+        write_bytes(b"\n", output)
+        return
+    if depth >= MAX_DEPTH:
+        fail("archive exceeds bounded scan depth")
+    if kind == "zip":
+        with zipfile.ZipFile(stream) as archive:
+            for entry in archive.infolist():
+                if entry.flag_bits & 1:
+                    fail("archive is encrypted and cannot be scanned")
+                nested = name + "!" + entry.filename
+                if entry.is_dir():
+                    write_name(nested, output)
+                else:
+                    with archive.open(entry) as payload:
+                        scan_stream(payload, nested, depth + 1, output)
+    elif kind == "tar":
+        with tarfile.open(fileobj=stream, mode="r:*") as archive:
+            for entry in archive:
+                nested = name + "!" + entry.name
+                if entry.isfile():
+                    with archive.extractfile(entry) as payload:
+                        scan_stream(payload, nested, depth + 1, output)
+                else:
+                    write_name(nested, output)
+                    write_name(entry.linkname, output)
+    else:
+        with gzip.GzipFile(fileobj=stream) as payload:
+            scan_stream(payload, name[:-3], depth + 1, output)
+
+
+def scan_link(path, relative, output):
+    target = os.readlink(path)
+    if os.path.isabs(target) or not os.path.exists(path) or os.path.commonpath((root, os.path.realpath(path))) != root:
+        fail("symlink is broken, absolute, or outside the scan root")
+    write_name(relative, output)
+    write_name(target, output)
+
+
+try:
+    with open(sys.argv[3], "wb") as output:
+        for dirpath, dirnames, filenames in os.walk(root, followlinks=False,
+                onerror=lambda error: fail("cannot enumerate scan directory")):
+            if ".git" in dirnames:
+                dirnames.remove(".git")
+            for name in dirnames:
+                path = os.path.join(dirpath, name)
+                relative = os.path.relpath(path, root)
+                if os.path.islink(path):
+                    scan_link(path, relative, output)
+                else:
+                    write_name(relative, output)
+            for name in filenames:
+                path = os.path.join(dirpath, name)
+                relative = os.path.relpath(path, root)
+                if os.path.islink(path):
+                    scan_link(path, relative, output)
+                elif os.path.isfile(path):
+                    with open(path, "rb") as payload:
+                        scan_stream(payload, relative, 0, output)
+                else:
+                    fail("scan source is not a regular file")
+except (OSError, EOFError, ValueError, RuntimeError, NotImplementedError, zipfile.BadZipFile, tarfile.TarError, zlib.error):
+    fail("archive or scan source is corrupt, unreadable, or unsupported")
+PY
+)" "$dir" "$SECRET_COMBINED" "${2:-/dev/null}"
+}
+
+fm_record_scan_gitleaks_dir() { # <dir>
+  local dir=$1 cfg report ignore_dir rc source
+  local -a scan_args
+  [ -d "$dir" ] || die 1 "gitleaks directory is missing: $dir"
+  command -v gitleaks >/dev/null 2>&1 \
+    || die 1 "gitleaks is missing; refusing to publish"
+  cfg=$(mktemp "${TMPDIR:-/tmp}/fm-record-gitleaks.XXXXXX") \
+    || die 1 "cannot create the explicit gitleaks config"
+  report=$(mktemp "${TMPDIR:-/tmp}/fm-record-gitleaks-report.XXXXXX") \
+    || { rm -f "$cfg"; die 1 "cannot create the gitleaks report file"; }
+  ignore_dir=$(mktemp -d "${TMPDIR:-/tmp}/fm-record-gitleaks-ignore.XXXXXX") \
+    || { rm -f "$cfg" "$report"; die 1 "cannot create the empty gitleaks ignore dir"; }
+  fm_record_scan_write_gitleaks_config "$cfg" \
+    || { rm -rf "$cfg" "$report" "$ignore_dir"; die 1 "cannot write the explicit gitleaks config"; }
+  rc=0
+  fm_record_scan_archive_preflight "$dir" "$ignore_dir/payloads" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    rm -rf "$cfg" "$report" "$ignore_dir"
+    return "$rc"
+  fi
+  for source in stdin dir; do
+    scan_args=("$source" --no-banner --no-color --log-level warn --redact=100
+      --ignore-gitleaks-allow --gitleaks-ignore-path "$ignore_dir" --config "$cfg"
+      --max-archive-depth 2 --report-format json --report-path "$report")
+    if [ "$source" = dir ]; then
+      scan_args+=(-- "$dir")
+    fi
+    rc=0
+    # shellcheck disable=SC2016
+    fm_run_timed "${FM_RECORD_SCAN_TIMEOUT_SECONDS:-60}" bash -c 'payload=$1; shift; exec "$@" < "$payload"' \
+      _ "$ignore_dir/payloads" env -u GITLEAKS_CONFIG -u GITLEAKS_CONFIG_TOML gitleaks "${scan_args[@]}" >/dev/null 2>"${report}.err" || rc=$?
+    if [ "$rc" -eq 0 ] && [ ! -s "${report}.err" ]; then
+      continue
+    fi
+    if [ "$rc" -eq 1 ]; then
+      python3 - "$report" "$SECRET_COMBINED" <<'PY' || true
+import re
+import json
+import sys
+path = sys.argv[1]
+try:
+    data = json.load(open(path, encoding="utf-8"))
+except Exception:
+    sys.exit(0)
+if not isinstance(data, list):
+    sys.exit(0)
+for item in data[:1]:
+    rule = item.get("RuleID") or item.get("Rule") or "gitleaks"
+    file_path = item.get("File") or item.get("Path") or "unknown"
+    if re.search(sys.argv[2], file_path):
+        file_path = "[credential-shaped source path redacted]"
+    print("fm-record-scan: refusing to publish: %s matches the %s credential pattern" % (file_path, rule), file=sys.stderr)
+PY
+      rm -rf "$cfg" "$report" "${report}.err" "$ignore_dir"
+      return 2
+    fi
+    rm -rf "$cfg" "$report" "${report}.err" "$ignore_dir"
+    die 1 "gitleaks scan failed or was incomplete; refusing to publish"
+  done
+  rm -rf "$cfg" "$report" "${report}.err" "$ignore_dir"
+}
+
+fm_record_scan_chain() { # <dir>
+  local dir=$1 rc=0
+  fm_record_scan_gitleaks_dir "$dir" || rc=$?
+  case "$rc" in
+    0) ;;
+    2) return 2 ;;
+    *) return 1 ;;
+  esac
+  FM_RECORD_SCAN_HIT_CODE=2
+  scan_tree_for_secrets "$dir"
+}
+
+fm_record_scan_usage() {
+  awk '
+    NR == 1 { next }
+    /^#/ { sub(/^# ?/, ""); print; next }
+    { exit }
+  ' "${BASH_SOURCE[0]}" >&2
+}
+
+fm_record_scan_cli() {
+  local cmd=${1:-} dir rc=0
+  shift || true
+  case "$cmd" in
+    tree | chain)
+      if [ -z "${STAGE:-}" ]; then
+        STAGE=$(mktemp -d "${TMPDIR:-/tmp}/fm-record-scan-stage.XXXXXX") \
+          || die 1 "credential scan could not create its stage directory; refusing to publish"
+        trap 'rm -rf -- "$STAGE"' EXIT
+      fi
+      ;;
+  esac
+  case "$cmd" in
+    -h | --help | '')
+      fm_record_scan_usage
+      [ "$cmd" = '-h' ] || [ "$cmd" = '--help' ] || exit 3
+      exit 0
+      ;;
+    tree)
+      [ "$#" -ge 1 ] || fm_record_scan_die 3 "tree requires at least one directory"
+      FM_RECORD_SCAN_HIT_CODE=2
+      scan_tree_for_secrets "$@"
+      ;;
+    gitleaks)
+      dir=
+      while [ "$#" -gt 0 ]; do
+        case "$1" in
+          --dir)
+            dir=$2
+            shift 2
+            ;;
+          *)
+            fm_record_scan_die 3 "unknown gitleaks argument '$1'"
+            ;;
+        esac
+      done
+      [ -n "$dir" ] || fm_record_scan_die 3 "gitleaks requires --dir"
+      rc=0
+      fm_record_scan_gitleaks_dir "$dir" || rc=$?
+      case "$rc" in
+        0) exit 0 ;;
+        2) exit 2 ;;
+        *) exit 1 ;;
+      esac
+      ;;
+    archive-preflight)
+      dir=
+      while [ "$#" -gt 0 ]; do
+        case "$1" in
+          --dir)
+            dir=$2
+            shift 2
+            ;;
+          *)
+            fm_record_scan_die 3 "unknown archive-preflight argument '$1'"
+            ;;
+        esac
+      done
+      [ -n "$dir" ] || fm_record_scan_die 3 "archive-preflight requires --dir"
+      fm_record_scan_archive_preflight "$dir"
+      ;;
+    chain)
+      dir=
+      while [ "$#" -gt 0 ]; do
+        case "$1" in
+          --dir)
+            dir=$2
+            shift 2
+            ;;
+          *)
+            fm_record_scan_die 3 "unknown chain argument '$1'"
+            ;;
+        esac
+      done
+      [ -n "$dir" ] || fm_record_scan_die 3 "chain requires --dir"
+      rc=0
+      fm_record_scan_chain "$dir" || rc=$?
+      case "$rc" in
+        0) exit 0 ;;
+        2) exit 2 ;;
+        *) exit 1 ;;
+      esac
+      ;;
+    *)
+      fm_record_scan_die 3 "unknown argument '$cmd'; run --help"
+      ;;
+  esac
+}
+
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+  set -e
+  fm_record_scan_cli "$@"
+fi

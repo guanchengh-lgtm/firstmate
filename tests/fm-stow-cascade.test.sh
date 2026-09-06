@@ -11,6 +11,7 @@ set -u
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 CASCADE="$ROOT/bin/fm-stow-cascade.sh"
 TMP_ROOT=$(fm_test_tmproot fm-stow-cascade)
+fm_git_identity fmtest fmtest@example.invalid
 mkdir -p "$TMP_ROOT"
 TMP_ROOT=$(cd "$TMP_ROOT" && pwd -P)
 FAKEBIN=$(fm_fakebin "$TMP_ROOT/fakebin")
@@ -362,9 +363,43 @@ test_no_cascade_without_secondmates_or_from_a_secondmate_home() {
   pass "the cascade stays silent with no secondmates and never runs from a secondmate home"
 }
 
+test_cascade_does_not_checkpoint_a_configured_record() {
+  local primary home origin before
+  primary=$(new_primary record-enum)
+  home=$(new_home record-home 10)
+  printf '%s\n' 'cccccc' > "$home/data/captain.md"
+  local_record record-home "$home" > "$primary/data/secondmates.md"
+  origin="$home/record-origin.git"
+  mkdir -p "$home/empty-home"
+  git init --quiet --bare --initial-branch=main "$origin"
+  HOME="$home/empty-home" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_DATA_OVERRIDE="$home/data" FM_STATE_OVERRIDE="$home/state" \
+    FM_CONFIG_OVERRIDE="$home/config" FM_RECORD_SETTLE_SECONDS=0 \
+    "$ROOT/bin/fm-record.sh" setup --init --origin "file://$origin" --code-root "$ROOT" \
+    >/dev/null \
+    || fail "stow cascade Record setup failed"
+  HOME="$home/empty-home" \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_DATA_OVERRIDE="$home/data" FM_STATE_OVERRIDE="$home/state" \
+    FM_CONFIG_OVERRIDE="$home/config" FM_RECORD_SETTLE_SECONDS=0 \
+    "$ROOT/bin/fm-record.sh" checkpoint --reason stow >/dev/null \
+    || fail "stow cascade could not take the completed-home checkpoint"
+  before=$(git --git-dir="$home/data/.git" rev-parse HEAD)
+  printf '%s\n' 'dddddddd' > "$home/data/captain.md"
+  run_cascade "$primary" >/dev/null
+  [ "$(git --git-dir="$home/data/.git" rev-parse HEAD)" = "$before" ] \
+    || fail "cascade enumeration created a Record commit"
+  git --git-dir="$home/data/.git" --work-tree="$home/data" cat-file -p HEAD:captain.md \
+    | grep -Fxq 'cccccc' \
+    || fail "cascade enumeration replaced the completed-home snapshot"
+  pass "cascade enumerates without checkpointing a configured Record"
+}
+
 test_budget_is_enforced_per_home_and_never_summed
 test_every_registered_home_is_enumerated_exactly_once
 test_transport_routes_by_placement_and_liveness
 test_receipt_facts_are_complete_and_show_before_and_after
 test_a_slow_remote_is_bounded_and_the_rest_still_report
 test_no_cascade_without_secondmates_or_from_a_secondmate_home
+test_cascade_does_not_checkpoint_a_configured_record

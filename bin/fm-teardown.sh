@@ -87,6 +87,10 @@
 #   no-mistakes validation-truth gate (bin/fm-validation-truth-lib.sh) because
 #   discard is not a claim that the ship is green. Only use it when the captain
 #   has explicitly said to discard the work.
+# Before irreversible cleanup of a ship or scout, teardown requires
+# bin/fm-record.sh checkpoint with reason teardown and --required.
+# A disabled Record is a no-op; a refusal preserves the task's durable sources.
+# --force does not bypass this checkpoint.
 #
 # Transient / stale worktree git lock recovery (teardown-lock-race): a crew process
 # killed mid-git-operation can leave a .git/worktrees/<wt>/index.lock (or, for a
@@ -2914,6 +2918,14 @@ else
     BACKLOG_SKIP_REASON="Orca cleanup recovery is not a launched backlog worker"
   else
     BACKLOG_SKIP_REASON=$TEARDOWN_BACKLOG_SKIP_REASON
+  fi
+fi
+
+# Keep this checkpoint before the first irreversible cleanup below.
+if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
+  if ! "$SCRIPT_DIR/fm-record.sh" checkpoint --reason teardown --required >&2; then
+    echo "REFUSED: Record checkpoint could not capture a durable local commit before cleanup." >&2
+    exit 1
   fi
 fi
 

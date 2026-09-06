@@ -98,16 +98,10 @@
 # corpus re-exports byte-identically on any later day.
 #
 # Secret boundary. Every included source snapshot and every generated page is
-# scanned for a fixed set of high-confidence credential shapes before any live
-# mutation. A match refuses the run, naming only the logical source path and the
-# pattern class, never the matched bytes. The classes are deliberately precise
-# and incomplete; there is no generic password or entropy detector, because its
-# false-positive policy is undefined.
-#
-# The OpenAI class is exactly
-# `sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,255}`. It deliberately fails
-# closed: a false positive blocks export for review, while a false negative can
-# expose a credential.
+# scanned by bin/fm-record-scan.sh before any live mutation. That owner holds
+# the pattern set, class names, and fail-closed diagnostics. A match refuses
+# the run, naming only the logical source path and the pattern class, never
+# the matched bytes.
 #
 # Exit codes:
 #   0  mirror published and present on the remote
@@ -155,6 +149,9 @@ die() { # <exit-code> <message>...
 note() {
   printf 'fm-feeder-export: %s\n' "$*" >&2
 }
+
+# shellcheck source=bin/fm-record-scan.sh
+. "$SCRIPT_DIR/fm-record-scan.sh"
 
 case "${1:-}" in
   -h | --help)
@@ -1467,68 +1464,9 @@ build_manifest() {
 }
 
 # --- snapshot, secrets, dates, rendering ------------------------------------
-
-OPENAI_SECRET='sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,255}'
-SECRET_COMBINED="-----BEGIN ((RSA|EC|DSA|OPENSSH|ENCRYPTED) )?PRIVATE KEY-----|gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{20,255}|(AKIA|ASIA)[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{10,255}|[sr]k_live_[A-Za-z0-9]{16,255}|AIza[A-Za-z0-9_-]{35}|$OPENAI_SECRET"
-
-secret_pattern_matches() { # <extended-regexp> <file>
-  local rc
-  if LC_ALL=C grep -Eq -- "$1" "$2" 2>/dev/null; then
-    return 0
-  else
-    rc=$?
-  fi
-  [ "$rc" -eq 1 ] && return 1
-  die 1 "credential scan failed while reading staged content; refusing to publish"
-}
-
-secret_text_matches() { # <text>
-  local rc
-  if printf '%s\n' "$1" | LC_ALL=C grep -Eq -- "$SECRET_COMBINED" 2>/dev/null; then
-    return 0
-  else
-    rc=$?
-  fi
-  [ "$rc" -eq 1 ] && return 1
-  die 1 "credential scan failed while checking a source label; refusing to publish"
-}
-
-secret_class_of() { # <file>; prints the first matching class name
-  local file=$1
-  if secret_pattern_matches '-----BEGIN ((RSA|EC|DSA|OPENSSH|ENCRYPTED) )?PRIVATE KEY-----' "$file"; then
-    printf '%s\n' private-key
-    return 0
-  fi
-  if secret_pattern_matches 'gh[pousr]_[A-Za-z0-9]{36,255}' "$file"; then
-    printf '%s\n' github-classic-token
-    return 0
-  fi
-  if secret_pattern_matches 'github_pat_[A-Za-z0-9_]{20,255}' "$file"; then
-    printf '%s\n' github-fine-grained-token
-    return 0
-  fi
-  if secret_pattern_matches '(AKIA|ASIA)[A-Z0-9]{16}' "$file"; then
-    printf '%s\n' aws-access-key-id
-    return 0
-  fi
-  if secret_pattern_matches 'xox[baprs]-[A-Za-z0-9-]{10,255}' "$file"; then
-    printf '%s\n' slack-token
-    return 0
-  fi
-  if secret_pattern_matches '[sr]k_live_[A-Za-z0-9]{16,255}' "$file"; then
-    printf '%s\n' stripe-live-key
-    return 0
-  fi
-  if secret_pattern_matches 'AIza[A-Za-z0-9_-]{35}' "$file"; then
-    printf '%s\n' google-api-key
-    return 0
-  fi
-  if secret_pattern_matches "$OPENAI_SECRET" "$file"; then
-    printf '%s\n' openai-key
-    return 0
-  fi
-  printf 'unclassified\n'
-}
+# Pattern matching, class names, and batched tree scan live in
+# bin/fm-record-scan.sh, sourced above. logical_label_for stays here because
+# it maps feeder stage paths through this run's manifest.
 
 # Resolve a staged file back to the logical record it came from, so a refusal
 # names data/... rather than a transient stage path.
@@ -1559,39 +1497,6 @@ logical_label_for() { # <staged-path>
   fi
   LC_ALL=C awk -F'\t' -v kind="$kind" -v id="$id" \
     '$1 == kind && $4 == id { print $2; found = 1; exit } END { if (!found) print kind "/" id }' "$MANIFEST"
-}
-
-# One scan pass over a whole staged tree. Running grep once per file costs a
-# process per record on a corpus of this size, so the scan is batched; it still
-# happens before any live mutation, which is the boundary that matters.
-scan_tree_for_secrets() { # <dir>...
-  local hit class label hits sorted rc
-  hits="$STAGE/secret-scan-hits"
-  sorted="$STAGE/secret-scan-hits.sorted"
-  exec 4> "$hits" \
-    || die 1 "credential scan could not create its hits file; refusing to publish"
-  if LC_ALL=C grep -REl -- "$SECRET_COMBINED" "$@" >&4 2>/dev/null; then
-    :
-  else
-    rc=$?
-    if [ "$rc" -ne 1 ]; then
-      exec 4>&- || true
-      die 1 "credential scan failed while reading staged content; refusing to publish"
-    fi
-  fi
-  exec 4>&- \
-    || die 1 "credential scan could not close its hits file; refusing to publish"
-  LC_ALL=C sort -o "$sorted" "$hits" \
-    || die 1 "credential scan failed while sorting staged content; refusing to publish"
-  hit=$(sed -n '1p' "$sorted") \
-    || die 1 "credential scan failed while reading its sorted hits; refusing to publish"
-  [ -n "$hit" ] || return 0
-  class=$(secret_class_of "$hit")
-  label=$(logical_label_for "$hit")
-  if secret_text_matches "$label"; then
-    label='[credential-shaped source path redacted]'
-  fi
-  die 1 "refusing to publish: $label matches the $class credential pattern"
 }
 
 assert_text_payload() { # <file> <logical-label>

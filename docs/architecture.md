@@ -406,5 +406,11 @@ Use `/stow` before an intentional reset when the conversation may hold durable k
 ## Development notes
 
 The optional Studio launchd deadman is a notify-only external reader of the watcher beacon; [`deadman.md`](deadman.md) owns install and probe behavior.
+`bin/fm-record.sh` owns Record transactions independently of the read-only deadman; the optional scheduler and lifecycle callers share that owner.
+Runtime producers keep ownership of the live task status, metadata, and inbox records; the Record owner alone publishes their selected mirror into `data/.record-state`.
+That mirror is historical input, not a second runtime store or a place ordinary workers append.
+The same transaction owner maintains `.gitattributes`, while setup owns `.gitignore` and the repository-local hooks and binding files.
+[`configuration.md`](configuration.md#record-repository-datagit) owns operator setup and recovery.
+`bin/fm-record.sh`'s header owns the transaction mechanics and points to the exact scope selectors.
 The current watcher reliability work combines always-on bash triage with a durable queue for actionable wakes, generation-bound post-handling acknowledgement, deterministic re-arm recovery after watcher downtime, a race-proof singleton lock, duplicate self-eviction, drain-time liveness assertion, and a self-verifying tracked-child arm wrapper.
 The presence-gated sub-supervisor (`bin/fm-supervise-daemon.sh`) provides walk-away supervision via the `/afk` skill while reusing the same shared wake classifier as the always-on watcher.

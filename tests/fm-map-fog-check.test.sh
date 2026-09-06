@@ -396,7 +396,43 @@ SH
   pass "bootstrap: checker failure output and status remain exact"
 }
 
+test_nested_git_map_is_not_discovered() {
+  local home out rc
+  home=$(new_home nested-git)
+  mkdir -p "$home/data/.git/objects/aa" "$home/data/prog"
+  cat > "$home/data/.git/objects/aa/map.md" <<'EOF'
+# Nested
+
+## Destination
+
+Done.
+
+## Not yet specified
+
+- Whether a nested Git map is treated as live fog.
+EOF
+  cat > "$home/data/prog/map.md" <<'EOF'
+# Real
+
+## Destination
+
+Done.
+
+## Not yet specified
+
+- none
+EOF
+  set +e
+  out=$(run_check "$home")
+  rc=$?
+  set -e
+  [ "$rc" -eq 0 ] || fail "nested Git map discovery exited $rc: $out"
+  [ -z "$out" ] || fail "nested Git map.md was discovered as fog: $out"
+  pass "map discovery prunes nested Git metadata"
+}
+
 test_absent_maps_are_silent
+test_nested_git_map_is_not_discovered
 test_missing_section_is_structural
 test_untokenized_bullet_is_live
 test_parked_and_closed_and_none_are_clean

@@ -16,7 +16,7 @@ assert_present "$RUNNER" "bin/fm-test-run.sh is missing"
 [ -x "$RUNNER" ] || fail "bin/fm-test-run.sh must be executable"
 
 test_list_all_exact_suite_coverage() {
-  local listed expected missing extra f
+  local listed expected missing extra f repo
   listed=$("$RUNNER" --list --all | LC_ALL=C sort)
   expected=$(
     for f in "$ROOT"/tests/*.test.sh; do
@@ -33,6 +33,14 @@ test_list_all_exact_suite_coverage() {
   [ "$(printf '%s\n' "$listed" | uniq | wc -l | tr -d ' ')" = \
     "$(printf '%s\n' "$listed" | wc -l | tr -d ' ')" ] \
     || fail "--list --all must not duplicate scripts"
+  repo=$(fm_test_tmproot fm-test-run-nested-git)
+  init_changed_fixture_repo "$repo"
+  git init --quiet "$repo/data"
+  mkdir -p "$repo/data/.git/tests"
+  printf '#!/bin/sh\necho nested\n' > "$repo/data/.git/tests/foo.test.sh"
+  listed=$("$repo/bin/fm-test-run.sh" --list --all | LC_ALL=C sort)
+  printf '%s\n' "$listed" | grep -F 'data/.git' >/dev/null \
+    && fail "--list --all discovered a nested Git test file"
   pass "exact suite coverage: --all lists every tests/*.test.sh once"
 }
 

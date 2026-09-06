@@ -1152,6 +1152,18 @@ two
   pass "fm-feeder-export: empty and mixed source sets both publish complete indexes"
 }
 
+test_nested_git_report_is_not_exported() {
+  local dir
+  dir=$(new_case nested-git-report)
+  seed_records "$dir"
+  mkdir -p "$dir/home/data/.git/objects/aa"
+  printf '# Nested Git report\n\nnested body\n' > "$dir/home/data/.git/objects/aa/report.md"
+  assert_export_ok "$dir" 'nested Git report'
+  assert_present "$dir/vault/wiki/reports/task-one.md" 'nested Git report: real report missing'
+  assert_absent "$dir/vault/wiki/reports/aa.md" 'nested Git report: nested object was exported'
+  pass "fm-feeder-export: report discovery keeps its depth limit over nested Git metadata"
+}
+
 test_source_enumeration_failures() {
   local dir before
   dir=$(new_case source-enumeration-failures)
@@ -1773,6 +1785,7 @@ test_secret_lookalikes_publish() {
 # Safe lookalikes
 
 A short OpenAI token like sk-short stays ordinary text.
+Decision key: sample-route-call
 A short token like ghp_abc or AKIAshort is not a credential shape.
 The literal pattern gh[pousr]_[A-Za-z0-9]{36,255} is documentation.
 MD
@@ -3296,6 +3309,7 @@ test_owned_symlink_refusals
 test_render_time_transaction_link_refusals
 test_prior_digest_failure_refuses_before_journal
 test_empty_and_mixed_source_sets
+test_nested_git_report_is_not_exported
 test_source_enumeration_failures
 test_source_alias_handling
 test_titles_and_yaml_quoting
