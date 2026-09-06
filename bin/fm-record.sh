@@ -12,7 +12,7 @@
 #   fm-record.sh health
 #   fm-record.sh setup [--init] [--origin URL] [--branch NAME] [--code-root PATH]
 #                    [--write-plist] [--bootstrap]
-#   fm-record.sh pre-commit [--candidate-index PATH]
+#   fm-record.sh pre-commit
 #
 # An unconfigured home (no $FM_HOME/data/.git) is an explicit disabled no-op.
 # After .git exists, a missing scanner, wrong root, extra remote, detached
@@ -140,13 +140,13 @@ release_lock() {
 
 # shellcheck disable=SC2329 # Invoked from trap EXIT.
 on_exit() {
-  release_lock
   if [ -n "${CAND_WORK:-}" ] && [ -d "${CAND_WORK:-}" ]; then
     rm -rf "${CAND_WORK%/*}"
   fi
   if [ -n "${CAND_INDEX:-}" ]; then
     rm -f "$CAND_INDEX" "${CAND_INDEX}.lock"
   fi
+  release_lock
 }
 
 trap on_exit EXIT
@@ -277,44 +277,48 @@ is_ignored() { # <abs-path>
   case "$rel" in
     .git | .git/*) return 0 ;;
     .record-state | .record-state/*) return 0 ;;
-    .obsidian/workspace.json | .obsidian/workspace-mobile.json | .DS_Store) return 0 ;;
+    .obsidian/workspace*.json | .DS_Store) return 0 ;;
     .record-tmp-* | */.record-tmp-*) return 0 ;;
   esac
   git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" check-ignore -q -- "$rel" 2>/dev/null
 }
 
 list_data_relpaths() {
-  local path rel
-  [ -d "$RECORD_WORK" ] || return 0
+  local out=$1 path rel rc
+  find "$RECORD_WORK" \( -name .git -type d -prune \) -o \( -print0 \) > "$out.raw" || return 1
   while IFS= read -r -d '' path; do
     rel=${path#"$RECORD_WORK"/}
     [ "$rel" != "$path" ] || continue
-    case "$rel" in
-      .git | .git/*) continue ;;
-      .record-state | .record-state/*) continue ;;
+    rc=0
+    is_ignored "$rel" || rc=$?
+    case "$rc" in
+      0) continue ;;
+      1) ;;
+      *) return 1 ;;
     esac
-    if is_ignored "$rel"; then
-      continue
-    fi
-    printf '%s\n' "$rel"
-  done < <(find "$RECORD_WORK" \( -name .git -type d -prune \) -o \( -print0 \))
+    printf '%s\n' "$rel" || return 1
+  done < "$out.raw" > "$out"
 }
 
 list_state_sources() {
-  local path base
+  local out=$1 path
+  : > "$out" || return 1
   [ -d "$STATE" ] || return 0
-  for path in "$STATE"/*.status "$STATE"/*.meta; do
-    [ -e "$path" ] || continue
-    [ -f "$path" ] && [ ! -L "$path" ] || die 8 "state source $path must be a regular file"
-    printf '%s\n' "$path"
-  done
-  for path in "$STATE"/*.inbox; do
-    [ -e "$path" ] || continue
-    [ -d "$path" ] && [ ! -L "$path" ] || die 8 "state inbox $path must be a directory"
-    while IFS= read -r -d '' base; do
-      printf '%s\n' "$base"
-    done < <(find "$path" \( -type f -o -type l \) -print0)
-  done
+  find "$STATE" -mindepth 1 -maxdepth 1 \( -name '*.status' -o -name '*.meta' -o -name '*.inbox' \) \
+    -print0 > "$out.raw" || return 1
+  while IFS= read -r -d '' path; do
+    case "$path" in
+      *.inbox)
+        [ -d "$path" ] && [ ! -L "$path" ] || return 1
+        find "$path" \( -type f -o -type l \) -print > "$out.inbox" || return 1
+        cat "$out.inbox" || return 1
+        ;;
+      *)
+        [ -f "$path" ] && [ ! -L "$path" ] || return 1
+        printf '%s\n' "$path" || return 1
+        ;;
+    esac
+  done < "$out.raw" > "$out"
 }
 
 path_mode() {
@@ -348,7 +352,12 @@ inventory_line() { # <kind> <abs> <rel>
 
 build_inventory() { # <outfile>
   local out=$1 rel abs path
-  : > "$out"
+  if ! list_data_relpaths "$out.data" || ! list_state_sources "$out.state" ||
+    ! LC_ALL=C sort -o "$out.data" "$out.data" || ! LC_ALL=C sort -o "$out.state" "$out.state"; then
+    rm -f "$out.data" "$out.data.raw" "$out.state" "$out.state.raw" "$out.state.inbox"
+    return 4
+  fi
+  : > "$out" || return 4
   while IFS= read -r rel; do
     [ -n "$rel" ] || continue
     abs="$RECORD_WORK/$rel"
@@ -356,12 +365,13 @@ build_inventory() { # <outfile>
       validate_symlink "$abs" "$rel"
     fi
     inventory_line data "$abs" "data:$rel" >> "$out" || die 4 "cannot inventory $rel"
-  done < <(list_data_relpaths | LC_ALL=C sort)
+  done < "$out.data"
   while IFS= read -r path; do
     [ -n "$path" ] || continue
     rel=${path#"$STATE"/}
     inventory_line state "$path" "state:$rel" >> "$out" || die 4 "cannot inventory state $rel"
-  done < <(list_state_sources | LC_ALL=C sort)
+  done < "$out.state"
+  rm -f "$out.data" "$out.data.raw" "$out.state" "$out.state.raw" "$out.state.inbox"
 }
 
 validate_symlink() { # <abs> <rel>
@@ -398,25 +408,26 @@ settle_inventory() {
 }
 
 copy_file_atomic() { # <src> <dest>
-  local src=$1 dest=$2 tmp dir
+  local src=$1 dest=$2 tmp dir target
   dir=$(dirname "$dest")
-  mkdir -p "$dir"
+  mkdir -p "$dir" || return 1
   tmp="$dir/.record-tmp-$$.${dest##*/}"
   if [ -L "$src" ]; then
-    rm -f "$dest"
-    ln -s -- "$(readlink "$src")" "$dest"
-    rm -f "$tmp"
+    target=$(readlink "$src") || return 1
+    rm -f "$dest" || return 1
+    ln -s -- "$target" "$dest" || return 1
+    rm -f "$tmp" || return 1
     return 0
   fi
-  cp -p -- "$src" "$tmp"
+  cp -p -- "$src" "$tmp" || return 1
   mv -f "$tmp" "$dest"
 }
 
 freeze_candidate() { # <inventory>
-  local inv=$1 kind mode digest target rel abs dest
+  local inv=$1 kind mode digest target rel abs dest actual expected
   CAND_WORK="$GIT_DIR_ABS/record-candidate/work"
-  rm -rf "$GIT_DIR_ABS/record-candidate"
-  mkdir -p "$CAND_WORK/.record-state"
+  rm -rf "$GIT_DIR_ABS/record-candidate" || return 4
+  mkdir -p "$CAND_WORK/.record-state" || return 4
   while IFS=$(printf '\t') read -r kind mode digest target rel; do
     [ -n "$rel" ] || continue
     case "$rel" in
@@ -432,20 +443,20 @@ freeze_candidate() { # <inventory>
         continue
         ;;
     esac
-    copy_file_atomic "$abs" "$dest"
-    if [ "$kind" = f ] && [ -n "$mode" ]; then
-      chmod "$mode" "$dest" 2>/dev/null || true
-    fi
+    copy_file_atomic "$abs" "$dest" || return 4
+    actual=$(inventory_line candidate "$dest" "$rel") || return 4
+    expected=$(printf '%s\t%s\t%s\t%s\t%s' "$kind" "$mode" "$digest" "$target" "$rel")
+    [ "$actual" = "$expected" ] || return 4
   done < "$inv"
 }
 
 attr_escape() {
-  python3 -c 'import sys
-p=sys.argv[1]
-if any(ch in p for ch in " \t[]*?") or p[:1] in "-#":
-    print("\"" + p.replace("\\", "\\\\").replace("\"", "\\\"") + "\"")
-else:
-    print(p)' "$1"
+  python3 -c 'import json, sys
+p = sys.argv[1]
+p = "".join("\\" + ch if ch in "\\[]*?" else ch for ch in p)
+if p.startswith("!"):
+    p = "\\" + p
+print(json.dumps(p, ensure_ascii=False))' "$1"
 }
 
 binary_attr_lines() {
@@ -456,53 +467,38 @@ binary_attr_lines() {
   done
 }
 
-existing_literal_lfs_paths() {
-  local file=$1 line path
+existing_literal_lfs_rules() {
+  local file=$1 line
   [ -f "$file" ] || return 0
   while IFS= read -r line; do
     case "$line" in
-      \"*\"\ filter=lfs*)
-        path=${line#\"}
-        path=${path%%\"*}
-        printf '%s\n' "$path"
-        ;;
-      *' filter=lfs diff=lfs merge=lfs -text')
-        path=${line%% filter=lfs*}
-        case "$path" in
-          \** | '') ;;
-          *) printf '%s\n' "$path" ;;
-        esac
-        ;;
+      \** | '') ;;
+      *' filter=lfs diff=lfs merge=lfs -text') printf '%s\n' "$line" || return 1 ;;
     esac
   done < "$file"
 }
 
 update_lfs_attributes() {
-  local attr="$CAND_WORK/.gitattributes" existing tmp rel size ext
-  existing=$(mktemp "${TMPDIR:-/tmp}/fm-record-lfs.XXXXXX")
-  tmp=$(mktemp "${TMPDIR:-/tmp}/fm-record-attr.XXXXXX")
-  existing_literal_lfs_paths "$RECORD_WORK/.gitattributes" > "$existing"
-  existing_literal_lfs_paths "$attr" >> "$existing"
-  binary_attr_lines > "$tmp"
-  while IFS= read -r rel; do
-    [ -n "$rel" ] || continue
-    [ -f "$CAND_WORK/$rel" ] || continue
+  local attr="$CAND_WORK/.gitattributes" tmp rel size ext path
+  tmp=$(mktemp "${TMPDIR:-/tmp}/fm-record-attr.XXXXXX") || return 1
+  existing_literal_lfs_rules "$attr" > "$tmp" || return 1
+  binary_attr_lines >> "$tmp" || return 1
+  find "$CAND_WORK" \( -name .git -type d -prune \) -o -type f -print0 > "$tmp.paths" || return 1
+  while IFS= read -r -d '' path; do
+    rel=${path#"$CAND_WORK"/}
     ext=${rel##*.}
     case "$ext" in
       csv | json | txt | vtt | CSV | JSON | TXT | VTT) ;;
       *) continue ;;
     esac
-    size=$(LC_ALL=C wc -c < "$CAND_WORK/$rel" | tr -d ' ')
+    size=$(LC_ALL=C wc -c < "$path" | tr -d ' ') || return 1
     if [ "$size" -ge "$TEXT_LFS_BYTES" ]; then
-      printf '%s\n' "$rel" >> "$existing"
+      printf '%s filter=lfs diff=lfs merge=lfs -text\n' "$(attr_escape "$rel")" >> "$tmp" || return 1
     fi
-  done < <(find "$CAND_WORK" \( -name .git -type d -prune \) -o -type f -print | sed "s|^$CAND_WORK/||")
-  LC_ALL=C sort -u "$existing" | while IFS= read -r rel; do
-    [ -n "$rel" ] || continue
-    printf '%s filter=lfs diff=lfs merge=lfs -text\n' "$(attr_escape "$rel")"
-  done >> "$tmp"
-  mv -f "$tmp" "$attr"
-  rm -f "$existing"
+  done < "$tmp.paths"
+  LC_ALL=C sort -u -o "$tmp" "$tmp" || return 1
+  mv -f "$tmp" "$attr" || return 1
+  rm -f "$tmp.paths"
 }
 
 stage_candidate() {
@@ -544,9 +540,9 @@ commit_candidate() { # <reason>
   fi
   message="record: ${reason}"
   GIT_INDEX_FILE="$CAND_INDEX" git --git-dir="$GIT_DIR_ABS" --work-tree="$CAND_WORK" \
-    commit --quiet --no-verify -m "$message"
-  git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" read-tree HEAD
-  publish_owned_live_files
+    commit --quiet --no-verify -m "$message" || return 8
+  git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" read-tree HEAD || return 8
+  publish_owned_live_files || return 8
   return 0
 }
 
@@ -554,17 +550,19 @@ publish_owned_live_files() {
   local src dest rel
   src="$CAND_WORK/.record-state"
   dest="$RECORD_WORK/.record-state"
-  mkdir -p "$dest"
+  mkdir -p "$dest" || return 1
   if [ -d "$src" ]; then
+    find "$src" \( -type f -o -type l \) -print0 > "$CAND_WORK/../publish.sources" || return 1
+    find "$dest" \( -type f -o -type l \) -print0 > "$CAND_WORK/../publish.destinations" || return 1
     while IFS= read -r -d '' rel; do
-      copy_file_atomic "$rel" "$dest/${rel#"$src"/}"
-    done < <(find "$src" \( -type f -o -type l \) -print0)
+      copy_file_atomic "$rel" "$dest/${rel#"$src"/}" || return 1
+    done < "$CAND_WORK/../publish.sources"
     while IFS= read -r -d '' rel; do
-      [ -e "$src/${rel#"$dest"/}" ] || rm -f "$rel"
-    done < <(find "$dest" \( -type f -o -type l \) -print0)
+      [ -e "$src/${rel#"$dest"/}" ] || rm -f "$rel" || return 1
+    done < "$CAND_WORK/../publish.destinations"
   fi
   if [ -f "$CAND_WORK/.gitattributes" ]; then
-    copy_file_atomic "$CAND_WORK/.gitattributes" "$RECORD_WORK/.gitattributes"
+    copy_file_atomic "$CAND_WORK/.gitattributes" "$RECORD_WORK/.gitattributes" || return 1
   fi
 }
 
@@ -574,7 +572,7 @@ push_once() {
   set +e
   out=$(GIT_TERMINAL_PROMPT=0 fm_run_timed "$PUSH_TIMEOUT" \
     git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" \
-    -c credential.helper= push --quiet origin "HEAD:$(sed -n '1p' "$GIT_DIR_ABS/record-branch")" 2>&1)
+    push --quiet origin "HEAD:$(sed -n '1p' "$GIT_DIR_ABS/record-branch")" 2>&1)
   rc=$?
   set -e
   if [ "$rc" -eq 0 ]; then
@@ -585,7 +583,7 @@ push_once() {
     return 6
   fi
   case "$out" in
-    *'non-fast-forward'* | *'failed to push some refs'* | *'[rejected]'*)
+    *'[rejected]'*'(non-fast-forward)'* | *'[rejected]'*'(fetch first)'*)
       printf 'diverged\n'
       return 7
       ;;
@@ -605,7 +603,13 @@ push_once() {
 }
 
 pending_commit_count() {
-  git --git-dir="$GIT_DIR_ABS" rev-list --count "origin/$(sed -n '1p' "$GIT_DIR_ABS/record-branch")..HEAD" 2>/dev/null || printf '0\n'
+  local remote_ref
+  remote_ref="origin/$(sed -n '1p' "$GIT_DIR_ABS/record-branch")"
+  if git --git-dir="$GIT_DIR_ABS" rev-parse --verify "$remote_ref" >/dev/null 2>&1; then
+    git --git-dir="$GIT_DIR_ABS" rev-list --count "$remote_ref..HEAD"
+  else
+    git --git-dir="$GIT_DIR_ABS" rev-list --count HEAD
+  fi
 }
 
 run_transaction() { # tick|checkpoint <reason> try|wait|required
@@ -632,7 +636,10 @@ run_transaction() { # tick|checkpoint <reason> try|wait|required
     rm -f "$inv"
     finish 4 unsettled
   fi
-  freeze_candidate "$inv"
+  if ! freeze_candidate "$inv"; then
+    rm -f "$inv"
+    finish 4 unsettled
+  fi
   update_lfs_attributes
   stage_candidate
   rc=0
@@ -643,6 +650,13 @@ run_transaction() { # tick|checkpoint <reason> try|wait|required
   fi
   rc=0
   commit_candidate "$reason" || rc=$?
+  if [ "$rc" -gt 1 ]; then
+    rm -f "$inv"
+    if [ "$lock_mode" = required ]; then
+      finish 9 configuration-error detail=commit-publication
+    fi
+    finish 8 configuration-error detail=commit-publication
+  fi
   sha=$(git --git-dir="$GIT_DIR_ABS" rev-parse --short HEAD)
   if [ "$mode" != tick ]; then
     rm -f "$inv"
@@ -691,8 +705,7 @@ cmd_health() {
 
 write_gitignore() {
   cat > "$1" <<'EOF'
-.obsidian/workspace.json
-.obsidian/workspace-mobile.json
+.obsidian/workspace*.json
 .DS_Store
 .record-tmp-*
 search-anomaly-signal/.serpapi.env
@@ -712,7 +725,7 @@ EOF
 }
 
 cmd_setup() {
-  local init=0 write_plist=0 bootstrap=0 origin='' branch=$EXPECTED_BRANCH code_root=$FM_ROOT
+  local init=0 write_plist=0 bootstrap=0 origin='' branch=$EXPECTED_BRANCH code_root=$FM_ROOT attr_tmp
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --init) init=1; shift ;;
@@ -744,7 +757,11 @@ cmd_setup() {
   printf '%s\n' "$branch" > "$GIT_DIR_ABS/record-branch"
   printf '%s\n' "$(physical_dir "$code_root")" > "$GIT_DIR_ABS/record-code-root"
   write_gitignore "$RECORD_WORK/.gitignore"
-  binary_attr_lines > "$RECORD_WORK/.gitattributes"
+  attr_tmp=$(mktemp "$GIT_DIR_ABS/record-attributes.XXXXXX")
+  binary_attr_lines > "$attr_tmp"
+  existing_literal_lfs_rules "$RECORD_WORK/.gitattributes" >> "$attr_tmp"
+  LC_ALL=C sort -u -o "$attr_tmp" "$attr_tmp"
+  mv -f "$attr_tmp" "$RECORD_WORK/.gitattributes"
   git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" lfs install --local --force >/dev/null
   install_hooks "$GIT_DIR_ABS/hooks" "$(physical_dir "$code_root")"
   if [ "$write_plist" -eq 1 ]; then
@@ -798,55 +815,43 @@ bootstrap_record_job() {
 }
 
 extract_index_payloads() { # <index> <dest-dir>
-  local index=$1 dest=$2 sha path meta oid payload oid_dir
-  mkdir -p "$dest"
+  local index=$1 dest=$2 sha path meta oid payload oid_dir size
+  mkdir -p "$dest" || return 1
+  GIT_INDEX_FILE="$index" git --git-dir="$GIT_DIR_ABS" ls-files -s -z > "$dest/../index.entries" || return 1
   while IFS=$(printf '\t') read -r -d '' meta path; do
     [ -n "$path" ] || continue
     sha=$(printf '%s\n' "$meta" | awk '{print $2}')
-    [ -n "$sha" ] || continue
+    [ -n "$sha" ] || return 1
     payload="$dest/$path"
-    mkdir -p "$(dirname "$payload")"
-    GIT_INDEX_FILE="$index" git --git-dir="$GIT_DIR_ABS" cat-file -p "$sha" > "$payload"
+    mkdir -p "$(dirname "$payload")" || return 1
+    GIT_INDEX_FILE="$index" git --git-dir="$GIT_DIR_ABS" cat-file -p "$sha" > "$payload" || return 1
     if head -n 1 "$payload" | grep -Fq 'git-lfs.github.com/spec/v1'; then
+      git lfs pointer --check --file="$payload" >/dev/null 2>&1 || return 1
       oid=$(awk '/^oid sha256:/ { print $2 }' "$payload")
       oid=${oid#sha256:}
+      size=$(awk '/^size / { print $2 }' "$payload")
       oid_dir="$GIT_DIR_ABS/lfs/objects/$(printf '%s' "$oid" | cut -c1-2)/$(printf '%s' "$oid" | cut -c3-4)"
-      if [ -n "$oid" ] && [ -f "$oid_dir/$oid" ]; then
-        cp -p "$oid_dir/$oid" "$payload"
-      fi
+      [ -f "$oid_dir/$oid" ] || return 1
+      cp -p "$oid_dir/$oid" "$payload" || return 1
+      [ "$(sha256_file "$payload")" = "$oid" ] || return 1
+      [ "$(wc -c < "$payload" | tr -d ' ')" = "$size" ] || return 1
     fi
-  done < <(GIT_INDEX_FILE="$index" git --git-dir="$GIT_DIR_ABS" ls-files -s -z)
+  done < "$dest/../index.entries"
 }
 
 cmd_pre_commit() {
-  local candidate='' dest rc=0
-  while [ "$#" -gt 0 ]; do
-    case "$1" in
-      --candidate-index)
-        candidate=$2
-        shift 2
-        ;;
-      *) die 2 "unknown pre-commit argument '$1'" ;;
-    esac
-  done
-  if [ -n "$candidate" ]; then
-    [ "${FM_RECORD_INTERNAL:-}" = 1 ] || die 8 "candidate index is only accepted from an internal Record call"
-    GIT_DIR_ABS=${GIT_DIR:-$DATA/.git}
-    [ -d "$GIT_DIR_ABS" ] || die 8 "pre-commit candidate has no git dir"
-    dest=$(mktemp -d "${TMPDIR:-/tmp}/fm-record-precommit.XXXXXX")
-    extract_index_payloads "$candidate" "$dest"
-    "$SCRIPT_DIR/fm-record-scan.sh" chain --dir "$dest" || rc=$?
-    rm -rf "$dest"
-    case "$rc" in
-      0) exit 0 ;;
-      *) exit 5 ;;
-    esac
-  fi
+  local dest rc=0
+  [ "$#" -eq 0 ] || die 2 "pre-commit does not accept arguments"
+  require_hash_tool
   GIT_DIR_ABS=${GIT_DIR:-$DATA/.git}
   [ -d "$GIT_DIR_ABS" ] || die 8 "pre-commit has no git dir"
   dest=$(mktemp -d "${TMPDIR:-/tmp}/fm-record-precommit.XXXXXX")
-  extract_index_payloads "${GIT_INDEX_FILE:-$GIT_DIR_ABS/index}" "$dest"
-  "$SCRIPT_DIR/fm-record-scan.sh" chain --dir "$dest" || rc=$?
+  if extract_index_payloads "${GIT_INDEX_FILE:-$GIT_DIR_ABS/index}" "$dest/work"; then
+    "$SCRIPT_DIR/fm-record-scan.sh" chain --dir "$dest/work" || rc=$?
+  else
+    printf 'fm-record: cannot resolve indexed payloads for scanning\n' >&2
+    rc=1
+  fi
   rm -rf "$dest"
   case "$rc" in
     0) exit 0 ;;
@@ -911,7 +916,7 @@ case "${1:-}" in
     shift
     cmd_checkpoint "$@"
     ;;
-  health | status)
+  health)
     shift
     case "$(binding_state)" in
       absent)

@@ -12,15 +12,13 @@
 # detector, because its false-positive policy is undefined.
 #
 # The OpenAI class is exactly
-# `sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_]{32,255}`. Hyphens after the known
-# prefix are not part of the key body, so tokens such as sk-gradient do not
-# match. The private-key class requires a PEM header plus a key-body line;
-# a quoted header in prose is not a match.
+# `sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,255}`. It deliberately fails
+# closed: a false positive blocks export for review, while a false negative can
+# expose a credential.
 #
 # When executed:
 #   fm-record-scan.sh tree <dir>...
 #   fm-record-scan.sh class <file>
-#   fm-record-scan.sh text <string>
 #   fm-record-scan.sh gitleaks --dir <dir>
 #   fm-record-scan.sh chain --dir <dir>
 #   fm-record-scan.sh archive-preflight --dir <dir>
@@ -38,9 +36,9 @@ set -u
 
 export LC_ALL=C
 
-OPENAI_SECRET='sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_]{32,255}'
+OPENAI_SECRET='sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,255}'
 PRIVATE_KEY_HEADER='-----BEGIN ((RSA|EC|DSA|OPENSSH|ENCRYPTED) )?PRIVATE KEY-----'
-SECRET_COMBINED="gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{20,255}|(AKIA|ASIA)[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{10,255}|[sr]k_live_[A-Za-z0-9]{16,255}|AIza[A-Za-z0-9_-]{35}|$OPENAI_SECRET"
+SECRET_COMBINED="$PRIVATE_KEY_HEADER|gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{20,255}|(AKIA|ASIA)[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{10,255}|[sr]k_live_[A-Za-z0-9]{16,255}|AIza[A-Za-z0-9_-]{35}|$OPENAI_SECRET"
 
 fm_record_scan_die() { # <exit-code> <message>...
   local code=$1
@@ -77,38 +75,9 @@ secret_text_matches() { # <text>
   die 1 "credential scan failed while checking a source label; refusing to publish"
 }
 
-secret_file_has_private_key() { # <file>
-  # Use index() and length() so BSD awk can see a PEM header plus body without
-  # depending on interval quantifiers or optional groups.
-  awk '
-    index($0, "-----BEGIN ") == 1 && index($0, " PRIVATE KEY-----") > 0 {
-      hdr = 1
-      next
-    }
-    hdr && index($0, "-----END ") == 1 {
-      hdr = 0
-      next
-    }
-    hdr {
-      line = $0
-      gsub(/=+$/, "", line)
-      ok = 1
-      if (length(line) < 32) ok = 0
-      for (i = 1; ok && i <= length(line); i++) {
-        c = substr(line, i, 1)
-        if ((c < "A" || c > "Z") && (c < "a" || c > "z") && (c < "0" || c > "9") && c != "+" && c != "/") {
-          ok = 0
-        }
-      }
-      if (ok) { found = 1; exit }
-    }
-    END { exit found ? 0 : 1 }
-  ' "$1"
-}
-
 secret_class_of() { # <file>; prints the first matching class name
   local file=$1
-  if secret_file_has_private_key "$file"; then
+  if secret_pattern_matches "$PRIVATE_KEY_HEADER" "$file"; then
     printf '%s\n' private-key
     return 0
   fi
@@ -149,28 +118,6 @@ if ! declare -F logical_label_for >/dev/null 2>&1; then
   }
 fi
 
-collect_private_key_hits() { # <hits-file> <dir>...
-  local hits=$1 header_list rc
-  shift
-  header_list="${hits}.private-headers"
-  if LC_ALL=C grep -REl -- "$PRIVATE_KEY_HEADER" "$@" > "$header_list" 2>/dev/null; then
-    :
-  else
-    rc=$?
-    rm -f "$header_list"
-    [ "$rc" -eq 1 ] && return 0
-    die 1 "credential scan failed while reading staged content; refusing to publish"
-  fi
-  while IFS= read -r file; do
-    [ -n "$file" ] || continue
-    if secret_file_has_private_key "$file"; then
-      printf '%s\n' "$file" >> "$hits" \
-        || die 1 "credential scan could not record a private-key hit; refusing to publish"
-    fi
-  done < "$header_list"
-  rm -f "$header_list"
-}
-
 # One scan pass over a whole staged tree. Running grep once per file costs a
 # process per record on a corpus of this size, so the scan is batched; it still
 # happens before any live mutation, which is the boundary that matters.
@@ -192,7 +139,6 @@ scan_tree_for_secrets() { # <dir>...
   fi
   exec 4>&- \
     || die 1 "credential scan could not close its hits file; refusing to publish"
-  collect_private_key_hits "$hits" "$@"
   LC_ALL=C sort -o "$sorted" "$hits" \
     || die 1 "credential scan failed while sorting staged content; refusing to publish"
   hit=$(sed -n '1p' "$sorted") \
@@ -213,12 +159,14 @@ title = "firstmate-record"
 [extend]
 useDefault = true
 TOML
+  printf "\n[[rules]]\nid = 'firstmate-feeder'\nregex = '%s'\n" "$SECRET_COMBINED" >> "$1"
 }
 
 fm_record_scan_archive_preflight() { # <dir>
   local dir=$1
   [ -d "$dir" ] || die 1 "archive preflight directory is missing: $dir"
-  python3 - "$dir" <<'PY'
+  python3 - "$dir" "$SECRET_COMBINED" <<'PY'
+import re
 import os
 import sys
 import zipfile
@@ -235,6 +183,8 @@ def is_archive_name(name):
 
 
 def fail(msg):
+    if re.search(sys.argv[2], msg):
+        msg = "archive cannot be scanned: [credential-shaped source path redacted]"
     print("fm-record-scan: " + msg, file=sys.stderr)
     sys.exit(1)
 
@@ -283,14 +233,14 @@ def check_gzip(path):
         with gzip.open(path, "rb") as fh:
             while fh.read(1024 * 1024):
                 pass
-    except OSError:
+    except (OSError, EOFError):
         fail("archive is corrupt or unsupported: " + path)
 
 
 def check_tar(path):
     try:
         tarfile.open(path, mode="r:*").close()
-    except tarfile.TarError:
+    except (tarfile.TarError, OSError):
         fail("archive is corrupt or unsupported: " + path)
 
 
@@ -345,7 +295,8 @@ fm_record_scan_gitleaks_dir() { # <dir>
     return 0
   fi
   if [ "$rc" -eq 1 ]; then
-    python3 - "$report" <<'PY' || true
+    python3 - "$report" "$SECRET_COMBINED" <<'PY' || true
+import re
 import json
 import sys
 path = sys.argv[1]
@@ -358,6 +309,8 @@ if not isinstance(data, list):
 for item in data[:1]:
     rule = item.get("RuleID") or item.get("Rule") or "gitleaks"
     file_path = item.get("File") or item.get("Path") or "unknown"
+    if re.search(sys.argv[2], file_path):
+        file_path = "[credential-shaped source path redacted]"
     print("fm-record-scan: refusing to publish: %s matches the %s credential pattern" % (file_path, rule), file=sys.stderr)
 PY
     rm -rf "$cfg" "$report" "${report}.err" "$ignore_dir"
@@ -409,16 +362,8 @@ fm_record_scan_cli() {
     class)
       [ "$#" -eq 1 ] || fm_record_scan_die 3 "class requires one file"
       [ -f "$1" ] || die 1 "class file is missing: $1"
-      if secret_file_has_private_key "$1" || secret_pattern_matches "$SECRET_COMBINED" "$1"; then
+      if secret_pattern_matches "$SECRET_COMBINED" "$1"; then
         secret_class_of "$1"
-        exit 2
-      fi
-      printf 'none\n'
-      ;;
-    text)
-      [ "$#" -eq 1 ] || fm_record_scan_die 3 "text requires one string"
-      if secret_text_matches "$1"; then
-        printf 'hit\n'
         exit 2
       fi
       printf 'none\n'

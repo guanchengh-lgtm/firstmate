@@ -12,14 +12,8 @@ fm_git_identity fmtest fmtest@example.invalid
 
 secret_fixture() {
   case "$1" in
-    openssh-private-key) printf -- '%s\n%s\n%s\n' \
-      '-----BEGIN OPENSSH PRIVATE KEY-----' \
-      'YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=' \
-      '-----END OPENSSH PRIVATE KEY-----' ;;
-    encrypted-private-key) printf -- '%s\n%s\n%s\n' \
-      '-----BEGIN ENCRYPTED PRIVATE KEY-----' \
-      'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA' \
-      '-----END ENCRYPTED PRIVATE KEY-----' ;;
+    openssh-private-key) printf -- '-----BEGIN OPENSSH PRIVATE %s-----' 'KEY' ;;
+    encrypted-private-key) printf -- '-----BEGIN ENCRYPTED PRIVATE %s-----' 'KEY' ;;
     github-classic) printf '%s%s' 'ghp' '_0123456789abcdefghijklmnopqrstuvwxyzAB' ;;
     github-pat) printf '%s%s' 'github' '_pat_0123456789abcdefghijklmnop' ;;
     aws-access-key) printf '%s%s' 'AKI' 'AABCDEFGHIJKLMNOP' ;;
@@ -27,11 +21,11 @@ secret_fixture() {
     stripe-live) printf '%s%s' 'sk' '_live_0123456789abcdefgh' ;;
     stripe-test) printf '%s%s' 'sk' '_test_0123456789abcdefgh' ;;
     google-api) printf '%s%s' 'AIz' 'aabcdefghijklmnopqrstuvwxyz0123456789' ;;
-    openai-project) printf '%s%s' 'sk-' 'proj-0123456789abcdefghijklmnopQRSTUV' ;;
-    openai-service-account) printf '%s%s' 'sk-' 'svcacct-0123456789abcdefghijklmnopQRSTUV' ;;
-    openai-admin) printf '%s%s' 'sk-' 'admin-0123456789abcdefghijklmnopQRSTUV' ;;
-    openai-plain) printf '%s%s' 'sk-' '0123456789abcdefghijklmnopQRSTUV' ;;
-    openai-underscore-suffix) printf '%s%s' 'sk-' '0123456789abcdefghijklmnop_suffixX' ;;
+    openai-project) printf '%s%s' 'sk-' 'proj-0123456789_abcd-efghijklmnop' ;;
+    openai-service-account) printf '%s%s' 'sk-' 'svcacct-0123456789_abcd-efghijklmnop' ;;
+    openai-admin) printf '%s%s' 'sk-' 'admin-0123456789_abcd-efghijklmnop' ;;
+    openai-plain) printf '%s%s' 'sk-' '0123456789abcdefghijklmnop' ;;
+    openai-underscore-suffix) printf '%s%s' 'sk-' '0123456789abcdefghij_suffix' ;;
     *) fail "secret_fixture: unknown fixture $1" ;;
   esac
 }
@@ -92,10 +86,7 @@ test_lookalikes_are_clean() {
   mkdir -p "$dir"
   cat > "$dir/safe.md" <<'MD'
 A short OpenAI token like sk-short stays ordinary text.
-A color token like sk-gradient-from-blue-to-navy-and-then-some is not a key.
 Decision key: sample-route-call
-See the quoted header "-----BEGIN PRIVATE KEY-----" in this sentence.
------BEGIN PRIVATE KEY-----
 A short token like ghp_abc or AKIAshort is not a credential shape.
 The literal pattern gh[pousr]_[A-Za-z0-9]{36,255} is documentation.
 MD
@@ -103,7 +94,7 @@ MD
   expect_code 0 "$RC" 'lookalikes'
   run_scan class "$dir/safe.md"
   expect_code 0 "$RC" 'lookalike class'
-  assert_contains "$OUT" 'none' 'quoted header classified as a key'
+  assert_contains "$OUT" 'none' 'lookalike classified as a key'
   pass "fm-record-scan: lookalikes stay clean"
 }
 
@@ -119,6 +110,16 @@ test_credential_shaped_path_is_redacted() {
   assert_contains "$OUT" 'credential-shaped source path redacted' 'path-label not redacted'
   assert_not_contains "$OUT" "$token" 'path-label leaked the token'
   assert_not_contains "$OUT" "$body" 'path-label leaked the body token'
+  run_scan chain --dir "$dir"
+  expect_code 2 "$RC" 'chain path-label'
+  assert_contains "$OUT" 'credential-shaped source path redacted' 'gitleaks path-label not redacted'
+  assert_not_contains "$OUT" "$token" 'gitleaks path-label leaked the token'
+  assert_not_contains "$OUT" "$body" 'gitleaks path-label leaked the body token'
+  rm "$dir/${token}.md"
+  printf 'corrupt archive' > "$dir/${token}.zip"
+  run_scan chain --dir "$dir"
+  expect_code 1 "$RC" 'archive path-label'
+  assert_not_contains "$OUT" "$token" 'archive diagnostic leaked the token'
   pass "fm-record-scan: credential-shaped path labels are redacted"
 }
 
@@ -269,6 +270,46 @@ PTR
   pass "fm-record-scan: LFS pointer text is not enough; payload bytes are scanned"
 }
 
+test_private_key_headers_refuse_in_serialized_text() {
+  local dir header format
+  dir="$TMP_ROOT/private-headers"
+  mkdir -p "$dir"
+  header=$(secret_fixture openssh-private-key)
+  for format in indented json; do
+    if [ "$format" = indented ]; then
+      printf '  %s\n' "$header" > "$dir/key.txt"
+    else
+      printf '{"key":"%s\\nbody"}\n' "$header" > "$dir/key.txt"
+    fi
+    run_scan tree "$dir"
+    expect_code 2 "$RC" "$format private key header"
+    assert_contains "$OUT" 'private-key' 'serialized header was not classified'
+    assert_not_contains "$OUT" "$header" 'serialized header was exposed'
+  done
+  pass "fm-record-scan: private key headers refuse in indented and serialized text"
+}
+
+test_compressed_feeder_patterns_block_the_chain() {
+  local dir secret
+  dir="$TMP_ROOT/compressed-feeder"
+  mkdir -p "$dir"
+  secret=$(secret_fixture openai-plain)
+  python3 - "$dir/archive.zip" "$secret" <<'PYTEST'
+import io
+import sys
+import zipfile
+inner = io.BytesIO()
+with zipfile.ZipFile(inner, "w", zipfile.ZIP_DEFLATED) as archive:
+    archive.writestr("payload.txt", sys.argv[2])
+with zipfile.ZipFile(sys.argv[1], "w", zipfile.ZIP_DEFLATED) as archive:
+    archive.writestr("inner.zip", inner.getvalue())
+PYTEST
+  run_scan chain --dir "$dir"
+  expect_code 2 "$RC" 'compressed feeder pattern'
+  assert_not_contains "$OUT" "$secret" 'archive scan leaked the token'
+  pass "fm-record-scan: compressed feeder patterns block the archive-aware chain"
+}
+
 test_chain_clean_tree() {
   local dir
   dir="$TMP_ROOT/chain-clean"
@@ -289,4 +330,6 @@ test_gitleaks_only_and_feeder_only_each_block
 test_inline_allow_comment_is_ignored
 test_archive_corrupt_and_encrypted_refuse
 test_lfs_pointer_does_not_hide_payload
+test_private_key_headers_refuse_in_serialized_text
+test_compressed_feeder_patterns_block_the_chain
 test_chain_clean_tree

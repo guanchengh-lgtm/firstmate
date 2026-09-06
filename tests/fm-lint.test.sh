@@ -163,7 +163,7 @@ test_help_reports_the_complete_interface() {
 }
 
 test_list_files_reports_the_shell_inventory() {
-  local listed expected
+  local listed expected repo
   # CI=true forces the full canonical set regardless of the ambient branch or
   # working-tree diff a local test run happens to have, so this stays a pure
   # inventory check independent of fm-lint.sh's own changed-file mode below.
@@ -171,10 +171,14 @@ test_list_files_reports_the_shell_inventory() {
   expected=$(find bin bin/backends tests -maxdepth 1 -type f -name '*.sh' -print | LC_ALL=C sort)
   [ "$(printf '%s\n' "$listed" | LC_ALL=C sort)" = "$expected" ] \
     || fail "fm-lint.sh --list-files did not return the complete shell inventory"
-  mkdir -p "$ROOT/data/.git/bin"
-  printf '#!/bin/sh\n' > "$ROOT/data/.git/bin/evil.sh"
-  listed=$(CI=true "$LINT" --list-files)
-  rm -rf "$ROOT/data/.git"
+  repo=$(fm_test_tmproot fm-lint-nested-git)
+  mkdir -p "$repo/bin/backends" "$repo/tests"
+  cp "$LINT" "$repo/bin/fm-lint.sh"
+  git init --quiet "$repo"
+  git init --quiet "$repo/data"
+  mkdir -p "$repo/data/.git/bin"
+  printf '#!/bin/sh\n' > "$repo/data/.git/bin/evil.sh"
+  listed=$(CI=true "$repo/bin/fm-lint.sh" --list-files)
   printf '%s\n' "$listed" | grep -F 'data/.git' >/dev/null \
     && fail "fm-lint.sh --list-files discovered a nested Git shell file"
   pass "fm-lint.sh --list-files reports the complete shell inventory"

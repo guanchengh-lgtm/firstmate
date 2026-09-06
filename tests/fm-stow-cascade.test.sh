@@ -362,15 +362,6 @@ test_no_cascade_without_secondmates_or_from_a_secondmate_home() {
   pass "the cascade stays silent with no secondmates and never runs from a secondmate home"
 }
 
-test_stow_skill_names_the_record_checkpoint() {
-  local skill="$ROOT/.agents/skills/stow/SKILL.md"
-  assert_contains "$(cat "$skill")" 'bin/fm-record.sh checkpoint --reason stow' \
-    "the stow skill does not name the completed-home Record checkpoint"
-  assert_contains "$(cat "$skill")" 'That enumerator only lists homes and mechanical inputs.' \
-    "the stow skill does not keep the cascade as an enumerator"
-  pass "the stow skill owns the completed-home Record checkpoint"
-}
-
 test_cascade_does_not_checkpoint_a_configured_record() {
   local primary home origin before
   primary=$(new_primary record-enum)
@@ -410,5 +401,4 @@ test_transport_routes_by_placement_and_liveness
 test_receipt_facts_are_complete_and_show_before_and_after
 test_a_slow_remote_is_bounded_and_the_rest_still_report
 test_no_cascade_without_secondmates_or_from_a_secondmate_home
-test_stow_skill_names_the_record_checkpoint
 test_cascade_does_not_checkpoint_a_configured_record

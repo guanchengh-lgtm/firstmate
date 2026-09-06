@@ -622,25 +622,19 @@ secret_fixture() {  # <fixture> -> prints one assembled credential sample
   # literal credential shape trips GitHub push protection and blocks the push,
   # so no line of this file may hold a complete scanner-matching credential.
   case "$1" in
-    openssh-private-key) printf -- '%s\n%s\n%s\n' \
-      '-----BEGIN OPENSSH PRIVATE KEY-----' \
-      'YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=' \
-      '-----END OPENSSH PRIVATE KEY-----' ;;
-    encrypted-private-key) printf -- '%s\n%s\n%s\n' \
-      '-----BEGIN ENCRYPTED PRIVATE KEY-----' \
-      'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA' \
-      '-----END ENCRYPTED PRIVATE KEY-----' ;;
+    openssh-private-key) printf -- '-----BEGIN OPENSSH PRIVATE %s-----' 'KEY' ;;
+    encrypted-private-key) printf -- '-----BEGIN ENCRYPTED PRIVATE %s-----' 'KEY' ;;
     github-classic) printf '%s%s' 'ghp' '_0123456789abcdefghijklmnopqrstuvwxyzAB' ;;
     github-pat) printf '%s%s' 'github' '_pat_0123456789abcdefghijklmnop' ;;
     aws-access-key) printf '%s%s' 'AKI' 'AABCDEFGHIJKLMNOP' ;;
     slack) printf '%s%s' 'xox' 'b-0123456789abcdef' ;;
     stripe-live) printf '%s%s' 'sk' '_live_0123456789abcdefgh' ;;
     google-api) printf '%s%s' 'AIz' 'aabcdefghijklmnopqrstuvwxyz0123456789' ;;
-    openai-project) printf '%s%s' 'sk-' 'proj-0123456789abcdefghijklmnopQRSTUV' ;;
-    openai-service-account) printf '%s%s' 'sk-' 'svcacct-0123456789abcdefghijklmnopQRSTUV' ;;
-    openai-admin) printf '%s%s' 'sk-' 'admin-0123456789abcdefghijklmnopQRSTUV' ;;
-    openai-plain) printf '%s%s' 'sk-' '0123456789abcdefghijklmnopQRSTUV' ;;
-    openai-underscore-suffix) printf '%s%s' 'sk-' '0123456789abcdefghijklmnop_suffixX' ;;
+    openai-project) printf '%s%s' 'sk-' 'proj-0123456789_abcd-efghijklmnop' ;;
+    openai-service-account) printf '%s%s' 'sk-' 'svcacct-0123456789_abcd-efghijklmnop' ;;
+    openai-admin) printf '%s%s' 'sk-' 'admin-0123456789_abcd-efghijklmnop' ;;
+    openai-plain) printf '%s%s' 'sk-' '0123456789abcdefghijklmnop' ;;
+    openai-underscore-suffix) printf '%s%s' 'sk-' '0123456789abcdefghij_suffix' ;;
     *) fail "secret_fixture: unknown fixture $1" ;;
   esac
 }
@@ -1791,10 +1785,7 @@ test_secret_lookalikes_publish() {
 # Safe lookalikes
 
 A short OpenAI token like sk-short stays ordinary text.
-A color token like sk-gradient-from-blue-to-navy-and-then-some is not a key.
 Decision key: sample-route-call
-See the quoted header "-----BEGIN PRIVATE KEY-----" in this sentence.
------BEGIN PRIVATE KEY-----
 A short token like ghp_abc or AKIAshort is not a credential shape.
 The literal pattern gh[pousr]_[A-Za-z0-9]{36,255} is documentation.
 MD

@@ -100,9 +100,13 @@ test_setup_and_first_tick_commit_and_push() {
   local home origin
   IFS=$(printf '\t') read -r home origin < <(new_home first-tick)
   setup_record "$home" "$origin"
-  assert_contains "$(cat "$home/data/.gitignore")" '**/.env' 'setup omitted .env ignore'
-  assert_contains "$(cat "$home/data/.gitignore")" 'search-anomaly-signal/.serpapi.env' \
-    'setup omitted the serpapi env ignore'
+  local ignored
+  for ignored in .env nested/.env search-anomaly-signal/.serpapi.env \
+    .obsidian/workspace.json .obsidian/workspace-mobile.json .obsidian/workspace-extra.json; do
+    git -C "$home/data" check-ignore -q -- "$ignored" || fail "setup did not ignore $ignored"
+    mkdir -p "$(dirname "$home/data/$ignored")"
+    printf 'private workspace\n' > "$home/data/$ignored"
+  done
   printf '# note\n\nhello\n' > "$home/data/captain.md"
   run_rec "$home" tick
   expect_code 0 "$RC" 'first tick'
@@ -111,6 +115,11 @@ test_setup_and_first_tick_commit_and_push() {
     || fail 'first tick did not push main'
   git --git-dir="$home/data/.git" --work-tree="$home/data" cat-file -e HEAD:captain.md \
     || fail 'first tick did not commit captain.md'
+  for ignored in .obsidian/workspace.json .obsidian/workspace-mobile.json .obsidian/workspace-extra.json; do
+    if git -C "$home/data" cat-file -e "HEAD:$ignored" 2>/dev/null; then
+      fail "tick committed $ignored"
+    fi
+  done
   pass "fm-record: the first tick commits and pushes a clean Record"
 }
 
@@ -281,34 +290,56 @@ test_special_names_and_outside_symlink_refuse() {
   pass "fm-record: special names commit and outside links refuse"
 }
 
+assert_lfs_blob() {
+  local home=$1 path=$2 pointer oid
+  [ "$(git -C "$home/data" check-attr --cached filter -- "$path")" = "$path: filter: lfs" ] \
+    || fail "$path did not receive the LFS filter"
+  pointer="$TMP_ROOT/indexed-lfs-pointer"
+  git -C "$home/data" show "HEAD:$path" > "$pointer" || fail "$path was not committed"
+  git lfs pointer --check --file="$pointer" || fail "$path was not stored as an LFS pointer"
+  oid=$(awk '/^oid sha256:/ {sub(/^oid sha256:/, ""); print}' "$pointer")
+  [ "$oid" = "$(shasum -a 256 "$home/data/$path" | cut -d ' ' -f1)" ] \
+    || fail "$path points at the wrong LFS payload"
+}
+
 test_lfs_text_threshold_and_no_oscillation() {
-  local home origin attrs
+  local home origin path
   IFS=$(printf '\t') read -r home origin < <(new_home lfs)
   setup_record "$home" "$origin"
   mkdir -p "$home/data/raw"
   dd if=/dev/zero of="$home/data/raw/small.txt" bs=1048575 count=1 2>/dev/null
   dd if=/dev/zero of="$home/data/raw/exact.txt" bs=1048576 count=1 2>/dev/null
   dd if=/dev/zero of="$home/data/raw/above.txt" bs=1048577 count=1 2>/dev/null
-  printf 'x' > "$home/data/raw/space file.csv"
-  dd if=/dev/zero of="$home/data/raw/space file.csv" bs=1048576 count=1 2>/dev/null
-  printf 'x' > "$home/data/raw/-dash.json"
-  dd if=/dev/zero of="$home/data/raw/-dash.json" bs=1048576 count=1 2>/dev/null
-  printf 'x' > "$home/data/raw/brack[et].vtt"
-  dd if=/dev/zero of="$home/data/raw/brack[et].vtt" bs=1048576 count=1 2>/dev/null
+  for path in 'raw/space file.csv' raw/-dash.json 'raw/brack[et].vtt' 'raw/star*.txt' 'raw/question?.json'; do
+    dd if=/dev/zero of="$home/data/$path" bs=1048576 count=1 2>/dev/null
+  done
+  for path in raw/bracke.vtt raw/starX.txt raw/questionX.json; do
+    printf 'small\n' > "$home/data/$path"
+  done
   printf 'PNG' > "$home/data/raw/pic.png"
   run_rec "$home" checkpoint --reason session-start
   expect_code 0 "$RC" 'lfs attributes'
-  attrs=$(cat "$home/data/.gitattributes")
-  assert_contains "$attrs" '*.png filter=lfs' 'png rule'
-  assert_contains "$attrs" 'exact.txt' 'exact 1MiB path'
-  assert_contains "$attrs" 'above.txt' 'above 1MiB path'
-  assert_not_contains "$attrs" 'small.txt' 'below-threshold text should stay ordinary'
-  dd if=/dev/zero of="$home/data/raw/exact.txt" bs=100 count=1 2>/dev/null
+  for path in raw/pic.png raw/exact.txt raw/above.txt 'raw/space file.csv' \
+    raw/-dash.json 'raw/brack[et].vtt' 'raw/star*.txt' 'raw/question?.json'; do
+    assert_lfs_blob "$home" "$path"
+  done
+  for path in raw/small.txt raw/bracke.vtt raw/starX.txt raw/questionX.json; do
+    [ "$(git -C "$home/data" check-attr --cached filter -- "$path")" = "$path: filter: unspecified" ] \
+      || fail "$path received an unintended LFS filter"
+    git -C "$home/data" show "HEAD:$path" > "$TMP_ROOT/ordinary-blob"
+    cmp -s "$TMP_ROOT/ordinary-blob" "$home/data/$path" || fail "$path did not retain ordinary bytes"
+  done
+  for path in raw/exact.txt 'raw/space file.csv' 'raw/brack[et].vtt' 'raw/star*.txt' 'raw/question?.json'; do
+    printf 'shrunken\n' > "$home/data/$path"
+  done
+  run_rec "$home" setup --code-root "$ROOT"
+  expect_code 0 "$RC" 'setup preserves LFS rules'
   run_rec "$home" checkpoint --reason stow
   expect_code 0 "$RC" 'lfs shrink'
-  attrs=$(cat "$home/data/.gitattributes")
-  assert_contains "$attrs" 'exact.txt' 'shrunk LFS path must stay LFS'
-  pass "fm-record: LFS attributes are deterministic and do not oscillate"
+  for path in raw/exact.txt 'raw/space file.csv' 'raw/brack[et].vtt' 'raw/star*.txt' 'raw/question?.json'; do
+    assert_lfs_blob "$home" "$path"
+  done
+  pass "fm-record: LFS attributes are literal and survive shrink and repeated setup"
 }
 
 test_push_failure_keeps_local_commit() {
@@ -359,18 +390,26 @@ test_job_plist_has_sixty_seconds_and_no_keepalive() {
   local home origin plist
   IFS=$(printf '\t') read -r home origin < <(new_home job)
   setup_record "$home" "$origin"
-  plist="$TMP_ROOT/diverge-job.plist"
   plist="$TMP_ROOT/job/record.plist"
   mkdir -p "$(dirname "$plist")" "$TMP_ROOT/job/logs"
   HOME="$TMP_ROOT/empty-home" \
     FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
     FM_RECORD_PLIST="$plist" FM_RECORD_LOG_DIR="$TMP_ROOT/job/logs" \
     "$RECORD" setup --write-plist --code-root "$ROOT" >/dev/null
-  grep -Fq 'firstmate-record-tick-v1' "$plist" || fail 'plist missing owner mark'
-  grep -Fq '<integer>60</integer>' "$plist" || fail 'plist missing 60 second interval'
-  grep -Fq 'KeepAlive' "$plist" && fail 'plist has KeepAlive'
-  grep -Fq "$ROOT/bin/fm-record.sh" "$plist" || fail 'plist does not point at the code-root script'
-  grep -Fq "$home" "$plist" || fail 'plist missing FM_HOME'
+  python3 - "$plist" "$ROOT" "$home" "$TMP_ROOT/job/logs" <<'PYTEST' || fail 'incorrect LaunchAgent configuration'
+import plistlib
+import sys
+with open(sys.argv[1], "rb") as stream:
+    job = plistlib.load(stream)
+assert job["Label"] == "com.firstmate.record-tick"
+assert type(job["StartInterval"]) is int and job["StartInterval"] == 60
+assert "KeepAlive" not in job
+assert job["ProgramArguments"] == [sys.argv[2] + "/bin/fm-record.sh", "tick"]
+assert job["EnvironmentVariables"]["FM_HOME"] == sys.argv[3]
+assert job["RunAtLoad"] is True
+assert job["StandardOutPath"] == sys.argv[4] + "/firstmate-record-tick.stdout.log"
+assert job["StandardErrorPath"] == sys.argv[4] + "/firstmate-record-tick.stderr.log"
+PYTEST
   pass "fm-record: the LaunchAgent plist is a 60-second sibling job"
 }
 
@@ -438,6 +477,205 @@ test_required_checkpoint_times_out_when_lock_is_live() {
   pass "fm-record: a required checkpoint refuses when the lock stays live"
 }
 
+test_commit_and_publication_failures_refuse() {
+  local home origin before fakebin
+  IFS=$(printf '\t') read -r home origin < <(new_home commit-failure)
+  setup_record "$home" "$origin"
+  printf 'old\n' > "$home/data/captain.md"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'commit failure seed'
+  before=$(git -C "$home/data" rev-parse HEAD)
+  printf 'new\n' > "$home/data/captain.md"
+  touch "$home/data/.git/HEAD.lock"
+  run_rec "$home" checkpoint --reason teardown --required
+  expect_code 9 "$RC" 'required commit failure'
+  assert_not_contains "$OUT" 'committed-local' 'failed commit reported success'
+  [ "$(git -C "$home/data" rev-parse HEAD)" = "$before" ] || fail 'locked HEAD changed'
+  rm "$home/data/.git/HEAD.lock"
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/git" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  [ "$arg" != read-tree ] || exit 1
+done
+exec "$FM_TEST_REAL_GIT" "$@"
+SH
+  chmod +x "$fakebin/git"
+  FM_TEST_REAL_GIT=$(command -v git) PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason teardown --required
+  expect_code 9 "$RC" 'required index publication failure'
+  assert_not_contains "$OUT" 'committed-local' 'failed publication reported success'
+  pass "fm-record: required checkpoints refuse commit and publication failures"
+}
+
+test_inventory_failures_refuse_partial_snapshots() {
+  local home origin before fakebin scope
+  IFS=$(printf '\t') read -r home origin < <(new_home enumeration)
+  setup_record "$home" "$origin"
+  mkdir -p "$home/state/task.inbox"
+  printf 'old\n' > "$home/data/captain.md"
+  printf 'message\n' > "$home/state/task.inbox/001.msg"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'inventory failure seed'
+  before=$(git -C "$home/data" rev-parse HEAD)
+  printf 'new\n' > "$home/data/captain.md"
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/find" <<'SH'
+#!/usr/bin/env bash
+if [ "$1" = "$FM_TEST_FIND_FAILURE" ]; then
+  printf '%s\0' "$1"
+  exit 1
+fi
+exec "$FM_TEST_REAL_FIND" "$@"
+SH
+  chmod +x "$fakebin/find"
+  for scope in "$home/data" "$home/state/task.inbox"; do
+    FM_TEST_REAL_FIND=$(command -v find) FM_TEST_FIND_FAILURE="$scope" PATH="$fakebin:$PATH" \
+      run_rec "$home" checkpoint --reason stow
+    expect_code 4 "$RC" 'enumeration failure'
+    [ "$(git -C "$home/data" rev-parse HEAD)" = "$before" ] || fail 'partial inventory changed HEAD'
+  done
+  pass "fm-record: failed data and inbox enumeration cannot commit deletions"
+}
+
+test_frozen_bytes_must_match_the_settled_inventory() {
+  local home origin before fakebin
+  IFS=$(printf '\t') read -r home origin < <(new_home freeze)
+  setup_record "$home" "$origin"
+  printf 'old\n' > "$home/data/captain.md"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'freeze seed'
+  before=$(git -C "$home/data" rev-parse HEAD)
+  printf 'settled\n' > "$home/data/captain.md"
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/cp" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [ "$arg" = "$FM_HOME/data/captain.md" ]; then
+    printf 'changed after settling\n' > "$arg"
+  fi
+done
+exec "$FM_TEST_REAL_CP" "$@"
+SH
+  chmod +x "$fakebin/cp"
+  FM_TEST_REAL_CP=$(command -v cp) PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason stow
+  expect_code 4 "$RC" 'copy changed bytes'
+  [ "$(git -C "$home/data" rev-parse HEAD)" = "$before" ] || fail 'unsettled copied bytes changed HEAD'
+  pass "fm-record: copied bytes must match the settled inventory"
+}
+
+test_cleanup_keeps_the_lock_until_candidates_are_removed() {
+  local home origin fakebin pid n
+  IFS=$(printf '\t') read -r home origin < <(new_home cleanup)
+  setup_record "$home" "$origin"
+  printf 'snapshot\n' > "$home/data/captain.md"
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/rm" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [ "$arg" = "$FM_HOME/data/.git/record-candidate" ] && [ -d "$arg/work" ]; then
+    : > "$FM_HOME/cleanup-started"
+    n=0
+    while [ ! -e "$FM_HOME/cleanup-continue" ] && [ "$n" -lt 100 ]; do
+      sleep 0.05
+      n=$((n + 1))
+    done
+  fi
+done
+exec "$FM_TEST_REAL_RM" "$@"
+SH
+  chmod +x "$fakebin/rm"
+  (
+    trap - EXIT
+    FM_TEST_REAL_RM=$(command -v rm) PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason stow
+    expect_code 0 "$RC" 'cleanup checkpoint'
+  ) &
+  pid=$!
+  n=0
+  while [ ! -e "$home/cleanup-started" ] && [ "$n" -lt 200 ]; do
+    sleep 0.05
+    n=$((n + 1))
+  done
+  [ -e "$home/cleanup-started" ] || fail 'cleanup did not start'
+  run_rec "$home" tick
+  touch "$home/cleanup-continue"
+  wait "$pid" || fail 'cleanup checkpoint failed'
+  expect_code 3 "$RC" 'tick during candidate cleanup'
+  [ ! -e "$home/data/.git/record-candidate" ] || fail 'candidate cleanup did not finish'
+  pass "fm-record: cleanup retains the lock until candidate removal finishes"
+}
+
+test_first_delivery_is_retried_without_new_bytes() {
+  local home origin mode before
+  for mode in checkpoint offline; do
+    IFS=$(printf '\t') read -r home origin < <(new_home "first-delivery-$mode")
+    setup_record "$home" "$origin"
+    printf 'snapshot\n' > "$home/data/captain.md"
+    if [ "$mode" = checkpoint ]; then
+      run_rec "$home" checkpoint --reason stow
+      expect_code 0 "$RC" 'initial checkpoint'
+    else
+      mv "$origin" "$origin.away"
+      run_rec "$home" tick
+      expect_code 6 "$RC" 'initial offline push'
+      mv "$origin.away" "$origin"
+    fi
+    before=$(git -C "$home/data" rev-parse HEAD)
+    run_rec "$home" tick
+    expect_code 0 "$RC" 'first delivery retry'
+    assert_contains "$OUT" 'state=pushed' 'first delivery was skipped'
+    [ "$(git --git-dir="$origin" rev-parse main)" = "$before" ] || fail 'first delivery did not reach origin'
+  done
+  pass "fm-record: an unchanged tick retries unconfirmed first delivery"
+}
+
+test_push_retains_credentials_and_classifies_lfs_failure() {
+  local home origin
+  IFS=$(printf '\t') read -r home origin < <(new_home lfs-failure)
+  setup_record "$home" "$origin"
+  git -C "$home/data" config --local credential.helper '!f() { printf "username=fixture\npassword=fixture\n"; }; f'
+  cat > "$home/data/.git/hooks/pre-push" <<'SH'
+#!/usr/bin/env bash
+printf 'protocol=https\nhost=example.invalid\n\n' | git credential fill > "$FM_TEST_CREDENTIAL_RESULT" || exit 1
+printf 'git lfs upload failed\n' >&2
+exit 1
+SH
+  chmod +x "$home/data/.git/hooks/pre-push"
+  printf 'snapshot\n' > "$home/data/captain.md"
+  FM_TEST_CREDENTIAL_RESULT="$home/credentials" run_rec "$home" tick
+  expect_code 6 "$RC" 'LFS pre-push failure'
+  assert_contains "$OUT" 'class=lfs' 'LFS upload failure was misclassified'
+  assert_contains "$(cat "$home/credentials")" 'username=fixture' 'configured credential helper was disabled'
+  git -C "$home/data" cat-file -e HEAD:captain.md || fail 'LFS failure lost the local commit'
+  pass "fm-record: push retains credential helpers and reports LFS upload failure"
+}
+
+test_manual_lfs_commit_requires_resolved_payloads() {
+  local home origin oid object
+  IFS=$(printf '\t') read -r home origin < <(new_home missing-lfs)
+  setup_record "$home" "$origin"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'missing LFS seed'
+  secret_fixture github-classic > "$home/data/manual.png"
+  git -C "$home/data" add manual.png
+  set +e
+  OUT=$(FM_HOME="$home" git -C "$home/data" commit -m 'manual LFS' 2>&1)
+  RC=$?
+  set -e
+  [ "$RC" -ne 0 ] || fail 'indexed LFS content bypassed scanning'
+  assert_contains "$OUT" 'scan-blocked' 'indexed LFS content was not scanned'
+  oid=$(git -C "$home/data" show :manual.png | sed -n 's/^oid sha256://p')
+  object="$home/data/.git/lfs/objects/${oid:0:2}/${oid:2:2}/$oid"
+  git -C "$home/data" show :manual.png > "$home/data/manual.png"
+  rm "$object"
+  set +e
+  OUT=$(FM_HOME="$home" git -C "$home/data" commit -m 'missing LFS' 2>&1)
+  RC=$?
+  set -e
+  [ "$RC" -ne 0 ] || fail 'missing LFS content bypassed scanning'
+  assert_contains "$OUT" 'cannot resolve indexed payloads' 'missing LFS object was not refused'
+  pass "fm-record: manual LFS commits scan resolved bytes and refuse absent objects"
+}
+
 test_outer_repository_stays_clean() {
   local after
   after=$(git -C "$ROOT" status --short --untracked-files=all)
@@ -464,4 +702,11 @@ test_job_plist_has_sixty_seconds_and_no_keepalive
 test_old_data_prefix_history_stays_an_ancestor
 test_pre_commit_hook_blocks_manual_commit
 test_required_checkpoint_times_out_when_lock_is_live
+test_commit_and_publication_failures_refuse
+test_inventory_failures_refuse_partial_snapshots
+test_frozen_bytes_must_match_the_settled_inventory
+test_cleanup_keeps_the_lock_until_candidates_are_removed
+test_first_delivery_is_retried_without_new_bytes
+test_push_retains_credentials_and_classifies_lfs_failure
+test_manual_lfs_commit_requires_resolved_payloads
 test_outer_repository_stays_clean
