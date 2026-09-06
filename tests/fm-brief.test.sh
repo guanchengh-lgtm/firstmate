@@ -974,7 +974,7 @@ EOF
 
   receipt="$home/data/brief-status-ship/recall.json"
   assert_present "$receipt" "the concurrent refresh left no recall receipt"
-  python3 - "$receipt" <<'PYX'
+  python3 - "$receipt" <<'PYX' || fail "brief receipt assertion failed"
 import json, sys
 p = json.load(open(sys.argv[1], encoding="utf-8"))
 assert isinstance(p["named_sources"], list), p
@@ -1047,6 +1047,37 @@ test_task_file_and_refresh_recall_routes() {
 
   pass "fm-brief.sh: task-file, named sources, refresh, and verifier/secondmate recall contracts hold"
 }
+
+test_absolute_record_citation_is_excluded() {
+  local home record task brief receipt
+  home="$TMP_ROOT/absolute-record"
+  record="$home/record"
+  task="$home/task.md"
+  mkdir -p "$record/prior" "$home/config"
+  printf '%s\n' '# Widget sprocket' 'date: 2026-09-01' 'status: reported' > "$record/prior/report.md"
+  printf '# Task\nContinue widget sprocket work from %s/prior/report.md.\n' "$record" > "$task"
+  FM_HOME="$home" FM_DATA_OVERRIDE="$record" "$ROOT/bin/fm-brief.sh" absolute-citation firstmate \
+    --mode no-mistakes --task-file "$task" >/dev/null 2>&1 || fail "absolute citation brief failed"
+  brief="$record/absolute-citation/brief.md"
+  receipt="$record/absolute-citation/recall.json"
+  assert_no_grep '- data/prior/report.md - ' "$brief" "the absolute citation was recalled again"
+  python3 - "$receipt" <<'PY' || fail "absolute citation was absent from the receipt"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert "data/prior/report.md" in p["preexisting_cited_paths"], p
+assert "data/prior/report.md" not in p["emitted_paths"], p
+PY
+  pass "absolute citations under an overridden Record root are excluded and recorded"
+}
+
+if [ "${1:-}" = recall ]; then
+  test_absolute_record_citation_is_excluded
+  test_task_file_and_refresh_recall_routes
+  test_recall_refresh_manifest_and_status_contracts
+  exit 0
+fi
+
+test_absolute_record_citation_is_excluded
 
 test_script_parses
 test_help_includes_entire_header

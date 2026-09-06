@@ -309,28 +309,26 @@ stage() {  # <stage-name>: breadcrumb for the parent's truncation banner
 # shellcheck source=bin/fm-session-lock-lib.sh
 . "$SCRIPT_DIR/fm-session-lock-lib.sh"
 
-session_start_record_digest_bytes() {  # <bytes>
-  local receipt=$STATE/.session-recall-receipt.json lock_pid
+session_start_record_digest_bytes() {
+  local receipt=$STATE/.session-recall-receipt.json publication
   [ -f "$receipt" ] && [ ! -L "$receipt" ] || return 0
-  lock_pid=$(tr -d '\r\n' < "$STATE/.lock" 2>/dev/null || true)
-  case "$lock_pid" in ''|*[!0-9]*) return 0 ;; esac
-  FM_DIGEST_SESSION=$lock_pid python3 - "$receipt" >/dev/null 2>&1 <<'PYSESSION' || return 0
-import json, os, sys
-
-payload = json.load(open(sys.argv[1], encoding="utf-8"))
-if str(payload.get("session") or "") != os.environ.get("FM_DIGEST_SESSION", ""):
-    raise SystemExit(1)
-PYSESSION
-  FM_DIGEST_BYTES=$1 python3 - "$receipt" <<'PYDIGEST' || true
+  publication=$(cat "$SESSION_START_STAGE_FILE" 2>/dev/null) || return 0
+  case "$publication" in published:sha256:*) ;; *) return 0 ;; esac
+  FM_DIGEST_BYTES=$1 python3 - "$receipt" "$STATE/.lock" "${publication#published:sha256:}" <<'PYDIGEST' || true
+import hashlib
 import json
 import os
 import sys
 import tempfile
 
-path = sys.argv[1]
+path, lock, expected = sys.argv[1:]
 try:
-    payload = json.load(open(path, encoding="utf-8"))
+    raw = open(path, "rb").read()
+    payload = json.loads(raw)
+    session = open(lock, encoding="utf-8").read().strip()
 except (OSError, ValueError):
+    raise SystemExit(0)
+if hashlib.sha256(raw).hexdigest() != expected or str(payload.get("session")) != session:
     raise SystemExit(0)
 payload["digest_bytes"] = int(os.environ.get("FM_DIGEST_BYTES") or 0)
 fd, tmp = tempfile.mkstemp(prefix=".session-recall-receipt.", dir=os.path.dirname(path))
@@ -395,7 +393,7 @@ if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
     printf '%s\n' "$BAR"
   fi
   if [ -n "$SESSION_START_DIGEST_FILE" ]; then
-    if [ "$REEMIT" -eq 0 ] && [ "$SESSION_START_RC" -eq 0 ]; then
+    if [ "$SESSION_START_RC" -eq 0 ]; then
       session_start_record_digest_bytes \
         "$(wc -c < "$SESSION_START_DIGEST_FILE" | tr -d '[:space:]')"
     fi
@@ -464,11 +462,7 @@ print_file_or_absent() {
   subsection "$label"
   if [ -f "$path" ]; then
     if [ -s "$path" ]; then
-      if [ -n "${SESSION_STATUS_EMITTED:-}" ]; then
-        tee -a "$SESSION_STATUS_EMITTED" < "$path"
-      else
-        cat "$path"
-      fi
+      cat "$path"
     else
       printf '(present, empty)\n'
     fi
@@ -486,7 +480,7 @@ print_backlog_pointer() {
 # is the one tasks-axi's markdown backend writes: "(hold: ...)", "(hold-kind:
 # ...)", and "blocked-by: ...". Bracket expressions rather than backslashes,
 # because awk's -v applies escape processing before the regex is ever compiled.
-MANUAL_KEEP_RE='[(]hold|blocked-by:'
+MANUAL_KEEP_RE='[(]hold(-kind)?:|blocked-by:'
 
 print_backlog_manual_compact() {
   local path=$1 reason=$2
@@ -625,9 +619,6 @@ print_status_tail() {
   # and the full log path above reaches the rest.
   while IFS= read -r line || [ -n "$line" ]; do
     fm_cap_line "$line"
-    if [ -n "${SESSION_STATUS_EMITTED:-}" ]; then
-      printf '%s\n' "$FM_LINE_CAP_LINE" >> "$SESSION_STATUS_EMITTED"
-    fi
   done < <(tail -n "$STATUS_TAIL" "$status")
 }
 
@@ -664,7 +655,7 @@ session_start_open_items() {  # <backlog-file>
     /^##[[:space:]]+/ { state = state_for_heading($0); next }
     state == "in_flight" && /^[-*][[:space:]]+/ { take($0); next }
     state == "queued" && /^[-*][[:space:]]+/ {
-      if ($0 ~ /[(]hold|blocked-by:/) take($0)
+      if ($0 ~ /[(]hold(-kind)?:|blocked-by:/) take($0)
       else ready[++nr] = $0
       next
     }
@@ -699,7 +690,7 @@ session_start_printed_ids() {  # <backlog-file>
     /^##[[:space:]]+/ { state = state_for_heading($0); next }
     state == "in_flight" && /^[-*][[:space:]]+/ { emit($0); next }
     state == "queued" && /^[-*][[:space:]]+/ {
-      if ($0 ~ /[(]hold|blocked-by:/) emit($0)
+      if ($0 ~ /[(]hold(-kind)?:|blocked-by:/) emit($0)
       else if (plain++ < max) emit($0)
       next
     }
@@ -868,9 +859,10 @@ PY
 }
 
 session_start_publish_recall_artifacts() {
-  local pid=$1 manifest receipt tmp
+  local pid=$1 manifest receipt tmp published_hash
   [ -n "$pid" ] || return 0
   [ "$READ_ONLY" -eq 0 ] || return 0
+  fm_session_lock_owned_by_self "$STATE" || return 0
   mkdir -p "$STATE" 2>/dev/null || return 0
   manifest=$STATE/.session-recall-identities
   receipt=$STATE/.session-recall-receipt.json
@@ -926,9 +918,12 @@ payload = {
 json.dump(payload, open(sys.argv[1], "w", encoding="utf-8"), indent=2, sort_keys=True)
 open(sys.argv[1], "a", encoding="utf-8").write("\n")
 PY
+  published_hash=$(hash_file_sha256 "$tmp") || published_hash=
   if ! mv -f "$tmp" "$receipt" 2>/dev/null; then
     rm -f "$tmp"
     echo "warning: session recall receipt was not published; metrics coverage is incomplete" >&2
+  else
+    SESSION_RECALL_PUBLISHED_HASH=$published_hash
   fi
 }
 
@@ -1003,6 +998,16 @@ EOF
     printf 'The original AGENTS.md baseline no longer matches, but the current file is absent.\n'
   fi
 }
+
+SESSION_RECALL_PUBLISHED_HASH=
+SESSION_PREFIX_TEE_PID=
+if [ -n "$SESSION_STATUS_EMITTED" ] && mkfifo "$SESSION_STATUS_EMITTED.pipe"; then
+  exec 3>&1
+  tee "$SESSION_STATUS_EMITTED" < "$SESSION_STATUS_EMITTED.pipe" >&3 &
+  SESSION_PREFIX_TEE_PID=$!
+  exec > "$SESSION_STATUS_EMITTED.pipe"
+  rm -f "$SESSION_STATUS_EMITTED.pipe"
+fi
 
 AGENTS_START_HASH=
 if [ "$REEMIT" -eq 0 ] && [ "$SESSION_SOURCE" = startup ]; then
@@ -1136,9 +1141,6 @@ else
   DRAIN_OUT=$("$SCRIPT_DIR/fm-wake-drain.sh" 2>&1)
   if [ -n "$DRAIN_OUT" ]; then
     printf '%s\n' "$DRAIN_OUT"
-    if [ -n "${SESSION_STATUS_EMITTED:-}" ]; then
-      printf '%s\n' "$DRAIN_OUT" >> "$SESSION_STATUS_EMITTED"
-    fi
   else
     printf '(no queued wakes)\n'
   fi
@@ -1216,20 +1218,13 @@ EOF
 stage prior-session
 PRIOR_FOLD_OUT=$("$SCRIPT_DIR/fm-prior-session-fold.sh" || true)
 printf '%s\n' "$PRIOR_FOLD_OUT"
-if [ -n "${SESSION_STATUS_EMITTED:-}" ]; then
-  printf '%s\n' "$PRIOR_FOLD_OUT" >> "$SESSION_STATUS_EMITTED"
-fi
 
 # --- 7. fleet-state digest ---------------------------------------------
 # Before CONTEXT: see this file's ORDERING note. Live fleet identity is what a
 # truncated tail must never take.
 stage fleet-state
 section "FLEET STATE"
-if [ -n "${SESSION_STATUS_EMITTED:-}" ]; then
-  print_backlog_compact "$DATA/backlog.md" "data/backlog.md" | tee -a "$SESSION_STATUS_EMITTED"
-else
-  print_backlog_compact "$DATA/backlog.md" "data/backlog.md"
-fi
+print_backlog_compact "$DATA/backlog.md" "data/backlog.md"
 
 subsection "Work under way (state/*.meta)"
 META_FOUND=0
@@ -1238,11 +1233,7 @@ for meta in "$STATE"/*.meta; do
   META_FOUND=1
   id=$(basename "$meta" .meta)
   printf '\n--- %s ---\n' "$id"
-  if [ -n "${SESSION_STATUS_EMITTED:-}" ]; then
-    tee -a "$SESSION_STATUS_EMITTED" < "$meta"
-  else
-    cat "$meta"
-  fi
+  cat "$meta"
 
   window=$(fm_meta_get "$meta" window)
   target=$(fm_backend_target_of_meta "$meta")
@@ -1337,6 +1328,10 @@ print_file_or_absent "$DATA/learnings.md" "data/learnings.md"
 
 # --- 10. recalled pointers ---------------------------------------------
 stage recalled-pointers
+if [ -n "$SESSION_PREFIX_TEE_PID" ]; then
+  exec 1>&3 3>&-
+  wait "$SESSION_PREFIX_TEE_PID"
+fi
 session_start_emit_recall
 
 # --- 11. closing reminder ----------------------------------------------
@@ -1386,7 +1381,6 @@ if [ "$READ_ONLY" -eq 0 ] && [ "$REEMIT" -eq 0 ]; then
     && printf '%s\n' "$COMPLETION_PID" > "$COMPLETION_TMP" 2>/dev/null \
     && mv -f "$COMPLETION_TMP" "$COMPLETION_FILE" 2>/dev/null; then
     COMPLETION_RECORDED=1
-    session_start_publish_recall_artifacts "$COMPLETION_PID"
   else
     [ -z "$COMPLETION_TMP" ] || rm -f "$COMPLETION_TMP" 2>/dev/null || true
     printf '\nSESSION_START_COMPLETION: not recorded - the next clear or compact will run a full startup.\n'
@@ -1396,6 +1390,14 @@ if [ "$READ_ONLY" -eq 0 ] && [ "$REEMIT" -eq 0 ]; then
       printf '\nSESSION_START_AGENTS_BASELINE: not recorded - a later supported rebuild will re-emit AGENTS.md.\n'
     fi
   fi
+fi
+if [ "$READ_ONLY" -eq 0 ]; then
+  if [ "$REEMIT" -eq 1 ] || [ "${COMPLETION_RECORDED:-0}" -eq 1 ]; then
+    session_start_publish_recall_artifacts "$(cat "$STATE/.lock" 2>/dev/null || true)"
+  fi
+fi
+if [ -n "$SESSION_RECALL_PUBLISHED_HASH" ]; then
+  stage "published:$SESSION_RECALL_PUBLISHED_HASH"
 fi
 [ -z "${SESSION_STATUS_EMITTED:-}" ] || rm -f "$SESSION_STATUS_EMITTED" 2>/dev/null || true
 

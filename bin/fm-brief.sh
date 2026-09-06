@@ -395,18 +395,16 @@ brief_refresh_recall() {  # <ship|scout> <brief>
     [ -n "$source" ] || continue
     printf '%s\n' "$source" >> "$src_tmp"
   done < <(brief_named_sources "$brief")
-  python3 - "$task_tmp" "$pre_tmp" <<'PY' || true
-import re, sys
-task_file, pre_file = sys.argv[1], sys.argv[2]
+  python3 - "$task_tmp" "$pre_tmp" "$SCRIPT_DIR/fm-recall.py" "$DATA" <<'PY' || true
+import runpy, sys
+task_file, pre_file, owner_file, root = sys.argv[1:]
+owner = runpy.run_path(owner_file)
 text = open(task_file, encoding="utf-8").read()
-seen = set()
-out = open(pre_file, "w", encoding="utf-8")
-for match in re.finditer(r"(?:data/[^\s\)\]\"'<>]+|https?://\S+)", text):
-    value = match.group(0).rstrip(").,;]")
-    if value not in seen:
-        seen.add(value)
-        out.write(value + "\n")
-out.close()
+with open(pre_file, "w", encoding="utf-8") as out:
+    for token in owner["extract_identities"](text, root):
+        identity = owner["identity_from_ref"](token, root)
+        if identity is not None:
+            out.write(identity.path + "\n")
 PY
 
   pending_block() {

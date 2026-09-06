@@ -52,38 +52,41 @@ seed_probe_corpus() {
   local root=$1
   mkdir -p "$root/data/decisions"
   : > "$root/data/done-archive.md"
-  python3 - "$PROBE_TSV" "$root" <<'PY'
-import os, sys
-tsv, root = sys.argv[1], sys.argv[2]
-seen = {}
-for line in open(tsv, encoding="utf-8"):
-    if line.startswith("#") or not line.strip():
-        continue
-    _n, date, disp, prior, query = line.rstrip("\n").split("\t")
-    for raw in [x for x in (disp + "," + prior).split(",") if x]:
-        if raw.startswith("decisions/"):
-            slug = os.path.basename(raw)[:-3]
-            path = os.path.join(root, "data", "decisions", slug + ".md")
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            if slug not in seen:
-                seen[slug] = query
-            body = seen[slug]
-            with open(path, "w", encoding="utf-8") as handle:
-                handle.write("# %s\n" % slug.replace("-", " "))
-                handle.write("date: %s\n" % date)
-                handle.write("status: decided\n")
-                handle.write("%s\n" % body)
-        else:
-            path = os.path.join(root, "data", raw, "report.md")
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            if raw not in seen:
-                seen[raw] = query
-            body = seen[raw]
-            with open(path, "w", encoding="utf-8") as handle:
-                handle.write("# %s\n" % raw.replace("-", " "))
-                handle.write("date: %s\n" % date)
-                handle.write("status: reported\n")
-                handle.write("%s\n" % body)
+  python3 - "$root" <<'PY' || fail "could not create the probe corpus"
+from pathlib import Path
+import sys
+
+root = Path(sys.argv[1]) / "data"
+documents = [
+    ("ov-kb-feeder", "2026-08-31", "Feeder export engineering review", "The exporter plan connects a feeder to the vault. Atomic writes and push guards protect the destination."),
+    ("ov-kb-graphify", "2026-08-31", "Graphify project installation", "The review selects a hook-free shape and records exact install commands."),
+    ("ov-kb-agentsmd", "2026-08-31", "Agents md token budget", "The plan covers eviction and the agentsmd backpass gate."),
+    ("ov-fm-lock-clear", "2026-08-31", "Session lock clear design", "Same-process replacement can deadlock. Reclaim needs a live ownership check."),
+    ("kb-graphify-tv", "2026-08-31", "Graphify hook-free install", "Install the project using the exact commands from the review."),
+    ("knowledge-stack-scout", "2026-08-31", "Knowledge stack survey", "Compare graphify installation with a feeder vault exporter and its atomic push guards."),
+    ("kb-feeder-vault-ship", "2026-08-31", "Feeder vault exporter", "Ship the export plan with atomic output and push guards."),
+    ("fm-lock-clear-reclaim", "2026-08-31", "Session lock reclaim fix", "Clear the replacement deadlock using the accepted design."),
+    ("kb-agentsmd-backpass", "2026-08-31", "Agentsmd backpass budget gate", "Apply the token budget and eviction design."),
+    ("decisions/agentsmd-budget-2026-08-31", "2026-08-31", "Agentsmd budget decision", "The backpass gate checks the token budget before accepting instructions."),
+    ("fm-fork-value-audit", "2026-09-01", "Fork material value audit", "Keep useful fork-only material and drop redundant code before the upstream merge. The drop set includes pr-check migration, f13 measure, spec-compile, and f4 ladder."),
+    ("fm-refuse-hooks-audit", "2026-09-01", "Fork hook value audit", "Determine which fork-only material to keep or drop before the upstream merge."),
+    ("ov-merge-slices", "2026-09-01", "Upstream merge slice plan", "The engineering review assigns risk tiers to each slice."),
+    ("fm-drop-prcheck-migrate", "2026-09-02", "Fork drop pr-check migration", "Execute the approved drop set and migrate the check."),
+    ("fm-drop-f13-measure-gate", "2026-09-02", "Fork drop f13 measure gate", "Execute the approved drop set and remove the measure gate."),
+    ("fm-drop-spec-compile-trio", "2026-09-02", "Fork drop spec-compile trio", "Execute the approved drop set for the compilation tools."),
+    ("fm-drop-f4-stop-ladder", "2026-09-02", "Fork drop f4 stop ladder", "Execute the approved drop set for the stopping path."),
+    ("decisions/fm-fork-drop-set-2026-09-01", "2026-09-01", "Fork drop set decision", "Approve pr-check migration, f13 measure removal, the spec-compile trio, and the f4 ladder removal."),
+    ("ov-s3-refresh", "2026-09-03", "Slice 3 delivery refresh", "The delivery plan still governs after session death and covers the exact-sync merge-local path."),
+    ("ov-s3-s6-plan", "2026-09-03", "Slice 3 delivery plan", "This plan governs delivery after session death. Use exact-sync and merge-local for the staged merge."),
+    ("ov-s3-pointer", "2026-09-03", "Slice 3 plan pointer", "Keep the governing delivery plan accessible after session death."),
+    ("fm-merge-slice-3", "2026-09-03", "Slice 3 delivery merge", "Run the exact-sync and merge-local delivery steps."),
+]
+for name, date, title, body in documents:
+    decision = name.startswith("decisions/")
+    path = root / (name + ".md") if decision else root / name / "report.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    status = "decided" if decision else "reported"
+    path.write_text(f"# {title}\ndate: {date}\nstatus: {status}\n{body}\n", encoding="utf-8")
 PY
 }
 
@@ -103,7 +106,7 @@ assert p["hits"][0]["id"]=="alpha"
 assert p["hits"][0]["path"]=="data/alpha/report.md"
 assert "Recalled pointers" in p["rendered"]
 assert "score" not in p["rendered"]
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: valid input returns bounded relevant pointers"
 }
 
@@ -119,7 +122,7 @@ p=json.load(sys.stdin)
 assert p["status"]=="empty", p
 assert p["pointer_count"]==0
 assert p["hits"]==[]
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: empty query is an explicit empty result"
 }
 
@@ -149,7 +152,7 @@ p=json.load(sys.stdin)
 ids=[h["id"] for h in p["hits"]]
 assert ids.count("canonical")==1, p
 assert "twin" not in ids, p
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: POINTER.md aliases collapse to one canonical pointer"
 }
 
@@ -165,7 +168,7 @@ test_equal_relevance_ignores_date() {
   write_report "$home" zzz-new "Shared widget token" 2020-01-01 reported
   recall_json "$home" --title "shared widget token" --surface pointers --now 2026-09-06 \
     > "$home/second.json"
-  python3 - "$home/first.json" "$home/second.json" <<'PY'
+  python3 - "$home/first.json" "$home/second.json" <<'PY' || fail "recall fixture or output assertion failed"
 import json,sys
 a=json.load(open(sys.argv[1],encoding="utf-8"))
 b=json.load(open(sys.argv[2],encoding="utf-8"))
@@ -195,7 +198,7 @@ assert by["exact"]["freshness"] is None, by["exact"]
 assert "check-freshness" not in by["exact"]["line"]
 assert by["unknown"]["date"]=="date unknown"
 assert by["unknown"]["freshness"] is None
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: freshness marks older-than-30-day dates and never exact-30-day or unknown dates"
 }
 
@@ -216,7 +219,7 @@ assert by["parked-doc"]["status"]=="parked"
 assert by["held-doc"]["freshness"] is None
 assert by["parked-doc"]["freshness"] is None
 assert "check-freshness" not in by["held-doc"]["line"]
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: held and parked documents keep state and never receive check-freshness"
 }
 
@@ -235,7 +238,7 @@ assert line.startswith("- data/long-doc/report.md - "), line
 assert "check-freshness" in line or ";" in line
 shown=line.split(" - ",1)[1]
 assert len(shown.split(" (",1)[0])<=90, shown
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: long titles keep a usable path inside the pointer line"
 }
 
@@ -262,7 +265,7 @@ import json,sys
 p=json.load(sys.stdin)
 assert p["status"] == "ok", p
 assert any(h["id"] == "real" for h in p.get("hits") or []), p
-'
+' || fail "recall output assertion failed"
   fi
   pass "fm-recall.sh: a tight deadline stays bounded and never pretends to be empty success"
 }
@@ -279,7 +282,7 @@ test_partial_body_is_diagnosed() {
 import json,sys
 p=json.load(sys.stdin)
 assert p.get("partial_input") is True or any("partial-input" in d for d in p.get("diagnostics") or []), p
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: oversized task body emits a partial-input diagnostic"
 }
 
@@ -292,7 +295,7 @@ test_thirteen_probe_floors() {
   home="$TMP_ROOT/probes"
   mkdir -p "$home"
   seed_probe_corpus "$home"
-  python3 - "$PROBE_TSV" "$TMP_ROOT/probe-rows" <<'PY'
+  python3 - "$PROBE_TSV" "$TMP_ROOT/probe-rows" <<'PY' || fail "recall fixture or output assertion failed"
 import json, sys
 rows = []
 for line in open(sys.argv[1], encoding="utf-8"):
@@ -306,7 +309,7 @@ PY
   row_count=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$TMP_ROOT/probe-rows")
   row_i=0
   while [ "$row_i" -lt "$row_count" ]; do
-    eval "$(python3 - "$TMP_ROOT/probe-rows" "$row_i" <<'PY'
+    eval "$(python3 - "$TMP_ROOT/probe-rows" "$row_i" <<'PY' || fail "recall fixture or output assertion failed"
 import json, sys
 row = json.load(open(sys.argv[1], encoding="utf-8"))[int(sys.argv[2])]
 for key in ("n", "date", "disp", "prior", "query"):
@@ -443,7 +446,7 @@ p=json.load(sys.stdin)
 ids=[hit["id"] for hit in p.get("hits") or []]
 assert "prior-widget" not in ids, p
 assert "other-sprocket" in ids or p.get("status") in ("ok","empty"), p
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: extracted identities exclude the same canonical token"
 }
 
@@ -475,7 +478,7 @@ assert "swapped" not in ids, p
 assert "dangling" not in ids, p
 assert "real" in ids, p
 assert "secret" not in json.dumps(p), p
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: a report replaced by a symlink is skipped, never read through"
 }
 
@@ -497,7 +500,7 @@ assert p["status"]=="ok", p
 assert any("malformed date" in d for d in p.get("diagnostics") or []), p
 line=p["rendered"]
 assert "date unknown" in line or "unknown" in line, line
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: a malformed declared date is diagnosed, never ranked as valid"
 }
 
@@ -518,7 +521,7 @@ assert p["status"]=="ok", p
 assert len(ids)==1, p
 assert ids[0] in ("loop-a","loop-b"), p
 assert any("cycle" in d for d in p.get("diagnostics") or []), p
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: an alias cycle terminates and never duplicates a pointer"
 }
 
@@ -535,7 +538,7 @@ p=json.load(sys.stdin)
 hits=p.get("hits") or []
 assert [h["id"] for h in hits]==["flat-one"], p
 assert hits[0]["path"].startswith("data/done-archive.md:"), p
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: a flat archive row without a heading still ranks"
 }
 
@@ -563,7 +566,7 @@ assert p["omitted"]==1, p
 text=p["rendered"]
 assert "### item1" in text and "### item2" in text, text
 assert -(-len(text.encode("utf-8"))//3) <= 108, (len(text), text)
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: a tight session budget keeps a shorter lower-ranked pointer"
 }
 
@@ -585,7 +588,7 @@ import json,sys
 p=json.load(sys.stdin)
 assert [h["id"] for h in p.get("hits") or []]==["solo"], p
 assert p["omitted"]==0, p
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: a block that costs exactly the cap is still emitted"
 }
 
@@ -609,7 +612,7 @@ ids=[h["id"] for h in p.get("hits") or []]
 assert ids==["solo"], p
 assert "### r" in p["rendered"], p["rendered"]
 assert -(-len(p["rendered"].encode("utf-8"))//3) <= 90, p["rendered"]
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: an item that cannot fit a pointer never blocks another item"
 }
 
@@ -647,7 +650,7 @@ import json,sys
 p=json.load(sys.stdin)
 assert p["partial_input"] is True, p
 assert any("partial-input" in d for d in p.get("diagnostics") or []), p
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: session query truncation reaches partial_input, not only diagnostics"
 }
 
@@ -670,7 +673,7 @@ ids=[h["id"] for h in p.get("hits") or []]
 assert "alpha" in ids, p
 assert "beta" in ids, p
 assert p["partial_input"] is True, p
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: an oversized first archive row keeps its bounded prefix and still ranks"
 }
 
@@ -688,7 +691,7 @@ ids=[h["id"] for h in p.get("hits") or []]
 assert ids[:2]==["alpha","beta"], p
 scores={h["id"]: h["score"] for h in p["hits"]}
 assert scores["alpha"]==scores["beta"], p
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: declared status metadata never changes relevance order"
 }
 
@@ -705,7 +708,7 @@ import json,sys
 p=json.load(sys.stdin)
 ids=[h["id"] for h in p.get("hits") or []]
 assert "a" not in ids, p
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: an alias identity exclusion removes its canonical document"
 }
 
@@ -724,7 +727,7 @@ import json,sys
 p=json.load(sys.stdin)
 assert "OUTSIDE_RACE_MARKER" not in json.dumps(p), p
 assert p["status"] in ("ok","empty"), p
-'
+' || fail "recall output assertion failed"
   pass "fm-recall.sh: a swapped task directory never renders an outside report"
 }
 
@@ -741,6 +744,115 @@ test_corrupted_expectation_exits_nonzero() {
     || fail "the committed probe expectation is not a valid 13-row fixture"
   pass "fm-recall.sh: a corrupted fixed expectation fails the executable harness"
 }
+
+test_archive_completion_annotations_do_not_change_rank() {
+  local home annotation
+  home="$TMP_ROOT/archive-rank"
+  mkdir -p "$home/data"
+  for annotation in 'done 2020-01-01' 'reported 2026-01-05' 'merged 2025-02-03'; do
+    printf '%s\n' '- [x] alpha - Widget' "- [x] bravo - Widget ($annotation)" > "$home/data/done-archive.md"
+    recall_json "$home" --title "widget $annotation" --surface pointers > "$home/result.json"
+    python3 - "$home/result.json" <<'PY' || fail "completion metadata changed archive relevance"
+import json, sys
+hits = json.load(open(sys.argv[1], encoding="utf-8"))["hits"]
+assert [hit["id"] for hit in hits] == ["alpha", "bravo"], hits
+assert hits[0]["score"] == hits[1]["score"], hits
+PY
+  done
+  pass "archive completion annotations do not change relevance"
+}
+
+test_unicode_identity_tokens_round_trip() {
+  local home token out kind path
+  home="$TMP_ROOT/unicode-identity"
+  write_report "$home" café 'Widget' 2026-01-01 reported
+  write_decision "$home" café 'Widget'
+  for kind in task decision; do
+    path=data/café/report.md
+    [ "$kind" != decision ] || path=data/decisions/café.md
+    token=$(printf '%s\n' "$path" | FM_HOME="$home" "$RECALL" --extract-identities)
+    [ "$token" = "$kind:café" ] || fail "Unicode identity was not extracted"
+    out=$(recall_json "$home" --title widget --surface pointers --exclude-identity "$token")
+    printf '%s\n' "$out" | python3 -c '
+import json, sys
+p = json.load(sys.stdin)
+assert sys.argv[1] not in [hit["identity"] for hit in p["hits"]], p
+assert p["pointer_count"] == 1, p
+' "$token" || fail "Unicode identity exclusion did not round trip"
+  done
+  pass "Unicode task and decision identities round trip through exclusion"
+}
+
+test_archive_locator_excludes_only_its_row() {
+  local home reference option token
+  home="$TMP_ROOT/archive-locators"
+  mkdir -p "$home/data"
+  printf '%s\n' '- [x] alpha - Widget' '- [x] bravo - Widget' > "$home/data/done-archive.md"
+  for reference in data/done-archive.md:1 data/done-archive.md#L1 \
+    "$home/data/done-archive.md:1" "$home/data/done-archive.md#L1" \
+    "[old]($home/data/done-archive.md#L1)"; do
+    for option in --exclude-path --exclude-identity; do
+      recall_json "$home" --title widget --surface pointers "$option" "$reference" > "$home/result.json"
+      python3 - "$home/result.json" <<'PY' || fail "archive locator excluded an unrelated row: $reference"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert [hit["id"] for hit in p["hits"]] == ["bravo"], p
+PY
+    done
+    token=$(printf '%s\n' "$reference" | FM_HOME="$home" "$RECALL" --extract-identities)
+    [ "$token" = task:alpha ] || fail "archive locator did not extract only its row: $token"
+  done
+  pass "archive locators exclude only their row across supported forms"
+}
+
+test_session_budget_keeps_allocation_order() {
+  local home id
+  home="$TMP_ROOT/allocation-order"
+  for id in a1 a2 a3; do write_report "$home" "$id" Sprocket 2026-09-01 reported; done
+  for id in b1 b2 b3; do write_report "$home" "$id" Narwhals 2026-09-01 reported; done
+  printf '%s\n' '[{"id":"a","title":"sprocket"},{"id":"b","title":"narwhals"}]' > "$home/queries.json"
+  recall_json "$home" --session-batch "$home/queries.json" --token-budget 140 > "$home/result.json"
+  python3 - "$home/result.json" <<'PY' || fail "session trimming broke allocation order"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert p["pointer_count"] == 4, p
+assert set(p["identities"]) == {"task:a1", "task:a2", "task:b1", "task:b2"}, p
+assert p["estimated_tokens"] <= 140, p
+assert p["omitted"] == 2, p
+PY
+  pass "session trimming preserves round-robin allocation order"
+}
+
+test_probe_corpus_ignores_expectation_changes() {
+  local home saved
+  home="$TMP_ROOT/independent-probes"
+  seed_probe_corpus "$home/before"
+  saved=$PROBE_TSV
+  PROBE_TSV="$home/changed.tsv"
+  printf '1\t2026-08-31\tinvented-result\t\tfeeder export plan engineering review\n' > "$PROBE_TSV"
+  seed_probe_corpus "$home/after"
+  PROBE_TSV=$saved
+  recall_json "$home/before" --title 'feeder export plan engineering review' --surface pointers > "$home/before.json"
+  recall_json "$home/after" --title 'feeder export plan engineering review' --surface pointers > "$home/after.json"
+  python3 - "$home/before.json" "$home/after.json" <<'PY' || fail "probe expectations changed the evaluated corpus"
+import json, sys
+before, after = [json.load(open(path, encoding="utf-8")) for path in sys.argv[1:]]
+assert before["hits"], before
+assert before["hits"] == after["hits"], (before, after)
+PY
+  pass "probe corpus remains independent from the expectations"
+}
+
+if [ "${1:-}" = probes ]; then
+  test_thirteen_probe_floors
+  exit 0
+fi
+
+test_archive_completion_annotations_do_not_change_rank
+test_unicode_identity_tokens_round_trip
+test_archive_locator_excludes_only_its_row
+test_session_budget_keeps_allocation_order
+test_probe_corpus_ignores_expectation_changes
 
 test_valid_input_returns_bounded_pointers
 test_empty_query_is_explicit_empty

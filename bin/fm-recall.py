@@ -71,7 +71,6 @@ DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 ARCH_HDR = re.compile(r"^## Archived (\d{4}-\d{2}-\d{2})\s*$")
 ARCH_FIRST = re.compile(r"^- \[x\] (\S+) - (.*)$")
 TASK_ID_RE = re.compile(r"[A-Za-z0-9._-]+")
-ARCHIVE_LOCATOR_RE = re.compile(r"^data/done-archive\.md:(\d+)$")
 TITLE_CUT_RE = re.compile(
     r" (?:\(repo:|\(kind:|\(hold:|\((?:done|merged|reported) \d|"
     r"data/\S+/report\.md|https?://\S+|blocked-by:)"
@@ -393,9 +392,9 @@ def identity_from_path(display_path, root=None):
 
 def identity_from_ref(raw, root):
     text = normalize_text(raw).strip()
-    if text.startswith("task:") and re.fullmatch(r"[A-Za-z0-9._-]+", text[5:]):
+    if text.startswith("task:") and re.fullmatch(r"[^/\\\s]+", text[5:]):
         return Identity("task", text[5:], "data/%s/report.md" % text[5:])
-    if text.startswith("decision:") and re.fullmatch(r"[A-Za-z0-9._-]+", text[9:]):
+    if text.startswith("decision:") and re.fullmatch(r"[^/\\\s]+", text[9:]):
         return Identity("decision", text[9:], "data/decisions/%s.md" % text[9:])
     if text.startswith("path:") and text[5:]:
         return Identity("path", text[5:], text[5:])
@@ -754,7 +753,7 @@ def load_archive(corpus):
             meta_date, meta_status, meta_raw_date = None, None, None
         sidecar = load_status_sidecar(corpus.root, os.path.join(corpus.root, canonical))
         title_text = canonical + " " + title + " " + heading
-        body_text = "\n".join(rank_lines(body.splitlines()))
+        body_text = "\n".join(rank_lines(DONE_DATE.sub("", body).splitlines()))
         if report_lines:
             body_text = body_text + "\n" + "\n".join(rank_lines(report_lines))
         ident = Identity("task", canonical, display)
@@ -1204,8 +1203,12 @@ def archive_reference(raw):
 
 
 def archive_row_identity(reference, root):
-    match = ARCHIVE_LOCATOR_RE.match(reference)
-    if not match or root is None:
+    match = re.search(r"(?::|#L)(\d+)$", reference)
+    if (
+        not match
+        or root is None
+        or normalize_record_path(reference, root) != "data/done-archive.md"
+    ):
         return None
     wanted = int(match.group(1))
     path = os.path.join(root, "done-archive.md")
@@ -1257,10 +1260,13 @@ def extract_identities(text, root):
             if not display:
                 continue
             add(
-                archive_row_identity(display, root) or identity_from_path(display, root)
+                archive_row_identity(reference, root) or identity_from_path(display, root)
             )
     for match in MD_LINK.finditer(text):
-        add(identity_from_ref(match.group(1), root))
+        add(
+            archive_row_identity(match.group(1), root)
+            or identity_from_ref(match.group(1), root)
+        )
     for match in re.finditer(r"^- \[[ xX]\] (\S+) - ", text, re.M):
         add(Identity("task", match.group(1), "data/%s/report.md" % match.group(1)))
     for match in re.finditer(
@@ -1273,6 +1279,7 @@ def extract_identities(text, root):
 def render_session_batch(queries, ranked, token_cap, now):
     chosen = [[] for _ in queries]
     used = set()
+    allocation_order = []
     rejected = [set() for _ in queries]
     dropped = set()
 
@@ -1302,6 +1309,7 @@ def render_session_batch(queries, ranked, token_cap, now):
                         rejected[index].add(token)
                         continue
                     used.add(token)
+                    allocation_order.append(index)
                     progressed = True
                     break
             if not progressed:
@@ -1335,9 +1343,9 @@ def render_session_batch(queries, ranked, token_cap, now):
     def trim_to_cap():
         popped = False
         while token_cap is not None and estimated_tokens(block_text()) > token_cap:
-            index = next((i for i in reversed(range(len(chosen))) if chosen[i]), None)
-            if index is None:
+            if not allocation_order:
                 return popped
+            index = allocation_order.pop()
             _score, doc = chosen[index].pop()
             token = doc.identity.token()
             used.discard(token)
