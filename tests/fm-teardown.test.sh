@@ -1747,7 +1747,7 @@ SH
       ;;
   esac
   rc=0
-  FM_ROOT_OVERRIDE="$ROOT" FM_DATA_OVERRIDE="$case_dir/data" FM_STATE_OVERRIDE="$case_dir/state" FM_CONFIG_OVERRIDE="$case_dir/config" \
+  FM_ROOT_OVERRIDE="$ROOT" FM_HOME="$case_dir" FM_DATA_OVERRIDE="$case_dir/data" FM_STATE_OVERRIDE="$case_dir/state" FM_CONFIG_OVERRIDE="$case_dir/config" \
     FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" \
     FM_FAKE_HERDR_SESSION_LIST_GARBAGE="$([ "$mode" = unresolvable-lock ] && printf 1 || printf 0)" \
     PATH="$case_dir/fakebin:$PATH" \
@@ -1777,14 +1777,15 @@ test_herdr_flat_teardown_preflight_refuses_before_changes() {
 }
 
 configure_secondmate_with_herdr_child() {  # <case-dir>
-  local case_dir=$1 home="$1/secondmate-home"
+  local case_dir=$1 home="$1-secondmate-home" child_wt="$1-child-herdr-wt"
   mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects"
   printf '%s\n' task-x1 > "$home/.fm-secondmate-home"
   printf '%s\n' "home=$home" >> "$case_dir/state/task-x1.meta"
+  git -C "$case_dir/project" worktree add -q -b fm/child-herdr "$child_wt" main
   fm_write_meta "$home/state/child-herdr.meta" \
     "window=childsession:wC:p1" \
     "endpoint_task_id=child-herdr" \
-    "worktree=$case_dir/wt" \
+    "worktree=$child_wt" \
     "project=$case_dir/project" \
     "kind=ship" \
     "mode=local-only" \
@@ -1831,7 +1832,7 @@ test_forced_secondmate_herdr_child_preflight_refuses_before_changes() {
   case_dir=$(make_case herdr-child-preflight)
   write_meta "$case_dir" local-only secondmate
   configure_secondmate_with_herdr_child "$case_dir"
-  home="$case_dir/secondmate-home"
+  home="$case_dir-secondmate-home"
   log="$case_dir/herdr.log"; closed="$case_dir/closed"; thlog="$case_dir/treehouse.log"
   : > "$log"; : > "$thlog"
   cat > "$case_dir/fakebin/treehouse" <<SH
@@ -1857,12 +1858,12 @@ SH
 }
 
 configure_secondmate_with_tmux_children() {  # <case-dir>
-  local case_dir=$1 home="$1/secondmate-home" child child_wt
+  local case_dir=$1 home="$1-secondmate-home" child child_wt
   mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects"
   printf '%s\n' task-x1 > "$home/.fm-secondmate-home"
   printf '%s\n' "home=$home" >> "$case_dir/state/task-x1.meta"
   for child in child-a child-b; do
-    child_wt="$case_dir/$child-wt"
+    child_wt="$case_dir-$child-wt"
     git -C "$case_dir/project" worktree add -q -b "fm/$child" "$child_wt" main
     fm_write_meta "$home/state/$child.meta" \
       "window=firstmate:fm-$child" \
@@ -1880,7 +1881,7 @@ test_forced_secondmate_teardown_holds_descendant_lifecycle_locks() {
   case_dir=$(make_case descendant-locks)
   write_meta "$case_dir" local-only secondmate
   configure_secondmate_with_tmux_children "$case_dir"
-  home="$case_dir/secondmate-home"
+  home="$case_dir-secondmate-home"
   : > "$case_dir/kill.log"
   : > "$case_dir/treehouse.log"
   cat > "$case_dir/fakebin/tmux" <<SH
@@ -1933,7 +1934,7 @@ SH
   [ -e "$case_dir/state/task-x1.meta" ] && [ -d "$home" ] \
     || { : > "$release"; wait "$holder_pid" 2>/dev/null || true; fail "descendant-locks: refusal removed parent state"; }
   for child in child-a child-b; do
-    [ -e "$home/state/$child.meta" ] && [ -d "$case_dir/$child-wt" ] \
+    [ -e "$home/state/$child.meta" ] && [ -d "$case_dir-$child-wt" ] \
       || { : > "$release"; wait "$holder_pid" 2>/dev/null || true; fail "descendant-locks: refusal removed $child state or worktree"; }
   done
 
@@ -1954,7 +1955,7 @@ test_forced_secondmate_herdr_child_retains_records_when_close_unconfirmed() {
   case_dir=$(make_case herdr-child-unconfirmed-close)
   write_meta "$case_dir" local-only secondmate
   configure_secondmate_with_herdr_child "$case_dir"
-  home="$case_dir/secondmate-home"
+  home="$case_dir-secondmate-home"
   log="$case_dir/herdr.log"; closed="$case_dir/closed"; : > "$log"
   rc=0
   FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" FM_FAKE_HERDR_PRESENCE_UNKNOWN=1 \
@@ -1971,16 +1972,19 @@ test_forced_secondmate_herdr_child_retains_records_when_close_unconfirmed() {
 }
 
 configure_nested_secondmate_with_herdr_grandchild() {  # <case-dir>
-  local case_dir=$1 home="$1/secondmate-home" nested_home="$1/secondmate-home/nested-home"
+  local case_dir=$1 home="$1-secondmate-home" nested_home="$1-secondmate-home/nested-home"
+  local nested_wt="$1-nested-sm-wt" grandchild_wt="$1-grandchild-herdr-wt"
   mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects"
   mkdir -p "$nested_home/state" "$nested_home/data" "$nested_home/config" "$nested_home/projects"
   printf '%s\n' task-x1 > "$home/.fm-secondmate-home"
   printf '%s\n' nested-sm > "$nested_home/.fm-secondmate-home"
   printf '%s\n' "home=$home" >> "$case_dir/state/task-x1.meta"
+  git -C "$case_dir/project" worktree add -q -b fm/nested-sm "$nested_wt" main
+  git -C "$case_dir/project" worktree add -q -b fm/grandchild-herdr "$grandchild_wt" main
   fm_write_meta "$home/state/nested-sm.meta" \
     "window=firstmate:fm-nested-sm" \
     "endpoint_task_id=nested-sm" \
-    "worktree=$case_dir/wt" \
+    "worktree=$nested_wt" \
     "project=$case_dir/project" \
     "kind=secondmate" \
     "mode=local-only" \
@@ -1988,7 +1992,7 @@ configure_nested_secondmate_with_herdr_grandchild() {  # <case-dir>
   fm_write_meta "$nested_home/state/grandchild-herdr.meta" \
     "window=grandchildsession:wG:p1" \
     "endpoint_task_id=grandchild-herdr" \
-    "worktree=$case_dir/wt" \
+    "worktree=$grandchild_wt" \
     "project=$case_dir/project" \
     "kind=ship" \
     "mode=local-only" \
@@ -2026,7 +2030,7 @@ test_forced_teardown_retains_nested_secondmate_home_when_grandchild_close_unconf
   case_dir=$(make_case herdr-grandchild-unconfirmed-close)
   write_meta "$case_dir" local-only secondmate
   configure_nested_secondmate_with_herdr_grandchild "$case_dir"
-  home="$case_dir/secondmate-home"; nested_home="$home/nested-home"
+  home="$case_dir-secondmate-home"; nested_home="$home/nested-home"
   log="$case_dir/herdr.log"; closed="$case_dir/closed"; : > "$log"
   rc=0
   FM_FAKE_HERDR_LOG="$log" FM_FAKE_HERDR_CLOSED="$closed" \
