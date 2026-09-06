@@ -422,7 +422,11 @@ print_file_or_absent() {
   subsection "$label"
   if [ -f "$path" ]; then
     if [ -s "$path" ]; then
-      cat "$path"
+      if [ -n "${SESSION_STATUS_EMITTED:-}" ]; then
+        tee -a "$SESSION_STATUS_EMITTED" < "$path"
+      else
+        cat "$path"
+      fi
     else
       printf '(present, empty)\n'
     fi
@@ -704,6 +708,9 @@ session_start_emit_recall() {
     return 0
   fi
   budget=$FM_STARTUP_MEMORY_BUDGET_VALUE
+  if [ "${#budget}" -gt 9 ]; then
+    budget=999999999
+  fi
   for memory_file in captain.md captain-shared.md learnings.md; do
     if fm_startup_memory_measure_file "$DATA/$memory_file" >/dev/null; then
       memory_tokens=$((memory_tokens + FM_STARTUP_MEMORY_MEASURE_TOKENS))

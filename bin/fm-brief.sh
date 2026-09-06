@@ -264,9 +264,13 @@ brief_backlog_title() {  # <task-id>
   local backlog=$DATA/backlog.md
   [ -f "$backlog" ] && [ ! -L "$backlog" ] || return 0
   awk -v id="$1" '
-    $0 ~ "^- \\[[ xX]\\] " id " - " {
-      line = $0
-      sub(/^- \[[ xX]\] [^ ]+ - /, "", line)
+    /^- \[[ xX]\] / {
+      rest = $0
+      sub(/^- \[[ xX]\] /, "", rest)
+      pos = index(rest, " - ")
+      if (pos == 0) next
+      if (substr(rest, 1, pos - 1) != id) next
+      line = substr(rest, pos + 3)
       sub(/ \(repo:.*$/, "", line)
       sub(/ \(kind:.*$/, "", line)
       sub(/ \(since .*$/, "", line)
@@ -484,7 +488,7 @@ PY
     if [ "$branch_rc" -eq 0 ]; then
       return 0
     fi
-    if [ "$branch_rc" -eq 3 ]; then
+    if [ "$branch_rc" -ne 4 ]; then
       echo "error: could not replace the recalled-pointers section" >&2
       return 2
     fi

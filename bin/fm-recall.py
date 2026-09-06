@@ -206,6 +206,23 @@ def read_bounded(path, limit):
     return data.decode("utf-8", errors="replace"), False
 
 
+def read_capped_line(handle, limit):
+    chunk = handle.readline(limit)
+    if not chunk:
+        return None, False
+    if chunk.endswith("\n"):
+        return chunk, False
+    dropped = False
+    while True:
+        extra = handle.readline(limit)
+        if not extra:
+            break
+        dropped = True
+        if extra.endswith("\n"):
+            break
+    return chunk, dropped
+
+
 def read_head_lines(path, line_count, limit):
     try:
         handle = open(path, "rb")
@@ -217,7 +234,7 @@ def read_head_lines(path, line_count, limit):
         hit_limit = False
         leftover = b""
         while len(lines) < line_count:
-            chunk = handle.readline()
+            chunk = handle.readline(limit - total + 1)
             if not chunk:
                 break
             if total + len(chunk) > limit:
@@ -702,8 +719,17 @@ def load_archive(corpus):
             doc.aliases.append(task_id)
 
     try:
-        for raw in handle:
+        while True:
+            raw, dropped = read_capped_line(handle, ARCHIVE_LIMIT)
+            if raw is None:
+                break
             lineno += 1
+            if dropped:
+                corpus.partial = True
+                corpus.note(
+                    "partial-input",
+                    "archive line %s truncated at %s bytes" % (lineno, ARCHIVE_LIMIT),
+                )
             line = raw.rstrip("\n")
             match = ARCH_HDR.match(line)
             if match:
@@ -927,6 +953,13 @@ def collect_exclusions(
                 Identity("task", resolved, "data/%s/report.md" % resolved).token()
             )
     for raw in raw_identities:
+        reference = normalize_text(raw).strip()
+        if reference.startswith("path:"):
+            reference = reference[5:]
+        row_identity = archive_row_identity(reference, root)
+        if row_identity is not None:
+            tokens_out.add(row_identity.token())
+            continue
         ident = identity_from_ref(raw, root)
         if ident is not None:
             tokens_out.add(ident.token())
@@ -934,6 +967,10 @@ def collect_exclusions(
                 tokens_out.add(Identity("task", ident.key, ident.path).token())
     files = set()
     for raw in list(raw_paths) + list(raw_files):
+        row_identity = archive_row_identity(normalize_text(raw).strip(), root)
+        if row_identity is not None:
+            tokens_out.add(row_identity.token())
+            continue
         path = normalize_record_path(raw, root) or strip_locator(raw)
         if path:
             files.add(path)
@@ -996,12 +1033,22 @@ def render_block(hits, surface, token_cap, now, omitted_start=0):
                 break
         if estimated_tokens(text) > token_cap:
             text = compose([], omitted)
+        if estimated_tokens(text) > token_cap:
+            return "", omitted_start + len(hits)
     return text, omitted
 
 
 def input_fingerprint(payload):
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(blob).hexdigest()
+
+
+def clamp_input(value, label, diagnostics):
+    encoded = (value or "").encode("utf-8")
+    if len(encoded) <= INPUT_LIMIT:
+        return value or "", False
+    diagnostics.append("partial-input: %s truncated at %s bytes" % (label, INPUT_LIMIT))
+    return encoded[:INPUT_LIMIT].decode("utf-8", errors="ignore"), True
 
 
 def read_query_inputs(title, body_file, sources, diagnostics):
@@ -1019,7 +1066,10 @@ def read_query_inputs(title, body_file, sources, diagnostics):
             diagnostics.append(
                 "partial-input: task body truncated at %s bytes" % INPUT_LIMIT
             )
-    chosen_title = title or first_meaningful_heading(body)
+    chosen_title, title_truncated = clamp_input(
+        title or first_meaningful_heading(body), "task title", diagnostics
+    )
+    partial = partial or title_truncated
     if sources:
         for source in sources:
             if not source or "\n" in source or "\r" in source or "\t" in source:
@@ -1070,7 +1120,12 @@ def archive_row_identity(reference, root):
         return None
     row = None
     with handle:
-        for lineno, raw in enumerate(handle, 1):
+        lineno = 0
+        while True:
+            raw, _dropped = read_capped_line(handle, ARCHIVE_LIMIT)
+            if raw is None:
+                break
+            lineno += 1
             if lineno == wanted:
                 row = raw.rstrip("\n")
                 break
@@ -1180,14 +1235,22 @@ def run_session_batch_main(args, root, statuses, now, diagnostics):
     if not isinstance(queries, list):
         return emit_unavailable("session batch must be a JSON array", args.json)
     cleaned = []
+    partial_query = False
     for item in queries[:5]:
         if not isinstance(item, dict) or not item.get("id"):
             continue
+        title, title_truncated = clamp_input(
+            item.get("title") or item["id"], "session item title", diagnostics
+        )
+        body, body_truncated = clamp_input(
+            item.get("body") or "", "session item body", diagnostics
+        )
+        partial_query = partial_query or title_truncated or body_truncated
         cleaned.append(
             {
                 "id": item["id"],
-                "title": item.get("title") or item["id"],
-                "body": item.get("body") or "",
+                "title": title,
+                "body": body,
                 "sources": item.get("sources") or [],
             }
         )
@@ -1366,8 +1429,9 @@ def main(argv=None):
         root = resolve_root(args.root)
         title = args.title
         body = ""
+        partial_body = False
         if not args.session_batch:
-            title, body, _partial_body = read_query_inputs(
+            title, body, partial_body = read_query_inputs(
                 args.title, args.body_file, args.source, diagnostics
             )
             if not title and args.task_id:
@@ -1472,7 +1536,7 @@ def main(argv=None):
         "omitted": omitted,
         "bytes": len(rendered.encode("utf-8")),
         "estimated_tokens": estimated_tokens(rendered),
-        "partial_input": corpus.partial,
+        "partial_input": corpus.partial or partial_body,
     }
     payload.update(extras)
     payload["diagnostics"] = diagnostics
