@@ -2921,11 +2921,9 @@ fi
 # irreversible cleanup. A disabled home is an explicit no-op. A required
 # checkpoint refusal keeps the durable sources in place.
 if [ "$KIND" = ship ] || [ "$KIND" = scout ]; then
-  if [ "${FORCE:-}" != "--force" ]; then
-    if ! "$SCRIPT_DIR/fm-record.sh" checkpoint --reason teardown --required >&2; then
-      echo "REFUSED: Record checkpoint could not capture a durable local commit before cleanup." >&2
-      exit 1
-    fi
+  if ! "$SCRIPT_DIR/fm-record.sh" checkpoint --reason teardown --required >&2; then
+    echo "REFUSED: Record checkpoint could not capture a durable local commit before cleanup." >&2
+    exit 1
   fi
 fi
 

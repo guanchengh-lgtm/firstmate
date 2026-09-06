@@ -308,7 +308,8 @@ After a home is activated, `data/` is also the Record repository: one Git snapsh
 `bin/fm-record.sh`'s header and `--help` own the exact flags, exit codes, settle window, lock, scan chain, and LFS rules.
 This section owns only operator setup and recovery.
 
-An unconfigured home has no `data/.git` and every Record command is an explicit disabled no-op, so secondmate homes stay quiet until someone initializes them.
+A home that has never enabled Record returns an explicit disabled no-op for checkpoints, ticks, and health checks.
+An activated home refuses these commands if its Git metadata is missing.
 Do not initialize, commit, or push the live home from a worker checkout.
 Live activation is a separate approved home operation after the shared code has landed.
 

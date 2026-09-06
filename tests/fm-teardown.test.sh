@@ -1569,19 +1569,22 @@ test_local_only_teardown_scan_block_keeps_meta() {
   pass "local-only teardown keeps metadata when the Record scan blocks"
 }
 
-test_force_skips_record_checkpoint_when_scan_would_block() {
-  local case_dir secret
-  case_dir=$(make_case force-skips-record)
+test_force_preserves_record_checkpoint_when_scan_blocks() {
+  local case_dir secret rc=0
+  case_dir=$(make_case force-record)
   write_meta "$case_dir" local-only ship
+  mkdir -p "$case_dir/state/task-x1.inbox"
+  printf 'keep inbox\n' > "$case_dir/state/task-x1.inbox/001.msg"
   setup_teardown_record "$case_dir"
   secret=$(teardown_secret_fixture)
   printf '%s\n' "$secret" > "$case_dir/data/leaky.md"
   FM_HOME="$case_dir" FM_RECORD_SETTLE_SECONDS=0 \
-    run_teardown "$case_dir" --force > "$case_dir/forced.out" 2> "$case_dir/forced.err" \
-    || fail "forced teardown failed while the Record would have been scan-blocked"
-  assert_absent "$case_dir/state/task-x1.meta" \
-    "forced teardown left metadata after skipping the Record checkpoint"
-  pass "force skips the Record checkpoint and still tears down"
+    run_teardown "$case_dir" --force > "$case_dir/forced.out" 2> "$case_dir/forced.err" || rc=$?
+  expect_code 1 "$rc" "forced teardown must refuse a blocked Record checkpoint"
+  assert_present "$case_dir/state/task-x1.meta" "forced teardown removed uncaptured metadata"
+  assert_present "$case_dir/state/task-x1.inbox/001.msg" "forced teardown removed an uncaptured inbox"
+  assert_grep 'REFUSED: Record checkpoint' "$case_dir/forced.err" "forced teardown omitted the checkpoint refusal"
+  pass "force preserves Record capture before teardown"
 }
 
 test_teardown_missing_busy_sidecar_completes() {
@@ -4295,7 +4298,7 @@ test_invalid_ship_role_refuses
 test_scout_teardown_uses_report_and_captain_hold_gates
 test_scout_teardown_scan_block_keeps_inbox_and_meta
 test_local_only_teardown_scan_block_keeps_meta
-test_force_skips_record_checkpoint_when_scan_would_block
+test_force_preserves_record_checkpoint_when_scan_blocks
 test_teardown_closes_the_backlog_item_itself
 test_spawn_then_teardown_closes_backlog_atomically
 test_teardown_manual_backend_leaves_the_backlog_to_the_operator

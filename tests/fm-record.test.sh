@@ -619,6 +619,21 @@ test_divergence_does_not_force() {
   assert_contains "$OUT" 'state=diverged' 'health lost divergence'
   git --git-dir="$home/data/.git" --work-tree="$home/data" cat-file -e HEAD:local.md \
     || fail 'local commit was lost on diverge'
+  printf 'later local edit\n' > "$home/data/local.md"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'changed checkpoint after divergence'
+  assert_contains "$OUT" 'delivery=diverged' 'changed checkpoint lost delivery failure'
+  assert_contains "$OUT" 'failure_class=diverged' 'changed checkpoint lost failure class'
+  python3 - "$home/diverged-health" "$home/data/.git/record-health" <<'PYTEST' || fail 'delivery health was not preserved'
+import sys
+def read(path):
+    return dict(line.rstrip("\n").split("=", 1) for line in open(path))
+before, after = map(read, sys.argv[1:])
+assert before["last_push_at"] == after["last_push_at"]
+assert before["pending_since"] == after["pending_since"]
+assert int(after["pending"]) > int(before["pending"])
+assert int(after["pending_age_seconds"]) >= int(before["pending_age_seconds"])
+PYTEST
   pass "fm-record: a non-fast-forward push reports diverged and keeps both histories"
 }
 
@@ -1015,19 +1030,27 @@ test_first_delivery_is_retried_without_new_bytes() {
 }
 
 test_push_retains_credentials_and_classifies_lfs_failure() {
-  local home origin
+  local home origin fakebin
   IFS=$(printf '\t') read -r home origin < <(new_home lfs-failure)
   setup_record "$home" "$origin"
   git -C "$home/data" config --local credential.helper '!f() { printf "username=fixture\npassword=fixture\n"; }; f'
-  cat > "$home/data/.git/hooks/pre-push" <<'SH'
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/git" <<'SH'
 #!/usr/bin/env bash
-printf 'protocol=https\nhost=example.invalid\n\n' | git credential fill > "$FM_TEST_CREDENTIAL_RESULT" || exit 1
-printf 'git lfs upload failed\n' >&2
-exit 1
+git_args=()
+for arg in "$@"; do
+  if [ "$arg" = push ]; then
+    printf 'protocol=https\nhost=example.invalid\n\n' | "$FM_TEST_REAL_GIT" "${git_args[@]}" credential fill > "$FM_TEST_CREDENTIAL_RESULT" || exit 1
+    printf 'git lfs upload failed\n' >&2
+    exit 1
+  fi
+  git_args+=("$arg")
+done
+exec "$FM_TEST_REAL_GIT" "$@"
 SH
-  chmod +x "$home/data/.git/hooks/pre-push"
+  chmod +x "$fakebin/git"
   printf 'snapshot\n' > "$home/data/captain.md"
-  FM_TEST_CREDENTIAL_RESULT="$home/credentials" run_rec "$home" tick
+  FM_TEST_REAL_GIT=$(command -v git) FM_TEST_CREDENTIAL_RESULT="$home/credentials" PATH="$fakebin:$PATH" run_rec "$home" tick
   expect_code 6 "$RC" 'LFS pre-push failure'
   assert_contains "$OUT" 'class=lfs' 'LFS upload failure was misclassified'
   assert_contains "$(cat "$home/credentials")" 'username=fixture' 'configured credential helper was disabled'
@@ -1189,6 +1212,256 @@ PY
   pass "fm-record: indexed archive links retain their types without outside traversal"
 }
 
+test_outgoing_history_and_prohibited_paths_are_scanned() {
+  local home origin before secret path
+  IFS=$(printf '\t') read -r home origin < <(new_home outgoing-history)
+  setup_record "$home" "$origin"
+  printf 'clean\n' > "$home/data/captain.md"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'outgoing seed'
+  before=$(git --git-dir="$origin" rev-parse main)
+  for path in .env nested/.env search-anomaly-signal/.serpapi.env; do
+    mkdir -p "$(dirname "$home/data/$path")"
+    printf 'ACCOUNT_NAME=alice\n' > "$home/data/$path"
+    git -C "$home/data" add -f "$path"
+    set +e
+    OUT=$(git -C "$home/data" commit -qm 'prohibited path' 2>&1)
+    RC=$?
+    set -e
+    [ "$RC" -ne 0 ] || fail 'a prohibited path passed the real pre-commit hook'
+    assert_contains "$OUT" 'prohibited path' 'hook omitted the prohibited path refusal'
+    git -C "$home/data" read-tree HEAD
+    rm "$home/data/$path"
+  done
+  secret=$(secret_fixture github-classic)
+  printf '%s\n' "$secret" > "$home/data/unsafe.txt"
+  git -C "$home/data" add unsafe.txt
+  git -C "$home/data" commit --no-verify -qm 'unsupported manual commit'
+  git -C "$home/data" rm -q unsafe.txt
+  git -C "$home/data" commit --no-verify -qm 'remove unsafe file'
+  run_rec "$home" tick
+  expect_code 5 "$RC" 'outgoing deleted credential'
+  assert_not_contains "$OUT" "$secret" 'history scan disclosed the credential'
+  [ "$(git --git-dir="$origin" rev-parse main)" = "$before" ] || fail 'unsafe history reached origin'
+  pass 'fm-record: manual hooks reject prohibited paths and tick scans outgoing history'
+}
+
+test_activation_roots_permissions_and_hooks_refuse_unsafe_setup() {
+  local home origin other command hook before
+  IFS=$(printf '\t') read -r home origin < <(new_home activation-boundaries)
+  setup_record "$home" "$origin"
+  python3 - "$home/data/.git" <<'PYTEST' || fail 'setup did not protect private Git content'
+import os, stat, sys
+assert stat.S_IMODE(os.stat(sys.argv[1]).st_mode) == 0o700
+PYTEST
+  chmod 755 "$home/data/.git"
+  run_rec "$home" checkpoint --reason teardown --required
+  expect_code 8 "$RC" 'publicly readable Git directory'
+  chmod 700 "$home/data/.git"
+  other="$TMP_ROOT/other-boundary-home"
+  mkdir -p "$other/state" "$other/data"
+  printf 'other private content\n' > "$other/state/task.meta"
+  for command in tick setup; do
+    set +e
+    OUT=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$other/state" \
+      "$RECORD" "$command" 2>&1)
+    RC=$?
+    set -e
+    expect_code 8 "$RC" 'mismatched state root'
+    set +e
+    OUT=$(FM_HOME="$other" FM_ROOT_OVERRIDE="$ROOT" FM_DATA_OVERRIDE="$home/data" \
+      "$RECORD" "$command" 2>&1)
+    RC=$?
+    set -e
+    expect_code 8 "$RC" 'mismatched data root'
+  done
+  [ ! -e "$other/.record-enabled" ] || fail 'setup activated the wrong home'
+  for hook in pre-commit pre-push; do
+    cp "$home/data/.git/hooks/$hook" "$home/$hook.before"
+    printf '#!/bin/sh\nexit 1\n' > "$home/data/.git/hooks/$hook"
+    before=$(shasum -a 256 "$home/data/.gitattributes")
+    run_rec "$home" setup --code-root "$ROOT"
+    expect_code 8 "$RC" 'unknown existing hook'
+    [ "$(cat "$home/data/.git/hooks/$hook")" = "$(printf '#!/bin/sh\nexit 1')" ] || fail 'setup replaced an unknown protection'
+    [ "$(shasum -a 256 "$home/data/.gitattributes")" = "$before" ] || fail 'refused setup changed attributes'
+    cp "$home/$hook.before" "$home/data/.git/hooks/$hook"
+  done
+  mv "$home/data/.git" "$home/git.saved"
+  for command in tick health; do
+    run_rec "$home" "$command"
+    expect_code 8 "$RC" 'activated home without Git metadata'
+    assert_not_contains "$OUT" 'state=disabled' 'activated home became disabled'
+  done
+  run_rec "$home" checkpoint --reason teardown --required
+  expect_code 8 "$RC" 'required checkpoint without activated Git metadata'
+  pass 'fm-record: activation, root ownership, private modes, and existing hooks are enforced'
+}
+
+test_scope_ignores_only_record_exclusions_and_refuses_separators() {
+  local home origin path name
+  IFS=$(printf '\t') read -r home origin < <(new_home scope-and-separators)
+  setup_record "$home" "$origin"
+  mkdir -p "$home/data/raw" "$home/data/.git/info" "$home/state/task.inbox/handled"
+  printf '*.log\n' > "$home/global-ignore"
+  git -C "$home/data" config core.excludesFile "$home/global-ignore"
+  printf '*.txt\n' > "$home/data/.git/info/exclude"
+  printf '*.json\n' > "$home/data/raw/.gitignore"
+  for path in raw/measurement.log raw/notes.txt raw/events.json; do
+    printf 'durable content\n' > "$home/data/$path"
+  done
+  for name in .seq.lock.steal .seq.lock.steal.owner.fixture .ring-state .escalated .staging.fixture .dedup.fixture .lock-probe.fixture; do
+    ln -s "$home/runtime-lease" "$home/state/task.inbox/$name"
+  done
+  printf 'handled message\n' > "$home/state/task.inbox/handled/001.msg"
+  printf 'ordinary hidden message\n' > "$home/state/task.inbox/.seq.lock-not-runtime.msg"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'Record scope'
+  for path in raw/measurement.log raw/notes.txt raw/events.json .record-state/task.inbox/handled/001.msg .record-state/task.inbox/.seq.lock-not-runtime.msg; do
+    git -C "$home/data" cat-file -e "HEAD:$path" || fail "required content was omitted: $path"
+  done
+  for name in .seq.lock.steal .ring-state .escalated .staging.fixture .dedup.fixture .lock-probe.fixture; do
+    if git -C "$home/data" cat-file -e "HEAD:.record-state/task.inbox/$name" 2>/dev/null; then
+      fail 'runtime inbox object entered the mirror'
+    fi
+  done
+  printf 'a\n' > "$home/data/a"
+  printf 'b\n' > "$home/data/b"
+  for path in "$home/data/"$'a\nb' "$home/state/task.inbox/"$'a\tb'; do
+    printf 'must not disappear\n' > "$path"
+    run_rec "$home" checkpoint --reason stow
+    expect_code 8 "$RC" 'unsupported filename separator'
+    assert_contains "$OUT" 'unsupported separators' 'separator refusal is not explicit'
+    if [ "$path" = "$home/data/"$'a\nb' ]; then
+      git -C "$home/data" add -f "$path"
+      set +e
+      OUT=$(git -C "$home/data" commit -qm 'unsupported filename' 2>&1)
+      RC=$?
+      set -e
+      [ "$RC" -ne 0 ] || fail 'manual commit accepted an ambiguous filename'
+      [ -z "$(find "$home/data/.git" -maxdepth 1 -name 'record-precommit.*' -print)" ] || fail 'manual refusal retained scan temporaries'
+      git -C "$home/data" read-tree HEAD
+    fi
+    rm "$path"
+  done
+  pass 'fm-record: fixed scope preserves durable files and refuses ambiguous filenames'
+}
+
+test_quiet_ticks_skip_copy_hash_and_scan_work() {
+  local home origin fakebin pushed stamp
+  IFS=$(printf '\t') read -r home origin < <(new_home cheap-quiet-tick)
+  setup_record "$home" "$origin"
+  printf 'aaaa\n' > "$home/data/captain.md"
+  printf 'status\n' > "$home/state/task.status"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'quiet tick seed'
+  pushed=$(sed -n 's/^last_push_at=//p' "$home/data/.git/record-health")
+  stamp=$(python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(s.st_ino,s.st_mtime_ns,s.st_ctime_ns)' "$home/data/.record-state/task.status")
+  fakebin=$(fm_fakebin "$home")
+  printf '#!/bin/sh\nexit 1\n' > "$fakebin/cp"
+  printf '#!/bin/sh\nexit 1\n' > "$fakebin/gitleaks"
+  cat > "$fakebin/shasum" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in */captain.md | */task.status) exit 1 ;; esac
+done
+exec "$FM_TEST_REAL_SHASUM" "$@"
+SH
+  chmod +x "$fakebin/cp" "$fakebin/gitleaks" "$fakebin/shasum"
+  for _ in 1 2 3; do
+    FM_TEST_REAL_SHASUM=$(command -v shasum) PATH="$fakebin:$PATH" run_rec "$home" tick
+    expect_code 0 "$RC" 'quiet tick without copies or scans'
+    assert_contains "$OUT" 'state=unchanged' 'quiet tick result'
+    assert_contains "$OUT" "last_push_at=$pushed" 'quiet tick lost the successful push receipt'
+  done
+  [ "$stamp" = "$(python3 -c 'import os,sys; s=os.stat(sys.argv[1]); print(s.st_ino,s.st_mtime_ns,s.st_ctime_ns)' "$home/data/.record-state/task.status")" ] || fail 'quiet tick rewrote the mirror'
+  python3 - "$home/data/captain.md" <<'PYTEST'
+import os, sys
+path = sys.argv[1]
+s = os.stat(path)
+with open(path, "w") as output:
+    output.write("bbbb\n")
+os.utime(path, ns=(s.st_atime_ns, s.st_mtime_ns))
+PYTEST
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'same size and mtime rewrite'
+  assert_contains "$OUT" 'delivery=pending' 'new local content was reported as delivered'
+  [ "$(git -C "$home/data" show HEAD:captain.md)" = bbbb ] || fail 'metadata hint hid changed bytes'
+  pass 'fm-record: quiet ticks skip corpus work and changed bytes still receive content checks'
+}
+
+test_head_race_preserves_the_competing_commit() {
+  local home origin fakebin
+  IFS=$(printf '\t') read -r home origin < <(new_home head-race)
+  setup_record "$home" "$origin"
+  printf 'seed\n' > "$home/data/captain.md"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'HEAD race seed'
+  printf 'candidate\n' > "$home/data/captain.md"
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/git" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [ "$arg" = add ] && [ -n "${GIT_INDEX_FILE:-}" ]; then
+    "$FM_TEST_REAL_GIT" "$@" || exit 1
+    printf 'competing commit\n' > "$FM_HOME/data/later.md"
+    env -u GIT_INDEX_FILE "$FM_TEST_REAL_GIT" -C "$FM_HOME/data" add -A || exit 1
+    env -u GIT_INDEX_FILE "$FM_TEST_REAL_GIT" -C "$FM_HOME/data" commit --no-verify -qm competing || exit 1
+    "$FM_TEST_REAL_GIT" -C "$FM_HOME/data" rev-parse HEAD > "$FM_HOME/competing-head"
+    exit 0
+  fi
+done
+exec "$FM_TEST_REAL_GIT" "$@"
+SH
+  chmod +x "$fakebin/git"
+  FM_TEST_REAL_GIT=$(command -v git) PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason stow
+  expect_code 8 "$RC" 'HEAD advanced after freezing'
+  [ "$(git -C "$home/data" rev-parse HEAD)" = "$(cat "$home/competing-head")" ] || fail 'checkpoint replaced the competing commit'
+  git -C "$home/data" diff --cached --quiet || fail 'checkpoint changed the competing index'
+  git -C "$home/data" cat-file -e HEAD:later.md || fail 'competing file disappeared'
+  pass 'fm-record: changed HEAD refuses the frozen snapshot without replacing competing work'
+}
+
+test_index_publication_restart_preserves_user_staging() {
+  local home origin fakebin before after
+  IFS=$(printf '\t') read -r home origin < <(new_home publication-recovery)
+  setup_record "$home" "$origin"
+  printf 'before\n' > "$home/data/captain.md"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'publication recovery seed'
+  before=$(git -C "$home/data" rev-parse HEAD)
+  cp "$home/data/.git/index" "$home/index.before"
+  printf 'after\n' > "$home/data/captain.md"
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/mv" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  [ "$arg" != "$FM_HOME/data/.git/index.lock" ] || exit 1
+done
+exec "$FM_TEST_REAL_MV" "$@"
+SH
+  chmod +x "$fakebin/mv"
+  FM_TEST_REAL_MV=$(command -v mv) PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason teardown --required
+  expect_code 9 "$RC" 'failed final index rename'
+  after=$(git -C "$home/data" rev-parse HEAD)
+  [ "$after" != "$before" ] || fail 'fixture did not reach the committed publication boundary'
+  cmp -s "$home/index.before" "$home/data/.git/index" || fail 'failed rename changed the old index'
+  git -C "$home/data" read-tree HEAD
+  printf 'user staging\n' > "$home/data/user.md"
+  git -C "$home/data" add user.md
+  cp "$home/data/.git/index" "$home/index.user"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 8 "$RC" 'recovery with competing staging'
+  cmp -s "$home/index.user" "$home/data/.git/index" || fail 'recovery replaced genuine staging'
+  cp "$home/index.before" "$home/data/.git/index"
+  rm "$home/data/user.md"
+  run_rec "$home" checkpoint --reason teardown --required
+  expect_code 0 "$RC" 'restart reconciles prepared index'
+  [ "$(git -C "$home/data" rev-parse HEAD)" = "$after" ] || fail 'recovery created a second commit'
+  git -C "$home/data" diff --cached --quiet || fail 'recovery did not publish the committed index'
+  [ "$(cat "$home/data/captain.md")" = after ] || fail 'recovery lost source bytes'
+  pass 'fm-record: restart recovers prepared publication while preserving competing staging'
+}
+
 test_outer_repository_stays_clean() {
   local after
   after=$(git -C "$ROOT" status --short --untracked-files=all)
@@ -1231,4 +1504,11 @@ test_manual_lfs_commit_requires_resolved_payloads
 test_owned_publication_is_retried_without_new_bytes
 test_restored_lfs_pointers_require_resolved_payloads
 test_indexed_archive_links_keep_their_types
+test_outgoing_history_and_prohibited_paths_are_scanned
+test_activation_roots_permissions_and_hooks_refuse_unsafe_setup
+test_scope_ignores_only_record_exclusions_and_refuses_separators
+test_quiet_ticks_skip_copy_hash_and_scan_work
+test_head_race_preserves_the_competing_commit
+test_index_publication_restart_preserves_user_staging
+
 test_outer_repository_stays_clean

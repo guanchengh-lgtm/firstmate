@@ -454,9 +454,9 @@ test_executable_cleans_only_its_own_stages() {
         error) input="$dir/missing"; expected=1 ;;
       esac
       if [ "$command" = tree ]; then
-        STAGE= TMPDIR="$temp" run_scan tree "$input"
+        STAGE='' TMPDIR="$temp" run_scan tree "$input"
       else
-        STAGE= TMPDIR="$temp" run_scan chain --dir "$input"
+        STAGE='' TMPDIR="$temp" run_scan chain --dir "$input"
       fi
       expect_code "$expected" "$RC" "$command $mode stage cleanup"
       [ -z "$(find "$temp" -mindepth 1 -print)" ] || fail "$command $mode left a scanner temporary"
@@ -469,6 +469,33 @@ test_executable_cleans_only_its_own_stages() {
   [ "$(cat "$stage/marker")" = caller-owned ] || fail 'scanner removed caller-owned files'
   [ -f "$stage/secret-scan-hits" ] || fail 'scanner removed caller-owned scan results'
   pass "fm-record-scan: executable scans remove only their own temporary stages"
+}
+
+test_scan_expansion_and_execution_are_bounded() {
+  local dir fakebin start elapsed
+  dir="$TMP_ROOT/bounded-scan"
+  mkdir -p "$dir/tree" "$dir/temp"
+  python3 - "$dir/tree/archive.gz" <<'PYTEST'
+import gzip, sys
+with gzip.open(sys.argv[1], "wb") as output:
+    output.write(b"a" * 65536)
+PYTEST
+  FM_RECORD_SCAN_MAX_BYTES=4096 TMPDIR="$dir/temp" run_scan chain --dir "$dir/tree"
+  expect_code 1 "$RC" 'expanded byte limit'
+  assert_contains "$OUT" 'byte limit' 'expansion failure did not name its bound'
+  [ -z "$(find "$dir/temp" -mindepth 1 -print)" ] || fail 'bounded expansion left temporary payloads'
+  rm "$dir/tree/archive.gz"
+  printf 'clean\n' > "$dir/tree/ok.txt"
+  fakebin=$(fm_fakebin "$dir")
+  printf '#!/bin/sh\nsleep 30\n' > "$fakebin/gitleaks"
+  chmod +x "$fakebin/gitleaks"
+  start=$(date +%s)
+  FM_RECORD_SCAN_TIMEOUT_SECONDS=1 TMPDIR="$dir/temp" PATH="$fakebin:$PATH" run_scan chain --dir "$dir/tree"
+  elapsed=$(($(date +%s) - start))
+  expect_code 1 "$RC" 'gitleaks deadline'
+  [ "$elapsed" -lt 10 ] || fail 'scanner did not enforce its deadline'
+  [ -z "$(find "$dir/temp" -mindepth 1 -print)" ] || fail 'timed out scanner left temporary payloads'
+  pass 'fm-record-scan: archive expansion and scanner execution have enforced bounds'
 }
 
 test_chain_clean_tree() {
@@ -497,4 +524,5 @@ test_gitleaks_path_exclusions_do_not_hide_payloads
 test_nested_archives_require_complete_scans
 test_unsupported_archive_formats_refuse
 test_executable_cleans_only_its_own_stages
+test_scan_expansion_and_execution_are_bounded
 test_chain_clean_tree

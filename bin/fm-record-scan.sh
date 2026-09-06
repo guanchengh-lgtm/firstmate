@@ -30,7 +30,9 @@
 #
 # Gitleaks is invoked with this script's explicit config, --redact=100,
 # --ignore-gitleaks-allow, and --max-archive-depth 2. Working-tree allowlists,
-# baselines, and GITLEAKS_CONFIG are not inherited.
+# baselines, and GITLEAKS_CONFIG are not inherited. Expanded scan bytes are
+# capped by FM_RECORD_SCAN_MAX_BYTES (default 536870912). Archive inspection
+# and each gitleaks pass use FM_RECORD_SCAN_TIMEOUT_SECONDS (default 60).
 set -u
 
 export LC_ALL=C
@@ -161,14 +163,27 @@ TOML
   printf "\n[[rules]]\nid = 'firstmate-feeder'\nregex = '%s'\n" "$SECRET_COMBINED" >> "$1"
 }
 
+fm_record_scan_require_timeout() {
+  case "${FM_RECORD_SCAN_TIMEOUT_SECONDS:-60}" in
+    '' | *[!0-9]* | 0) die 1 "scan timeout must be a positive integer" ;;
+  esac
+  [ "${FM_RECORD_SCAN_TIMEOUT_SECONDS:-60}" -gt 0 ] 2>/dev/null || die 1 "scan timeout must be positive"
+  case "${FM_RECORD_SCAN_MAX_BYTES:-536870912}" in
+    '' | *[!0-9]*) die 1 "scan byte limit must be a positive integer" ;;
+  esac
+  [ "${FM_RECORD_SCAN_MAX_BYTES:-536870912}" -gt 0 ] 2>/dev/null || die 1 "scan byte limit must be positive"
+  # shellcheck source=bin/fm-timeout-lib.sh
+  . "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/fm-timeout-lib.sh"
+}
+
 fm_record_scan_archive_preflight() { # <dir>
   local dir=$1
   [ -d "$dir" ] || die 1 "archive preflight directory is missing: $dir"
-  python3 - "$dir" "$SECRET_COMBINED" "${2:-/dev/null}" <<'PY'
+  fm_record_scan_require_timeout
+  fm_run_timed "${FM_RECORD_SCAN_TIMEOUT_SECONDS:-60}" python3 -c "$(cat <<'PY'
 import gzip
 import os
 import re
-import shutil
 import sys
 import tarfile
 import zipfile
@@ -177,6 +192,7 @@ import zlib
 root = os.path.realpath(sys.argv[1])
 MAX_DEPTH = 2
 pattern = re.compile(sys.argv[2])
+remaining = int(os.environ.get("FM_RECORD_SCAN_MAX_BYTES", "536870912"))
 
 
 def fail(message, code=1):
@@ -184,11 +200,19 @@ def fail(message, code=1):
     sys.exit(code)
 
 
+def write_bytes(value, output):
+    global remaining
+    remaining -= len(value)
+    if remaining < 0:
+        fail("expanded scan exceeds the byte limit")
+    output.write(value)
+
+
 def write_name(name, output):
     if pattern.search(name):
         fail("refusing to publish: [credential-shaped source path redacted] matches the credential filename pattern", 2)
-    output.write(name.encode("utf-8", errors="surrogateescape") + b"\n")
-    output.write(re.sub(r"[/.!]", "\n", name).encode("utf-8", errors="surrogateescape") + b"\n")
+    write_bytes(name.encode("utf-8", errors="surrogateescape") + b"\n", output)
+    write_bytes(re.sub(r"[/.!]", "\n", name).encode("utf-8", errors="surrogateescape") + b"\n", output)
 
 
 def scan_stream(stream, name, depth, output):
@@ -209,8 +233,12 @@ def scan_stream(stream, name, depth, output):
         kind = "tar" if tarfile.is_tarfile(stream) else "gzip"
         stream.seek(0)
     else:
-        shutil.copyfileobj(stream, output)
-        output.write(b"\n")
+        while True:
+            block = stream.read(min(65536, max(1, remaining + 1)))
+            if not block:
+                break
+            write_bytes(block, output)
+        write_bytes(b"\n", output)
         return
     if depth >= MAX_DEPTH:
         fail("archive exceeds bounded scan depth")
@@ -274,6 +302,7 @@ try:
 except (OSError, EOFError, ValueError, RuntimeError, NotImplementedError, zipfile.BadZipFile, tarfile.TarError, zlib.error):
     fail("archive or scan source is corrupt, unreadable, or unsupported")
 PY
+)" "$dir" "$SECRET_COMBINED" "${2:-/dev/null}"
 }
 
 fm_record_scan_gitleaks_dir() { # <dir>
@@ -304,8 +333,9 @@ fm_record_scan_gitleaks_dir() { # <dir>
       scan_args+=(-- "$dir")
     fi
     rc=0
-    env -u GITLEAKS_CONFIG -u GITLEAKS_CONFIG_TOML \
-      gitleaks "${scan_args[@]}" < "$ignore_dir/payloads" >/dev/null 2>"${report}.err" || rc=$?
+    # shellcheck disable=SC2016
+    fm_run_timed "${FM_RECORD_SCAN_TIMEOUT_SECONDS:-60}" bash -c 'payload=$1; shift; exec "$@" < "$payload"' \
+      _ "$ignore_dir/payloads" env -u GITLEAKS_CONFIG -u GITLEAKS_CONFIG_TOML gitleaks "${scan_args[@]}" >/dev/null 2>"${report}.err" || rc=$?
     if [ "$rc" -eq 0 ] && [ ! -s "${report}.err" ]; then
       continue
     fi
