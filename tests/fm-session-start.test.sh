@@ -2555,6 +2555,104 @@ EOF
   pass "session start rejects Pi loaded markers from previous sessions"
 }
 
+# HOST_CWD uses real cwd evidence; only the fixture parent's harness name is fake.
+# The negative case bounds its ancestry at that parent to avoid the test runner's cwd.
+test_bootstrap_host_cwd() {
+  local mode=$1 location=$2 rec root home fakebin worktree host_dir out status host_pid
+  rec=$(new_world "host-cwd-$mode-$location")
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  printf '%s\n' manual > "$home/config/tasks-backend"
+  printf '%s\n' tmux > "$home/config/backend"
+  worktree="${root%/*}/copy"
+  git -C "$root" worktree add -q --detach "$worktree"
+  worktree=$(cd "$worktree" && pwd -P)
+  host_dir=$worktree
+  [ "$location" = copy ] || host_dir=$home
+  cat > "$fakebin/ps" <<'SH'
+#!/usr/bin/env bash
+set -u
+pid=
+previous=
+for argument in "$@"; do
+  [ "$previous" = -p ] && pid=$argument
+  previous=$argument
+done
+case "$*" in
+  *ppid=*comm=*)
+    if [ "${FM_HOST_CWD_BOUND_PARENT:-0}" = 1 ] && [ "$pid" = "$FM_HOST_CWD_PARENT" ]; then
+      identity=$(/bin/ps "$@") || exit $?
+      read -r parent comm <<< "$identity"
+      printf '1 %s\n' "$comm"
+    else
+      exec /bin/ps "$@"
+    fi
+    ;;
+  *comm=*)
+    if [ "$pid" = "$FM_HOST_CWD_PARENT" ]; then
+      printf 'codex\n'
+    else
+      exec /bin/ps "$@"
+    fi
+    ;;
+  *args=*)
+    if [ "$pid" = "$FM_HOST_CWD_PARENT" ]; then
+      printf 'codex\n'
+    else
+      exec /bin/ps "$@"
+    fi
+    ;;
+  *) exec /bin/ps "$@" ;;
+esac
+SH
+  chmod +x "$fakebin/ps"
+  # The wrapper remains the live parent while bootstrap runs from the real home.
+  # lsof is not mocked, so the positive check must find this parent's real cwd.
+  status=0
+  # shellcheck disable=SC2016
+  out=$(env -u FM_STATE_OVERRIDE -u FM_DATA_OVERRIDE -u FM_CONFIG_OVERRIDE \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
+    FM_BOOTSTRAP_NETWORK=skip FM_BOOTSTRAP_DETECT_ONLY="$([ "$mode" = read-only ] && echo 1 || echo 0)" \
+    FM_BOOTSTRAP_LOCKED="$([ "$mode" = locked ] && echo 1 || echo 0)" \
+    FM_HOST_CWD_BOUND_PARENT="$([ "$location" = copy ] && echo 0 || echo 1)" \
+    bash -c '
+      cd "$1" || exit 1
+      export FM_HOST_CWD_PARENT=$$
+      printf "%s\n" "$$" > "$2/host-pid"
+      (cd "$2" && "$3")
+      result=$?
+      exit "$result"
+    ' _ "$host_dir" "$home" "$ROOT/bin/fm-bootstrap.sh" 2>&1) || status=$?
+  expect_code 0 "$status" "$mode bootstrap failed during HOST_CWD detection"
+  host_pid=$(cat "$home/host-pid")
+  if [ "$location" = copy ]; then
+    assert_contains "$out" "HOST_CWD: process $host_pid (" "$mode bootstrap omitted the real worktree-rooted parent"
+    assert_contains "$out" "has cwd $worktree, a task copy" "$mode bootstrap omitted the real ancestor cwd"
+    assert_contains "$out" "Relocate: exit this session, cd $home, relaunch the harness, then rerun teardown." \
+      "$mode bootstrap omitted the relocation advice"
+    [ "$(printf '%s\n' "$out" | grep -c '^HOST_CWD:')" -eq 1 ] \
+      || fail "$mode bootstrap repeated the host warning"
+  else
+    assert_not_contains "$out" 'HOST_CWD:' "$mode bootstrap warned when the bounded ancestry was outside a copy"
+  fi
+  pass "$mode bootstrap uses real ancestor cwd evidence for $location"
+}
+
+if [ "${1:-}" = host-cwd ]; then
+  test_bootstrap_host_cwd locked copy
+  test_bootstrap_host_cwd read-only copy
+  test_bootstrap_host_cwd locked outside
+  test_bootstrap_host_cwd read-only outside
+  exit 0
+fi
+
+test_bootstrap_host_cwd locked copy
+test_bootstrap_host_cwd read-only copy
+test_bootstrap_host_cwd locked outside
+test_bootstrap_host_cwd read-only outside
+
 test_context_digest_absent_empty_present
 test_lock_refusal_read_only_path
 test_lock_write_failure_read_only_path

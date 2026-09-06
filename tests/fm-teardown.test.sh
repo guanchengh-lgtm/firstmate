@@ -59,7 +59,7 @@ set -u
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 fm_git_identity fmtest fmtest@example.invalid
 
-TEARDOWN="$ROOT/bin/fm-teardown.sh"
+TEARDOWN="${FM_TEST_TEARDOWN:-$ROOT/bin/fm-teardown.sh}"
 PR_CHECK="$ROOT/bin/fm-pr-check.sh"
 TMP_ROOT=$(fm_test_tmproot fm-teardown-tests)
 REAL_GIT_FOR_TEST=$(command -v git)
@@ -2725,6 +2725,7 @@ EOF
     kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
     fail "host-session-spared: live session host or child was reaped"
   fi
+  kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
   expect_code 1 "$rc" "host-session-spared: teardown should refuse the worktree return"
   assert_grep "reaping leaked worktree process" "$case_dir/stderr" \
     "host-session-spared: teardown did not report reaping the task-owned process"
@@ -2732,6 +2733,8 @@ EOF
     "host-session-spared: teardown did not refuse the unsafe worktree return"
   [ "$(grep -Fc "$host_pid" "$case_dir/stderr")" -eq 1 ] \
     || fail "host-session-spared: refusal did not name the host shell exactly once"
+  assert_grep "cwd=$case_dir/wt)" "$case_dir/stderr" "host-session-spared: cwd missing"
+  assert_grep "Clear it: exit that session or relocate its host shell out of" "$case_dir/stderr" "host-session-spared: remedy missing"
   assert_present "$case_dir/wt" "host-session-spared: teardown removed the worktree"
   assert_present "$case_dir/state/task-x1.meta" "host-session-spared: teardown removed task metadata"
   assert_absent "$case_dir/treehouse.log" "host-session-spared: teardown called treehouse return"
@@ -4031,6 +4034,11 @@ test_leftover_then_sync_retains_unique_gone_branch() {
     || fail "leftover-sync-unique: unique [gone] branch was deleted by leftover or fleet sync"
   pass "teardown followed by fleet sync retains a unique [gone] branch"
 }
+
+if [ "${1:-}" = host-cwd ]; then
+  test_host_session_under_worktree_is_spared
+  exit 0
+fi
 
 test_local_only_fork_remote_allows
 test_help_documents_force_validation_truth_skip

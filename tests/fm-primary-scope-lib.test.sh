@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -eu
+# shellcheck source=tests/lib.sh
 . "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+# shellcheck source=bin/fm-primary-scope-lib.sh
 . "$ROOT/bin/fm-primary-scope-lib.sh"
 TMP_ROOT=$(fm_test_tmproot fm-primary-scope)
 fm_git_identity fmtest fmtest@example.invalid

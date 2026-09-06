@@ -168,6 +168,8 @@
 #     root still exists, so the account's healthy LaunchAgent worker and every
 #     live remote secondmate worker are out of scope. Best effort: a sweep
 #     failure never blocks this teardown.
+# Protected-process refusals name the command, cwd, and session relocation remedy.
+# Linked-worktree home refusal is owned by bin/fm-primary-scope-lib.sh.
 set -eu
 
 usage() {
@@ -182,6 +184,8 @@ Options:
   --force  Skip ordinary-task dirty and landed-work checks, skip scout report
            checks, discard secondmate child work, and skip the no-mistakes
            validation-truth gate because discard is not a green claim.
+  A live session host rooted in the task copy makes teardown refuse.
+  --force does not override this protected-process refusal.
   Linked-worktree home refusal: bin/fm-primary-scope-lib.sh.
   -h, --help
            Show this help.
@@ -1522,7 +1526,7 @@ pids_with_cwd_under() {  # <dir>
         path=${line#n}
         case "$path" in
           "$dir"|"$dir"/*)
-            [ -n "$pid" ] && [ "$pid" != "$$" ] && printf '%s\n' "$pid"
+            [ -n "$pid" ] && [ "$pid" != "$$" ] && printf '%s\t%s\n' "$pid" "$path"
             ;;
         esac
         ;;
@@ -1683,15 +1687,22 @@ task_pids_under_roots() {  # <dir>...
   TASK_PIDS=
   TASK_PIDS_FAILED_DIR=
   TASK_PIDS_REFUSE_REASON=
-  local dir dir_pids pids="" pid filtered="" protected_status
+  local dir dir_pids pids="" pid cwd filtered="" protected_status
+  TASK_PID_CWDS=()
   for dir in "$@"; do
     [ -n "$dir" ] || continue
     if ! dir_pids=$(pids_with_cwd_under "$dir"); then
       TASK_PIDS_FAILED_DIR=$dir
       return 1
     fi
-    pids="$pids
-$dir_pids"
+    while IFS=$'\t' read -r pid cwd; do
+      [ -n "$pid" ] || continue
+      TASK_PID_CWDS[pid]=$cwd
+      pids="$pids
+$pid"
+    done <<EOF
+$dir_pids
+EOF
   done
   TASK_PIDS=$(printf '%s\n' "$pids" | grep -E '^[0-9]+$' | sort -un || true)
   task_load_protected_set || return 1
@@ -1727,10 +1738,23 @@ reap_task_pids_or_refuse() {  # <dir>...
   return 1
 }
 
+# Render each protected pid once using cwd captured by the existing lsof scan.
+task_render_spared_hosts() {
+  local pid comm separator=
+  while IFS= read -r pid; do
+    [ -n "$pid" ] || continue
+    comm=$(ps -p "$pid" -o comm= 2>/dev/null) || comm='<unknown>'
+    printf '%s%s (%s, cwd=%s)' "$separator" "$pid" "$comm" "${TASK_PID_CWDS[pid]:-<unknown>}"
+    separator=' '
+  done <<EOF
+${TASK_SPARED_PIDS:-}
+EOF
+}
+
 task_report_spared_hosts() {  # <root>
   local root=$1 rendered
   [ -n "${TASK_SPARED_PIDS:-}" ] || return 0
-  rendered=$(printf '%s' "$TASK_SPARED_PIDS" | tr '\n' ' ')
+  rendered=$(task_render_spared_hosts)
   echo "teardown: sparing host process(es) for $ID still rooted in ${root:-<unknown>}: $rendered" >&2
 }
 
@@ -1748,8 +1772,8 @@ task_refuse_treehouse_return_with_protected_roots() {  # <dir>...
   fi
   reap_task_pids_or_refuse "$@" || return 1
   [ -n "${TASK_SPARED_PIDS:-}" ] || return 0
-  rendered=$(printf '%s' "$TASK_SPARED_PIDS" | tr '\n' ' ')
-  echo "REFUSED: protected process(es) for $ID remain rooted in the worktree/tasktmp: $rendered; preserving the worktree/tasktmp for manual inspection or retry." >&2
+  rendered=$(task_render_spared_hosts)
+  echo "REFUSED: protected process(es) for $ID remain rooted in the worktree/tasktmp: $rendered; preserving the worktree/tasktmp for manual inspection or retry. Clear it: exit that session or relocate its host shell out of ${1:-<root>} (start the next firstmate from $FM_HOME), then rerun bin/fm-teardown.sh $ID." >&2
   return 1
 }
 
