@@ -1,0 +1,81 @@
+Test: tests/fm-fleet-snapshot-view.test.sh
+Selector: test_nested_git_report_is_not_discovered
+Subject: bin/fm-fleet-snapshot.sh:1712
+-   LC_ALL=C find "$DATA" -mindepth 2 -maxdepth 2 -type f -name report.md -print \
++   LC_ALL=C find "$DATA" -mindepth 2 -maxdepth 4 -type f -name report.md -print \
+
+not ok - snapshot walked a nested Git report: {
+  "schema": "fm-fleet-snapshot.v1",
+  "generated": "2026-09-06T21:45:47Z",
+  "fm_home": "/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-fleet-snapshot.QayDy2/nested-git-report",
+  "roots": {
+    "fm_root": "/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC",
+    "state": "/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-fleet-snapshot.QayDy2/nested-git-report/state",
+    "data": "/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-fleet-snapshot.QayDy2/nested-git-report/data",
+    "config": "/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-fleet-snapshot.QayDy2/nested-git-report/config",
+    "projects": "/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-fleet-snapshot.QayDy2/nested-git-report/projects"
+  },
+  "backlog": {
+    "path": "/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-fleet-snapshot.QayDy2/nested-git-report/data/backlog.md",
+    "present": false,
+    "records": []
+  },
+  "tasks": [],
+  "main_inventory": {
+    "valid": true,
+    "reason": null,
+    "orphan_in_flight": [],
+    "unstructured_current_count": 0
+  },
+  "scout_reports": [
+    {
+      "id": "aa",
+      "path": "/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-fleet-snapshot.QayDy2/nested-git-report/data/.git/objects/aa/report.md",
+      "kind": "scout"
+    },
+    {
+      "id": "real-scout",
+      "path": "/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-fleet-snapshot.QayDy2/nested-git-report/data/real-scout/report.md",
+      "kind": "scout"
+    }
+  ],
+  "decision_locks_open": [],
+  "secondmate_current": {
+    "registry": {
+      "present": false,
+      "available": true,
+      "complete": true,
+      "reason": null,
+      "provenance": "registered-table",
+      "path": "/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-fleet-snapshot.QayDy2/nested-git-report/data/secondmates.md",
+      "freshness": {
+        "status": "fresh",
+        "observed_at": "2026-09-06T21:45:47Z"
+      },
+      "records": [],
+      "input_truncated": false,
+      "records_truncated": false,
+      "reasons": [],
+      "lines_in_window": 0,
+      "records_in_window": 0
+    },
+    "records": [],
+    "total_registered": 0,
+    "total": 0,
+    "shown": 0,
+    "truncated": 0
+  },
+  "secondmate_landed": {
+    "records": [],
+    "truncated": [],
+    "unreadable": [],
+    "partial": []
+  },
+  "secondmate_guidance": {
+    "note": "For kind=secondmate, bearings selects validated structured state from that registered home; parent events and bounded terminal evidence are fallback-only supplements and never current-state authority."
+  }
+}
+
+exit=1
+
+After source restoration: git status --porcelain is empty.

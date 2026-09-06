@@ -1,0 +1,2 @@
+ok - the portable timeout path force-kills a command that ignores TERM
+# fm-session-start.test.sh: all assertions passed

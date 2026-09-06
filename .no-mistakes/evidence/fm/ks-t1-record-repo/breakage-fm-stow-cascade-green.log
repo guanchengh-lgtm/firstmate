@@ -1,0 +1,8 @@
+Test: tests/fm-stow-cascade.test.sh
+Selector: test_cascade_does_not_checkpoint_a_configured_record
+Original source restored. git status --porcelain is empty before this run.
+
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - cascade enumerates without checkpointing a configured Record
+
+exit=0

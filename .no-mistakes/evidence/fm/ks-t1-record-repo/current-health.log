@@ -1,0 +1,95 @@
+
+Observed command result for expect_code 0 "$RC" "setup $home"
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+
+Observed command result for expect_code 0 "$RC" "setup $home"
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+
+Observed command result for expect_code 0 "$RC" 'current health seed push'
+fm-record: state=pushed commit=16e167c
+pending=0
+last_push_at=2026-09-06T20:45:54Z
+delivery=pushed
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+
+Observed command result for expect_code 0 "$RC" 'current health seed push'
+fm-record: state=pushed commit=16e167c
+pending=0
+last_push_at=2026-09-06T20:45:54Z
+delivery=pushed
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+
+Observed command result for expect_code 0 "$RC" 'health after manual commit'
+fm-record: state=committed-local
+commit=16e167c
+state=committed-local
+updated_at=2026-09-06T20:45:54Z
+pending=1
+last_push_at=2026-09-06T20:45:54Z
+delivery=pending
+failure_class=none
+pending_since=1788727434
+pending_age_seconds=121
+
+Observed command result for expect_code 0 "$RC" 'health after manual commit'
+fm-record: state=committed-local
+commit=16e167c
+state=committed-local
+updated_at=2026-09-06T20:45:54Z
+pending=1
+last_push_at=2026-09-06T20:45:54Z
+delivery=pending
+failure_class=none
+pending_since=1788727434
+pending_age_seconds=121
+
+Observed command result for expect_code 6 "$RC" 'current health pending push'
+fm-record: state=push-pending commit=628835f class=offline pending=1
+pending=1
+last_push_at=2026-09-06T20:45:54Z
+delivery=push-pending
+failure_class=offline
+pending_since=1788727557
+pending_age_seconds=0
+
+Observed command result for expect_code 6 "$RC" 'current health pending push'
+fm-record: state=push-pending commit=628835f class=offline pending=1
+pending=1
+last_push_at=2026-09-06T20:45:54Z
+delivery=push-pending
+failure_class=offline
+pending_since=1788727557
+pending_age_seconds=0
+
+Observed command result for expect_code 0 "$RC" 'current health pending age'
+fm-record: state=push-pending
+commit=628835f
+class=offline
+pending=1
+state=push-pending
+updated_at=2026-09-06T20:45:57Z
+last_push_at=2026-09-06T20:45:54Z
+delivery=push-pending
+failure_class=offline
+pending_since=1788727557
+pending_age_seconds=3
+
+Observed command result for expect_code 0 "$RC" 'current health pending age'
+fm-record: state=push-pending
+commit=628835f
+class=offline
+pending=1
+state=push-pending
+updated_at=2026-09-06T20:45:57Z
+last_push_at=2026-09-06T20:45:54Z
+delivery=push-pending
+failure_class=offline
+pending_since=1788727557
+pending_age_seconds=3
+ok - fm-record: read-only health reports current commits and age while retaining delivery receipts

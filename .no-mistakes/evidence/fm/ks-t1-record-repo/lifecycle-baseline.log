@@ -1,0 +1,41 @@
+FM_TEST_BEGIN 2026-09-06T21:29:15Z tests/fm-gotmp.test.sh family=session-bootstrap expected_gate_skip=none
+not ok - teardown exited non-zero with a valid tasktmp: REFUSED: fm-teardown.sh self-located its home to linked worktree /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase/tmp/fm-gotmp-tests.yr1DNQ/td-rm-z2; that copy's state/ is not a firstmate home. Set FM_HOME=/Users/AI/.no-mistakes/repos or start firstmate from /Users/AI/.no-mistakes/repos, then retry.
+FM_TEST_END 2026-09-06T21:29:15Z tests/fm-gotmp.test.sh exit=1 duration_ms=226 gate_skip=false
+FM_TEST_BEGIN 2026-09-06T21:29:15Z tests/fm-map-fog-check.test.sh family=session-bootstrap expected_gate_skip=none
+ok - map-fog: no map files is silent success
+ok - map discovery prunes nested Git metadata
+ok - map-fog: missing Not yet specified section is exit 2
+ok - map-fog: untokenized bullet is live fog
+ok - map-fog: parked, closed, and none are not live
+ok - map-fog: explicit - none is clean
+ok - map-fog: closed pointer must resolve to an existing file
+ok - map-fog: exact-count regression pins live fog
+ok - bootstrap: ordinary fog findings aggregate to one line per map
+ok - bootstrap: separate maps keep separate fog summaries
+ok - bootstrap: colliding map paths keep separate fog summaries
+ok - bootstrap: relative data override aggregates fog findings
+ok - bootstrap: tabbed map paths retain raw findings
+ok - bootstrap: structural fog failure remains exact
+ok - bootstrap: checker failure output and status remain exact
+# all fm-map-fog-check tests passed
+FM_TEST_END 2026-09-06T21:29:29Z tests/fm-map-fog-check.test.sh exit=0 duration_ms=13172 gate_skip=false
+FM_TEST_BEGIN 2026-09-06T21:29:29Z tests/fm-stow-cascade.test.sh family=secondmate expected_gate_skip=none
+not ok - over-budget home did not report its own allowance
+FM_TEST_END 2026-09-06T21:29:29Z tests/fm-stow-cascade.test.sh exit=1 duration_ms=256 gate_skip=false
+FM_TEST_BEGIN 2026-09-06T21:29:29Z tests/fm-captain-hold-lifecycle.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - report-only unresolved captain call is reproduced and completion refuses before loss
+not ok - reviewed investigation teardown failed: REFUSED: fm-teardown.sh self-located its home to linked worktree /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase/tmp/fm-captain-hold.lNcEJf/completion-gate; that copy's state/ is not a firstmate home. Set FM_HOME=/Users/AI/.no-mistakes/repos or start firstmate from /Users/AI/.no-mistakes/repos, then retry.
+FM_TEST_END 2026-09-06T21:29:35Z tests/fm-captain-hold-lifecycle.test.sh exit=1 duration_ms=6439 gate_skip=false
+FM_TEST_BEGIN 2026-09-06T21:29:35Z tests/fm-teardown.test.sh family=pr-forge expected_gate_skip=none
+not ok - fork-allow: teardown should succeed when HEAD is on a fork remote: expected exit 0, got 1
+FM_TEST_END 2026-09-06T21:29:36Z tests/fm-teardown.test.sh exit=1 duration_ms=551 gate_skip=false
+FM_TEST_SUMMARY total=5 failed=4 skipped_gate=0 duration_ms=20936
+FM_TEST_SUMMARY_FAMILY family=pr-forge count=1 duration_ms=551 failed=1
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=6439 failed=1
+FM_TEST_SUMMARY_FAMILY family=secondmate count=1 duration_ms=256 failed=1
+FM_TEST_SUMMARY_FAMILY family=session-bootstrap count=2 duration_ms=13398 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-map-fog-check.test.sh duration_ms=13172
+FM_TEST_SLOWEST rank=2 script=tests/fm-captain-hold-lifecycle.test.sh duration_ms=6439
+FM_TEST_SLOWEST rank=3 script=tests/fm-teardown.test.sh duration_ms=551
+FM_TEST_SLOWEST rank=4 script=tests/fm-stow-cascade.test.sh duration_ms=256
+FM_TEST_SLOWEST rank=5 script=tests/fm-gotmp.test.sh duration_ms=226

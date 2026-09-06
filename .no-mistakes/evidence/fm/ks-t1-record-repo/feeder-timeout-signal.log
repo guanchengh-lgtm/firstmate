@@ -1,0 +1,2 @@
+ok - fm-feeder-export: INT, TERM, and HUP during render or publication roll back cleanly
+ok - fm-feeder-export: publication, commit, cleanup, and push signals preserve recoverable state

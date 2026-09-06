@@ -1,0 +1,8 @@
+ok - fm-feeder-export: report discovery keeps its depth limit over nested Git metadata
+ok - fm-feeder-export: every high-confidence credential class refuses before mutation
+ok - fm-feeder-export: ordinary text that resembles a credential still publishes
+ok - fm-feeder-export: a credential reaching a generated page refuses before publication
+ok - fm-feeder-export: credential scan command and storage errors fail closed
+ok - fm-feeder-export: INT, TERM, and HUP during render or publication roll back cleanly
+ok - fm-feeder-export: publication, commit, cleanup, and push signals preserve recoverable state
+ok - fm-feeder-export: a full generation reaches a local bare origin through the pinned identity

@@ -1,0 +1,19 @@
+Test: tests/fm-stow-cascade.test.sh
+Selector: test_cascade_does_not_checkpoint_a_configured_record
+Subject: bin/fm-record.sh:1278
+-   run_transaction checkpoint "$reason" "$lock_mode"
++   return 0
+
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fatal: ambiguous argument 'HEAD': unknown revision or path not in the working tree.
+Use '--' to separate paths from revisions, like this:
+'git <command> [<revision>...] -- [<file>...]'
+fatal: ambiguous argument 'HEAD': unknown revision or path not in the working tree.
+Use '--' to separate paths from revisions, like this:
+'git <command> [<revision>...] -- [<file>...]'
+fatal: invalid object name 'HEAD'.
+not ok - cascade enumeration replaced the completed-home snapshot
+
+exit=1
+
+After source restoration: git status --porcelain is empty.

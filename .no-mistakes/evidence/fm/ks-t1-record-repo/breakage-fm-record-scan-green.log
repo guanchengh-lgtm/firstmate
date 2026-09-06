@@ -1,0 +1,7 @@
+Test: tests/fm-record-scan.test.sh
+Selector: test_eight_classes_refuse_without_echoing_values
+Original source restored. git status --porcelain is empty before this run.
+
+ok - fm-record-scan: every feeder class refuses without echoing the value
+
+exit=0

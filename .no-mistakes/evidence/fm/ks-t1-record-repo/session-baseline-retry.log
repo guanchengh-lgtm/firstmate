@@ -1,0 +1,8 @@
+ok - context digest distinguishes ABSENT, empty-but-present, and populated files
+ok - a lock refusal prints a loud read-only banner, skips every mutating step, and still completes the digest
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start checkpoints the Record only on a locked startup
+ok - session start: inactive reconciliation runs after the digest and retains its durable wake
+ok - the portable timeout path force-kills a command that ignores TERM
+ok - --reemit reprints the digest without repeating startup's mutating sweeps and still drains queued wakes
+# fm-session-start.test.sh: all assertions passed

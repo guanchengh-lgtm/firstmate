@@ -1,0 +1,11 @@
+Test: tests/fm-lint.test.sh
+Selector: test_list_files_reports_the_shell_inventory
+Subject: bin/fm-lint.sh:931
+-     ROOTS=(bin/*.sh bin/backends/*.sh tests/*.sh)
++     ROOTS=(bin/*.sh bin/backends/*.sh tests/*.sh data/.git/bin/*.sh)
+
+not ok - fm-lint.sh --list-files did not return the complete shell inventory
+
+exit=1
+
+After source restoration: git status --porcelain is empty.

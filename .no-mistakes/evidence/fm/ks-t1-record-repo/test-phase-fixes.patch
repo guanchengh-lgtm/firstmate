@@ -1,0 +1,96 @@
+diff --git a/bin/fm-timeout-lib.sh b/bin/fm-timeout-lib.sh
+index 7b572ac3..56aced7f 100644
+--- a/bin/fm-timeout-lib.sh
++++ b/bin/fm-timeout-lib.sh
+@@ -87,7 +87,7 @@ fm_run_bash_timeout() {
+ }
+ 
+ fm_run_external_timeout() {
+-  local runner=$1 seconds=$2 status_file runner_pid runner_rc command_rc
++  local runner=$1 seconds=$2 status_file runner_pid runner_rc command_rc monitor_was_on=0
+   shift 2
+   status_file=$(mktemp "${TMPDIR:-/tmp}/fm-timeout-status.XXXXXX" 2>/dev/null) || return 124
+   # Run timeout asynchronously so its pid - also the process-group id created
+@@ -95,6 +95,9 @@ fm_run_external_timeout() {
+   # A shell wrapper can exit promptly on TERM while one of its descendants
+   # ignores TERM; timeout then considers the command finished and does not send
+   # its configured KILL. Explicitly reap that leftover group on a real timeout.
++  # Monitor mode prevents Bash from ignoring INT and QUIT in the async child.
++  case $- in *m*) monitor_was_on=1 ;; esac
++  set -m
+   # shellcheck disable=SC2016  # Expansion is deliberately deferred to the child shell.
+   "$runner" -k 1 "$seconds" bash -c '
+     status_file=$1
+@@ -105,6 +108,7 @@ fm_run_external_timeout() {
+     exit "$command_rc"
+   ' _ "$status_file" "$@" &
+   runner_pid=$!
++  [ "$monitor_was_on" -eq 1 ] || set +m
+   if wait "$runner_pid"; then
+     runner_rc=0
+   else
+diff --git a/tests/fm-session-start.test.sh b/tests/fm-session-start.test.sh
+index 9d585d60..a12f33b9 100755
+--- a/tests/fm-session-start.test.sh
++++ b/tests/fm-session-start.test.sh
+@@ -1484,10 +1484,10 @@ SH
+ 
+ # The locked startup scan may need the same expensive current-state read that a
+ # busy validation makes slow. It belongs to the detached startup worker, so the
+-# digest must finish before this 8s answer exists; the answer then has to create
++# digest must finish before the test releases the answer; the answer must create
+ # the ordinary durable inactive-outcome wake rather than disappear off-path.
+ test_inactive_reconcile_never_blocks_the_digest() {
+-  local rec root home fakebin world worktree crew_state calls out started elapsed waited=0
++  local rec root home fakebin world worktree crew_state calls out waited=0
+   rec=$(new_world inactive-reconcile-deferred)
+   IFS='|' read -r root home fakebin <<EOF
+ $rec
+@@ -1514,7 +1514,8 @@ if [ "${1:-} ${2:-}" = 'axi status' ]; then
+   else
+     printf '%s\n' 'blocking' >> "${FM_FAKE_NM_CALLS:?}"
+   fi
+-  sleep 8
++  while [ ! -e "${FM_FAKE_NM_CALLS:?}.release" ]; do sleep 0.1; done
++  : > "${FM_FAKE_NM_CALLS:?}.answered"
+   printf '%s\n' 'slow validation state answered'
+ fi
+ exit 0
+@@ -1535,19 +1536,19 @@ SH
+   touch -t 202001010000 "$home/state/slow-child.meta" \
+     "$home/state/slow-child.status" "$home/state/slow-child.turn-ended"
+ 
+-  started=$(date +%s)
+   out=$(FM_BACKEND=tmux FM_FAKE_HARNESS_PID="$SESSION_START_TEST_HARNESS_PID" \
+     FM_FAKE_NM_CALLS="$calls" FM_INACTIVE_RECONCILE_SECS=60 \
+-    FM_INACTIVE_RECONCILE_BUDGET_SECS=10 FM_INACTIVE_CREW_STATE_BIN="$crew_state" \
++    FM_INACTIVE_RECONCILE_BUDGET_SECS=30 FM_INACTIVE_CREW_STATE_BIN="$crew_state" \
+     run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+-  elapsed=$(( $(date +%s) - started ))
+ 
+   assert_contains "$out" "SESSION START" "the digest did not complete"
+-  [ "$elapsed" -lt 8 ] \
+-    || fail "the digest waited ${elapsed}s for inactive reconciliation's 8s state read"
+-  [ "$(grep -c '^blocking$' "$calls" 2>/dev/null || true)" -eq 0 ] \
+-    || fail "the digest called the slow state reader on its blocking path"
++  assert_present "$home/state/.session-start-complete" "the digest did not record completion"
++  assert_absent "$calls.answered" "the slow state reader answered before the digest completed"
++  if grep -q '^blocking$' "$calls" 2>/dev/null; then
++    fail "the digest called the slow state reader on its blocking path"
++  fi
+ 
++  : > "$calls.release"
+   while ! grep -Fq $'\tcheck\tinactive-outcome:' "$home/state/.wake-queue" 2>/dev/null \
+     && [ "$waited" -lt 150 ]; do
+     sleep 0.1
+@@ -2026,6 +2027,10 @@ SH
+   env PATH="$fakebin:$BASE_PATH" "$driver" "$ROOT/bin/fm-timeout-lib.sh" \
+     bash -c 'exit 137' || status=$?
+   expect_code 137 "$status" "natural command exit 137"
++  status=0
++  env PATH="$fakebin:$BASE_PATH" "$driver" "$ROOT/bin/fm-timeout-lib.sh" \
++    bash -c 'trap "exit 42" INT; kill -INT "$$"; exit 0' || status=$?
++  expect_code 42 "$status" "a bounded command must receive SIGINT"
+   pass "the portable timeout path force-kills a command that ignores TERM"
+ }
+ 

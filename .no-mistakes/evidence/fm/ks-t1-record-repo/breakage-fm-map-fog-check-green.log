@@ -1,0 +1,8 @@
+Test: tests/fm-map-fog-check.test.sh
+Selector: test_nested_git_map_is_not_discovered
+Original source restored. git status --porcelain is empty before this run.
+
+ok - map discovery prunes nested Git metadata
+# all fm-map-fog-check tests passed
+
+exit=0

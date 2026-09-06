@@ -1,0 +1,7 @@
+Test: tests/fm-lint.test.sh
+Selector: test_list_files_reports_the_shell_inventory
+Original source restored. git status --porcelain is empty before this run.
+
+ok - fm-lint.sh --list-files reports the complete shell inventory
+
+exit=0

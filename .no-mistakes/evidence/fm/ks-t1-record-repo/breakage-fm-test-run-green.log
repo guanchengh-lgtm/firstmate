@@ -1,0 +1,7 @@
+Test: tests/fm-test-run.test.sh
+Selector: test_list_all_exact_suite_coverage
+Original source restored. git status --porcelain is empty before this run.
+
+ok - exact suite coverage: --all lists every tests/*.test.sh once
+
+exit=0

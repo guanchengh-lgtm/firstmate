@@ -1,0 +1,9 @@
+Test: tests/fm-session-start.test.sh
+Selector: test_record_checkpoint_only_on_locked_startup
+Original source restored. git status --porcelain is empty before this run.
+
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start checkpoints the Record only on a locked startup
+# fm-session-start.test.sh: all assertions passed
+
+exit=0

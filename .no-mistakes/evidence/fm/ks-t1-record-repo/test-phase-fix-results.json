@@ -1,0 +1,22 @@
+{
+  "summary": "Preserve timeout signals and stabilize deferred startup tests",
+  "findings": [],
+  "root_causes": {
+    "T1": "The asynchronous external-timeout launch used non-monitor Bash, which ignores SIGINT and SIGQUIT in its child. The feeder then missed an interrupt after git add. Monitor mode preserves signal handling while retaining process-group cleanup and the caller setting.",
+    "T2": "The whole startup digest sometimes took eight seconds even though reconciliation was deferred. Its absolute eight-second assertion compared independent local startup work against the fake reader delay. The fixture now withholds the response until the digest records completion, then requires exactly one deferred read and its durable outcome wake."
+  },
+  "tested": [
+    "Focused reproduction: bounded tests/fm-feeder-export.test.sh selector test_signals_roll_back failed with signal after git add: exporter reported success; fix-feeder-before.log.",
+    "Focused reproduction: tests/fm-session-start.test.sh selector test_inactive_reconcile_never_blocks_the_digest failed at eight seconds; fix-startup-before.log. An unchanged retry passed; fix-startup-diagnosis.log.",
+    "Signal counterfactual: direct Python had a default SIGINT handler, bounded Python inherited SIG_IGN, and enabling monitor mode restored its default handler; fix-signal-counterfactual.log.",
+    "Regression: tests/fm-session-start.test.sh selector test_portable_timeout_escalates_term_resistant_process expected SIGINT trap exit 42 but received 0 before the code fix; fix-timeout-regression-red.log. It passed after the fix, including timeout escalation and natural exit 137; fix-timeout-regression-green.log.",
+    "Focused verification: fm_run_timed 120 with tests/fm-feeder-export.test.sh selector test_signals_roll_back passed INT, TERM, HUP, and post-staging rollback; fix-feeder-green.log.",
+    "Focused verification: tests/fm-session-start.test.sh selector test_inactive_reconcile_never_blocks_the_digest passed after restoring the injected fault and reapplying the intended fixes; fix-startup-final-green.log.",
+    "Disconfirming experiment: removing only the worker stdout redirection did not block startup because the caller also redirected its output; fix-startup-breakage-red.log contains a pass, not red evidence. The source was restored and porcelain was empty before the next experiment; fix-startup-first-restore.log.",
+    "breakage: tests/fm-session-start.test.sh subject bin/fm-startup-network.sh:293 selector test_inactive_reconcile_never_blocks_the_digest red /Users/AI/.no-mistakes/evidence/01M1VRWMEZJGZ0328RGDY94JYC/fix-startup-wait-breakage-red.log; inserted a one-line wait for the deferred worker, observed missing digest completion, restored the original source and temporarily removed the saved intended fix patch to verify clean porcelain, then reapplied the intended fixes and reran green.",
+    "breakage: final clean baseline state git status --porcelain returned empty output after restoring the mutation and temporarily removing the saved intended fixes; /Users/AI/.no-mistakes/evidence/01M1VRWMEZJGZ0328RGDY94JYC/fix-startup-final-restore.log. The intended fixes were then reapplied for delivery; final working changes are bin/fm-timeout-lib.sh and tests/fm-session-start.test.sh."
+  ],
+  "prior_breakage": "The twelve branch test files already have red/restored-clean/green observations from the previous Test round in manufactured-breakage.log and the supplied tested entries. Those completed checks were not repeated.",
+  "scope": "Only the assigned test-fix phase and focused selectors ran. No lint, formatter, static analysis, full suite, pipeline control, commit, push, PR, CI, tool installation, or live-home activation ran.",
+  "cleanup": "The tests cleaned their temporary fixtures. No test artifact was created in the working tree; the existing ignored .no-mistakes directory was retained. Only the two intentional source/test changes remain."
+}

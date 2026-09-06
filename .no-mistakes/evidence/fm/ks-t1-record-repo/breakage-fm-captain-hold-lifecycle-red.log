@@ -1,0 +1,12 @@
+Test: tests/fm-captain-hold-lifecycle.test.sh
+Selector: test_complete_scan_block_cannot_print_success
+Subject: bin/fm-captain-hold.sh:1138
+-   record_out=$("$SCRIPT_DIR/fm-record.sh" checkpoint --reason complete 2>&1) \
++   record_out=$(true) \
+
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+not ok - scan-blocked completion printed success
+
+exit=1
+
+After source restoration: git status --porcelain is empty.

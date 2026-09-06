@@ -1,0 +1,8 @@
+Test: tests/fm-teardown.test.sh
+Selector: test_force_preserves_record_checkpoint_when_scan_blocks
+Original source restored. git status --porcelain is empty before this run.
+
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - force preserves Record capture before teardown
+
+exit=0

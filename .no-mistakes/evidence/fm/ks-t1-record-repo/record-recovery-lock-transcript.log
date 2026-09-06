@@ -1,0 +1,51 @@
+
+Public Record response:
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+
+Public Record response:
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+
+Public Record response:
+fm-record: state=committed-local commit=d74b05f
+pending=1
+pending_since=1788730814
+delivery=pending
+pending_age_seconds=0
+
+Public Record response:
+fm-record: state=committed-local commit=d74b05f
+pending=1
+pending_since=1788730814
+delivery=pending
+pending_age_seconds=0
+
+Public Record response:
+fm-record: state=configuration-error detail=commit-publication
+pending=2
+delivery=pending
+pending_since=1788730814
+pending_age_seconds=1
+
+Public Record response:
+fm-record: state=configuration-error detail=commit-publication
+pending=2
+delivery=pending
+pending_since=1788730814
+pending_age_seconds=1
+
+Public Record response:
+fm-record: broken Record symlink
+
+Public Record response:
+fm-record: broken Record symlink
+
+Concurrent git add exit=128
+Committed snapshot=56fae8e80e2b9b678313bd43f7bdf93edf9f980a
+Working file=working bytes
+
+Concurrent git add exit=128
+Committed snapshot=56fae8e80e2b9b678313bd43f7bdf93edf9f980a
+Working file=working bytes
+ok - fm-record: recovery holds the index lock throughout staged-content checks and publication

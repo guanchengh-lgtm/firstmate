@@ -1,0 +1,101 @@
+
+Observed command result for expect_code 0 "$RC" "setup $home"
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+
+Observed command result for expect_code 0 "$RC" "setup $home"
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+
+Observed command result for expect_code 0 "$RC" 'refresh recovery seed'
+fm-record: state=committed-local commit=f265eef
+pending=1
+pending_since=1788727542
+delivery=pending
+pending_age_seconds=0
+
+Observed command result for expect_code 0 "$RC" 'refresh recovery seed'
+fm-record: state=committed-local commit=f265eef
+pending=1
+pending_since=1788727542
+delivery=pending
+pending_age_seconds=0
+
+Observed command result for expect_code 9 "$RC" "interrupted index publication at $fault"
+fm-record: state=configuration-error detail=commit-publication
+pending=2
+delivery=pending
+pending_since=1788727542
+pending_age_seconds=2
+
+Observed command result for expect_code 9 "$RC" "interrupted index publication at $fault"
+fm-record: state=configuration-error detail=commit-publication
+pending=2
+delivery=pending
+pending_since=1788727542
+pending_age_seconds=2
+
+Observed command result for expect_code 0 "$RC" "recovery after status at $fault"
+fm-record: state=unchanged commit=a8861f5
+pending=2
+delivery=pending
+pending_since=1788727542
+pending_age_seconds=3
+
+Observed command result for expect_code 0 "$RC" "recovery after status at $fault"
+fm-record: state=unchanged commit=a8861f5
+pending=2
+delivery=pending
+pending_since=1788727542
+pending_age_seconds=3
+
+Observed command result for expect_code 0 "$RC" "setup $home"
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+
+Observed command result for expect_code 0 "$RC" "setup $home"
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+
+Observed command result for expect_code 0 "$RC" 'refresh recovery seed'
+fm-record: state=committed-local commit=dc92248
+pending=1
+pending_since=1788727547
+delivery=pending
+pending_age_seconds=0
+
+Observed command result for expect_code 0 "$RC" 'refresh recovery seed'
+fm-record: state=committed-local commit=dc92248
+pending=1
+pending_since=1788727547
+delivery=pending
+pending_age_seconds=0
+
+Observed command result for expect_code 9 "$RC" "interrupted index publication at $fault"
+fm-record: state=configuration-error detail=commit-publication
+pending=2
+delivery=pending
+pending_since=1788727547
+pending_age_seconds=2
+
+Observed command result for expect_code 9 "$RC" "interrupted index publication at $fault"
+fm-record: state=configuration-error detail=commit-publication
+pending=2
+delivery=pending
+pending_since=1788727547
+pending_age_seconds=2
+
+Observed command result for expect_code 0 "$RC" "recovery after status at $fault"
+fm-record: state=unchanged commit=19f38be
+pending=2
+delivery=pending
+pending_since=1788727547
+pending_age_seconds=3
+
+Observed command result for expect_code 0 "$RC" "recovery after status at $fault"
+fm-record: state=unchanged commit=19f38be
+pending=2
+delivery=pending
+pending_since=1788727547
+pending_age_seconds=3
+ok - fm-record: recovery accepts stat refreshes before and after index publication

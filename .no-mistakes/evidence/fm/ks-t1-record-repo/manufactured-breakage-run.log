@@ -1,0 +1,25 @@
+Running breakage: tests/fm-record.test.sh subject bin/fm-record.sh:785 selector test_index_recovery_accepts_a_status_refresh
+Red observed, source restored, porcelain empty, green confirmed: fm-record
+Running breakage: tests/fm-record-scan.test.sh subject bin/fm-record-scan.sh:42 selector test_eight_classes_refuse_without_echoing_values
+Red observed, source restored, porcelain empty, green confirmed: fm-record-scan
+Running breakage: tests/fm-captain-hold-lifecycle.test.sh subject bin/fm-captain-hold.sh:1138 selector test_complete_scan_block_cannot_print_success
+Red observed, source restored, porcelain empty, green confirmed: fm-captain-hold-lifecycle
+Running breakage: tests/fm-feeder-export.test.sh subject bin/fm-feeder-export.sh:1362 selector test_nested_git_report_is_not_exported
+Red observed, source restored, porcelain empty, green confirmed: fm-feeder-export
+Running breakage: tests/fm-fleet-snapshot-view.test.sh subject bin/fm-fleet-snapshot.sh:1712 selector test_nested_git_report_is_not_discovered
+Red observed, source restored, porcelain empty, green confirmed: fm-fleet-snapshot-view
+Running breakage: tests/fm-gotmp.test.sh subject bin/fm-teardown.sh:3100 selector test_teardown_removes_tasktmp_dir
+Red observed, source restored, porcelain empty, green confirmed: fm-gotmp
+Running breakage: tests/fm-lint.test.sh subject bin/fm-lint.sh:931 selector test_list_files_reports_the_shell_inventory
+Red observed, source restored, porcelain empty, green confirmed: fm-lint
+Running breakage: tests/fm-map-fog-check.test.sh subject bin/fm-map-fog-check.sh:176 selector test_nested_git_map_is_not_discovered
+Red observed, source restored, porcelain empty, green confirmed: fm-map-fog-check
+Running breakage: tests/fm-session-start.test.sh subject bin/fm-session-start.sh:995 selector test_record_checkpoint_only_on_locked_startup
+Red observed, source restored, porcelain empty, green confirmed: fm-session-start
+Running breakage: tests/fm-stow-cascade.test.sh subject bin/fm-record.sh:1278 selector test_cascade_does_not_checkpoint_a_configured_record
+Red observed, source restored, porcelain empty, green confirmed: fm-stow-cascade
+Running breakage: tests/fm-teardown.test.sh subject bin/fm-teardown.sh:2924 selector test_force_preserves_record_checkpoint_when_scan_blocks
+Red observed, source restored, porcelain empty, green confirmed: fm-teardown
+Running breakage: tests/fm-test-run.test.sh subject bin/fm-test-run.sh:1028 selector test_list_all_exact_suite_coverage
+Red observed, source restored, porcelain empty, green confirmed: fm-test-run
+All manufactured breakage checks complete. Final porcelain is empty.

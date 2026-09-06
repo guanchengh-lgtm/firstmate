@@ -1,0 +1,245 @@
+
+$ FM_EVIDENCE_TRACE=1 bash select-test.sh tests/fm-record.test.sh test_index_recovery_locks_before_comparing_staged_content
+
+Observed command result for expect_code 0 "$RC" "setup $home"
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+
+Observed command result for expect_code 0 "$RC" "setup $home"
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+
+Observed command result for expect_code 0 "$RC" 'recovery race seed'
+fm-record: state=committed-local commit=6c00696
+pending=1
+pending_since=1788727509
+delivery=pending
+pending_age_seconds=0
+
+Observed command result for expect_code 0 "$RC" 'recovery race seed'
+fm-record: state=committed-local commit=6c00696
+pending=1
+pending_since=1788727509
+delivery=pending
+pending_age_seconds=0
+
+Observed command result for expect_code 9 "$RC" 'recovery race publication failure'
+fm-record: state=configuration-error detail=commit-publication
+pending=2
+delivery=pending
+pending_since=1788727509
+pending_age_seconds=1
+
+Observed command result for expect_code 9 "$RC" 'recovery race publication failure'
+fm-record: state=configuration-error detail=commit-publication
+pending=2
+delivery=pending
+pending_since=1788727509
+pending_age_seconds=1
+
+Observed command result for expect_code 8 "$RC" 'broken source after recovery'
+fm-record: broken Record symlink
+
+Observed command result for expect_code 8 "$RC" 'broken source after recovery'
+fm-record: broken Record symlink
+ok - fm-record: recovery holds the index lock throughout staged-content checks and publication
+
+$ FM_EVIDENCE_TRACE=1 bash select-test.sh tests/fm-record.test.sh test_index_recovery_accepts_a_status_refresh
+
+Observed command result for expect_code 0 "$RC" "setup $home"
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+
+Observed command result for expect_code 0 "$RC" "setup $home"
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+
+Observed command result for expect_code 0 "$RC" 'refresh recovery seed'
+fm-record: state=committed-local commit=f265eef
+pending=1
+pending_since=1788727542
+delivery=pending
+pending_age_seconds=0
+
+Observed command result for expect_code 0 "$RC" 'refresh recovery seed'
+fm-record: state=committed-local commit=f265eef
+pending=1
+pending_since=1788727542
+delivery=pending
+pending_age_seconds=0
+
+Observed command result for expect_code 9 "$RC" "interrupted index publication at $fault"
+fm-record: state=configuration-error detail=commit-publication
+pending=2
+delivery=pending
+pending_since=1788727542
+pending_age_seconds=2
+
+Observed command result for expect_code 9 "$RC" "interrupted index publication at $fault"
+fm-record: state=configuration-error detail=commit-publication
+pending=2
+delivery=pending
+pending_since=1788727542
+pending_age_seconds=2
+
+Observed command result for expect_code 0 "$RC" "recovery after status at $fault"
+fm-record: state=unchanged commit=a8861f5
+pending=2
+delivery=pending
+pending_since=1788727542
+pending_age_seconds=3
+
+Observed command result for expect_code 0 "$RC" "recovery after status at $fault"
+fm-record: state=unchanged commit=a8861f5
+pending=2
+delivery=pending
+pending_since=1788727542
+pending_age_seconds=3
+
+Observed command result for expect_code 0 "$RC" "setup $home"
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+
+Observed command result for expect_code 0 "$RC" "setup $home"
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+
+Observed command result for expect_code 0 "$RC" 'refresh recovery seed'
+fm-record: state=committed-local commit=dc92248
+pending=1
+pending_since=1788727547
+delivery=pending
+pending_age_seconds=0
+
+Observed command result for expect_code 0 "$RC" 'refresh recovery seed'
+fm-record: state=committed-local commit=dc92248
+pending=1
+pending_since=1788727547
+delivery=pending
+pending_age_seconds=0
+
+Observed command result for expect_code 9 "$RC" "interrupted index publication at $fault"
+fm-record: state=configuration-error detail=commit-publication
+pending=2
+delivery=pending
+pending_since=1788727547
+pending_age_seconds=2
+
+Observed command result for expect_code 9 "$RC" "interrupted index publication at $fault"
+fm-record: state=configuration-error detail=commit-publication
+pending=2
+delivery=pending
+pending_since=1788727547
+pending_age_seconds=2
+
+Observed command result for expect_code 0 "$RC" "recovery after status at $fault"
+fm-record: state=unchanged commit=19f38be
+pending=2
+delivery=pending
+pending_since=1788727547
+pending_age_seconds=3
+
+Observed command result for expect_code 0 "$RC" "recovery after status at $fault"
+fm-record: state=unchanged commit=19f38be
+pending=2
+delivery=pending
+pending_since=1788727547
+pending_age_seconds=3
+ok - fm-record: recovery accepts stat refreshes before and after index publication
+
+$ FM_EVIDENCE_TRACE=1 bash select-test.sh tests/fm-record.test.sh test_health_reads_current_pending_commits_and_age
+
+Observed command result for expect_code 0 "$RC" "setup $home"
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+
+Observed command result for expect_code 0 "$RC" "setup $home"
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+
+Observed command result for expect_code 0 "$RC" 'current health seed push'
+fm-record: state=pushed commit=16e167c
+pending=0
+last_push_at=2026-09-06T20:45:54Z
+delivery=pushed
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+
+Observed command result for expect_code 0 "$RC" 'current health seed push'
+fm-record: state=pushed commit=16e167c
+pending=0
+last_push_at=2026-09-06T20:45:54Z
+delivery=pushed
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+
+Observed command result for expect_code 0 "$RC" 'health after manual commit'
+fm-record: state=committed-local
+commit=16e167c
+state=committed-local
+updated_at=2026-09-06T20:45:54Z
+pending=1
+last_push_at=2026-09-06T20:45:54Z
+delivery=pending
+failure_class=none
+pending_since=1788727434
+pending_age_seconds=121
+
+Observed command result for expect_code 0 "$RC" 'health after manual commit'
+fm-record: state=committed-local
+commit=16e167c
+state=committed-local
+updated_at=2026-09-06T20:45:54Z
+pending=1
+last_push_at=2026-09-06T20:45:54Z
+delivery=pending
+failure_class=none
+pending_since=1788727434
+pending_age_seconds=121
+
+Observed command result for expect_code 6 "$RC" 'current health pending push'
+fm-record: state=push-pending commit=628835f class=offline pending=1
+pending=1
+last_push_at=2026-09-06T20:45:54Z
+delivery=push-pending
+failure_class=offline
+pending_since=1788727557
+pending_age_seconds=0
+
+Observed command result for expect_code 6 "$RC" 'current health pending push'
+fm-record: state=push-pending commit=628835f class=offline pending=1
+pending=1
+last_push_at=2026-09-06T20:45:54Z
+delivery=push-pending
+failure_class=offline
+pending_since=1788727557
+pending_age_seconds=0
+
+Observed command result for expect_code 0 "$RC" 'current health pending age'
+fm-record: state=push-pending
+commit=628835f
+class=offline
+pending=1
+state=push-pending
+updated_at=2026-09-06T20:45:57Z
+last_push_at=2026-09-06T20:45:54Z
+delivery=push-pending
+failure_class=offline
+pending_since=1788727557
+pending_age_seconds=3
+
+Observed command result for expect_code 0 "$RC" 'current health pending age'
+fm-record: state=push-pending
+commit=628835f
+class=offline
+pending=1
+state=push-pending
+updated_at=2026-09-06T20:45:57Z
+last_push_at=2026-09-06T20:45:54Z
+delivery=push-pending
+failure_class=offline
+pending_since=1788727557
+pending_age_seconds=3
+ok - fm-record: read-only health reports current commits and age while retaining delivery receipts

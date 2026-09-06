@@ -1,0 +1,98 @@
+[
+  {
+    "test": "tests/fm-record.test.sh",
+    "subject": "bin/fm-record.sh",
+    "line": 990,
+    "selector": "test_health_reads_current_pending_commits_and_age",
+    "old": "  health=$(read_health_file) || die 8 \"cannot read Record health\"",
+    "new": "  health=$(cat \"$GIT_DIR_ABS/record-health\") || die 8 \"cannot read Record health\""
+  },
+  {
+    "test": "tests/fm-record-scan.test.sh",
+    "subject": "bin/fm-record-scan.sh",
+    "line": 147,
+    "selector": "test_eight_classes_refuse_without_echoing_values",
+    "old": "  [ -n \"$hit\" ] || return 0",
+    "new": "  return 0"
+  },
+  {
+    "test": "tests/fm-feeder-export.test.sh",
+    "subject": "bin/fm-feeder-export.sh",
+    "line": 1362,
+    "selector": "test_nested_git_report_is_not_exported",
+    "old": "  LC_ALL=C find \"$DATA\" -mindepth 2 -maxdepth 2 -name report.md -print0 > \"$report_sources\" 2>/dev/null \\",
+    "new": "  LC_ALL=C find \"$DATA\" -mindepth 2 -maxdepth 5 -name report.md -print0 > \"$report_sources\" 2>/dev/null \\"
+  },
+  {
+    "test": "tests/fm-captain-hold-lifecycle.test.sh",
+    "subject": "bin/fm-captain-hold.sh",
+    "line": 1138,
+    "selector": "test_complete_scan_block_cannot_print_success",
+    "old": "  record_out=$(\"$SCRIPT_DIR/fm-record.sh\" checkpoint --reason complete 2>&1) \\",
+    "new": "  record_out=$(printf \"fm-record: state=disabled\") \\"
+  },
+  {
+    "test": "tests/fm-fleet-snapshot-view.test.sh",
+    "subject": "bin/fm-fleet-snapshot.sh",
+    "line": 1712,
+    "selector": "test_nested_git_report_is_not_discovered",
+    "old": "  LC_ALL=C find \"$DATA\" -mindepth 2 -maxdepth 2 -type f -name report.md -print \\",
+    "new": "  LC_ALL=C find \"$DATA\" -mindepth 2 -maxdepth 5 -type f -name report.md -print \\"
+  },
+  {
+    "test": "tests/fm-gotmp.test.sh",
+    "subject": "bin/fm-teardown.sh",
+    "line": 3100,
+    "selector": "test_teardown_removes_tasktmp_dir",
+    "old": "  rm -rf \"$TASK_TMP\"",
+    "new": "  : \"$TASK_TMP\""
+  },
+  {
+    "test": "tests/fm-lint.test.sh",
+    "subject": "bin/fm-lint.sh",
+    "line": 931,
+    "selector": "test_list_files_reports_the_shell_inventory",
+    "old": "    ROOTS=(bin/*.sh bin/backends/*.sh tests/*.sh)",
+    "new": "    ROOTS=(bin/*.sh bin/backends/*.sh tests/*.sh data/.git/bin/*.sh)"
+  },
+  {
+    "test": "tests/fm-map-fog-check.test.sh",
+    "subject": "bin/fm-map-fog-check.sh",
+    "line": 176,
+    "selector": "test_nested_git_map_is_not_discovered",
+    "old": "    done < <(find \"$DATA\" -name .git -prune -o -name map.md -type f -print 2>/dev/null || true)",
+    "new": "    done < <(find \"$DATA\" -name map.md -type f -print 2>/dev/null || true)"
+  },
+  {
+    "test": "tests/fm-session-start.test.sh",
+    "subject": "bin/fm-session-start.sh",
+    "line": 995,
+    "selector": "test_record_checkpoint_only_on_locked_startup",
+    "old": "  record_out=$(\"$SCRIPT_DIR/fm-record.sh\" checkpoint --reason session-start 2>&1) || true",
+    "new": "  record_out=$(\"$SCRIPT_DIR/fm-record.sh\" health 2>&1) || true"
+  },
+  {
+    "test": "tests/fm-stow-cascade.test.sh",
+    "subject": "bin/fm-record.sh",
+    "line": 1267,
+    "selector": "test_cascade_does_not_checkpoint_a_configured_record",
+    "old": "    session-start | stow | complete | teardown) ;;",
+    "new": "    session-start | complete | teardown) ;;"
+  },
+  {
+    "test": "tests/fm-teardown.test.sh",
+    "subject": "bin/fm-teardown.sh",
+    "line": 2924,
+    "selector": "test_force_preserves_record_checkpoint_when_scan_blocks",
+    "old": "  if ! \"$SCRIPT_DIR/fm-record.sh\" checkpoint --reason teardown --required >&2; then",
+    "new": "  if ! true; then"
+  },
+  {
+    "test": "tests/fm-test-run.test.sh",
+    "subject": "bin/fm-test-run.sh",
+    "line": 1028,
+    "selector": "test_list_all_exact_suite_coverage",
+    "old": "  for f in tests/*.test.sh; do",
+    "new": "  for f in tests/*.test.sh data/.git/tests/*.test.sh; do"
+  }
+]

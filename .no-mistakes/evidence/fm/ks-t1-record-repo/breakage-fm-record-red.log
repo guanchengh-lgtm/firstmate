@@ -1,0 +1,11 @@
+Test: tests/fm-record.test.sh
+Selector: test_index_recovery_accepts_a_status_refresh
+Subject: bin/fm-record.sh:785
+-     if ! git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" diff --cached --quiet --ita-visible-in-index "$tree" --; then
++     if ! cmp -s "$GIT_DIR_ABS/index" "$journal/index"; then
+
+not ok - recovery after status at rm: expected exit 0, got 8
+
+exit=1
+
+After source restoration: git status --porcelain is empty.

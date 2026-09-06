@@ -1,0 +1,8 @@
+Test: tests/fm-captain-hold-lifecycle.test.sh
+Selector: test_complete_scan_block_cannot_print_success
+Original source restored. git status --porcelain is empty before this run.
+
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - accepted completion cannot print success when the Record scan blocks
+
+exit=0

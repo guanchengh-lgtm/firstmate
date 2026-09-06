@@ -1,0 +1,167 @@
+
+$ gitleaks version; git lfs version
+8.30.1
+git-lfs/3.8.0 (GitHub; darwin arm64; go 1.27.0)
+
+$ Create an old-layout local origin and clone it into the scratch home.
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+
+$ fm-record.sh setup --code-root <this worktree>
+fm-record: state=unchanged detail=setup
+
+$ fm-record.sh checkpoint --reason stow
+fm-record: state=committed-local commit=c341d47
+pending=1
+pending_since=1788730422
+delivery=pending
+pending_age_seconds=0
+The checkpoint kept the old remote tip as an ancestor and did not push.
+
+$ git ls-tree -r --name-only HEAD
+.gitattributes
+.gitignore
+.record-state/task.inbox/handled/001.msg
+.record-state/task.meta
+.record-state/task.status
+captain.md
+context.md
+raw/sample.png
+seed.md
+
+$ git show HEAD:.record-state/task.inbox/handled/001.msg
+A handled task instruction.
+
+$ fm-record.sh tick
+fm-record: state=pushed commit=c341d47
+pending=0
+delivery=pushed
+pending_since=0
+last_push_at=2026-09-06T21:33:44Z
+failure_class=none
+pending_age_seconds=0
+
+$ Clone the local origin at another path, reinstall local hooks, and compare LFS bytes.
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+LFS source and restored SHA-256:
+bb6ec3516c9915cbe4ec9c14b181d056770622eac5c8a7e348aa68f52223096b  /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase/cli-rehearsal/home/data/raw/sample.png
+bb6ec3516c9915cbe4ec9c14b181d056770622eac5c8a7e348aa68f52223096b  /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase/cli-rehearsal/restored/data/raw/sample.png
+The relative link resolves. Workspace state and the runtime lock are absent.
+
+$ Run three quiet ticks and compare the commit and mirror file.
+fm-record: state=unchanged commit=c341d47
+pending=0
+last_push_at=2026-09-06T21:33:44Z
+delivery=pushed
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+fm-record: state=unchanged commit=c341d47
+pending=0
+last_push_at=2026-09-06T21:33:44Z
+delivery=pushed
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+fm-record: state=unchanged commit=c341d47
+pending=0
+last_push_at=2026-09-06T21:33:44Z
+delivery=pushed
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+Quiet ticks kept the same commit and mirror inode/timestamps.
+
+$ Reject a synthetic credential through tick and the installed manual-commit hook.
+fm-record-scan: refusing to publish: /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase/cli-rehearsal/home/data/.git/record-candidate/work/../scan/rejected.md matches the github-classic-token credential pattern
+fm-record: state=scan-blocked
+pending=0
+last_push_at=2026-09-06T21:33:44Z
+delivery=pushed
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+tick exit=5; HEAD and remote unchanged.
+fm-record-scan: refusing to publish: /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase/cli-rehearsal/home/data/.git/record-precommit.qZIcYU/work/rejected.md matches the github-classic-token credential pattern
+fm-record: state=scan-blocked
+manual git commit exit=1; no credential bytes reached Git history.
+
+$ Temporarily make the local origin unavailable, then tick a changed note.
+fm-record: state=push-pending commit=e689278 class=offline pending=1
+pending=1
+last_push_at=2026-09-06T21:33:44Z
+delivery=push-pending
+failure_class=offline
+pending_since=1788730437
+pending_age_seconds=0
+tick exit=6; the complete new local commit remains present.
+
+$ fm-record.sh health
+fm-record: state=push-pending
+commit=e689278
+class=offline
+pending=1
+state=push-pending
+updated_at=2026-09-06T21:33:57Z
+last_push_at=2026-09-06T21:33:44Z
+delivery=push-pending
+failure_class=offline
+pending_since=1788730437
+pending_age_seconds=2
+Health was read-only. It retained the last push and reported current pending age.
+
+$ fm-record.sh tick after restoring the origin, without another edit
+fm-record: state=pushed commit=e689278
+pending=0
+last_push_at=2026-09-06T21:34:01Z
+delivery=pushed
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+
+$ Create a clean manual commit, then read health before another tick.
+fm-record: state=committed-local
+commit=e689278
+state=committed-local
+updated_at=2026-09-06T21:34:01Z
+pending=1
+last_push_at=2026-09-06T21:34:01Z
+delivery=pending
+failure_class=none
+pending_since=1788730441
+pending_age_seconds=3
+
+$ Advance the origin independently from the restored clone.
+
+$ fm-record.sh tick with two different histories
+fm-record: state=diverged commit=3dd84cf
+pending=1
+last_push_at=2026-09-06T21:34:01Z
+delivery=diverged
+failure_class=diverged
+pending_since=1788730451
+pending_age_seconds=0
+tick exit=7; both local and remote histories remain unchanged.
+
+$ fm-record.sh checkpoint --reason stow after another local edit
+fm-record: state=committed-local commit=888b6cb
+pending=2
+last_push_at=2026-09-06T21:34:01Z
+delivery=diverged
+failure_class=diverged
+pending_since=1788730451
+pending_age_seconds=4
+fm-record: state=committed-local
+commit=888b6cb
+state=committed-local
+updated_at=2026-09-06T21:34:15Z
+pending=2
+last_push_at=2026-09-06T21:34:01Z
+delivery=diverged
+failure_class=diverged
+pending_since=1788730451
+pending_age_seconds=5
+
+The scratch rehearsal completed with no live-home or scheduler operation.

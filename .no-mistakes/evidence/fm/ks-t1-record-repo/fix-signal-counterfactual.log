@@ -1,0 +1,11 @@
+<built-in function default_int_handler>
+1
+<built-in function default_int_handler>
+[1]+  Done                    "$runner" -k 1 "$seconds" bash -c '
+    status_file=$1
+    shift
+    "$@"
+    command_rc=$?
+    printf "%s\n" "$command_rc" > "$status_file"
+    exit "$command_rc"
+  ' _ "$status_file" "$@"

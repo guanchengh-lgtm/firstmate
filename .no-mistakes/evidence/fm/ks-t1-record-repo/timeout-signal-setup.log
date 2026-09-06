@@ -1,0 +1,8 @@
+$ ['bash', '-c', '. bin/fm-timeout-lib.sh; fm_run_timed 5 python3 -c "import signal; print(signal.getsignal(signal.SIGINT))"']
+1
+exit=0
+$ ['python3', '-c', 'import signal; print(signal.getsignal(signal.SIGINT))']
+<built-in function default_int_handler>
+exit=0
+The optional per-script timeout inherited SIGINT=SIG_IGN (1). The direct invocation preserved the handler.
+The focused test_signals_roll_back retry passed through select-test.sh without the optional timeout.

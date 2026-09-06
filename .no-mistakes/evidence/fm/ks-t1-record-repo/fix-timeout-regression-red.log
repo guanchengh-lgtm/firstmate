@@ -1,0 +1,1 @@
+not ok - a bounded command must receive SIGINT: expected exit 42, got 0

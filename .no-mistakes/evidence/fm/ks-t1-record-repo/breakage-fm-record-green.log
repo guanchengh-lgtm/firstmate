@@ -1,0 +1,7 @@
+Test: tests/fm-record.test.sh
+Selector: test_index_recovery_accepts_a_status_refresh
+Original source restored. git status --porcelain is empty before this run.
+
+ok - fm-record: recovery accepts stat refreshes before and after index publication
+
+exit=0

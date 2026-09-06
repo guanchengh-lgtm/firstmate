@@ -1,0 +1,11 @@
+Test: tests/fm-test-run.test.sh
+Selector: test_list_all_exact_suite_coverage
+Subject: bin/fm-test-run.sh:1028
+-   for f in tests/*.test.sh; do
++   for f in tests/*.test.sh data/.git/tests/*.test.sh; do
+
+not ok - --list --all discovered a nested Git test file
+
+exit=1
+
+After source restoration: git status --porcelain is empty.

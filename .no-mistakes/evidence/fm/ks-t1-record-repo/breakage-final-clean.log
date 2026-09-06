@@ -1,0 +1,5 @@
+After all restores, green reruns, and temporary fixture cleanup:
+$ git status --porcelain
+(empty)
+$ git rev-parse HEAD
+e37e166f895bcaf8556d422087592717c4619ce0

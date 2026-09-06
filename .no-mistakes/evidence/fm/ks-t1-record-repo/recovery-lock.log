@@ -1,0 +1,43 @@
+
+Observed command result for expect_code 0 "$RC" "setup $home"
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+
+Observed command result for expect_code 0 "$RC" "setup $home"
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+
+Observed command result for expect_code 0 "$RC" 'recovery race seed'
+fm-record: state=committed-local commit=6c00696
+pending=1
+pending_since=1788727509
+delivery=pending
+pending_age_seconds=0
+
+Observed command result for expect_code 0 "$RC" 'recovery race seed'
+fm-record: state=committed-local commit=6c00696
+pending=1
+pending_since=1788727509
+delivery=pending
+pending_age_seconds=0
+
+Observed command result for expect_code 9 "$RC" 'recovery race publication failure'
+fm-record: state=configuration-error detail=commit-publication
+pending=2
+delivery=pending
+pending_since=1788727509
+pending_age_seconds=1
+
+Observed command result for expect_code 9 "$RC" 'recovery race publication failure'
+fm-record: state=configuration-error detail=commit-publication
+pending=2
+delivery=pending
+pending_since=1788727509
+pending_age_seconds=1
+
+Observed command result for expect_code 8 "$RC" 'broken source after recovery'
+fm-record: broken Record symlink
+
+Observed command result for expect_code 8 "$RC" 'broken source after recovery'
+fm-record: broken Record symlink
+ok - fm-record: recovery holds the index lock throughout staged-content checks and publication

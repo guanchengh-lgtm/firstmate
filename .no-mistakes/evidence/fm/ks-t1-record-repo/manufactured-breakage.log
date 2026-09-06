@@ -1,0 +1,37 @@
+MUTATE tests/fm-record.test.sh bin/fm-record.sh:990
+RED observed; restored; git status --porcelain returned empty output
+GREEN tests/fm-record.test.sh
+MUTATE tests/fm-record-scan.test.sh bin/fm-record-scan.sh:147
+RED observed; restored; git status --porcelain returned empty output
+GREEN tests/fm-record-scan.test.sh
+MUTATE tests/fm-feeder-export.test.sh bin/fm-feeder-export.sh:1362
+RED observed; restored; git status --porcelain returned empty output
+GREEN tests/fm-feeder-export.test.sh
+MUTATE tests/fm-captain-hold-lifecycle.test.sh bin/fm-captain-hold.sh:1138
+RED observed; restored; git status --porcelain returned empty output
+GREEN tests/fm-captain-hold-lifecycle.test.sh
+MUTATE tests/fm-fleet-snapshot-view.test.sh bin/fm-fleet-snapshot.sh:1712
+RED observed; restored; git status --porcelain returned empty output
+GREEN tests/fm-fleet-snapshot-view.test.sh
+MUTATE tests/fm-gotmp.test.sh bin/fm-teardown.sh:3100
+RED observed; restored; git status --porcelain returned empty output
+GREEN tests/fm-gotmp.test.sh
+MUTATE tests/fm-lint.test.sh bin/fm-lint.sh:931
+RED observed; restored; git status --porcelain returned empty output
+GREEN tests/fm-lint.test.sh
+MUTATE tests/fm-map-fog-check.test.sh bin/fm-map-fog-check.sh:176
+RED observed; restored; git status --porcelain returned empty output
+GREEN tests/fm-map-fog-check.test.sh
+MUTATE tests/fm-session-start.test.sh bin/fm-session-start.sh:995
+RED observed; restored; git status --porcelain returned empty output
+GREEN tests/fm-session-start.test.sh
+MUTATE tests/fm-stow-cascade.test.sh bin/fm-record.sh:1267
+RED observed; restored; git status --porcelain returned empty output
+GREEN tests/fm-stow-cascade.test.sh
+MUTATE tests/fm-teardown.test.sh bin/fm-teardown.sh:2924
+RED observed; restored; git status --porcelain returned empty output
+GREEN tests/fm-teardown.test.sh
+MUTATE tests/fm-test-run.test.sh bin/fm-test-run.sh:1028
+RED observed; restored; git status --porcelain returned empty output
+GREEN tests/fm-test-run.test.sh
+FINAL git status --porcelain returned empty output

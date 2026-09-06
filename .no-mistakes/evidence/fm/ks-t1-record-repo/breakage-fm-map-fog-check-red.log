@@ -1,0 +1,11 @@
+Test: tests/fm-map-fog-check.test.sh
+Selector: test_nested_git_map_is_not_discovered
+Subject: bin/fm-map-fog-check.sh:176
+-     done < <(find "$DATA" -name .git -prune -o -name map.md -type f -print 2>/dev/null || true)
++     done < <(find "$DATA" -name map.md -type f -print 2>/dev/null || true)
+
+not ok - nested Git map.md was discovered as fog: MAP_FOG: data/.git/objects/aa/map.md	live unspecified item: - Whether a nested Git map is treated as live fog.
+
+exit=1
+
+After source restoration: git status --porcelain is empty.

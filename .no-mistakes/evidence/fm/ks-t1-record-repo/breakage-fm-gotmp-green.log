@@ -1,0 +1,7 @@
+Test: tests/fm-gotmp.test.sh
+Selector: test_teardown_removes_tasktmp_dir
+Original source restored. git status --porcelain is empty before this run.
+
+ok - fm-teardown removes the dir pointed to by tasktmp= in meta
+
+exit=0

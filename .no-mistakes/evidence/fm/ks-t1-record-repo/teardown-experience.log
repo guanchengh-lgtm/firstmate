@@ -1,0 +1,136 @@
+
+Scenario: no-mistakes
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+$ bin/fm-teardown.sh task-x1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 1s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-record: state=committed-local commit=b1c8739
+pending=1
+pending_since=1788727805
+delivery=pending
+pending_age_seconds=0
+leftover: removed branch fm/task-x1
+leftover: removed 1, retained 0
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-no-mistakes/project: already current
+teardown task-x1 complete (window firstmate:fm-task-x1, worktree /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-no-mistakes/wt)
+Backlog: task-x1 just finished (this home keeps no backlog at /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-no-mistakes/data/backlog.md). Update /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-no-mistakes/data/backlog.md - move task-x1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+$ git show HEAD:.record-state/task-x1.inbox/handled/001.msg
+Preserve the final inbox message.
+$ git show HEAD:.record-state/task-x1.meta
+window=firstmate:fm-task-x1
+endpoint_task_id=task-x1
+worktree=/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-no-mistakes/wt
+project=/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-no-mistakes/project
+kind=ship
+mode=no-mistakes
+spawn_gen=teardown-test-task-x1
+Live metadata and inbox are removed. Their complete bytes remain in the local Record commit.
+The report is committed. Record delivery remains local until the next tick.
+
+Scenario: direct-PR
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+$ bin/fm-teardown.sh task-x1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 1s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-record: state=committed-local commit=f66481b
+pending=1
+pending_since=1788727815
+delivery=pending
+pending_age_seconds=0
+leftover: removed branch fm/task-x1
+leftover: removed 1, retained 0
+/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-direct-PR/project: already current
+teardown task-x1 complete (window firstmate:fm-task-x1, worktree /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-direct-PR/wt)
+Backlog: task-x1 just finished (this home keeps no backlog at /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-direct-PR/data/backlog.md). Update /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-direct-PR/data/backlog.md - move task-x1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+$ git show HEAD:.record-state/task-x1.inbox/handled/001.msg
+Preserve the final inbox message.
+$ git show HEAD:.record-state/task-x1.meta
+window=firstmate:fm-task-x1
+endpoint_task_id=task-x1
+worktree=/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-direct-PR/wt
+project=/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-direct-PR/project
+kind=ship
+mode=direct-PR
+spawn_gen=teardown-test-task-x1
+Live metadata and inbox are removed. Their complete bytes remain in the local Record commit.
+The report is committed. Record delivery remains local until the next tick.
+
+Scenario: local-only
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+$ bin/fm-teardown.sh task-x1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 1s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-record: state=committed-local commit=5331d88
+pending=1
+pending_since=1788727823
+delivery=pending
+pending_age_seconds=0
+leftover: removed branch fm/task-x1
+leftover: removed 1, retained 0
+teardown task-x1 complete (window firstmate:fm-task-x1, worktree /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-local-only/wt)
+Backlog: task-x1 just finished (this home keeps no backlog at /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-local-only/data/backlog.md). Update /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-local-only/data/backlog.md - move task-x1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+$ git show HEAD:.record-state/task-x1.inbox/handled/001.msg
+Preserve the final inbox message.
+$ git show HEAD:.record-state/task-x1.meta
+window=firstmate:fm-task-x1
+endpoint_task_id=task-x1
+worktree=/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-local-only/wt
+project=/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-local-only/project
+kind=ship
+mode=local-only
+spawn_gen=teardown-test-task-x1
+Live metadata and inbox are removed. Their complete bytes remain in the local Record commit.
+The report is committed. Record delivery remains local until the next tick.
+
+Scenario: scout
+fm-record: state=disabled
+complete: task-x1 captain-call and product-idea inventories reviewed
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+$ bin/fm-teardown.sh task-x1
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 1s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision with a foreground checkpoint: bin/fm-watch-checkpoint.sh --seconds 180.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-record: state=committed-local commit=9b9c234
+pending=1
+pending_since=1788727831
+delivery=pending
+pending_age_seconds=0
+leftover: removed branch fm/task-x1
+leftover: removed 1, retained 0
+teardown task-x1 complete (window firstmate:fm-task-x1, worktree /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-scout/wt)
+Backlog: task-x1 just finished (this home keeps no backlog at /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-scout/data/backlog.md). Update /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-scout/data/backlog.md - move task-x1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+$ git show HEAD:.record-state/task-x1.inbox/handled/001.msg
+Preserve the final inbox message.
+$ git show HEAD:.record-state/task-x1.meta
+window=firstmate:fm-task-x1
+endpoint_task_id=task-x1
+worktree=/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-scout/wt
+project=/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/teardown-evidence-fixtures/fm-teardown-tests.X02Xs7/record-success-scout/project
+kind=scout
+mode=no-mistakes
+spawn_gen=teardown-test-task-x1
+decisions_reviewed=1
+decision_keys=
+ideas_reviewed=1
+idea_ids=
+Live metadata and inbox are removed. Their complete bytes remain in the local Record commit.
+The report is committed. Record delivery remains local until the next tick.

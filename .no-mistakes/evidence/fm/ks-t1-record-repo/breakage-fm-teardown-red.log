@@ -1,0 +1,12 @@
+Test: tests/fm-teardown.test.sh
+Selector: test_force_preserves_record_checkpoint_when_scan_blocks
+Subject: bin/fm-teardown.sh:2924
+-   if ! "$SCRIPT_DIR/fm-record.sh" checkpoint --reason teardown --required >&2; then
++   if ! true; then
+
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+not ok - forced teardown must refuse a blocked Record checkpoint: expected exit 1, got 0
+
+exit=1
+
+After source restoration: git status --porcelain is empty.

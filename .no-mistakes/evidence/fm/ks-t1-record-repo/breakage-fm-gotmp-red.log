@@ -1,0 +1,11 @@
+Test: tests/fm-gotmp.test.sh
+Selector: test_teardown_removes_tasktmp_dir
+Subject: bin/fm-teardown.sh:3100
+-   rm -rf "$TASK_TMP"
++   : "$TASK_TMP"
+
+not ok - teardown did not remove the tasktmp dir (/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-gotmp-tests.UViaNU/fm-td-rm-z2 still exists)
+
+exit=1
+
+After source restoration: git status --porcelain is empty.

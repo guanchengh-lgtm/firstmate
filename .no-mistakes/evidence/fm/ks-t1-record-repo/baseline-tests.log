@@ -1,0 +1,396 @@
+FM_TEST_BEGIN 2026-09-06T20:39:52Z tests/fm-record.test.sh family=unclassified expected_gate_skip=none
+ok - fm-record: a disabled home is an explicit no-op
+ok - fm-record: a disabled home does not require hash tools
+ok - fm-record: the first tick commits and pushes a clean Record
+ok - fm-record: unchanged ticks do not create commits
+ok - fm-record: inherited Git overrides and a wrong root refuse
+ok - fm-record: every effective push destination must match the binding
+ok - fm-record: LFS configuration cannot redirect uploads from the bound origin
+ok - fm-record: setup and transactions refuse redirected hook directories
+ok - fm-record: a live lock owner makes tick busy
+ok - fm-record: an abandoned lock is recovered
+ok - fm-record: an unstable settle window does not commit
+ok - fm-record: the scan chain blocks the commit without echoing secrets
+ok - fm-record: the state mirror updates and keeps history
+ok - fm-record: special names commit and outside links refuse
+ok - fm-record: validation omits untrusted paths and cleans transaction files on every exit
+ok - fm-record: LFS attributes are literal and survive shrink and repeated setup
+ok - fm-record: push failure keeps local commits and the next tick retries
+ok - fm-record: a non-fast-forward push reports diverged and keeps both histories
+ok - fm-record: the LaunchAgent plist is a validated 60-second sibling job
+ok - fm-record: job preflight requires tools, stable code, and a valid binding
+ok - fm-record: the new root commit keeps the old data/ tip as an ancestor
+ok - fm-record: the installed pre-commit hook blocks a direct git commit
+ok - fm-record: a required checkpoint refuses when the lock stays live
+ok - fm-record: required checkpoints refuse commit and publication failures
+ok - fm-record: the Git index lock protects the commit and index publication
+ok - fm-record: failed data and inbox enumeration cannot commit deletions
+ok - fm-record: copied bytes must match the settled inventory
+ok - fm-record: cleanup retains the lock until candidate removal finishes
+ok - fm-record: an unchanged tick retries unconfirmed first delivery
+ok - fm-record: push retains credential helpers and reports LFS upload failure
+ok - fm-record: manual LFS commits scan resolved bytes and refuse absent objects
+ok - fm-record: publication recovery retains LFS rules when files shrink before or after retry
+ok - fm-record: ticks and checkpoints scan resolved LFS payloads after a restore
+ok - fm-record: indexed archive links retain their types without outside traversal
+ok - fm-record: manual hooks reject prohibited paths and tick scans outgoing history
+ok - fm-record: activation, root ownership, private modes, and existing hooks are enforced
+ok - fm-record: fixed scope preserves durable files and refuses ambiguous filenames
+ok - fm-record: quiet ticks skip corpus work and changed bytes still receive content checks
+ok - fm-record: changed HEAD refuses the frozen snapshot without replacing competing work
+ok - fm-record: restart recovers prepared publication while preserving competing staging
+ok - fm-record: recovery holds the index lock throughout staged-content checks and publication
+ok - fm-record: recovery accepts stat refreshes before and after index publication
+ok - fm-record: read-only health reports current commits and age while retaining delivery receipts
+ok - fm-record: fixtures leave the outer repository unchanged
+FM_TEST_END 2026-09-06T20:43:22Z tests/fm-record.test.sh exit=0 duration_ms=209934 gate_skip=false
+FM_TEST_BEGIN 2026-09-06T20:43:22Z tests/fm-record-scan.test.sh family=unclassified expected_gate_skip=none
+ok - fm-record-scan: --help names the scan contract
+ok - fm-record-scan: every feeder class refuses without echoing the value
+ok - fm-record-scan: lookalikes stay clean
+ok - fm-record-scan: credential-shaped path labels are redacted
+ok - fm-record-scan: binary hits and scanner errors fail closed
+ok - fm-record-scan: missing, failing, and incomplete gitleaks scans fail closed
+ok - fm-record-scan: gitleaks-only and feeder-only hits each block independently
+ok - fm-record-scan: gitleaks:allow comments do not exempt a hit
+ok - fm-record-scan: corrupt and encrypted archives refuse
+ok - fm-record-scan: LFS pointer text is not enough; payload bytes are scanned
+ok - fm-record-scan: private key headers refuse in indented and serialized text
+ok - fm-record-scan: compressed feeder patterns block the archive-aware chain
+ok - fm-record-scan: Gitleaks exclusions cannot hide payloads or credential filenames
+ok - fm-record-scan: nested archives must be readable within the scan depth
+ok - fm-record-scan: unsupported archives refuse even under hidden or nested names
+ok - fm-record-scan: executable scans remove only their own temporary stages
+ok - fm-record-scan: archive expansion and scanner execution have enforced bounds
+ok - fm-record-scan: chain accepts a clean tree
+FM_TEST_END 2026-09-06T20:43:29Z tests/fm-record-scan.test.sh exit=0 duration_ms=7414 gate_skip=false
+FM_TEST_BEGIN 2026-09-06T20:43:29Z tests/fm-feeder-export.test.sh family=pr-forge expected_gate_skip=none
+ok - fm-feeder-export: malformed vault configuration refuses before any mutation
+ok - fm-feeder-export: Git path and object overrides refuse before mutation
+ok - fm-feeder-export: an unauthorized vault identity refuses before any mutation
+ok - fm-feeder-export: the versioned pinned marker is required before any mutation
+ok - fm-feeder-export: a vault overlapping the home, code root, or sources refuses
+ok - fm-feeder-export: a symbolic owned, nested, stage, journal, or lock path refuses
+ok - fm-feeder-export: render-time journal and backup links do not change external targets
+ok - fm-feeder-export: prior tree digests must succeed before journal creation
+ok - fm-feeder-export: empty and mixed source sets both publish complete indexes
+ok - fm-feeder-export: report discovery keeps its depth limit over nested Git metadata
+ok - fm-feeder-export: source enumeration failures preserve the prior mirror
+ok - fm-feeder-export: only in-tree regular-file aliases are mirrored
+ok - fm-feeder-export: titles are extracted, quoted, and Unicode-preserving
+note: this filesystem folds case, so the collision pair cannot be created here
+ok - fm-feeder-export: unsafe and colliding destination identifiers refuse
+ok - fm-feeder-export: first-known and source-update dates never fall back to the export day
+ok - fm-feeder-export: unchanged corpora rerun byte-identically across export days
+ok - fm-feeder-export: each index lists every emitted page once in a deterministic order
+ok - fm-feeder-export: render writes, payload bytes, and ordered index links are validated off-path
+ok - fm-feeder-export: a malformed generated index refuses before publication
+ok - fm-feeder-export: every high-confidence credential class refuses before mutation
+ok - fm-feeder-export: ordinary text that resembles a credential still publishes
+ok - fm-feeder-export: a credential reaching a generated page refuses before publication
+ok - fm-feeder-export: credential scan command and storage errors fail closed
+ok - fm-feeder-export: NUL and invalid UTF-8 source bytes refuse before mutation
+ok - fm-feeder-export: exact exclusions omit whole records and every invalid entry refuses
+ok - fm-feeder-export: source bytes, identity, membership, and timestamps stay stable
+ok - fm-feeder-export: a held or stale lock refuses before mutation with an exact instruction
+ok - fm-feeder-export: a dirty vault worktree or index refuses before publication
+ok - fm-feeder-export: split-device publication refuses before live mutation
+ok - fm-feeder-export: only wiki/decisions and wiki/reports are staged and committed
+ok - fm-feeder-export: committed lineage, full tree, live bytes, and push artifacts are verified
+ok - fm-feeder-export: a failing render, rename, add, or commit rolls the mirror back
+not ok - signal after git add: exporter reported success
+FM_TEST_END 2026-09-06T20:48:43Z tests/fm-feeder-export.test.sh exit=1 duration_ms=313935 gate_skip=false
+FM_TEST_BEGIN 2026-09-06T20:48:43Z tests/fm-captain-hold-lifecycle.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - report-only unresolved captain call is reproduced and completion refuses before loss
+ok - the completion gate attests captain-held inventory and transfers open status decisions
+ok - answer records the captain's words, closes idempotently, and releases routed work
+ok - release frees held work with the captain's words recorded and the body preserved
+ok - a deferred captain call leaves the live Captain's Call until its date and stays answerable
+ok - an out-of-band close is recordable with the captain's word and nothing else
+ok - ended visual review follows the same captain-hold completion owner
+ok - resolved findings and decision-like prose do not create captain-held tasks
+ok - terminal single-owner stale status decisions do not block empty inventory
+ok - main-home and secondmate-home captain calls remain correctly routed
+ok - a bound channel's captured answers close their captain-held tasks at answer time
+ok - a channel source with no decision binding closes nothing
+ok - legacy identities, metadata, bindings, and the shim keep working
+ok - product ideas, released state, and shipped supersession survive collapse
+ok - legacy metadata and resolved or superseded bodies remain valid
+ok - the chat channel feeds the same keyed-answer intake a captured review does
+ok - completion and verification validate origins before constructing paths
+ok - a status resolution over a still-open captain-held task is signalled, not closed
+ok - a captain call with no routed work, a verified transfer, an open decision, and an answered call all stay silent
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - accepted completion cannot print success when the Record scan blocks
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - verify remains read-only and never checkpoints the Record
+FM_TEST_END 2026-09-06T20:51:12Z tests/fm-captain-hold-lifecycle.test.sh exit=0 duration_ms=149194 gate_skip=false
+FM_TEST_BEGIN 2026-09-06T20:51:12Z tests/fm-fleet-snapshot-view.test.sh family=snapshot-bearings expected_gate_skip=optional-binary
+ok - empty fleet snapshot and view use explicit absence markers
+ok - fixture snapshot covers task rows, backlog rows, pointers, and stable ordering
+ok - snapshot report discovery keeps its depth limit over nested Git metadata
+# verified - home-summary excludes kind=secondmate from child inventory
+ok - main_inventory discloses orphan/unstructured and clears when inventory is consistent
+ok - backlog normalization preserves strict roles and resolves every blocker compatibly
+ok - snapshot event hints follow reconciled current state
+ok - durable fold keeps an open decision past a later unrelated event
+ok - a live secondmate endpoint preserves unrelated open decisions
+ok - durable captain-held transfer closes the duplicate live status decision
+ok - durable fold clears a decision only on a keyed resolution
+ok - a completed scout's stale decision surfaces as a report pointer, not pending
+ok - a scout still parked at a decision stays pending (terminal clear does not over-fire)
+ok - snapshot includes durable scout reports after teardown
+ok - snapshot parses tasks-axi rows and respects operational overrides
+ok - fleet view renders the snapshot without secondmate peek guidance
+ok - fleet view renders secondmate agent liveness
+FM_TEST_END 2026-09-06T20:51:34Z tests/fm-fleet-snapshot-view.test.sh exit=0 duration_ms=21474 gate_skip=false
+FM_TEST_BEGIN 2026-09-06T20:51:34Z tests/fm-gotmp.test.sh family=session-bootstrap expected_gate_skip=none
+ok - fm-teardown removes the dir pointed to by tasktmp= in meta
+ok - fm-teardown skips gracefully when tasktmp= is absent (backward compat)
+ok - fm-teardown skips gracefully when tasktmp= points to a nonexistent dir
+FM_TEST_END 2026-09-06T20:51:40Z tests/fm-gotmp.test.sh exit=0 duration_ms=5961 gate_skip=false
+FM_TEST_BEGIN 2026-09-06T20:51:40Z tests/fm-map-fog-check.test.sh family=session-bootstrap expected_gate_skip=none
+ok - map-fog: no map files is silent success
+ok - map discovery prunes nested Git metadata
+ok - map-fog: missing Not yet specified section is exit 2
+ok - map-fog: untokenized bullet is live fog
+ok - map-fog: parked, closed, and none are not live
+ok - map-fog: explicit - none is clean
+ok - map-fog: closed pointer must resolve to an existing file
+ok - map-fog: exact-count regression pins live fog
+ok - bootstrap: ordinary fog findings aggregate to one line per map
+ok - bootstrap: separate maps keep separate fog summaries
+ok - bootstrap: colliding map paths keep separate fog summaries
+ok - bootstrap: relative data override aggregates fog findings
+ok - bootstrap: tabbed map paths retain raw findings
+ok - bootstrap: structural fog failure remains exact
+ok - bootstrap: checker failure output and status remain exact
+# all fm-map-fog-check tests passed
+FM_TEST_END 2026-09-06T20:51:54Z tests/fm-map-fog-check.test.sh exit=0 duration_ms=13667 gate_skip=false
+FM_TEST_BEGIN 2026-09-06T20:51:54Z tests/fm-session-start.test.sh family=session-bootstrap expected_gate_skip=none
+ok - locked bootstrap reports ancestor cwd for copy with failed tool none
+ok - read-only bootstrap reports ancestor cwd for copy with failed tool none
+ok - locked bootstrap reports ancestor cwd for outside with failed tool none
+ok - read-only bootstrap reports ancestor cwd for outside with failed tool none
+ok - locked bootstrap reports ancestor cwd for copy with failed tool ps
+ok - read-only bootstrap reports ancestor cwd for copy with failed tool ps
+ok - locked bootstrap reports ancestor cwd for copy with failed tool lsof
+ok - read-only bootstrap reports ancestor cwd for copy with failed tool lsof
+ok - locked bootstrap reports ancestor cwd for nested with failed tool git
+ok - read-only bootstrap reports ancestor cwd for nested with failed tool git
+ok - context digest distinguishes ABSENT, empty-but-present, and populated files
+ok - a lock refusal prints a loud read-only banner, skips every mutating step, and still completes the digest
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start checkpoints the Record only on a locked startup
+ok - session start stays read-only when lock ownership cannot be published
+ok - locked session start freezes trace context and lock refusal leaves it unchanged
+ok - concurrent session-lock acquisition admits exactly one live harness
+ok - digest sections are ordered safety-preamble first, live fleet state before curated memory
+ok - the read-once contract is stated once, ahead of the sources it governs
+ok - session start: configured and auto-detected Herdr homes never require tmux
+ok - session start: an absent recorded tmux window relaunches its Pi secondmate exactly once, off the blocking path
+ok - session start: a deferred relaunch is always reported, so the digest's stale endpoint record cannot stand
+not ok - the digest waited 8s for inactive reconciliation's 8s state read
+FM_TEST_END 2026-09-06T20:53:27Z tests/fm-session-start.test.sh exit=1 duration_ms=93207 gate_skip=false
+FM_TEST_BEGIN 2026-09-06T20:53:27Z tests/fm-stow-cascade.test.sh family=secondmate expected_gate_skip=none
+ok - each home is accounted against its own allowance instead of a fleet total
+ok - the cascade emits one stanza per registered home and refuses a double-counted registry
+ok - transport follows placement and live-agent state, and a remote home without an agent defers
+ok - each stanza carries the facts a per-home receipt needs, before and after curation
+ok - one slow or unreachable home is bounded and every other home still reports
+ok - the cascade stays silent with no secondmates and never runs from a secondmate home
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - cascade enumerates without checkpointing a configured Record
+FM_TEST_END 2026-09-06T20:53:34Z tests/fm-stow-cascade.test.sh exit=0 duration_ms=7518 gate_skip=false
+FM_TEST_BEGIN 2026-09-06T20:53:34Z tests/fm-teardown.test.sh family=pr-forge expected_gate_skip=none
+ok - local-only worktree with HEAD on a fork remote is torn down and the home summary is refreshed
+ok - teardown help owns the --force validation-truth carve-out
+ok - a ship with an unknown recorded role refuses cleanup
+ok - scout teardown requires its report and captain-hold completion, not source repetition
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - scout teardown keeps inbox and metadata when the Record scan blocks
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - local-only teardown keeps metadata when the Record scan blocks
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - force preserves Record capture before teardown
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 1s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-record: state=disabled
+ok - teardown closes its own backlog item before reporting success
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 8s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-record: state=disabled
+ok - spawn then teardown closes the backlog row atomically
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 1s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-record: state=disabled
+warning: leftover cleanup did not finish after task closure succeeded: ownership inventory unavailable
+/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-teardown-tests.BdbW8I/tasks-axi-manual-optout/project: skipped branch prune: ownership inventory or publication lock unavailable
+ok - teardown honors config/backlog-backend=manual and still finishes cleanly
+ok - local-only worktree with truly unpushed work is refused (safety preserved)
+ok - local-only worktree with work merged into local main is torn down (no regression)
+ok - no-mistakes worktree with HEAD on origin is torn down (no regression)
+ok - no-mistakes worktree landed by a real merge commit is torn down
+ok - no-mistakes worktree with genuinely unlanded work is refused (safety preserved)
+ok - local-only worktree with unpushed work is torn down under --force (escape hatch)
+ok - teardown completes when an exact busy-state sidecar is already absent
+ok - herdr teardown removes pane-owned escalation dedupe state
+ok - herdr flat teardown refuses before returning the isolated copy under lock contention and the retry completes cleanly
+ok - herdr flat teardown never erases records when pane presence is unparseable
+ok - herdr flat teardown preflight refuses before every destructive change
+ok - forced secondmate teardown preflights every Herdr child before cleanup mutation
+ok - forced secondmate teardown holds every descendant lifecycle and metadata lock
+ok - forced secondmate teardown retains Herdr child identity until exact pane disappearance
+ok - forced teardown retains a nested secondmate home and its grandchild's Herdr identity when the grandchild close is unconfirmed
+ok - herdr projection teardown retires its journal only after confirming the exact recorded pane is gone
+ok - herdr projection teardown retains every record when post-close presence is unknown
+ok - herdr projection teardown surfaces failed focus restoration without turning confirmed cleanup into a hard failure
+ok - squash-merged + deleted-branch worktree (PR merged) is torn down (the fix)
+ok - squash-merged PR accepts a local HEAD that is an ancestor of the final PR head
+ok - teardown discovers a merged PR by branch name and tears down when no pr= was ever recorded
+ok - merged PR does not allow teardown after a later local commit
+REFUSED: fm-guard.sh self-located its home to linked worktree /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC; that copy's state/ is not a firstmate home. Set FM_HOME=/Users/AI/.no-mistakes/repos or start firstmate from /Users/AI/.no-mistakes/repos, then retry.
+REFUSED: fm-guard.sh self-located its home to linked worktree /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC; that copy's state/ is not a firstmate home. Set FM_HOME=/Users/AI/.no-mistakes/repos or start firstmate from /Users/AI/.no-mistakes/repos, then retry.
+ok - fm-pr-check does not refresh PR head after HEAD moves
+REFUSED: fm-guard.sh self-located its home to linked worktree /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC; that copy's state/ is not a firstmate home. Set FM_HOME=/Users/AI/.no-mistakes/repos or start firstmate from /Users/AI/.no-mistakes/repos, then retry.
+ok - fm-pr-check records the remote PR head when the local worktree lags
+ok - worktree whose content already landed in the default branch is torn down (content fallback)
+ok - branch squashed into a review tree then re-parented as a synthesized merge on main is landed
+ok - content fallback refreshes origin default before comparing trees
+ok - dirty worktree is refused even when its committed work has landed (dirty always wins)
+ok - gh lookup error with content not in default refuses (fail-safe)
+ok - provably-stale worktree index.lock (old, no live holder) is cleared and teardown succeeds
+ok - live-held worktree index.lock is never removed and teardown refuses
+ok - lsof errors leave worktree index.lock in place and refuse teardown
+ok - stale lock cleanup rechecks and refuses dirty worktree before return
+ok - normal repo index.lock is resolved from the worktree and cleared when stale
+ok - lock mtime read failures leave worktree index.lock in place and refuse teardown
+ok - transient index.lock cleared after first failed return is retried successfully without force-remove
+ok - persistent index.lock exhausts retries and refuses without force-removing the lock
+ok - empty retry wait overrides use the default without aborting teardown
+ok - fractional legacy retry wait remains supported without arithmetic
+ok - a task's own parked no-mistakes run is aborted, not orphaned, before the worker is removed
+ok - teardown refuses before reap or removal when a task-owned run remains parked
+ok - a different run cannot confirm the targeted abort
+ok - empty post-abort status is not accepted as confirmation
+ok - the CLI's exact run-not-found signal confirms completion
+ok - a parked run on another branch is never aborted by this task's teardown (ownership is precise)
+ok - a task-owned autonomous running step is left alone rather than aborted
+ok - a leaked descendant process is reaped before the worktree return proceeds
+ok - a leaked descendant process rooted under the task's per-task tasktmp is reaped by teardown too
+tests/fm-teardown.test.sh: line 2574: 91719 Terminated: 15          sleep 300
+ok - missing lsof falls back to reaping the tmux pane process group
+ok - missing roots need no lsof check before task retirement
+ok - an erroring lsof scan refuses teardown and preserves the task
+ok - a reused pid with a different start time is never force-killed
+ok - an exec change preserves birth identity and the process is reaped
+ok - a live session host blocks treehouse return while task-owned processes are reaped
+ok - a live session host under tasktmp receives the matching relocation remedy
+ok - a missing task worktree does not bypass protection for a live tasktmp host
+ok - a live session host blocks Orca worktree removal
+ok - multiple numeric lock records cannot protect their concatenated pid
+ok - a live lock owner with an unreadable identity refuses teardown
+ok - a protected pid stays outside the signal set and blocks treehouse return when identity recheck fails
+ok - a live lock pid whose ancestor walk cannot be resolved refuses before destructive teardown
+ok - a process spawned during grace is reaped on a later pass
+ok - persistent leaked processes refuse teardown after bounded retries
+ok - a process exiting during identity lookup does not block teardown
+ok - the run abort and the leaked-process reap both complete before the destructive worktree return
+ok - clean landed resolver/baseline siblings are removed and keep-set objects stay
+ok - live metadata protects its branch checkout when paths differ
+branch 'trunk' set up to track 'origin/trunk'.
+ok - literal main and a changed resolved default retain sibling copies
+ok - a mutation-boundary branch change to live metadata retains the copy
+ok - a symlink ancestor cannot redirect a cleanup target
+ok - a locked live sibling is retained without a cleanup failure
+ok - dirty sibling is retained with a reason and the task still closes
+ok - a deleted remote branch cannot prove work through a stale tracking ref
+ok - cached default content proves a squash before any forge lookup
+ok - ORIG_HEAD protects unique work in a live copy
+ok - a gone temporary registration stays registered and is reported retained
+ok - an unrecorded same-repository copy stays without any Treehouse invocation
+ok - scout and task --force do not bypass leftover unpublished retention
+ok - a merged PR for the closing task cannot prove a leftover copy
+ok - captured landed branch is deleted and unknown or default branches remain
+ok - a normal scout discards only its captured branch
+ok - live child and cleanup caller cwd paths retain their siblings with spaces
+ok - submodule dirt remains visible when repository config ignores it
+ok - a second leftover pass makes no duplicate damage
+ok - a contended publication lock defers leftover cleanup without reopening the task
+ok - teardown followed by fleet sync retains a unique [gone] branch
+ok - a unique worktree-private ref retains its worktree
+ok - a registered stopped secondmate home stays in the keep-set
+ok - operation state in a linked worktree gitdir blocks cleanup
+ok - an empty metadata worktree defers the leftover pass
+ok - done task evidence attributes a landed ship branch for cleanup
+ok - completed ship evidence applies only to its exact repository
+ok - a registered home without readable state defers cleanup
+ok - default and process proof failures warn after task closure
+ok - nested registered homes lock and protect their live copies
+ok - a malformed worktree inventory retains all candidates with a warning
+ok - ignored payload is retained while a safe sibling still succeeds
+ok - a process started after the first scan retains the candidate
+ok - multiple leftover copies reuse one default resolution
+ok - ref changes, checkout changes, and Git failures retain branches
+FM_TEST_END 2026-09-06T21:05:41Z tests/fm-teardown.test.sh exit=0 duration_ms=726034 gate_skip=false
+FM_TEST_BEGIN 2026-09-06T21:05:41Z tests/fm-test-run.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - exact suite coverage: --all lists every tests/*.test.sh once
+ok - family selection returns a proper subset of the suite
+ok - single-script selection lists exactly that path
+ok - changed-file selection stays conservative (never silent full suite)
+ok - runner and its documentation surfaces select their curated family, not just their contract owners
+ok - changed selection covers dependents and fails closed for unmapped source
+ok - a bin reference selects the referencing scripts, and consumers still select their curated families
+ok - changed defaults to bounded automatic scheduling with serial override
+ok - empty changed selection emits deterministic text and JSON summaries
+ok - timing markers and JSON artifact are valid
+ok - aggregate exit reflects any script failure
+ok - gate-skip accounting is honest and non-failing
+ok - fail-on-gate-skip converts herdr-not-found into a hard failure
+ok - exclude-family drops the named primary family after selection
+ok - portable shard union, disjointness, and coverage guard hold
+ok - portable serial shards are a deterministic disjoint cover of the serial lane
+ok - coverage guard reports and bounds the unmeasured portable serial share
+ok - portable serial shard lanes refuse mismatched, out-of-range, and countless names
+ok - --jobs refuses non-proven / stateful selections
+ok - --jobs admits and schedules a family with a recorded concurrent proof
+ok - a concurrent run starts the longest-hint script first
+ok - --per-script-timeout-secs turns a hung script into a bounded failure
+ok - --max-wall-ms fails an over-budget run and refuses a malformed budget
+ok - jobs scheduler runs proven scripts; failure propagates; non-proven refused
+ok - Herdr CI family-run step times out at 20 min under a 75 min job backstop
+ok - aggregate-json merges lane timing artifacts
+FM_TEST_END 2026-09-06T21:08:26Z tests/fm-test-run.test.sh exit=0 duration_ms=165734 gate_skip=false
+FM_TEST_SUMMARY total=11 failed=2 skipped_gate=0 duration_ms=1714700
+FM_TEST_SUMMARY_FAMILY family=pr-forge count=2 duration_ms=1039969 failed=1
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=2 duration_ms=314928 failed=0
+FM_TEST_SUMMARY_FAMILY family=secondmate count=1 duration_ms=7518 failed=0
+FM_TEST_SUMMARY_FAMILY family=session-bootstrap count=3 duration_ms=112835 failed=1
+FM_TEST_SUMMARY_FAMILY family=snapshot-bearings count=1 duration_ms=21474 failed=0
+FM_TEST_SUMMARY_FAMILY family=unclassified count=2 duration_ms=217348 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-teardown.test.sh duration_ms=726034
+FM_TEST_SLOWEST rank=2 script=tests/fm-feeder-export.test.sh duration_ms=313935
+FM_TEST_SLOWEST rank=3 script=tests/fm-record.test.sh duration_ms=209934
+FM_TEST_SLOWEST rank=4 script=tests/fm-test-run.test.sh duration_ms=165734
+FM_TEST_SLOWEST rank=5 script=tests/fm-captain-hold-lifecycle.test.sh duration_ms=149194
+FM_TEST_SLOWEST rank=6 script=tests/fm-session-start.test.sh duration_ms=93207
+FM_TEST_SLOWEST rank=7 script=tests/fm-fleet-snapshot-view.test.sh duration_ms=21474
+FM_TEST_SLOWEST rank=8 script=tests/fm-map-fog-check.test.sh duration_ms=13667
+FM_TEST_SLOWEST rank=9 script=tests/fm-stow-cascade.test.sh duration_ms=7518
+FM_TEST_SLOWEST rank=10 script=tests/fm-record-scan.test.sh duration_ms=7414
+FM_TEST_SLOWEST rank=11 script=tests/fm-gotmp.test.sh duration_ms=5961

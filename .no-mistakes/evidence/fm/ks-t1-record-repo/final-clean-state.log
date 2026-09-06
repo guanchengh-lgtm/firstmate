@@ -1,0 +1,3 @@
+$ git status --porcelain
+[empty output]
+All temporary source mutations were restored. All manual fixture directories were removed.

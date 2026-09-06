@@ -1,0 +1,11 @@
+Test: tests/fm-record-scan.test.sh
+Selector: test_eight_classes_refuse_without_echoing_values
+Subject: bin/fm-record-scan.sh:42
+- SECRET_COMBINED="$PRIVATE_KEY_HEADER|gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{20,255}|(AKIA|ASIA)[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{10,255}|[sr]k_live_[A-Za-z0-9]{16,255}|AIza[A-Za-z0-9_-]{35}|$OPENAI_SECRET"
++ SECRET_COMBINED="$PRIVATE_KEY_HEADER|fmphase_never_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{20,255}|(AKIA|ASIA)[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{10,255}|[sr]k_live_[A-Za-z0-9]{16,255}|AIza[A-Za-z0-9_-]{35}|$OPENAI_SECRET"
+
+not ok - class github-classic-token: expected exit 2, got 0
+
+exit=1
+
+After source restoration: git status --porcelain is empty.

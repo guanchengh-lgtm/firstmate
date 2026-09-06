@@ -1,0 +1,195 @@
+FM_TEST_BEGIN 2026-09-06T21:30:23Z tests/fm-gotmp.test.sh family=session-bootstrap expected_gate_skip=none
+ok - fm-teardown removes the dir pointed to by tasktmp= in meta
+ok - fm-teardown skips gracefully when tasktmp= is absent (backward compat)
+ok - fm-teardown skips gracefully when tasktmp= points to a nonexistent dir
+FM_TEST_END 2026-09-06T21:30:30Z tests/fm-gotmp.test.sh exit=0 duration_ms=6581 gate_skip=false
+FM_TEST_BEGIN 2026-09-06T21:30:30Z tests/fm-stow-cascade.test.sh family=secondmate expected_gate_skip=none
+ok - each home is accounted against its own allowance instead of a fleet total
+ok - the cascade emits one stanza per registered home and refuses a double-counted registry
+ok - transport follows placement and live-agent state, and a remote home without an agent defers
+ok - each stanza carries the facts a per-home receipt needs, before and after curation
+ok - one slow or unreachable home is bounded and every other home still reports
+ok - the cascade stays silent with no secondmates and never runs from a secondmate home
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - cascade enumerates without checkpointing a configured Record
+FM_TEST_END 2026-09-06T21:30:38Z tests/fm-stow-cascade.test.sh exit=0 duration_ms=7949 gate_skip=false
+FM_TEST_BEGIN 2026-09-06T21:30:38Z tests/fm-captain-hold-lifecycle.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - report-only unresolved captain call is reproduced and completion refuses before loss
+ok - the completion gate attests captain-held inventory and transfers open status decisions
+ok - answer records the captain's words, closes idempotently, and releases routed work
+ok - release frees held work with the captain's words recorded and the body preserved
+ok - a deferred captain call leaves the live Captain's Call until its date and stays answerable
+ok - an out-of-band close is recordable with the captain's word and nothing else
+ok - ended visual review follows the same captain-hold completion owner
+ok - resolved findings and decision-like prose do not create captain-held tasks
+ok - terminal single-owner stale status decisions do not block empty inventory
+ok - main-home and secondmate-home captain calls remain correctly routed
+ok - a bound channel's captured answers close their captain-held tasks at answer time
+ok - a channel source with no decision binding closes nothing
+ok - legacy identities, metadata, bindings, and the shim keep working
+ok - product ideas, released state, and shipped supersession survive collapse
+ok - legacy metadata and resolved or superseded bodies remain valid
+ok - the chat channel feeds the same keyed-answer intake a captured review does
+ok - completion and verification validate origins before constructing paths
+ok - a status resolution over a still-open captain-held task is signalled, not closed
+ok - a captain call with no routed work, a verified transfer, an open decision, and an answered call all stay silent
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - accepted completion cannot print success when the Record scan blocks
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - verify remains read-only and never checkpoints the Record
+FM_TEST_END 2026-09-06T21:33:06Z tests/fm-captain-hold-lifecycle.test.sh exit=0 duration_ms=148288 gate_skip=false
+FM_TEST_BEGIN 2026-09-06T21:33:06Z tests/fm-teardown.test.sh family=pr-forge expected_gate_skip=none
+ok - local-only worktree with HEAD on a fork remote is torn down and the home summary is refreshed
+ok - teardown help owns the --force validation-truth carve-out
+ok - a ship with an unknown recorded role refuses cleanup
+ok - scout teardown requires its report and captain-hold completion, not source repetition
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - scout teardown keeps inbox and metadata when the Record scan blocks
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - local-only teardown keeps metadata when the Record scan blocks
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - force preserves Record capture before teardown
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 1s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-record: state=disabled
+ok - teardown closes its own backlog item before reporting success
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 8s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-record: state=disabled
+ok - spawn then teardown closes the backlog row atomically
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no live watcher process holds this home lock (last beat: 0s ago).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  repair missing watcher supervision according to the session-start block for this harness; do not use shell &.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+fm-record: state=disabled
+warning: leftover cleanup did not finish after task closure succeeded: ownership inventory unavailable
+/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-teardown-tests.bl2fjz/tasks-axi-manual-optout/project: skipped branch prune: ownership inventory or publication lock unavailable
+ok - teardown honors config/backlog-backend=manual and still finishes cleanly
+ok - local-only worktree with truly unpushed work is refused (safety preserved)
+ok - local-only worktree with work merged into local main is torn down (no regression)
+ok - no-mistakes worktree with HEAD on origin is torn down (no regression)
+ok - no-mistakes worktree landed by a real merge commit is torn down
+ok - no-mistakes worktree with genuinely unlanded work is refused (safety preserved)
+ok - local-only worktree with unpushed work is torn down under --force (escape hatch)
+ok - teardown completes when an exact busy-state sidecar is already absent
+ok - herdr teardown removes pane-owned escalation dedupe state
+ok - herdr flat teardown refuses before returning the isolated copy under lock contention and the retry completes cleanly
+ok - herdr flat teardown never erases records when pane presence is unparseable
+ok - herdr flat teardown preflight refuses before every destructive change
+ok - forced secondmate teardown preflights every Herdr child before cleanup mutation
+ok - forced secondmate teardown holds every descendant lifecycle and metadata lock
+ok - forced secondmate teardown retains Herdr child identity until exact pane disappearance
+ok - forced teardown retains a nested secondmate home and its grandchild's Herdr identity when the grandchild close is unconfirmed
+ok - herdr projection teardown retires its journal only after confirming the exact recorded pane is gone
+ok - herdr projection teardown retains every record when post-close presence is unknown
+ok - herdr projection teardown surfaces failed focus restoration without turning confirmed cleanup into a hard failure
+ok - squash-merged + deleted-branch worktree (PR merged) is torn down (the fix)
+ok - squash-merged PR accepts a local HEAD that is an ancestor of the final PR head
+ok - teardown discovers a merged PR by branch name and tears down when no pr= was ever recorded
+ok - merged PR does not allow teardown after a later local commit
+REFUSED: fm-guard.sh self-located its home to linked worktree /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC; that copy's state/ is not a firstmate home. Set FM_HOME=/Users/AI/.no-mistakes/repos or start firstmate from /Users/AI/.no-mistakes/repos, then retry.
+REFUSED: fm-guard.sh self-located its home to linked worktree /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC; that copy's state/ is not a firstmate home. Set FM_HOME=/Users/AI/.no-mistakes/repos or start firstmate from /Users/AI/.no-mistakes/repos, then retry.
+ok - fm-pr-check does not refresh PR head after HEAD moves
+REFUSED: fm-guard.sh self-located its home to linked worktree /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC; that copy's state/ is not a firstmate home. Set FM_HOME=/Users/AI/.no-mistakes/repos or start firstmate from /Users/AI/.no-mistakes/repos, then retry.
+ok - fm-pr-check records the remote PR head when the local worktree lags
+ok - worktree whose content already landed in the default branch is torn down (content fallback)
+ok - branch squashed into a review tree then re-parented as a synthesized merge on main is landed
+ok - content fallback refreshes origin default before comparing trees
+ok - dirty worktree is refused even when its committed work has landed (dirty always wins)
+ok - gh lookup error with content not in default refuses (fail-safe)
+ok - provably-stale worktree index.lock (old, no live holder) is cleared and teardown succeeds
+ok - live-held worktree index.lock is never removed and teardown refuses
+ok - lsof errors leave worktree index.lock in place and refuse teardown
+ok - stale lock cleanup rechecks and refuses dirty worktree before return
+ok - normal repo index.lock is resolved from the worktree and cleared when stale
+ok - lock mtime read failures leave worktree index.lock in place and refuse teardown
+ok - transient index.lock cleared after first failed return is retried successfully without force-remove
+ok - persistent index.lock exhausts retries and refuses without force-removing the lock
+ok - empty retry wait overrides use the default without aborting teardown
+ok - fractional legacy retry wait remains supported without arithmetic
+ok - a task's own parked no-mistakes run is aborted, not orphaned, before the worker is removed
+ok - teardown refuses before reap or removal when a task-owned run remains parked
+ok - a different run cannot confirm the targeted abort
+ok - empty post-abort status is not accepted as confirmation
+ok - the CLI's exact run-not-found signal confirms completion
+ok - a parked run on another branch is never aborted by this task's teardown (ownership is precise)
+ok - a task-owned autonomous running step is left alone rather than aborted
+ok - a leaked descendant process is reaped before the worktree return proceeds
+ok - a leaked descendant process rooted under the task's per-task tasktmp is reaped by teardown too
+tests/fm-teardown.test.sh: line 2574:  6028 Terminated: 15          sleep 300
+ok - missing lsof falls back to reaping the tmux pane process group
+ok - missing roots need no lsof check before task retirement
+ok - an erroring lsof scan refuses teardown and preserves the task
+ok - a reused pid with a different start time is never force-killed
+ok - an exec change preserves birth identity and the process is reaped
+ok - a live session host blocks treehouse return while task-owned processes are reaped
+ok - a live session host under tasktmp receives the matching relocation remedy
+ok - a missing task worktree does not bypass protection for a live tasktmp host
+ok - a live session host blocks Orca worktree removal
+ok - multiple numeric lock records cannot protect their concatenated pid
+ok - a live lock owner with an unreadable identity refuses teardown
+ok - a protected pid stays outside the signal set and blocks treehouse return when identity recheck fails
+ok - a live lock pid whose ancestor walk cannot be resolved refuses before destructive teardown
+ok - a process spawned during grace is reaped on a later pass
+ok - persistent leaked processes refuse teardown after bounded retries
+ok - a process exiting during identity lookup does not block teardown
+ok - the run abort and the leaked-process reap both complete before the destructive worktree return
+ok - clean landed resolver/baseline siblings are removed and keep-set objects stay
+ok - live metadata protects its branch checkout when paths differ
+branch 'trunk' set up to track 'origin/trunk'.
+ok - literal main and a changed resolved default retain sibling copies
+ok - a mutation-boundary branch change to live metadata retains the copy
+ok - a symlink ancestor cannot redirect a cleanup target
+ok - a locked live sibling is retained without a cleanup failure
+ok - dirty sibling is retained with a reason and the task still closes
+ok - a deleted remote branch cannot prove work through a stale tracking ref
+ok - cached default content proves a squash before any forge lookup
+ok - ORIG_HEAD protects unique work in a live copy
+ok - a gone temporary registration stays registered and is reported retained
+ok - an unrecorded same-repository copy stays without any Treehouse invocation
+ok - scout and task --force do not bypass leftover unpublished retention
+ok - a merged PR for the closing task cannot prove a leftover copy
+ok - captured landed branch is deleted and unknown or default branches remain
+ok - a normal scout discards only its captured branch
+ok - live child and cleanup caller cwd paths retain their siblings with spaces
+ok - submodule dirt remains visible when repository config ignores it
+ok - a second leftover pass makes no duplicate damage
+ok - a contended publication lock defers leftover cleanup without reopening the task
+ok - teardown followed by fleet sync retains a unique [gone] branch
+ok - a unique worktree-private ref retains its worktree
+ok - a registered stopped secondmate home stays in the keep-set
+ok - operation state in a linked worktree gitdir blocks cleanup
+ok - an empty metadata worktree defers the leftover pass
+ok - done task evidence attributes a landed ship branch for cleanup
+ok - completed ship evidence applies only to its exact repository
+ok - a registered home without readable state defers cleanup
+ok - default and process proof failures warn after task closure
+ok - nested registered homes lock and protect their live copies
+ok - a malformed worktree inventory retains all candidates with a warning
+ok - ignored payload is retained while a safe sibling still succeeds
+ok - a process started after the first scan retains the candidate
+ok - multiple leftover copies reuse one default resolution
+ok - ref changes, checkout changes, and Git failures retain branches
+FM_TEST_END 2026-09-06T21:45:06Z tests/fm-teardown.test.sh exit=0 duration_ms=719589 gate_skip=false
+FM_TEST_SUMMARY total=4 failed=0 skipped_gate=0 duration_ms=882661
+FM_TEST_SUMMARY_FAMILY family=pr-forge count=1 duration_ms=719589 failed=0
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=1 duration_ms=148288 failed=0
+FM_TEST_SUMMARY_FAMILY family=secondmate count=1 duration_ms=7949 failed=0
+FM_TEST_SUMMARY_FAMILY family=session-bootstrap count=1 duration_ms=6581 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-teardown.test.sh duration_ms=719589
+FM_TEST_SLOWEST rank=2 script=tests/fm-captain-hold-lifecycle.test.sh duration_ms=148288
+FM_TEST_SLOWEST rank=3 script=tests/fm-stow-cascade.test.sh duration_ms=7949
+FM_TEST_SLOWEST rank=4 script=tests/fm-gotmp.test.sh duration_ms=6581

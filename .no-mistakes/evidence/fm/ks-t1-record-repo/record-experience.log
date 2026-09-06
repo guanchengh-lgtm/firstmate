@@ -1,0 +1,152 @@
+Scratch-only Record experience. Git and Git LFS use a local bare remote.
+The settle window uses the production default of two seconds.
+$ git init --quiet --bare --initial-branch=main /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase-fixtures/record-experience-ege7qv1s/origin.git
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+exit=0
+$ /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/bin/fm-record.sh setup --init --origin file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase-fixtures/record-experience-ege7qv1s/origin.git --code-root /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+exit=0
+$ /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/bin/fm-record.sh checkpoint --reason stow
+fm-record: state=committed-local commit=56998ff
+pending=1
+pending_since=1788727474
+delivery=pending
+pending_age_seconds=0
+exit=0
+The completed-stow checkpoint created a local commit. The remote still has no branch.
+$ /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/bin/fm-record.sh tick
+fm-record: state=pushed commit=56998ff
+pending=0
+delivery=pushed
+pending_since=0
+last_push_at=2026-09-06T20:44:37Z
+failure_class=none
+pending_age_seconds=0
+exit=0
+$ /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/bin/fm-record.sh tick
+fm-record: state=unchanged commit=56998ff
+pending=0
+last_push_at=2026-09-06T20:44:37Z
+delivery=pushed
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+exit=0
+The quiet tick preserved the commit.
+$ git --git-dir=/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase-fixtures/record-experience-ege7qv1s/origin.git ls-tree -r --name-only main
+.gitattributes
+.gitignore
+.record-state/task-one.inbox/handled/001.msg
+.record-state/task-one.meta
+.record-state/task-one.status
+captain.md
+note-link.md
+raw/measurements.csv
+raw/photo.png
+exit=0
+$ git --git-dir=/Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase-fixtures/record-experience-ege7qv1s/origin.git show main:.record-state/task-one.inbox/handled/001.msg
+Preserve the report and its context.
+exit=0
+$ git clone --quiet file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase-fixtures/record-experience-ege7qv1s/origin.git /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase-fixtures/record-experience-ege7qv1s/restored-home/data
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+exit=0
+$ /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/bin/fm-record.sh setup --origin file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase-fixtures/record-experience-ege7qv1s/origin.git --code-root /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC
+fm-record: state=unchanged detail=setup
+exit=0
+$ git -C /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase-fixtures/record-experience-ege7qv1s/restored-home/data lfs pull
+
+exit=0
+Restored bytes match: captain.md sha256=be204b37f587e7c12eaf247da436568fa5e9ff865a4100a8ee8f33bd090e86d6
+Restored bytes match: raw/photo.png sha256=8a1315f769001dca0abbdcc575b341d6127767d3a97cabede7fbaad290efbec4
+Restored bytes match: raw/measurements.csv sha256=9783a6125412d110e1b9680fb97d6cd207573953fc62057d419e87379174ecd0
+Restored bytes match: .record-state/task-one.inbox/handled/001.msg sha256=c69c72184298d58c4a43e86f58877406c8b846f78c7605e1c0255d81a1f2f0d4
+The relative link resolves at the new path. The transient inbox file is absent.
+The fresh clone recreated its local LFS configuration and hooks.
+$ git -C /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase-fixtures/record-experience-ege7qv1s/first-home/data add manual.md
+
+exit=0
+$ git -C /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase-fixtures/record-experience-ege7qv1s/first-home/data commit -qm Capture a manual note
+
+exit=0
+$ /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/bin/fm-record.sh health
+fm-record: state=unchanged
+commit=56998ff
+state=unchanged
+updated_at=2026-09-06T20:44:38Z
+pending=1
+last_push_at=2026-09-06T20:44:37Z
+delivery=pending
+failure_class=none
+pending_since=1788727479
+pending_age_seconds=2
+exit=0
+Read-only health detects the manual commit and keeps the saved push receipt unchanged.
+$ /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/bin/fm-record.sh tick
+fm-record: state=push-pending commit=eae60e2 class=offline pending=1
+pending=1
+last_push_at=2026-09-06T20:44:37Z
+delivery=push-pending
+failure_class=offline
+pending_since=1788727489
+pending_age_seconds=0
+exit=6
+$ /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/bin/fm-record.sh health
+fm-record: state=push-pending
+commit=eae60e2
+class=offline
+pending=1
+state=push-pending
+updated_at=2026-09-06T20:44:49Z
+last_push_at=2026-09-06T20:44:37Z
+delivery=push-pending
+failure_class=offline
+pending_since=1788727489
+pending_age_seconds=1
+exit=0
+$ /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/bin/fm-record.sh tick
+fm-record: state=pushed commit=eae60e2
+pending=0
+last_push_at=2026-09-06T20:44:53Z
+delivery=pushed
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+exit=0
+$ git -C /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase-fixtures/record-experience-ege7qv1s/restored-home/data pull --ff-only
+From file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase-fixtures/record-experience-ege7qv1s/origin
+   56998ff..eae60e2  main       -> origin/main
+Updating 56998ff..eae60e2
+Fast-forward
+ manual.md | 1 +
+ 1 file changed, 1 insertion(+)
+ create mode 100644 manual.md
+exit=0
+$ git -C /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase-fixtures/record-experience-ege7qv1s/restored-home/data add second-device.md
+
+exit=0
+$ git -C /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase-fixtures/record-experience-ege7qv1s/restored-home/data commit -qm Capture second device progress
+
+exit=0
+$ git -C /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase-fixtures/record-experience-ege7qv1s/restored-home/data push origin main
+To file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase-fixtures/record-experience-ege7qv1s/origin.git
+   eae60e2..81ea8c5  main -> main
+exit=0
+$ /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/bin/fm-record.sh tick
+fm-record: state=diverged commit=577b24d
+pending=1
+last_push_at=2026-09-06T20:44:53Z
+delivery=diverged
+failure_class=diverged
+pending_since=1788727505
+pending_age_seconds=0
+exit=7
+Divergence retained the remote tip 81ea8c53d7884ee8ca0757a6220bc3ba0a649927 and the local tip 577b24db3ce11cc925dcdc11714b3879f75af01f.
+$ git -C /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase-fixtures/record-experience-ege7qv1s/first-home/data add rejected.md
+
+exit=0
+$ git commit -qm 'Reject a synthetic scanner fixture'
+fm-record-scan: refusing to publish: /Users/AI/.no-mistakes/worktrees/edb446952c22/01M1VRWMEZJGZ0328RGDY94JYC/.no-mistakes/test-phase-fixtures/record-experience-ege7qv1s/first-home/data/.git/record-precommit.UBMwcc/work/rejected.md matches the github-classic-token credential pattern
+fm-record: state=scan-blocked
+exit=1
+The real pre-commit hook refused the synthetic credential without printing its value or changing HEAD.
