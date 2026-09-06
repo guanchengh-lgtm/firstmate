@@ -864,6 +864,68 @@ test_direct_pr_requires_internal_only_surface() {
   pass "fm-brief.sh: product/mixed/uncertain/omitted + direct-PR refuse; internal-only and no-mistakes product still work"
 }
 
+test_task_file_and_refresh_recall_routes() {
+  local home task brief out
+  home="$TMP_ROOT/recall-brief-home"
+  mkdir -p "$home/data/alpha-prior" "$home/config"
+  printf '7500\n' > "$home/config/startup-memory-budget"
+  printf '%s\n' '# Widget sprocket plan' 'date: 2026-01-01' 'status: reported' \
+    'Widget sprocket plan body.' > "$home/data/alpha-prior/report.md"
+  task="$home/task.md"
+  printf '%s\n' '# Task' 'Implement the widget sprocket plan from prior work.' > "$task"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-recall-ship firstmate --mode no-mistakes \
+    --task-file "$task" >/dev/null 2>&1 \
+    || fail "ship --task-file should scaffold"
+  brief="$home/data/brief-recall-ship/brief.md"
+  assert_grep "# Recalled pointers" "$brief" "ship --task-file missing recalled pointers"
+  assert_no_grep "Recall is pending until the task section is finalized." "$brief" \
+    "finalized ship brief still showed pending recall"
+  assert_present "$home/data/brief-recall-ship/recall.json" "ship --task-file did not write a recall receipt"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-recall-scout firstmate --scout \
+    --source data/named-source.md --task-file "$task" >/dev/null 2>&1 \
+    || fail "scout --task-file should scaffold"
+  brief="$home/data/brief-recall-scout/brief.md"
+  assert_grep "# Named sources" "$brief" "scout --task-file dropped named sources"
+  assert_grep "data/named-source.md" "$brief" "scout --task-file dropped the named source literal"
+  assert_grep "# Recalled pointers" "$brief" "scout --task-file missing recalled pointers"
+  assert_no_grep "data/named-source.md - " "$brief" \
+    "named source path was emitted as a recalled pointer"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall ship \
+    "$home/data/brief-recall-ship/brief.md" >/dev/null 2>&1 \
+    || fail "refresh-recall ship should succeed"
+  count=$(grep -c '^# Recalled pointers$' "$home/data/brief-recall-ship/brief.md")
+  [ "$count" -eq 1 ] || fail "refresh-recall appended a second recalled-pointers heading ($count)"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall verifier \
+    "$home/data/brief-recall-ship/brief.md" 2>&1) || true
+  assert_contains "$out" "kind must be ship or scout" "verifier refresh-recall was not refused"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-recall-sm --secondmate --no-projects \
+    --task-file "$task" 2>&1) || true
+  assert_contains "$out" "--task-file applies only to ship or scout" \
+    "secondmate --task-file was not refused"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-recall-pending firstmate --mode no-mistakes \
+    >/dev/null 2>&1 || fail "placeholder ship should scaffold"
+  assert_grep "Recall is pending until the task section is finalized." \
+    "$home/data/brief-recall-pending/brief.md" \
+    "placeholder ship brief did not keep pending recall"
+
+  rm -f "$home/data/brief-recall-ship/recall.json"
+  mkdir "$home/data/brief-recall-ship/recall.json"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall ship \
+    "$home/data/brief-recall-ship/brief.md" 2>&1) || true
+  assert_contains "$out" "metrics coverage is incomplete" \
+    "receipt failure did not warn about incomplete metrics coverage"
+  assert_grep "# Recalled pointers" "$home/data/brief-recall-ship/brief.md" \
+    "receipt failure left the brief without its recalled-pointers section"
+
+  pass "fm-brief.sh: task-file, named sources, refresh, and verifier/secondmate recall contracts hold"
+}
+
 test_script_parses
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
@@ -888,3 +950,4 @@ test_secondmate_directory_paths_are_absolute_and_output_is_stable
 test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
 test_scout_and_secondmate_scaffold
+test_task_file_and_refresh_recall_routes

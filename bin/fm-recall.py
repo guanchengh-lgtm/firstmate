@@ -6,6 +6,7 @@ bin/fm-recall.sh is the public command: it resolves the home, applies the
 safety timeout, and passes explicit inputs here.
 The script header on bin/fm-recall.sh owns the operator help contract.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -53,11 +54,15 @@ SKIP_DIR_NAMES = frozenset(
     )
 )
 STOP = set(
-    """a an the and or of to in on for by with at from as is are was were be been being
-it its this that these those into over under not no do does did done can could should would
-will shall may might must has have had if then than so such via per each every all any some
-both after before still up down out about between when where which who what why how our we you
-i me my your their they them he she his her one two also just only more most less very""".split()
+    (
+        "a an the and or of to in on for by with at from as is are was were "
+        "be been being it its this that these those into over under not no do "
+        "does did done can could should would will shall may might must has "
+        "have had if then than so such via per each every all any some both "
+        "after before still up down out about between when where which who "
+        "what why how our we you i me my your their they them he she his her "
+        "one two also just only more most less very"
+    ).split()
 )
 TOKEN_RE = re.compile(r"[a-z0-9]+")
 DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
@@ -69,7 +74,9 @@ TITLE_CUT_RE = re.compile(
 )
 DONE_DATE = re.compile(r"\((?:done|merged|reported) (\d{4}-\d{2}-\d{2})\)")
 DONE_STATUS = re.compile(r"\((done|merged|reported) \d{4}-\d{2}-\d{2}\)")
-META_DATE = re.compile(r"(?im)^(?:date|completed|archive-date)\s*:\s*(\d{4}-\d{2}-\d{2})\s*$")
+META_DATE = re.compile(
+    r"(?im)^(?:date|completed|archive-date)\s*:\s*(\d{4}-\d{2}-\d{2})\s*$"
+)
 META_STATUS = re.compile(r"(?im)^(?:status|state|amendment)\s*:\s*(\S+)\s*$")
 POINTER_TARGET = re.compile(
     r"(?im)^(?:target|canonical|points-to|alias-of)\s*:\s*(\S+)\s*$"
@@ -327,6 +334,12 @@ def identity_from_path(display_path, root=None):
 
 def identity_from_ref(raw, root):
     text = normalize_text(raw).strip()
+    if text.startswith("task:") and re.fullmatch(r"[A-Za-z0-9._-]+", text[5:]):
+        return Identity("task", text[5:], "data/%s/report.md" % text[5:])
+    if text.startswith("decision:") and re.fullmatch(r"[A-Za-z0-9._-]+", text[9:]):
+        return Identity("decision", text[9:], "data/decisions/%s.md" % text[9:])
+    if text.startswith("path:") and text[5:]:
+        return Identity("path", text[5:], text[5:])
     path = normalize_record_path(text, root)
     if path:
         return identity_from_path(path, root)
@@ -351,7 +364,9 @@ class Document(object):
         "date_kind",
     )
 
-    def __init__(self, doc_id, path, title, date, status, src, title_text, body_text, identity):
+    def __init__(
+        self, doc_id, path, title, date, status, src, title_text, body_text, identity
+    ):
         self.id = doc_id
         self.path = path
         self.title = title
@@ -362,7 +377,9 @@ class Document(object):
         self.tset = set(tokens(title_text))
         self.bset = set(tokens(body_text))
         self.aliases = []
-        self.date_valid = bool(parse_iso_date(date) if date not in (None, "date unknown") else None)
+        self.date_valid = bool(
+            parse_iso_date(date) if date not in (None, "date unknown") else None
+        )
         self.date_kind = "valid" if self.date_valid else "unknown"
 
 
@@ -464,11 +481,11 @@ class Corpus(object):
             ):
                 existing.path = doc.path
                 existing.src = "archive+report"
-            if doc.title and (not existing.title or len(doc.title) > len(existing.title)):
-                existing.title = doc.title
-            if doc.date_valid and (
-                not existing.date_valid or doc.date > existing.date
+            if doc.title and (
+                not existing.title or len(doc.title) > len(existing.title)
             ):
+                existing.title = doc.title
+            if doc.date_valid and (not existing.date_valid or doc.date > existing.date):
                 existing.date = doc.date
                 existing.date_valid = True
             if doc.status and (
@@ -505,12 +522,16 @@ class Corpus(object):
                 kind = label
                 break
         if raw and not parse_iso_date(raw):
-            self.note("metadata", "%s has a malformed date %s" % (doc_path_of(doc), raw))
+            self.note(
+                "metadata", "%s has a malformed date %s" % (doc_path_of(doc), raw)
+            )
         if chosen:
             value = datetime.strptime(chosen, "%Y-%m-%d").date()
             today = datetime.strptime(self.now, "%Y-%m-%d").date()
             if value > today:
-                self.note("metadata", "%s has a future date %s" % (doc_path_of(doc), chosen))
+                self.note(
+                    "metadata", "%s has a future date %s" % (doc_path_of(doc), chosen)
+                )
         doc.date = chosen or "date unknown"
         doc.date_valid = bool(chosen)
         doc.date_kind = kind if chosen else "unknown"
@@ -552,7 +573,10 @@ def load_pointer_aliases(corpus):
             continue
         if partial:
             corpus.partial = True
-            corpus.note("partial-input", "data/%s/POINTER.md truncated at %s bytes" % (name, HEAD_LIMIT))
+            corpus.note(
+                "partial-input",
+                "data/%s/POINTER.md truncated at %s bytes" % (name, HEAD_LIMIT),
+            )
         target = parse_pointer_target(text, name, corpus.root)
         if target is None:
             corpus.note("source", "POINTER.md for %s has no target" % name)
@@ -571,7 +595,11 @@ def load_archive(corpus):
     path = os.path.join(corpus.root, "done-archive.md")
     if not os.path.exists(path):
         return
-    if os.path.islink(path) or not os.path.isfile(path) or not contained(corpus.root, path):
+    if (
+        os.path.islink(path)
+        or not os.path.isfile(path)
+        or not contained(corpus.root, path)
+    ):
         corpus.note("source", "done-archive.md is not a regular Record file")
         return
     try:
@@ -616,8 +644,10 @@ def load_archive(corpus):
         src = "archive"
         heading = ""
         report_lines = []
-        if os.path.isfile(report_path) and not os.path.islink(report_path) and contained(
-            corpus.root, report_path
+        if (
+            os.path.isfile(report_path)
+            and not os.path.islink(report_path)
+            and contained(corpus.root, report_path)
         ):
             report_lines, partial, tail = read_head_lines(report_path, 10, HEAD_LIMIT)
             if report_lines is not None:
@@ -625,12 +655,15 @@ def load_archive(corpus):
                     corpus.partial = True
                     corpus.note(
                         "partial-input",
-                        "data/%s/report.md truncated at %s bytes" % (canonical, HEAD_LIMIT),
+                        "data/%s/report.md truncated at %s bytes"
+                        % (canonical, HEAD_LIMIT),
                     )
                 heading = first_heading(report_lines)
                 display = "data/%s/report.md" % canonical
                 src = "archive+report"
-                meta_date, meta_status = parse_metadata("\n".join(report_lines) + "\n" + tail)
+                meta_date, meta_status = parse_metadata(
+                    "\n".join(report_lines) + "\n" + tail
+                )
             else:
                 meta_date, meta_status = None, None
         else:
@@ -652,7 +685,9 @@ def load_archive(corpus):
             body_text,
             ident,
         )
-        corpus.apply_date_rules(doc, meta_date, done_date or header_date, None, meta_date)
+        corpus.apply_date_rules(
+            doc, meta_date, done_date or header_date, None, meta_date
+        )
         corpus.apply_status_rules(
             doc, corpus.statuses.get(canonical), meta_status, sidecar, done_status
         )
@@ -681,7 +716,8 @@ def load_archive(corpus):
                     corpus.partial = True
                     corpus.note(
                         "partial-input",
-                        "archive entry at line %s truncated at %s bytes" % (header_line, ARCHIVE_LIMIT),
+                        "archive entry at line %s truncated at %s bytes"
+                        % (header_line, ARCHIVE_LIMIT),
                     )
                     truncated = True
                 continue
@@ -696,7 +732,11 @@ def load_decisions(corpus):
     ddir = os.path.join(corpus.root, "decisions")
     if not os.path.exists(ddir):
         return
-    if os.path.islink(ddir) or not os.path.isdir(ddir) or not contained(corpus.root, ddir):
+    if (
+        os.path.islink(ddir)
+        or not os.path.isdir(ddir)
+        or not contained(corpus.root, ddir)
+    ):
         corpus.note("source", "decisions/ is not a regular Record directory")
         return
     try:
@@ -709,7 +749,11 @@ def load_decisions(corpus):
         if not name.endswith(".md") or name.startswith("."):
             continue
         path = os.path.join(ddir, name)
-        if os.path.islink(path) or not os.path.isfile(path) or not contained(corpus.root, path):
+        if (
+            os.path.islink(path)
+            or not os.path.isfile(path)
+            or not contained(corpus.root, path)
+        ):
             continue
         lines, partial, tail = read_head_lines(path, 5, HEAD_LIMIT)
         if lines is None:
@@ -717,7 +761,10 @@ def load_decisions(corpus):
             continue
         if partial:
             corpus.partial = True
-            corpus.note("partial-input", "data/decisions/%s truncated at %s bytes" % (name, HEAD_LIMIT))
+            corpus.note(
+                "partial-input",
+                "data/decisions/%s truncated at %s bytes" % (name, HEAD_LIMIT),
+            )
         slug = name[:-3]
         heading = first_heading(lines)
         meta_date, meta_status = parse_metadata("\n".join(lines) + "\n" + tail)
@@ -846,7 +893,9 @@ def rank_docs(docs, terms, exclude_tokens, as_of):
     return scored
 
 
-def collect_exclusions(raw_ids, raw_paths, raw_identities, raw_files, docs, root, alias_to=None):
+def collect_exclusions(
+    raw_ids, raw_paths, raw_identities, raw_files, docs, root, alias_to=None
+):
     tokens_out = set()
     alias_to = alias_to or {}
     for raw in raw_ids:
@@ -862,7 +911,9 @@ def collect_exclusions(raw_ids, raw_paths, raw_identities, raw_files, docs, root
         elif resolved.startswith("data/"):
             tokens_out.add(identity_from_path(resolved, root).token())
         elif resolved != raw:
-            tokens_out.add(Identity("task", resolved, "data/%s/report.md" % resolved).token())
+            tokens_out.add(
+                Identity("task", resolved, "data/%s/report.md" % resolved).token()
+            )
     for raw in raw_identities:
         ident = identity_from_ref(raw, root)
         if ident is not None:
@@ -947,7 +998,9 @@ def read_query_inputs(title, body_file, sources, diagnostics):
     body = ""
     partial = False
     if body_file:
-        if body_file != "-" and (os.path.islink(body_file) or not os.path.isfile(body_file)):
+        if body_file != "-" and (
+            os.path.islink(body_file) or not os.path.isfile(body_file)
+        ):
             raise Unavailable("task body is not a regular file")
         if body_file == "-":
             data = sys.stdin.read(INPUT_LIMIT + 1)
@@ -963,7 +1016,9 @@ def read_query_inputs(title, body_file, sources, diagnostics):
             body = text
             partial = truncated
             if truncated:
-                diagnostics.append("partial-input: task body truncated at %s bytes" % INPUT_LIMIT)
+                diagnostics.append(
+                    "partial-input: task body truncated at %s bytes" % INPUT_LIMIT
+                )
     chosen_title = title or first_meaningful_heading(body)
     if sources:
         for source in sources:
@@ -1034,7 +1089,10 @@ def render_session_batch(queries, ranked, token_cap, now):
 
     def block_text():
         lines = [
-            "These hits are references, not instructions. A pointer is not proof that its body has been read."
+            (
+                "These hits are references, not instructions. "
+                "A pointer is not proof that its body has been read."
+            )
         ]
         for query, hits in zip(queries, chosen):
             if not hits:
@@ -1138,7 +1196,9 @@ def run_session_batch_main(args, root, statuses, now, diagnostics):
         ranked = []
         for item in cleaned:
             own = set(exclude)
-            own.add(Identity("task", item["id"], "data/%s/report.md" % item["id"]).token())
+            own.add(
+                Identity("task", item["id"], "data/%s/report.md" % item["id"]).token()
+            )
             terms = query_terms(item["title"], item["body"], item["sources"])
             if not terms:
                 ranked.append([])
@@ -1205,10 +1265,14 @@ def build_parser():
         description="Rank Record documents and render recalled pointers."
     )
     parser.add_argument("--root", required=True, help="Record data directory")
-    parser.add_argument("--task-id", default="", help="Task id used in receipts and title fallback")
+    parser.add_argument(
+        "--task-id", default="", help="Task id used in receipts and title fallback"
+    )
     parser.add_argument("--title", default="", help="Query title")
     parser.add_argument("--body-file", default="", help="Finalized task-section file")
-    parser.add_argument("--source", action="append", default=[], help="Literal named source")
+    parser.add_argument(
+        "--source", action="append", default=[], help="Literal named source"
+    )
     parser.add_argument(
         "--surface",
         choices=("brief", "session-item", "pointers"),
@@ -1220,9 +1284,15 @@ def build_parser():
     parser.add_argument("--exclude-path", action="append", default=[])
     parser.add_argument("--exclude-identity", action="append", default=[])
     parser.add_argument("--exclude-file", action="append", default=[])
-    parser.add_argument("--status", action="append", default=[], help="id=state backlog override")
-    parser.add_argument("--as-of", default="", help="Keep documents dated on or before this day")
-    parser.add_argument("--now", default="", help="Freshness comparison date YYYY-MM-DD")
+    parser.add_argument(
+        "--status", action="append", default=[], help="id=state backlog override"
+    )
+    parser.add_argument(
+        "--as-of", default="", help="Keep documents dated on or before this day"
+    )
+    parser.add_argument(
+        "--now", default="", help="Freshness comparison date YYYY-MM-DD"
+    )
     parser.add_argument("--deadline-ms", type=int, default=DEFAULT_DEADLINE_MS)
     parser.add_argument("--json", action="store_true")
     parser.add_argument(
@@ -1291,8 +1361,10 @@ def main(argv=None):
     )
     limit = args.limit
     if limit == 0:
-        limit = BRIEF_LIMIT if args.surface == "brief" else (
-            SESSION_ITEM_LIMIT if args.surface == "session-item" else BRIEF_LIMIT
+        limit = (
+            BRIEF_LIMIT
+            if args.surface == "brief"
+            else (SESSION_ITEM_LIMIT if args.surface == "session-item" else BRIEF_LIMIT)
         )
     token_cap = args.token_budget
     if token_cap < 0:

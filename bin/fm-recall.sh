@@ -183,6 +183,20 @@ if [ "$have_deadline" -eq 0 ]; then
 fi
 args+=("$@")
 
+extract_only=0
+for arg in "$@"; do
+  case "$arg" in
+    --extract-identities|--extract-identities=*) extract_only=1 ;;
+  esac
+done
+
+# The shared timeout helper backgrounds the child and therefore cannot keep
+# stdin. Identity extraction reads the already-emitted digest from stdin and
+# does not rank the corpus, so it runs without that bound.
+if [ "$extract_only" -eq 1 ]; then
+  exec python3 -B "$PYTHON_OWNER" "${args[@]}"
+fi
+
 rc=0
 fm_run_timed "$TIMEOUT" python3 -B "$PYTHON_OWNER" "${args[@]}" || rc=$?
 if [ "$rc" -eq 124 ]; then

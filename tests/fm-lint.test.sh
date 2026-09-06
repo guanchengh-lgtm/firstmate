@@ -156,6 +156,7 @@ test_help_reports_the_complete_interface() {
   help=$("$LINT" --help) || fail "fm-lint.sh --help failed"
   assert_contains "$help" "--telemetry" "fm-lint.sh --help omitted --telemetry"
   assert_contains "$help" "--required-version" "fm-lint.sh --help omitted --required-version"
+  assert_contains "$help" "--required-ruff-version" "fm-lint.sh --help omitted --required-ruff-version"
   assert_contains "$help" "--list-files" "fm-lint.sh --help omitted --list-files"
   assert_contains "$help" "--help" "fm-lint.sh --help omitted --help"
   assert_contains "$help" "--fast" "fm-lint.sh --help omitted --fast"
@@ -485,6 +486,7 @@ test_zero_changed_files_exits_clean() {
   assert_contains "$out" "no changed lint targets" "zero-changed run did not note the empty target set"
   assert_contains "$out" "workflow files valid" \
     "zero-changed run skipped workflow YAML validation"
+  assert_contains "$out" "Ruff 0.16.6" "zero-changed run did not lint the recall Python owner"
   pass "fm-lint.sh exits 0 with a note when the local branch has no changed lint targets"
 }
 
@@ -508,11 +510,43 @@ test_list_files_respects_changed_mode() {
   pass "fm-lint.sh --list-files reports the would-be changed set in changed mode"
 }
 
+test_python_syntax_and_undefined_name_fail_closed() {
+  local tmp broken out rc fakebin
+  tmp=$(fm_test_tmproot fm-lint-python)
+  broken="$tmp/broken.py"
+  printf 'def (\n' > "$broken"
+  rc=0
+  out=$("$LINT" "$broken" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "syntax-broken Python was accepted"$'\n'"$out"
+  assert_contains "$out" "SyntaxError" "Python syntax defect did not fail through fm-lint.sh"
+
+  printf 'print(undefined_name_xyz)\n' > "$broken"
+  rc=0
+  out=$("$LINT" "$broken" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "undefined-name Python was accepted"$'\n'"$out"
+  assert_contains "$out" "F821" "undefined-name defect did not fail through Ruff"
+
+  tmp=$(fm_test_tmproot fm-lint-noruff)
+  fakebin=$(fm_fakebin "$tmp")
+  for tool in bash dirname python3; do
+    ln -s "$(command -v "$tool")" "$fakebin/$tool"
+  done
+  printf 'print(1)\n' > "$tmp/ok.py"
+  rc=0
+  out=$(PATH="$fakebin" "$LINT" "$tmp/ok.py" 2>&1) || rc=$?
+  [ "$rc" -eq 1 ] || fail "missing Ruff expected exit 1, got $rc"$'\n'"$out"
+  assert_contains "$out" "Ruff not found" "missing Ruff did not name the required linter"
+  assert_contains "$out" "fm-install-ruff.sh" "missing Ruff did not name the pinned installer"
+  pass "Python syntax and undefined-name defects fail through the standard lint entry point"
+}
+
 test_pins_an_explicit_version() {
   [ -n "$REQUIRED" ] || fail "fm-lint.sh --required-version printed nothing"
   # The captain-agreed pin: adopt ShellCheck 0.11.0's rule set consistently,
   # which is also what drops the upstream-retired, false-positive-prone SC2015.
   assert_contains "$REQUIRED" "0.11.0" "fm-lint.sh must pin ShellCheck 0.11.0"
+  REQUIRED_RUFF=$("$LINT" --required-ruff-version)
+  assert_contains "$REQUIRED_RUFF" "0.16.6" "fm-lint.sh must pin Ruff 0.16.6"
   pass "fm-lint.sh pins an explicit ShellCheck version ($REQUIRED)"
 }
 
@@ -1058,3 +1092,4 @@ test_main_branch_forces_full_lint
 test_explicit_path_bypasses_changed_logic
 test_zero_changed_files_exits_clean
 test_list_files_respects_changed_mode
+test_python_syntax_and_undefined_name_fail_closed

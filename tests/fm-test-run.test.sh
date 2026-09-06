@@ -95,6 +95,7 @@ init_changed_fixture_repo() {
   chmod +x "$repo/bin/fm-test-run.sh"
   for script in \
     fm-brief.test.sh \
+    fm-recall.test.sh \
     fm-ask-user-authority.test.sh \
     fm-documentation-audiences.test.sh \
     fm-test-isolation-proof.test.sh \
@@ -129,6 +130,7 @@ init_changed_fixture_repo() {
   : >"$repo/bin/fm-supervisor-target-lib.sh"
   : >"$repo/bin/fm-control-lib.sh"
   : >"$repo/bin/fm-dod-lib.sh"
+  : >"$repo/bin/fm-recall.py"
   : >"$repo/bin/fm-timeout-lib.sh"
   : >"$repo/bin/fm-procevent-quota.sh"
   : >"$repo/bin/fm-quota-axi-lib.sh"
@@ -318,6 +320,17 @@ test_changed_dependency_selection_and_unmapped_failure() {
     "definition-of-done owner selects brief contract coverage"
   git -C "$repo" add bin/fm-dod-lib.sh
   git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm dod-owner-change
+
+  printf '\n' >>"$repo/bin/fm-recall.py"
+  listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)
+  assert_contains "$listed" "tests/fm-recall.test.sh" \
+    "recall owner selects its executable harness"
+  assert_contains "$listed" "tests/fm-brief.test.sh" \
+    "recall owner selects brief regressions"
+  assert_contains "$listed" "tests/fm-session-start.test.sh" \
+    "recall owner selects session-start regressions"
+  git -C "$repo" add bin/fm-recall.py
+  git -C "$repo" -c user.name=test -c user.email=test@example.invalid commit -qm recall-owner-change
 
   printf '\n' >>"$repo/bin/fm-timeout-lib.sh"
   listed=$(cd "$repo" && bin/fm-test-run.sh --list --changed --base HEAD)

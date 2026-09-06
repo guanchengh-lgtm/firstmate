@@ -2702,6 +2702,114 @@ SH
   pass "$mode bootstrap reports ancestor cwd for $location with failed tool $failed_tool"
 }
 
+seed_session_recall_world() {
+  local home=$1
+  mkdir -p "$home/data/prior-widget" "$home/config"
+  printf '7500\n' > "$home/config/startup-memory-budget"
+  printf '%s\n' manual > "$home/config/backlog-backend"
+  {
+    printf '# Prior widget archive\n'
+    printf 'date: 2026-01-01\n'
+    printf 'status: reported\n'
+    printf 'widget sprocket unique recall token.\n'
+  } > "$home/data/prior-widget/report.md"
+  cat > "$home/data/backlog.md" <<'EOF'
+# Backlog
+
+## In flight
+- [ ] inflight-one - Unique widget sprocket recall token (repo: firstmate) (kind: ship)
+- [ ] inflight-two - Unique widget sprocket recall token (repo: firstmate) (kind: ship)
+
+## Queued
+- [ ] held-one - Unique widget sprocket recall token (repo: firstmate) (kind: ship) (hold: captain choice pending) (hold-kind: captain)
+- [ ] blocked-one - Unique widget sprocket recall token (repo: firstmate) (kind: ship) blocked-by: inflight-one
+- [ ] ready-one - Unique widget sprocket recall token (repo: firstmate) (kind: ship)
+- [ ] ready-two - Unique widget sprocket recall token (repo: firstmate) (kind: ship)
+- [ ] ready-three - Unique widget sprocket recall token (repo: firstmate) (kind: ship)
+EOF
+}
+
+test_session_recall_selects_five_open_items() {
+  local rec root home fakebin out
+  rec=$(new_world recall-five)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  seed_session_recall_world "$home"
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "ready-three" "the seventh open row was dropped from the live listing"
+  assert_contains "$out" "RECALLED POINTERS" "session start did not emit recalled pointers"
+  assert_present "$home/state/.session-recall-receipt.json" "locked session start did not write a recall receipt"
+  python3 - "$home/state/.session-recall-receipt.json" <<'PY'
+import json,sys
+p=json.load(open(sys.argv[1],encoding="utf-8"))
+assert p["selected_item_count"]==5, p
+assert p["surface"]=="session-start"
+PY
+  pass "session start selects at most five unique open items and keeps the remaining live rows"
+}
+
+test_session_recall_dedupes_emitted_identities() {
+  local rec root home fakebin out
+  rec=$(new_world recall-dedupe)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  seed_session_recall_world "$home"
+  printf '%s\n' 'status: working: see data/prior-widget/report.md' > "$home/state/inflight-one.status"
+  printf 'window=fm-sess:w1\nkind=ship\n' > "$home/state/inflight-one.meta"
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  recalled=$(printf '%s\n' "$out" | awk '/^RECALLED POINTERS$/{flag=1;next}/^NEXT STEP$/{flag=0}flag')
+  assert_not_contains "$recalled" "data/prior-widget/report.md" \
+    "an already emitted identity was recalled again"
+  pass "session start dedupes exact identities already emitted in prior digest stages"
+}
+
+test_session_recall_skips_when_budget_is_exhausted() {
+  local rec root home fakebin out
+  rec=$(new_world recall-budget)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  seed_session_recall_world "$home"
+  printf '10\n' > "$home/config/startup-memory-budget"
+  python3 -c 'open("'"$home"'/data/captain.md","w",encoding="utf-8").write("x"*400)'
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "RECALLED POINTERS" "exhausted budget still emitted a recall block"
+  assert_contains "$out" "FLEET STATE" "exhausted recall hid fleet state"
+  assert_contains "$out" "inflight-one" "exhausted recall dropped a live open row"
+  pass "session start emits no recall block when the residual budget is exhausted"
+}
+
+test_session_recall_read_only_does_not_write_receipts() {
+  local rec root home fakebin out holder_pid
+  rec=$(new_world recall-readonly)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  seed_session_recall_world "$home"
+  sleep 300 &
+  holder_pid=$!
+  printf '%s\n' "$holder_pid" > "$home/state/.lock"
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  kill "$holder_pid" 2>/dev/null || true
+  wait "$holder_pid" 2>/dev/null || true
+  assert_contains "$out" "READ-ONLY SESSION" "foreign lock did not force read-only mode"
+  assert_absent "$home/state/.session-recall-receipt.json" \
+    "read-only session wrote a recall receipt"
+  assert_absent "$home/state/.session-recall-identities" \
+    "read-only session wrote a recall identity manifest"
+  pass "a lock-refused session may render recall but never writes receipts or manifests"
+}
+
 if [ "${1:-}" = runtime-bound ]; then
   test_home_preflight_is_bounded
   test_runtime_bound_truncates_loudly_and_exits_zero
@@ -2784,5 +2892,9 @@ test_read_only_pi_compact_refreshes_against_its_own_session_identity
 test_codex_unreachable_reset_sources_do_not_claim_instruction_refresh
 test_agents_baseline_requires_sha256_and_successful_completion
 test_reemit_keeps_repair_ownership_with_the_lock_holder
+test_session_recall_selects_five_open_items
+test_session_recall_dedupes_emitted_identities
+test_session_recall_skips_when_budget_is_exhausted
+test_session_recall_read_only_does_not_write_receipts
 
 echo "# fm-session-start.test.sh: all assertions passed"
