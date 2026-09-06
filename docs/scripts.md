@@ -78,6 +78,8 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `backends/cmux.sh`       | Experimental cmux session-provider adapter                                           |
 | `fm-config-push.sh`      | Push declared inherited local material to live local or remote secondmates and send the placement-specific config reread when changed |
 | `fm-feeder-export.sh`    | Publish and push the one-way mirror of this home's decisions and reports into the configured private feeder vault clone |
+| `fm-record.sh`           | Single Record transaction: settle, scan, commit `data/`, and (tick only) push; setup, health, and pre-commit entry points |
+| `fm-record-scan.sh`      | Shared fail-closed credential scan for the Record and the feeder, including gitleaks and archive preflight |
 | `fm-project-mode.sh`     | Resolve a project's registered delivery posture from `data/projects.md` for fleet sync and home seeding |
 | `fm-merge-local.sh`      | Fast-forward a `local-only` project's local default branch after approval; under `--exact-sync` also lands a pinned upstream-merge commit on the remote default branch |
 | `fm-review-diff.sh`      | Review a crewmate branch or resolved PR head against the authoritative base          |

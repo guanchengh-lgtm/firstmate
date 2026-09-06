@@ -302,6 +302,39 @@ Globs are refused, every entry must name a currently selected source, and an exc
 Both files are per home and are not inherited by secondmate homes, because each home mirrors its own records.
 `bin/fm-feeder-export.sh`'s header and `--help` own the page schema, the exact vault layout requirements, the first-known date rule and its limitation, the transaction and recovery mechanics, the secret-scan classes, and the exit codes.
 
+## Record repository (data/.git)
+
+After a home is activated, `data/` is also the Record repository: one Git snapshot of durable home files plus a mirrored live-state subset.
+`bin/fm-record.sh`'s header and `--help` own the exact flags, exit codes, settle window, lock, scan chain, and LFS rules.
+This section owns only operator setup and recovery.
+
+An unconfigured home has no `data/.git` and every Record command is an explicit disabled no-op, so secondmate homes stay quiet until someone initializes them.
+Do not initialize, commit, or push the live home from a worker checkout.
+Live activation is a separate approved home operation after the shared code has landed.
+
+To prepare a scratch or newly approved home, run `bin/fm-record.sh setup --init --origin <url>` from that home, then `bin/fm-record.sh health` and one `tick`.
+Setup writes a `.gitignore` that drops Obsidian workspace files, `.DS_Store`, Record temp names, `search-anomaly-signal/.serpapi.env`, and every `.env`.
+`setup --write-plist` renders `com.firstmate.record-tick` next to the existing deadman job.
+`setup --bootstrap` loads that job only after an explicit install consent.
+The job uses `StartInterval=60` and `RunAtLoad`, and it does not use `KeepAlive`.
+Sixty seconds is the attempt cadence while the user is logged in, not a hard off-device recovery bound through logout, sleep, scan refusal, or network loss.
+
+Distinguish three durability states when reading health or a session digest:
+
+- `committed-local` means this machine has a scanned Git commit and the files are recoverable here.
+- `pushed` means origin accepted that commit, so another clone can fetch it.
+- `push-pending` or `diverged` means the local commit remains and off-device restore is not yet proven.
+
+A scan-blocked or configuration-error result leaves earlier commits intact.
+Repair the named class, then run `tick` again.
+Do not force-push, rebase, or `git lfs install` outside the Record repository.
+The next tick retries one bounded push even when the working tree is clean.
+A diverged origin needs a later reconciliation owner, not an automatic rebase.
+
+Recovery on this machine is `git` plus `git lfs` inside `data/`.
+Restoring onto another machine is a clone of the private Record remote, then `setup` to recreate local hooks and LFS filters, because Git does not clone installed hooks.
+`.record-state` in that clone is historical mirror input, not proof that a worker is still alive.
+
 ## Secondmate routes (data/secondmates.md)
 
 Persistent secondmate routes live locally in `data/secondmates.md`.
