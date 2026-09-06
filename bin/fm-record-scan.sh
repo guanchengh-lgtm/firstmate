@@ -175,7 +175,7 @@ import tarfile
 import zipfile
 import zlib
 
-root = sys.argv[1]
+root = os.path.realpath(sys.argv[1])
 MAX_DEPTH = 2
 pattern = re.compile(sys.argv[2])
 
@@ -197,6 +197,11 @@ def scan_stream(stream, name, depth, output):
     header = stream.read(512)
     stream.seek(0)
     lower = name.lower()
+    if lower.endswith((".xz", ".txz", ".bz2", ".tbz", ".tbz2", ".7z", ".rar", ".zst", ".zstd",
+            ".tzst", ".lz4", ".lz", ".lzma", ".br", ".sz", ".s2", ".z", ".zz")) or header.startswith((
+            b"\xfd7zXZ\x00", b"BZh", b"7z\xbc\xaf\x27\x1c", b"Rar!\x1a\x07", b"\x28\xb5\x2f\xfd",
+            b"\x04\x22\x4d\x18", b"LZIP", b"\xff\x06\x00\x00sNaPpY", b"\x1f\x9d")):
+        fail("archive format is unsupported and cannot be scanned")
     if lower.endswith(".zip") or header.startswith((b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08")):
         kind = "zip"
     elif lower.endswith((".tar", ".tgz", ".tar.gz")) or header[257:262] == b"ustar":
@@ -236,6 +241,14 @@ def scan_stream(stream, name, depth, output):
             scan_stream(payload, name[:-3], depth + 1, output)
 
 
+def scan_link(path, relative, output):
+    target = os.readlink(path)
+    if os.path.isabs(target) or not os.path.exists(path) or os.path.commonpath((root, os.path.realpath(path))) != root:
+        fail("symlink is broken, absolute, or outside the scan root")
+    write_name(relative, output)
+    write_name(target, output)
+
+
 try:
     with open(sys.argv[3], "wb") as output:
         for dirpath, dirnames, filenames in os.walk(root, followlinks=False,
@@ -243,13 +256,17 @@ try:
             if ".git" in dirnames:
                 dirnames.remove(".git")
             for name in dirnames:
-                write_name(os.path.relpath(os.path.join(dirpath, name), root), output)
+                path = os.path.join(dirpath, name)
+                relative = os.path.relpath(path, root)
+                if os.path.islink(path):
+                    scan_link(path, relative, output)
+                else:
+                    write_name(relative, output)
             for name in filenames:
                 path = os.path.join(dirpath, name)
                 relative = os.path.relpath(path, root)
                 if os.path.islink(path):
-                    write_name(relative, output)
-                    write_name(os.readlink(path), output)
+                    scan_link(path, relative, output)
                 elif os.path.isfile(path):
                     with open(path, "rb") as payload:
                         scan_stream(payload, relative, 0, output)
@@ -329,8 +346,6 @@ fm_record_scan_chain() { # <dir>
     2) return 2 ;;
     *) return 1 ;;
   esac
-  STAGE=${STAGE:-$(mktemp -d "${TMPDIR:-/tmp}/fm-record-scan-stage.XXXXXX")} \
-    || die 1 "credential scan could not create its stage directory; refusing to publish"
   FM_RECORD_SCAN_HIT_CODE=2
   scan_tree_for_secrets "$dir"
 }
@@ -347,6 +362,15 @@ fm_record_scan_cli() {
   local cmd=${1:-} dir rc=0
   shift || true
   case "$cmd" in
+    tree | chain)
+      if [ -z "${STAGE:-}" ]; then
+        STAGE=$(mktemp -d "${TMPDIR:-/tmp}/fm-record-scan-stage.XXXXXX") \
+          || die 1 "credential scan could not create its stage directory; refusing to publish"
+        trap 'rm -rf -- "$STAGE"' EXIT
+      fi
+      ;;
+  esac
+  case "$cmd" in
     -h | --help | '')
       fm_record_scan_usage
       [ "$cmd" = '-h' ] || [ "$cmd" = '--help' ] || exit 3
@@ -354,8 +378,6 @@ fm_record_scan_cli() {
       ;;
     tree)
       [ "$#" -ge 1 ] || fm_record_scan_die 3 "tree requires at least one directory"
-      STAGE=${STAGE:-$(mktemp -d "${TMPDIR:-/tmp}/fm-record-scan-stage.XXXXXX")} \
-        || die 1 "credential scan could not create its stage directory; refusing to publish"
       FM_RECORD_SCAN_HIT_CODE=2
       scan_tree_for_secrets "$@"
       ;;

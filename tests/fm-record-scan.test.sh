@@ -405,6 +405,75 @@ PY
   pass "fm-record-scan: nested archives must be readable within the scan depth"
 }
 
+test_unsupported_archive_formats_refuse() {
+  local dir secret variant
+  dir="$TMP_ROOT/unsupported-archives"
+  secret=$(secret_fixture stripe-test)
+  python3 - "$dir" "$secret" <<'PY'
+import io
+import pathlib
+import sys
+import tarfile
+import zipfile
+root = pathlib.Path(sys.argv[1])
+for variant, compression, name in (("xz", "xz", "archive.tar.xz"), ("hidden", "xz", "response.bin"),
+        ("nested", "xz", "archive.zip"), ("bz2", "bz2", "archive.tar.bz2")):
+    directory = root / variant
+    directory.mkdir(parents=True)
+    data = io.BytesIO()
+    with tarfile.open(fileobj=data, mode="w:" + compression) as archive:
+        payload = sys.argv[2].encode()
+        entry = tarfile.TarInfo("response.bin")
+        entry.size = len(payload)
+        archive.addfile(entry, io.BytesIO(payload))
+    if variant == "nested":
+        with zipfile.ZipFile(directory / name, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr("response.bin", data.getvalue())
+    else:
+        (directory / name).write_bytes(data.getvalue())
+PY
+  for variant in xz hidden nested bz2; do
+    run_scan chain --dir "$dir/$variant"
+    expect_code 1 "$RC" "$variant unsupported archive"
+    assert_contains "$OUT" 'unsupported' 'unsupported archive had no named refusal'
+    assert_not_contains "$OUT" "$secret" 'unsupported archive exposed its payload'
+  done
+  pass "fm-record-scan: unsupported archives refuse even under hidden or nested names"
+}
+
+test_executable_cleans_only_its_own_stages() {
+  local dir temp stage command mode input expected
+  dir="$TMP_ROOT/stage-ownership"
+  temp="$dir/temp"
+  stage="$dir/caller-stage"
+  mkdir -p "$dir/tree" "$temp" "$stage"
+  for command in tree chain; do
+    for mode in clean hit error; do
+      input="$dir/tree"
+      expected=0
+      printf 'clean\n' > "$input/payload.txt"
+      case "$mode" in
+        hit) secret_fixture github-classic > "$input/payload.txt"; expected=2 ;;
+        error) input="$dir/missing"; expected=1 ;;
+      esac
+      if [ "$command" = tree ]; then
+        STAGE= TMPDIR="$temp" run_scan tree "$input"
+      else
+        STAGE= TMPDIR="$temp" run_scan chain --dir "$input"
+      fi
+      expect_code "$expected" "$RC" "$command $mode stage cleanup"
+      [ -z "$(find "$temp" -mindepth 1 -print)" ] || fail "$command $mode left a scanner temporary"
+    done
+  done
+  printf 'caller-owned\n' > "$stage/marker"
+  printf 'clean\n' > "$dir/tree/payload.txt"
+  STAGE="$stage" TMPDIR="$temp" run_scan tree "$dir/tree"
+  expect_code 0 "$RC" 'caller-owned stage scan'
+  [ "$(cat "$stage/marker")" = caller-owned ] || fail 'scanner removed caller-owned files'
+  [ -f "$stage/secret-scan-hits" ] || fail 'scanner removed caller-owned scan results'
+  pass "fm-record-scan: executable scans remove only their own temporary stages"
+}
+
 test_chain_clean_tree() {
   local dir
   dir="$TMP_ROOT/chain-clean"
@@ -429,4 +498,6 @@ test_private_key_headers_refuse_in_serialized_text
 test_compressed_feeder_patterns_block_the_chain
 test_gitleaks_path_exclusions_do_not_hide_payloads
 test_nested_archives_require_complete_scans
+test_unsupported_archive_formats_refuse
+test_executable_cleans_only_its_own_stages
 test_chain_clean_tree

@@ -369,10 +369,20 @@ test_push_failure_keeps_local_commit() {
   assert_contains "$OUT" 'push-pending' 'push-pending state'
   [ "$(git --git-dir="$home/data/.git" rev-parse HEAD)" != "$first" ] \
     || fail 'offline tick did not keep a new local commit'
+  cp "$home/data/.git/record-health" "$home/pending-health"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'local checkpoint while push is pending'
+  assert_contains "$OUT" 'delivery=push-pending' 'checkpoint hid pending delivery'
+  cmp -s "$home/pending-health" "$home/data/.git/record-health" || fail 'checkpoint replaced pending delivery health'
+  run_rec "$home" health
+  expect_code 0 "$RC" 'pending health'
+  assert_contains "$OUT" 'state=push-pending' 'health lost pending delivery'
   mv "$origin.away" "$origin"
   run_rec "$home" tick
   expect_code 0 "$RC" 'retry push'
   assert_contains "$OUT" 'state=pushed' 'retry should push'
+  run_rec "$home" health
+  assert_contains "$OUT" 'state=pushed' 'successful push did not replace failure health'
   pass "fm-record: push failure keeps local commits and the next tick retries"
 }
 
@@ -394,6 +404,14 @@ test_divergence_does_not_force() {
   run_rec "$home" tick
   expect_code 7 "$RC" 'diverged'
   assert_contains "$OUT" 'state=diverged' 'diverged state'
+  cp "$home/data/.git/record-health" "$home/diverged-health"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'local checkpoint while diverged'
+  assert_contains "$OUT" 'delivery=diverged' 'checkpoint hid divergence'
+  cmp -s "$home/diverged-health" "$home/data/.git/record-health" || fail 'checkpoint replaced divergence health'
+  run_rec "$home" health
+  expect_code 0 "$RC" 'divergence health'
+  assert_contains "$OUT" 'state=diverged' 'health lost divergence'
   git --git-dir="$home/data/.git" --work-tree="$home/data" cat-file -e HEAD:local.md \
     || fail 'local commit was lost on diverge'
   pass "fm-record: a non-fast-forward push reports diverged and keeps both histories"
@@ -697,39 +715,51 @@ test_manual_lfs_commit_requires_resolved_payloads() {
 }
 
 test_owned_publication_is_retried_without_new_bytes() {
-  local home origin before committed fakebin
-  IFS=$(printf '\t') read -r home origin < <(new_home publication-retry)
-  setup_record "$home" "$origin"
-  run_rec "$home" checkpoint --reason stow
-  expect_code 0 "$RC" 'publication retry seed'
-  before=$(git -C "$home/data" rev-parse HEAD)
-  dd if=/dev/zero of="$home/data/large.txt" bs=1048576 count=1 2>/dev/null
-  printf 'working: saved\n' > "$home/state/task.status"
-  fakebin=$(fm_fakebin "$home")
-  cat > "$fakebin/mv" <<'SH'
+  local home origin before committed fakebin timing
+  for timing in before setup after; do
+    IFS=$(printf '\t') read -r home origin < <(new_home "publication-retry-$timing")
+    setup_record "$home" "$origin"
+    run_rec "$home" checkpoint --reason stow
+    expect_code 0 "$RC" 'publication retry seed'
+    before=$(git -C "$home/data" rev-parse HEAD)
+    dd if=/dev/zero of="$home/data/large.txt" bs=1048576 count=1 2>/dev/null
+    printf 'working: saved\n' > "$home/state/task.status"
+    fakebin=$(fm_fakebin "$home")
+    cat > "$fakebin/mv" <<'SH'
 #!/usr/bin/env bash
 for arg in "$@"; do
   [ "$arg" != "$FM_HOME/data/.record-state/task.status" ] || exit 1
 done
 exec "$FM_TEST_REAL_MV" "$@"
 SH
-  chmod +x "$fakebin/mv"
-  FM_TEST_REAL_MV=$(command -v mv) PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason teardown --required
-  expect_code 9 "$RC" 'owned publication failure'
-  committed=$(git -C "$home/data" rev-parse HEAD)
-  [ "$committed" != "$before" ] || fail 'publication fixture did not commit before failure'
-  git -C "$home/data" diff --cached --quiet || fail 'publication fixture failed before updating the index'
-  [ ! -e "$home/data/.record-state/task.status" ] || fail 'publication fixture did not block the mirror'
-  run_rec "$home" checkpoint --reason stow
-  expect_code 0 "$RC" 'owned publication retry'
-  assert_contains "$OUT" 'state=unchanged' 'publication retry created another commit'
-  [ "$(git -C "$home/data" rev-parse HEAD)" = "$committed" ] || fail 'publication retry changed HEAD'
-  cmp -s "$home/state/task.status" "$home/data/.record-state/task.status" || fail 'publication retry left the mirror stale'
-  printf 'shrunken\n' > "$home/data/large.txt"
-  run_rec "$home" checkpoint --reason stow
-  expect_code 0 "$RC" 'LFS shrink after publication recovery'
-  assert_lfs_blob "$home" large.txt
-  pass "fm-record: unchanged checkpoints retry owned publication and retain LFS rules"
+    chmod +x "$fakebin/mv"
+    FM_TEST_REAL_MV=$(command -v mv) PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason teardown --required
+    expect_code 9 "$RC" 'owned publication failure'
+    committed=$(git -C "$home/data" rev-parse HEAD)
+    [ "$committed" != "$before" ] || fail 'publication fixture did not commit before failure'
+    git -C "$home/data" diff --cached --quiet || fail 'publication fixture failed before updating the index'
+    [ ! -e "$home/data/.record-state/task.status" ] || fail 'publication fixture did not block the mirror'
+    if [ "$timing" != after ]; then
+      printf 'shrunken before retry\n' > "$home/data/large.txt"
+      if [ "$timing" = setup ]; then
+        run_rec "$home" setup --code-root "$ROOT"
+        expect_code 0 "$RC" 'setup after failed publication'
+      fi
+    fi
+    run_rec "$home" checkpoint --reason stow
+    expect_code 0 "$RC" 'owned publication retry'
+    if [ "$timing" = after ]; then
+      assert_contains "$OUT" 'state=unchanged' 'publication retry created another commit'
+      [ "$(git -C "$home/data" rev-parse HEAD)" = "$committed" ] || fail 'publication retry changed HEAD'
+    fi
+    assert_lfs_blob "$home" large.txt
+    cmp -s "$home/state/task.status" "$home/data/.record-state/task.status" || fail 'publication retry left the mirror stale'
+    printf 'shrunken\n' > "$home/data/large.txt"
+    run_rec "$home" checkpoint --reason stow
+    expect_code 0 "$RC" 'LFS shrink after publication recovery'
+    assert_lfs_blob "$home" large.txt
+  done
+  pass "fm-record: publication recovery retains LFS rules when files shrink before or after retry"
 }
 
 test_restored_lfs_pointers_require_resolved_payloads() {
@@ -776,6 +806,41 @@ test_restored_lfs_pointers_require_resolved_payloads() {
   pass "fm-record: ticks and checkpoints scan resolved LFS payloads after a restore"
 }
 
+test_indexed_archive_links_keep_their_types() {
+  local home origin mode
+  IFS=$(printf '\t') read -r home origin < <(new_home archive-links)
+  setup_record "$home" "$origin"
+  python3 - "$home/data/archive.zip" <<'PY'
+import sys
+import zipfile
+with zipfile.ZipFile(sys.argv[1], "w") as archive:
+    archive.writestr("safe.txt", "clean archive content")
+PY
+  ln -s archive.zip "$home/data/alias.zip"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'checkpoint with an archive link'
+  mode=$(git -C "$home/data" ls-tree HEAD -- alias.zip)
+  [ "${mode%% *}" = 120000 ] || fail 'checkpoint changed the indexed link type'
+  [ "$(git -C "$home/data" show HEAD:alias.zip)" = archive.zip ] || fail 'checkpoint changed the link target'
+  ln -s archive.zip "$home/data/manual.zip"
+  git -C "$home/data" add manual.zip
+  set +e
+  OUT=$(git -C "$home/data" commit -m 'Add an internal archive link' 2>&1)
+  RC=$?
+  set -e
+  expect_code 0 "$RC" 'manual commit with an archive link'
+  printf 'outside data\n' > "$home/outside.txt"
+  ln -s ../outside.txt "$home/data/outside.zip"
+  git -C "$home/data" add outside.zip
+  set +e
+  OUT=$(git -C "$home/data" commit -m 'Reject an outside archive link' 2>&1)
+  RC=$?
+  set -e
+  [ "$RC" -ne 0 ] || fail 'manual commit accepted an outside link'
+  assert_contains "$OUT" 'scan-blocked' 'outside indexed link was not refused by the scanner'
+  pass "fm-record: indexed archive links retain their types without outside traversal"
+}
+
 test_outer_repository_stays_clean() {
   local after
   after=$(git -C "$ROOT" status --short --untracked-files=all)
@@ -811,4 +876,5 @@ test_push_retains_credentials_and_classifies_lfs_failure
 test_manual_lfs_commit_requires_resolved_payloads
 test_owned_publication_is_retried_without_new_bytes
 test_restored_lfs_pointers_require_resolved_payloads
+test_indexed_archive_links_keep_their_types
 test_outer_repository_stays_clean

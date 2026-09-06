@@ -467,14 +467,22 @@ binary_attr_lines() {
 }
 
 existing_literal_lfs_rules() {
-  local file=$1 line
-  [ -f "$file" ] || return 0
+  local file=$1 line committed= current= entry
+  if git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD >/dev/null 2>&1; then
+    entry=$(git --git-dir="$GIT_DIR_ABS" ls-tree HEAD -- .gitattributes) || return 1
+    if [ -n "$entry" ]; then
+      committed=$(git --git-dir="$GIT_DIR_ABS" show HEAD:.gitattributes) || return 1
+    fi
+  fi
+  if [ -f "$file" ]; then
+    current=$(cat "$file") || return 1
+  fi
   while IFS= read -r line; do
     case "$line" in
       \** | '') ;;
       *' filter=lfs diff=lfs merge=lfs -text') printf '%s\n' "$line" || return 1 ;;
     esac
-  done < "$file"
+  done <<< "$committed"$'\n'"$current"
 }
 
 update_lfs_attributes() {
@@ -614,7 +622,7 @@ pending_commit_count() {
 }
 
 run_transaction() { # tick|checkpoint <reason> try|wait|required
-  local mode=$1 reason=$2 lock_mode=$3 inv rc=0 sha pending class
+  local mode=$1 reason=$2 lock_mode=$3 inv rc=0 sha pending class delivery
   case "$(binding_state)" in
     absent)
       emit disabled
@@ -662,6 +670,13 @@ run_transaction() { # tick|checkpoint <reason> try|wait|required
   if [ "$mode" != tick ]; then
     rm -f "$inv"
     if [ "$rc" -eq 1 ]; then
+      delivery=$(read_health_file | sed -n 's/^state=//p')
+      case "$delivery" in
+        push-pending | diverged)
+          emit unchanged commit="$sha" delivery="$delivery"
+          exit 0
+          ;;
+      esac
       finish 0 unchanged commit="$sha"
     fi
     finish 0 committed-local commit="$sha"
@@ -825,6 +840,26 @@ extract_index_payloads() { # <index> <dest-dir>
     payload="$dest/$path"
     mkdir -p "$(dirname "$payload")" || return 1
     GIT_INDEX_FILE="$index" git --git-dir="$GIT_DIR_ABS" cat-file -p "$sha" > "$payload" || return 1
+    case "${meta%% *}" in
+      120000)
+        python3 - "$payload" <<'PY' || return 1
+import os
+import sys
+path = os.fsencode(sys.argv[1])
+try:
+    with open(path, "rb") as source:
+        target = source.read()
+    os.unlink(path)
+    os.symlink(target, path)
+except (OSError, ValueError):
+    print("fm-record: cannot materialize indexed symlink", file=sys.stderr)
+    sys.exit(1)
+PY
+        continue
+        ;;
+      100644 | 100755) ;;
+      *) return 1 ;;
+    esac
     if head -n 1 "$payload" | grep -Fq 'git-lfs.github.com/spec/v1'; then
       git lfs pointer --check --file="$payload" >/dev/null 2>&1 || return 1
       oid=$(awk '/^oid sha256:/ { print $2 }' "$payload")
