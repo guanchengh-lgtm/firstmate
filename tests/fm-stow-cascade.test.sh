@@ -11,6 +11,7 @@ set -u
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 CASCADE="$ROOT/bin/fm-stow-cascade.sh"
 TMP_ROOT=$(fm_test_tmproot fm-stow-cascade)
+fm_git_identity fmtest fmtest@example.invalid
 mkdir -p "$TMP_ROOT"
 TMP_ROOT=$(cd "$TMP_ROOT" && pwd -P)
 FAKEBIN=$(fm_fakebin "$TMP_ROOT/fakebin")
