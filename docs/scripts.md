@@ -39,12 +39,16 @@ The shared no-mistakes gate refusal for fleet lifecycle entrypoints is summarize
 | `fm-captain-hold.sh`    | Hold, answer, complete, verify, supersede, and read captain-held tasks plus product-idea completion attestations |
 | `fm-decision-hold.sh`    | One-release compatibility mapping from the retired decision command surface to `fm-captain-hold.sh` |
 | `fm-product-idea-lib.sh` | Shared product-idea ledger row and unscheduled-count grammar for completion and Bearings |
-| `fm-brief.sh`            | Scaffold ship (explicit `--mode` and optional validated surface), scout, secondmate-charter, Herdr-lab, and no-mistakes verifier briefs; lint worker briefs |
+| `fm-brief.sh`            | Scaffold and validate worker briefs, and refresh recalled pointers. |
+| `fm-recall.sh`           | Rank prior Record documents and print recalled pointers. |
+| `fm-recall.py`           | Own recall parsing, ranking, identity deduplication, and pointer rendering for the public shell command. |
+| `fm-backlog-state-lib.sh` | Read current backlog states for recall status overrides. |
 | `fm-delivery-surface-lib.sh` | Own the task-surface closed set and direct-PR eligibility shared by brief, spawn, and promotion |
 | `fm-dod-lib.sh`          | One owner of the ship task's mode-specific definition of done, rendered by both the brief scaffold and a scout promotion |
 | `fm-herdr-lab.sh`        | Provision and guardedly operate an isolated, never-default Herdr lab session         |
 | `fm-install-herdr.sh`    | Install CI's exact-version Herdr pin with official asset URL, SHA-256, and protocol checks |
 | `fm-install-treehouse.sh`| Install CI's exact-version Treehouse pin for real-Herdr E2E that needs spawn worktrees |
+| `fm-install-ruff.sh`     | Install the verified Ruff build required by the lint owner. |
 | `fm-herdr-ci-cleanup.sh` | Snapshot and tear down only job-owned `fm-lab-*` sessions in the Herdr CI lane       |
 | `fm-test-run.sh`         | Behavior-test runner: selection, portable lanes, bounded concurrency, budgets, coverage guard, timing/JSON |
 | `fm-test-isolation-proof.sh` | Concurrent isolation harness and portable candidate set owner |

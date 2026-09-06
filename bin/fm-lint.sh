@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # fm-lint.sh - the single owner of firstmate's lint definition.
 #
-# Runs its file set with ShellCheck's default severity, extended analysis,
+# Runs its shell file set with ShellCheck's default severity, extended analysis,
 # ambient configuration disabled, and one exact ShellCheck version. CI and
 # no-mistakes both invoke this script with no arguments, so the rule set,
 # version, bounded execution, and diagnostics ordering cannot drift.
@@ -30,8 +30,13 @@
 # The default (no explicit-path) path also runs bin/fm-lint-workflows.sh so a
 # malformed GitHub workflow, including a self-broken ci.yml, fails locally
 # before merge instead of only failing to run as CI.
+# The same no-argument path also lints bin/fm-recall.py with python3 syntax
+# compilation and a pinned Ruff check for standard-error and undefined-name
+# rules (E and F, including F821). That Python gate is a development
+# dependency only; the shipped recall executable still uses the standard
+# library alone. A missing or different Ruff version is a lint failure.
 #
-# With no explicit paths, the file set depends on context:
+# With no explicit paths, the shell file set depends on context:
 #   - In CI (GITHUB_ACTIONS=true or CI=true), on the main branch, or when no
 #     merge-base against origin/main (or local main) can be found, it lints
 #     the full canonical set: bin/*.sh bin/backends/*.sh tests/*.sh. This is
@@ -40,10 +45,14 @@
 #     only the canonical-set files changed since that merge-base, including
 #     uncommitted local edits, via plain local `git diff` (no network, no
 #     `gh`). A branch with zero matching changed files skips ShellCheck and
-#     prints a "no changed lint targets" note, then still runs both companion
-#     gates.
+#     prints a "no changed lint targets" note, then still runs the Python
+#     gate and both companion gates.
 # Explicit paths always bypass this file-set selection and lint exactly the
 # given paths, matching the same config, without either companion gate.
+# The exact relative path bin/fm-recall.py selects the Python gate; every
+# other explicit path goes to ShellCheck. --list-files prints only the
+# selected shell roots, because its consumers treat it as the shell inventory
+# and feed every listed path to a shell parser.
 #
 # Canonical lint defaults to two bounded workers over two stable logical shards.
 # Each shard writes separate diagnostics, and the parent replays those outputs in
@@ -60,11 +69,15 @@
 #   fm-lint.sh --jobs <1|2> [path]...  override bounded worker count
 #   fm-lint.sh --telemetry <path> ...  write a quiet metrics snapshot
 #   fm-lint.sh --required-version      print the ShellCheck pin
-#   fm-lint.sh --list-files            print the file set that would be linted
+#   fm-lint.sh --required-ruff-version print the Ruff pin
+#   fm-lint.sh --list-files            print the shell file set that would be linted
 #   fm-lint.sh --help                  print this usage
 set -u
 
 REQUIRED_SHELLCHECK=0.11.0
+REQUIRED_RUFF=0.16.6
+PYTHON_LINT_TARGET=bin/fm-recall.py
+RUFF_SELECT=E,F
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SELF="$SELF_DIR/fm-lint.sh"
 ROOT="$(cd "$SELF_DIR/.." && pwd)"
@@ -124,6 +137,10 @@ if [ "${1:-}" = "--required-version" ]; then
   printf '%s\n' "$REQUIRED_SHELLCHECK"
   exit 0
 fi
+if [ "${1:-}" = "--required-ruff-version" ]; then
+  printf '%s\n' "$REQUIRED_RUFF"
+  exit 0
+fi
 
 fm_lint_usage() {
   awk '
@@ -133,11 +150,55 @@ fm_lint_usage() {
   ' "$SELF"
 }
 
-# Default no-args lint also validates GitHub workflows. Explicit paths stay a
-# ShellCheck-only override so callers can target one shell root.
+# This companion follows the explicit-path policy in this file's header.
 fm_lint_run_workflows() {
   [ "$EXPLICIT_PATHS" -eq 0 ] || return 0
   "$SELF_DIR/fm-lint-workflows.sh"
+}
+
+fm_lint_ruff_version() {
+  "$1" version | awk '{print $2; exit}'
+}
+
+fm_lint_run_python() {
+  local path ruff_bin resolved compile_out ruff_out rc=0
+  [ "${#PYTHON_ROOTS[@]}" -gt 0 ] || return 0
+  if ! command -v python3 >/dev/null 2>&1; then
+    printf 'fm-lint.sh: python3 is required to lint %s.\n' "$PYTHON_LINT_TARGET" >&2
+    return 1
+  fi
+  if ! command -v ruff >/dev/null 2>&1; then
+    printf 'fm-lint.sh: Ruff not found; install Ruff %s with bin/fm-install-ruff.sh <destination-directory> and put that directory on PATH.\n' \
+      "$REQUIRED_RUFF" >&2
+    return 1
+  fi
+  ruff_bin=$(command -v ruff)
+  resolved=$(fm_lint_ruff_version "$ruff_bin")
+  printf 'fm-lint.sh: Ruff %s (pinned %s)\n' "$resolved" "$REQUIRED_RUFF" >&2
+  if [ "$resolved" != "$REQUIRED_RUFF" ]; then
+    printf 'fm-lint.sh: Ruff %s required for CI parity, found %s. Install %s with bin/fm-install-ruff.sh <destination-directory>.\n' \
+      "$REQUIRED_RUFF" "$resolved" "$REQUIRED_RUFF" >&2
+    return 1
+  fi
+  for path in "${PYTHON_ROOTS[@]}"; do
+    if [ ! -f "$path" ]; then
+      printf 'fm-lint.sh: Python lint target is missing: %s\n' "$path" >&2
+      rc=1
+      continue
+    fi
+    compile_out=$(python3 -m py_compile "$path" 2>&1) || {
+      printf '%s\n' "$compile_out" >&2
+      rc=1
+      continue
+    }
+    ruff_out=$("$ruff_bin" check --isolated --select "$RUFF_SELECT" -- "$path" 2>&1) || {
+      printf '%s\n' "$ruff_out" >&2
+      rc=1
+      continue
+    }
+    [ -z "$ruff_out" ] || printf '%s\n' "$ruff_out"
+  done
+  return "$rc"
 }
 
 # Captain-locked calibration, measured once on 2026-08-31 with pinned
@@ -912,9 +973,16 @@ fm_lint_is_canonical_root() {
 
 CHANGED_MODE=0
 EXPLICIT_PATHS=0
+PYTHON_ROOTS=()
 if [ "$#" -gt 0 ]; then
   EXPLICIT_PATHS=1
-  ROOTS=("$@")
+  ROOTS=()
+  for path in "$@"; do
+    case "$path" in
+      "$PYTHON_LINT_TARGET") PYTHON_ROOTS+=("$path") ;;
+      *) ROOTS+=("$path") ;;
+    esac
+  done
 else
   full_lint=1
   if [ "${GITHUB_ACTIONS:-}" != true ] && [ "${CI:-}" != true ] \
@@ -938,6 +1006,9 @@ else
       ROOTS+=("$changed_path")
     done < <(git diff --name-only --diff-filter=ACMR -z "$merge_base" -- 2>/dev/null | LC_ALL=C sort -z)
   fi
+  if [ -f "$PYTHON_LINT_TARGET" ]; then
+    PYTHON_ROOTS+=("$PYTHON_LINT_TARGET")
+  fi
 fi
 ROOT_COUNT=${#ROOTS[@]}
 
@@ -948,6 +1019,12 @@ if [ "$LIST_FILES" -eq 1 ]; then
   }
   [ "$ROOT_COUNT" -eq 0 ] || printf '%s\n' ${ROOTS[@]+"${ROOTS[@]}"}
   exit 0
+fi
+
+# Explicit Python-only paths never consult ShellCheck.
+if [ "$ROOT_COUNT" -eq 0 ] && [ "$EXPLICIT_PATHS" -eq 1 ] && [ "${#PYTHON_ROOTS[@]}" -gt 0 ]; then
+  fm_lint_run_python
+  exit $?
 fi
 
 if ! command -v shellcheck >/dev/null 2>&1; then
@@ -977,7 +1054,12 @@ fi
 if [ "$CHANGED_MODE" -eq 1 ] && [ "$ROOT_COUNT" -eq 0 ]; then
   printf 'fm-lint.sh: no changed lint targets\n'
   overall_rc=0
-  fm_lint_run_agentsmd_budget || overall_rc=$?
+  fm_lint_run_python || overall_rc=$?
+  if [ "$overall_rc" -eq 0 ]; then
+    fm_lint_run_agentsmd_budget || overall_rc=$?
+  else
+    fm_lint_run_agentsmd_budget || true
+  fi
   if [ "$overall_rc" -eq 0 ]; then
     fm_lint_run_workflows || overall_rc=$?
   else
@@ -1284,6 +1366,11 @@ EOF
   fi
 fi
 
+if [ "$overall_rc" -eq 0 ]; then
+  fm_lint_run_python || overall_rc=$?
+else
+  fm_lint_run_python || true
+fi
 if [ "$overall_rc" -eq 0 ]; then
   fm_lint_run_agentsmd_budget || overall_rc=$?
 else

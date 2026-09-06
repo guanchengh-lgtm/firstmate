@@ -1,0 +1,14 @@
+# n	probe_date	dispatched_ids (comma)	prior_ids (comma; decisions as decisions/<file>)	query
+1	2026-08-31	ov-kb-feeder		feeder export plan engineering review
+2	2026-08-31	ov-kb-graphify		graphify project install hook-free shape
+3	2026-08-31	ov-kb-agentsmd		agents md token budget eviction plan
+4	2026-08-31	ov-fm-lock-clear		session lock clear same-process replacement deadlock
+5	2026-08-31	kb-graphify-tv	ov-kb-graphify,knowledge-stack-scout	graphify hook-free install exact commands
+6	2026-08-31	kb-feeder-vault-ship	ov-kb-feeder,knowledge-stack-scout	feeder vault exporter guards atomic push
+7	2026-08-31	fm-lock-clear-reclaim	ov-fm-lock-clear	session lock clear reclaim fix design
+8	2026-08-31	kb-agentsmd-backpass	ov-kb-agentsmd,decisions/agentsmd-budget-2026-08-31.md	agentsmd backpass budget gate design
+9	2026-09-01	fm-fork-value-audit	fm-refuse-hooks-audit	fork-only material value audit keep or drop before upstream merge
+10	2026-09-01	ov-merge-slices		upstream merge slice plan eng review risk tiers
+11	2026-09-02	fm-drop-prcheck-migrate,fm-drop-f13-measure-gate,fm-drop-spec-compile-trio,fm-drop-f4-stop-ladder	decisions/fm-fork-drop-set-2026-09-01.md,fm-fork-value-audit	fork drop set execution pr-check migration f13 measure spec-compile f4 ladder
+12	2026-09-03	ov-s3-refresh	ov-s3-s6-plan,ov-s3-pointer	slice 3 delivery plan still governs after session death
+13	2026-09-03	fm-merge-slice-3	ov-s3-s6-plan,ov-s3-refresh	slice 3 delivery exact-sync merge-local

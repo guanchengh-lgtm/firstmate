@@ -261,16 +261,24 @@ There is no shared learnings file by captain decision.
 
 ## Startup memory budget (config/startup-memory-budget)
 
-`config/startup-memory-budget` is the primary-authoritative per-home allowance for the startup prompt-memory surface: `data/captain.md`, `data/captain-shared.md`, and `data/learnings.md` together.
+`config/startup-memory-budget` is the primary-authoritative per-home allowance for the startup prompt-memory surface: `data/captain.md`, `data/captain-shared.md`, and `data/learnings.md`, plus the prior-session fold and recalled pointers.
 The locked mutable bootstrap path materializes its visible default of `7500` estimated tokens in a primary home when the file is absent.
 To select another allowance, replace the primary home's file with one valid positive value in the exact format below; the next locked bootstrap convergence or `bin/fm-config-push.sh` propagates it to registered secondmates.
 A secondmate does not create an independent default and instead receives the primary value through the inherited-local-material contract in [`secondmate-provisioning`](../.agents/skills/secondmate-provisioning/SKILL.md).
 The file must be one positive base-10 integer followed by exactly one newline in a regular, single-linked file beneath a non-symlinked `config/` directory.
 Malformed, multi-line, symlinked, hardlinked, special, or otherwise unsafe values are rejected rather than treated as a default.
-Use `bin/fm-startup-memory-budget.sh read` to validate and print the effective value, or `bin/fm-startup-memory-budget.sh report` to account for the three files.
-The stable local estimate is `ceil(UTF-8 bytes / 3)` per file, a conservative portable approximation rather than a provider-exact tokenizer.
+Use `bin/fm-startup-memory-budget.sh read` to validate and print the effective value, or `bin/fm-startup-memory-budget.sh report` to account for the three memory files.
+The stable local estimate is `ceil(UTF-8 bytes / 3)` for each accounted component, including each memory file, rather than a provider-exact tokenizer.
 An inherited `data/captain-shared.md` counts in a secondmate's total but remains primary-owned and read-only there.
-The session-start and Bearings prior-session retrieve charges those three files first and then spends only remaining budget under its own token cap; `bin/fm-prior-session-fold.sh`'s header owns that residual bound, format, and incompleteness contract.
+Session start charges the three memory files first, then the prior-session fold, then recalled pointers from the leftover residual.
+Session-start recall is hard-capped at 450 estimated tokens, including its heading, and is omitted when that residual is exhausted.
+An absent or unreadable budget file does not invent the 7500 default at session start; recalled pointers are omitted instead.
+The full session-start digest is measured, not capped, and may exceed the allowance.
+There is no full-digest overflow policy and no new targeted-recovery path for an oversized digest.
+`bin/fm-prior-session-fold.sh`'s header owns that fold's residual bound, format, and incompleteness contract.
+`bin/fm-session-start.sh`'s header owns open-item selection, exact-identity dedupe, receipt publication, and when recall is omitted.
+`bin/fm-recall.sh`'s header owns ranking, pointer format, freshness display, and exit behavior.
+`bin/fm-brief.sh`'s header owns ship and scout recall refresh and `data/<id>/recall.json`.
 The internal [`/stow` skill](../.agents/skills/stow/SKILL.md) owns curation and its automatic secondmate cascade, which accounts every home against this same per-home allowance separately rather than against a fleet total.
 `bin/fm-startup-memory-budget.sh`'s header owns exact parsing, publication, and report output mechanics.
 

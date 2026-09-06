@@ -255,7 +255,7 @@ test_worker_brief_check_refuses_fake_skill_slashes() {
   brief="$TMP_ROOT/fake-worker-slash.md"
 
   for token in /harness-adapters /firstmate-coding-guidelines /wayfinder /last30days /wiki /design-sync; do
-    printf '# Task\nInvoke %s before coding.\n\n# Setup\nfixture\n' "$token" > "$brief"
+    printf '# Task\nInvoke %s before coding.\n\n<!-- firstmate:generated -->\n\n# Setup\nfixture\n' "$token" > "$brief"
     out=$(FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-brief.sh" --check-worker ship "$brief" 2>&1)
     status=$?
     [ "$status" -ne 0 ] || fail "worker brief check accepted forbidden invocation $token"
@@ -263,11 +263,11 @@ test_worker_brief_check_refuses_fake_skill_slashes() {
       "worker brief refusal did not name forbidden invocation $token"
   done
 
-  printf '# Task\nInvoke /grill-with-docs before coding.\n\n# Setup\nfixture\n' > "$brief"
+  printf '# Task\nInvoke /grill-with-docs before coding.\n\n<!-- firstmate:generated -->\n\n# Setup\nfixture\n' > "$brief"
   FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-brief.sh" --check-worker ship "$brief" >/dev/null 2>&1 \
     || fail "worker brief check refused allowed /grill-with-docs invocation"
 
-  printf '# Task\nName last30days and wiki as optional feeders; do not invoke them.\n\n# Setup\nfixture\n' > "$brief"
+  printf '# Task\nName last30days and wiki as optional feeders; do not invoke them.\n\n<!-- firstmate:generated -->\n\n# Setup\nfixture\n' > "$brief"
   FM_ROOT_OVERRIDE="$ROOT" "$ROOT/bin/fm-brief.sh" --check-worker ship "$brief" >/dev/null 2>&1 \
     || fail "worker brief check confused a plain name with a slash invocation"
   pass "fm-brief.sh: worker check refuses fake slashes but permits names"
@@ -768,6 +768,8 @@ You are a crewmate.
 # Task
 Delivery contract: mode=direct-PR is the wrong posture here.
 
+<!-- firstmate:generated -->
+
 # Definition of done
 Delivery contract: mode=no-mistakes
 Role: builder
@@ -790,6 +792,8 @@ You are a crewmate.
 
 # Task
 Body text about the feature.
+
+<!-- firstmate:generated -->
 
 # Definition of done
 Delivery contract: mode=no-mistakes
@@ -864,6 +868,393 @@ test_direct_pr_requires_internal_only_surface() {
   pass "fm-brief.sh: product/mixed/uncertain/omitted + direct-PR refuse; internal-only and no-mistakes product still work"
 }
 
+test_generated_boundary_owns_every_brief_consumer() {
+  local home task brief out
+  home="$TMP_ROOT/recall-boundary-home"
+  mkdir -p "$home/data/zebra-prior" "$home/data/named-prior" "$home/config"
+  printf '7500\n' > "$home/config/startup-memory-budget"
+  printf '%s\n' '# Zebraonly study' 'date: 2026-01-01' 'status: reported' \
+    'Zebraonly study body.' > "$home/data/zebra-prior/report.md"
+  printf '%s\n' '# Named prior study' 'date: 2026-01-01' 'status: reported' \
+    'Named prior study body.' > "$home/data/named-prior/report.md"
+
+  task="$home/task-headings.md"
+  printf '%s\n' 'ordinary task' '' '# Named sources' '- data/named-prior/report.md' \
+    '' 'zebraonly' > "$task"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-boundary firstmate --mode no-mistakes \
+    --task-file "$task" >/dev/null 2>&1 || fail "ship --task-file should scaffold"
+  brief="$home/data/brief-boundary/brief.md"
+  assert_grep "data/zebra-prior/report.md" "$brief" \
+    "a task-owned named-source heading truncated the recall query"
+  assert_no_grep "data/named-prior/report.md - " "$brief" \
+    "a task-owned named-source list was treated as the generated manifest"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --check-worker ship "$brief" 2>&1) || true
+  assert_not_contains "$out" "REFUSED" "the boundary check refused a clean brief"
+
+  cat > "$home/data/brief-boundary/legacy.md" <<'EOF'
+You are a crewmate.
+
+# Task
+KEEP THIS TASK TEXT about zebraonly work.
+
+# Recalled pointers
+This heading belongs to the task author.
+
+# Herdr lifecycle declaration - NOT ENABLED
+gate
+
+# Setup
+setup
+EOF
+  cp "$home/data/brief-boundary/legacy.md" "$home/legacy-before.md"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall ship \
+    "$home/data/brief-boundary/legacy.md" >/dev/null 2>&1 \
+    || fail "refresh failed for a manually written brief"
+  python3 - "$home/legacy-before.md" "$home/data/brief-boundary/legacy.md" <<'PY' || fail "refresh changed manually written task text"
+from pathlib import Path
+import sys
+before, after = [Path(path).read_bytes() for path in sys.argv[1:]]
+task, scaffold = before.split(b"# Herdr lifecycle declaration - NOT ENABLED", 1)
+assert after.startswith(task)
+assert after.endswith(b"# Herdr lifecycle declaration - NOT ENABLED" + scaffold)
+PY
+  assert_grep "data/zebra-prior/report.md" "$home/data/brief-boundary/legacy.md" \
+    "refresh did not place recall before the existing scaffold"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-empty-flag firstmate \
+    --mode no-mistakes --task-file= 2>&1) || true
+  assert_contains "$out" "--task-file requires a path" \
+    "an explicitly empty --task-file value was accepted"
+  [ ! -e "$home/data/brief-empty-flag/brief.md" ] \
+    || fail "an explicitly empty --task-file still scaffolded a brief"
+
+  pass "fm-brief.sh: one generated boundary serves task, source, refresh, and validation paths"
+}
+
+test_recall_refresh_manifest_and_status_contracts() {
+  local home task brief out count receipt i
+  home="$TMP_ROOT/recall-contracts-home"
+  mkdir -p "$home/data/held-prior" "$home/config" "$home/state"
+  printf '7500\n' > "$home/config/startup-memory-budget"
+  printf '%s\n' '# Carburetor gadget study' 'date: 2020-01-01' 'status: reported' \
+    'Carburetor gadget study body.' > "$home/data/held-prior/report.md"
+  cat > "$home/data/backlog.md" <<'EOF'
+# Backlog
+
+## Queued
+- [ ] held-prior - Carburetor gadget study (repo: firstmate) (kind: ship) (hold: captain choice pending) (hold-kind: captain)
+EOF
+  task="$home/task.md"
+  printf '%s\n' '# Task' 'Continue the carburetor gadget study.' > "$task"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-status-ship firstmate \
+    --mode no-mistakes --task-file "$task" 2>&1) \
+    || fail "ship --task-file should scaffold"
+  brief="$home/data/brief-status-ship/brief.md"
+  assert_grep "data/held-prior/report.md" "$brief" "the prior carburetor report was not recalled"
+  assert_grep "; held)" "$brief" "the current held backlog state did not win over the stored status"
+  assert_no_grep "check-freshness" "$brief" "a held row was marked check-freshness"
+  assert_contains "$out" "no usable session recall manifest" \
+    "an absent session recall manifest did not warn"
+
+  printf 'home=%s\n' "$home" > "$home/state/.session-recall-identities"
+  printf 'session=%s\n' 999999 >> "$home/state/.session-recall-identities"
+  printf 'task:held-prior\n' >> "$home/state/.session-recall-identities"
+  printf '%s\n' 424242 > "$home/state/.lock"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall ship "$brief" 2>&1) \
+    || fail "refresh-recall should succeed with a stale manifest"
+  assert_contains "$out" "no usable session recall manifest (stale session)" \
+    "a stale session manifest did not warn"
+  assert_grep "data/held-prior/report.md" "$brief" \
+    "a stale manifest wrongly deduplicated a pointer"
+
+  i=0
+  while [ "$i" -lt 3 ]; do
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall ship "$brief" >/dev/null 2>&1 &
+    i=$((i + 1))
+  done
+  wait
+  count=$(grep -c '^# Recalled pointers$' "$brief")
+  [ "$count" -eq 1 ] \
+    || fail "concurrent refreshes left $count recalled-pointers headings"
+  assert_grep "# Setup" "$brief" "a concurrent refresh truncated the brief"
+
+  receipt="$home/data/brief-status-ship/recall.json"
+  assert_present "$receipt" "the concurrent refresh left no recall receipt"
+  python3 - "$receipt" <<'PYX' || fail "brief receipt assertion failed"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert isinstance(p["named_sources"], list), p
+assert len(p["named_sources"]) <= 10, p
+assert len(p["preexisting_cited_paths"]) <= 10, p
+assert all(len(entry) <= 200 for entry in p["preexisting_cited_paths"]), p
+assert "receipt bound:" in p["receipt_bound"], p
+PYX
+  pass "fm-brief.sh: manifest warnings, current backlog state, concurrent refresh, and receipt bounds hold"
+}
+
+test_task_file_and_refresh_recall_routes() {
+  local home task brief out
+  home="$TMP_ROOT/recall-brief-home"
+  mkdir -p "$home/data/alpha-prior" "$home/config"
+  printf '7500\n' > "$home/config/startup-memory-budget"
+  printf '%s\n' '# Widget sprocket plan' 'date: 2026-01-01' 'status: reported' \
+    'Widget sprocket plan body.' > "$home/data/alpha-prior/report.md"
+  task="$home/task.md"
+  printf '%s\n' '# Task' 'Implement the widget sprocket plan from prior work.' > "$task"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-recall-ship firstmate --mode no-mistakes \
+    --task-file "$task" >/dev/null 2>&1 \
+    || fail "ship --task-file should scaffold"
+  brief="$home/data/brief-recall-ship/brief.md"
+  assert_grep "# Recalled pointers" "$brief" "ship --task-file missing recalled pointers"
+  assert_no_grep "Recall is pending until the task section is finalized." "$brief" \
+    "finalized ship brief still showed pending recall"
+  assert_present "$home/data/brief-recall-ship/recall.json" "ship --task-file did not write a recall receipt"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-recall-scout firstmate --scout \
+    --source data/named-source.md --task-file "$task" >/dev/null 2>&1 \
+    || fail "scout --task-file should scaffold"
+  brief="$home/data/brief-recall-scout/brief.md"
+  assert_grep "# Named sources" "$brief" "scout --task-file dropped named sources"
+  assert_grep "data/named-source.md" "$brief" "scout --task-file dropped the named source literal"
+  assert_grep "# Recalled pointers" "$brief" "scout --task-file missing recalled pointers"
+  assert_no_grep "data/named-source.md - " "$brief" \
+    "named source path was emitted as a recalled pointer"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall ship \
+    "$home/data/brief-recall-ship/brief.md" >/dev/null 2>&1 \
+    || fail "refresh-recall ship should succeed"
+  count=$(grep -c '^# Recalled pointers$' "$home/data/brief-recall-ship/brief.md")
+  [ "$count" -eq 1 ] || fail "refresh-recall appended a second recalled-pointers heading ($count)"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall verifier \
+    "$home/data/brief-recall-ship/brief.md" 2>&1) || true
+  assert_contains "$out" "kind must be ship or scout" "verifier refresh-recall was not refused"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-recall-sm --secondmate --no-projects \
+    --task-file "$task" 2>&1) || true
+  assert_contains "$out" "--task-file applies only to ship or scout" \
+    "secondmate --task-file was not refused"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-recall-pending firstmate --mode no-mistakes \
+    >/dev/null 2>&1 || fail "placeholder ship should scaffold"
+  assert_grep "Recall is pending until the task section is finalized." \
+    "$home/data/brief-recall-pending/brief.md" \
+    "placeholder ship brief did not keep pending recall"
+
+  rm -f "$home/data/brief-recall-ship/recall.json"
+  mkdir "$home/data/brief-recall-ship/recall.json"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall ship \
+    "$home/data/brief-recall-ship/brief.md" 2>&1) || true
+  assert_contains "$out" "metrics coverage is incomplete" \
+    "receipt failure did not warn about incomplete metrics coverage"
+  assert_grep "# Recalled pointers" "$home/data/brief-recall-ship/brief.md" \
+    "receipt failure left the brief without its recalled-pointers section"
+
+  pass "fm-brief.sh: task-file, named sources, refresh, and verifier/secondmate recall contracts hold"
+}
+
+test_absolute_record_citation_is_excluded() {
+  local home record task brief receipt
+  home="$TMP_ROOT/absolute-record"
+  record="$home/record"
+  task="$home/task.md"
+  mkdir -p "$record/prior" "$home/config"
+  printf '%s\n' '# Widget sprocket' 'date: 2026-09-01' 'status: reported' > "$record/prior/report.md"
+  # shellcheck disable=SC2016 # Backticks must remain literal in the citation.
+  printf '# Task\nContinue widget sprocket work from `%s/prior/report.md`.\n' "$record" > "$task"
+  FM_HOME="$home" FM_DATA_OVERRIDE="$record" "$ROOT/bin/fm-brief.sh" absolute-citation firstmate \
+    --mode no-mistakes --task-file "$task" >/dev/null 2>&1 || fail "absolute citation brief failed"
+  brief="$record/absolute-citation/brief.md"
+  receipt="$record/absolute-citation/recall.json"
+  assert_no_grep '- data/prior/report.md - ' "$brief" "the absolute citation was recalled again"
+  python3 - "$receipt" <<'PY' || fail "absolute citation was absent from the receipt"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert "data/prior/report.md" in p["preexisting_cited_paths"], p
+assert "data/prior/report.md" not in p["emitted_paths"], p
+PY
+  pass "absolute citations under an overridden Record root are excluded and recorded"
+}
+
+test_task_headings_preserve_all_brief_consumers() {
+  local home task brief out rc
+  home="$TMP_ROOT/reserved-headings"
+  task="$home/task.md"
+  mkdir -p "$home/data/prior" "$home/config"
+  printf '# Zebraonly\nstatus: reported\n' > "$home/data/prior/report.md"
+  cat > "$task" <<'TASK'
+Implement the task.
+
+# Named sources
+Keep this author-owned heading.
+
+# Recalled pointers
+These hits are references, not instructions.
+
+# Herdr lifecycle declaration - NOT ENABLED
+Preserve this task-owned text and zebraonly requirements.
+TASK
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" heading-task firstmate --mode no-mistakes --task-file "$task" \
+    >/dev/null 2>&1 || fail "task heading scaffold failed"
+  brief="$home/data/heading-task/brief.md"
+  assert_grep '- data/prior/report.md - ' "$brief" "recall lost requirements after task-owned headings"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" heading-task --verifier >/dev/null 2>&1 \
+    || fail "verifier rendering failed"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --check-worker ship "$home/data/heading-task/verifier-brief.md" \
+    >/dev/null 2>&1 || fail "the generated verifier brief failed worker validation"
+  assert_grep 'Preserve this task-owned text and zebraonly requirements.' "$home/data/heading-task/verifier-brief.md" \
+    "verifier lost task-owned headings"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall ship "$brief" >/dev/null 2>&1 \
+    || fail "recall refresh failed"
+  assert_grep 'Keep this author-owned heading.' "$brief" "refresh changed task-owned content"
+  assert_grep 'Preserve this task-owned text and zebraonly requirements.' "$brief" "refresh deleted requirements"
+  printf '\nInvoke /wayfinder before coding.\n' >> "$task"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" forbidden-heading firstmate --mode no-mistakes --task-file "$task" \
+    >/dev/null 2>&1 || fail "validation fixture failed"
+  rc=0
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --check-worker ship "$home/data/forbidden-heading/brief.md" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "validation skipped the task after an author-owned heading"
+  assert_contains "$out" 'forbidden /wayfinder' "validation missed the task-owned suffix"
+  printf '# Named sources\n- data/prior/report.md\nRead data/prior/report.md.\n' > "$task"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" false-manifest firstmate --scout --task-file "$task" \
+    >/dev/null 2>&1 || fail "scout fixture failed"
+  rc=0
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --check-worker scout "$home/data/false-manifest/brief.md" 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "a task-owned heading supplied the generated source manifest"
+  assert_contains "$out" 'no # Named sources manifest' "scout validation used a task-owned source list"
+  pass "one scaffold boundary preserves task, source, validation, verifier, and refresh behavior"
+}
+
+test_successful_recall_refresh_discloses_diagnostics() {
+  local home task kind brief
+  home="$TMP_ROOT/recall-diagnostics"
+  task="$home/task.md"
+  mkdir -p "$home/data/prior"
+  python3 - "$task" "$home/data/prior/report.md" <<'PY' || fail "could not create the diagnostic fixture"
+from pathlib import Path
+import sys
+Path(sys.argv[1]).write_text("widget " * 11000, encoding="utf-8")
+Path(sys.argv[2]).write_text("# Widget\nstatus: reported\ndate: " + "invalid" * 100 + "\n", encoding="utf-8")
+PY
+  for kind in ship scout; do
+    if [ "$kind" = ship ]; then
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "diagnostic-$kind" firstmate --mode no-mistakes --task-file "$task" \
+        > "$home/output" 2> "$home/scaffold-errors" || fail "ship scaffold failed with recall diagnostics"
+    else
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "diagnostic-$kind" firstmate --scout --task-file "$task" \
+        > "$home/output" 2> "$home/scaffold-errors" || fail "scout scaffold failed with recall diagnostics"
+    fi
+    brief="$home/data/diagnostic-$kind/brief.md"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall "$kind" "$brief" \
+      > "$home/output" 2> "$home/refresh-errors" || fail "refresh failed with recall diagnostics"
+    python3 - "$home/scaffold-errors" "$home/refresh-errors" <<'PY' || fail "successful recall hid or exceeded its diagnostic warning"
+from pathlib import Path
+import sys
+for path in sys.argv[1:]:
+    warnings = [line for line in Path(path).read_text().splitlines() if line.startswith("warning: recall:")]
+    assert len(warnings) == 1, (path, warnings)
+    assert "partial-input: task body truncated" in warnings[0], (path, warnings)
+    assert len(warnings[0].encode("utf-8")) <= 517, (path, warnings)
+PY
+    assert_grep '- data/prior/report.md - ' "$brief" "diagnostics removed the successful recall result"
+  done
+  pass "successful scaffold and refresh show one bounded recall warning"
+}
+
+test_legacy_generated_briefs_keep_their_boundary() {
+  local home kind brief receipt
+  home="$TMP_ROOT/legacy-generated"
+  mkdir -p "$home/data/named" "$home/data/prior" "$home/data/scaffold"
+  printf '# Widget\nstatus: reported\n' > "$home/data/named/report.md"
+  printf '# Zebraonly\nstatus: reported\n' > "$home/data/prior/report.md"
+  printf '# Scaffoldonly\nstatus: reported\n' > "$home/data/scaffold/report.md"
+  printf 'Read data/named/report.md and assess zebraonly.\n' > "$home/task.md"
+  for kind in ship scout; do
+    if [ "$kind" = ship ]; then
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "legacy-$kind" firstmate --mode no-mistakes \
+        --source data/named/report.md --task-file "$home/task.md" >/dev/null 2>&1 || fail "legacy ship fixture failed"
+    else
+      FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "legacy-$kind" firstmate --scout \
+        --source data/named/report.md --task-file "$home/task.md" >/dev/null 2>&1 || fail "legacy scout fixture failed"
+    fi
+    brief="$home/data/legacy-$kind/brief.md"
+    receipt="$home/data/legacy-$kind/recall.json"
+    python3 - "$brief" "$kind" <<'PYLEGACY' || fail "could not create the legacy generated brief"
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+text = path.read_text().replace("<!-- firstmate:generated -->\n", "")
+text = text.replace("# Setup\n", "# Setup\nScaffoldonly.\n")
+if sys.argv[2] == "scout":
+    start = text.index("# Recalled pointers\n")
+    end = text.index("# Herdr", start)
+    text = text[:start] + text[end:]
+path.write_text(text)
+PYLEGACY
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --check-worker "$kind" "$brief" >/dev/null 2>&1 \
+      || fail "legacy generated brief failed worker validation"
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall "$kind" "$brief" >/dev/null 2>&1 \
+      || fail "legacy generated brief failed recall refresh"
+    python3 - "$brief" "$receipt" <<'PYLEGACY' || fail "legacy scaffold content became task input"
+import json, sys
+from pathlib import Path
+text = Path(sys.argv[1]).read_text()
+p = json.loads(Path(sys.argv[2]).read_text())
+assert p["named_sources"] == ["data/named/report.md"], p
+assert "data/prior/report.md" in p["emitted_paths"], p
+assert "data/named/report.md" not in p["emitted_paths"], p
+assert "data/scaffold/report.md" not in p["emitted_paths"], p
+assert text.count("# Recalled pointers\n") == 1, text
+assert text.index("# Named sources") < text.index("# Recalled pointers") < text.index("# Herdr"), text
+PYLEGACY
+  done
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" legacy-ship --verifier >/dev/null 2>&1 || fail "legacy verifier rendering failed"
+  assert_no_grep 'Scaffoldonly' "$home/data/legacy-ship/verifier-brief.md" "legacy verifier included builder scaffold text"
+  pass "legacy generated briefs preserve task input, named sources, and recall placement"
+}
+
+test_foreign_citation_does_not_hide_local_brief_recall() {
+  local home
+  home="$TMP_ROOT/foreign-brief-citation"
+  mkdir -p "$home/data/prior"
+  printf '# Widget\nstatus: reported\n' > "$home/data/prior/report.md"
+  # shellcheck disable=SC2016 # Backticks must remain literal in the citation.
+  printf 'Continue widget work described in `%s/other/data/prior/report.md`.\n' "$home" > "$home/task.md"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" foreign-citation firstmate --mode no-mistakes --task-file "$home/task.md" \
+    >/dev/null 2>&1 || fail "foreign-citation brief failed"
+  python3 - "$home/data/foreign-citation/recall.json" <<'PYFOREIGN' || fail "foreign citation suppressed local recall"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert "data/prior/report.md" in p["emitted_paths"], p
+assert "data/prior/report.md" not in p["preexisting_cited_paths"], p
+PYFOREIGN
+  pass "foreign brief citations preserve local recall eligibility"
+}
+
+if [ "${1:-}" = recall ]; then
+  test_legacy_generated_briefs_keep_their_boundary
+  test_foreign_citation_does_not_hide_local_brief_recall
+  test_successful_recall_refresh_discloses_diagnostics
+  test_task_headings_preserve_all_brief_consumers
+  test_generated_boundary_owns_every_brief_consumer
+  test_worker_brief_check_refuses_fake_skill_slashes
+  test_scout_named_sources_are_manifested
+  test_verifier_brief_leads_with_verifier_contract
+  test_absolute_record_citation_is_excluded
+  test_task_file_and_refresh_recall_routes
+  test_recall_refresh_manifest_and_status_contracts
+  exit 0
+fi
+
+test_legacy_generated_briefs_keep_their_boundary
+test_foreign_citation_does_not_hide_local_brief_recall
+test_successful_recall_refresh_discloses_diagnostics
+test_task_headings_preserve_all_brief_consumers
+test_absolute_record_citation_is_excluded
+
 test_script_parses
 test_help_includes_entire_header
 test_ship_modes_generate_clean_briefs
@@ -888,3 +1279,6 @@ test_secondmate_directory_paths_are_absolute_and_output_is_stable
 test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
 test_scout_and_secondmate_scaffold
+test_task_file_and_refresh_recall_routes
+test_recall_refresh_manifest_and_status_contracts
+test_generated_boundary_owns_every_brief_consumer
