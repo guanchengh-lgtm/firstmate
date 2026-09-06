@@ -1,0 +1,9 @@
+$ git diff --stat 77ae2df2..1709fde6
+ docs/verification/owner-invoke-wait-claims.json | 47 -------------------------
+ 1 file changed, 47 deletions(-)
+
+$ test -e docs/verification/owner-invoke-wait-claims.json || echo 'file absent at 1709fde6'
+file absent at 1709fde6
+
+$ grep -rn owner-invoke-wait-claims bin tests docs .agents .claude .github
+(no consumer; grep exit 1)

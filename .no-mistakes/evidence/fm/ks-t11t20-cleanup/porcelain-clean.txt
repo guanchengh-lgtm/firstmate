@@ -1,0 +1,2 @@
+$ git status --porcelain
+(empty; exit 0)
