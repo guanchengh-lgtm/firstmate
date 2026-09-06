@@ -383,6 +383,8 @@ PRIMARY_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
 . "$SCRIPT_DIR/fm-wake-lib.sh"
 # shellcheck source=bin/fm-line-cap-lib.sh
 . "$SCRIPT_DIR/fm-line-cap-lib.sh"
+# shellcheck source=bin/fm-backlog-state-lib.sh
+. "$SCRIPT_DIR/fm-backlog-state-lib.sh"
 # shellcheck source=bin/fm-startup-memory-budget-lib.sh
 . "$SCRIPT_DIR/fm-startup-memory-budget-lib.sh"
 
@@ -635,33 +637,7 @@ session_start_open_items() {
 }
 
 session_start_status_overrides() {
-  local path=$DATA/backlog.md
-  [ -f "$path" ] && [ ! -L "$path" ] || return 0
-  awk '
-    function state_for_heading(line, heading) {
-      heading = line
-      sub(/^##[[:space:]]+/, "", heading)
-      sub(/[[:space:]]+$/, "", heading)
-      if (heading == "In flight") return "in_flight"
-      if (heading == "Queued") return "queued"
-      if (heading == "Done") return "done"
-      return ""
-    }
-    function emit(line, fallback,    id, state) {
-      if (line !~ /^[-*][[:space:]]+\[/) return
-      id = line
-      sub(/^[-*][[:space:]]+\[[ xX]\][[:space:]]+/, "", id)
-      sub(/[[:space:]].*$/, "", id)
-      if (id == "") return
-      state = fallback
-      if (line ~ /hold-kind:[[:space:]]*parked/) state = "parked"
-      else if (line ~ /[(]hold|hold-kind:/) state = "held"
-      printf "%s=%s\n", id, state
-    }
-    /^##[[:space:]]+/ { state = state_for_heading($0); next }
-    state == "in_flight" && /^[-*][[:space:]]+/ { emit($0, "in_flight"); next }
-    state == "queued" && /^[-*][[:space:]]+/ { emit($0, "queued"); next }
-  ' "$path"
+  fm_backlog_status_overrides "$DATA/backlog.md"
 }
 
 session_start_printed_ids() {
@@ -698,6 +674,7 @@ session_start_emit_recall() {
   local budget memory_tokens=0 fold_bytes=0 fold_tokens=0 residual=0 allocated=0
   local queries_file result_file ident_file items_file missing=none truncation=none
   local item_count=0 pointer_count=0 recall_bytes=0 recall_tokens=0 omitted=0
+  local partial_input=0
   local heading heading_bytes heading_tokens rendered rc
   SESSION_RECALL_IDENTITIES=""
   SESSION_RECALL_RECEIPT_STATUS=skipped
@@ -718,7 +695,7 @@ session_start_emit_recall() {
       missing=memory
     fi
   done
-  fold_bytes=$(printf '%s' "${PRIOR_FOLD_OUT:-}" | wc -c | tr -d '[:space:]')
+  fold_bytes=$(printf '%s\n' "${PRIOR_FOLD_OUT:-}" | wc -c | tr -d '[:space:]')
   fold_tokens=$(fm_startup_memory_estimated_tokens_for_bytes "$fold_bytes") || fold_tokens=0
   residual=$((budget - memory_tokens - fold_tokens))
   if [ "$residual" -lt 0 ]; then
@@ -805,12 +782,19 @@ print("pointer_count=%s" % int(payload.get("pointer_count") or 0))
 print("recall_bytes=%s" % int(payload.get("bytes") or 0))
 print("recall_tokens=%s" % int(payload.get("estimated_tokens") or 0))
 print("omitted=%s" % int(payload.get("omitted") or 0))
+print("partial_input=%s" % (1 if payload.get("partial_input") else 0))
 PY
 )"
   rendered=$(python3 -c 'import json,sys; sys.stdout.write(json.load(open(sys.argv[1],encoding="utf-8")).get("rendered") or "")' "$result_file")
   SESSION_RECALL_IDENTITIES=$(python3 -c 'import json,sys; print("\n".join(json.load(open(sys.argv[1],encoding="utf-8")).get("identities") or []))' "$result_file")
   if [ "${omitted:-0}" -gt 0 ]; then
     truncation='token-cap'
+  fi
+  if [ "${partial_input:-0}" -eq 1 ]; then
+    case "$truncation" in
+      none) truncation='partial-input' ;;
+      *) truncation="$truncation+partial-input" ;;
+    esac
   fi
   if [ -n "$rendered" ]; then
     printf '%s' "$heading"

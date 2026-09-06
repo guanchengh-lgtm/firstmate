@@ -433,6 +433,110 @@ assert "other-sprocket" in ids or p.get("status") in ("ok","empty"), p
   pass "fm-recall.sh: extracted identities exclude the same canonical token"
 }
 
+test_symlinked_report_is_skipped_without_traceback() {
+  local home out
+  home="$TMP_ROOT/rename-race"
+  mkdir -p "$home/data/swapped" "$home/outside"
+  write_report "$home" real "Widget sprocket real report" 2026-01-01 reported
+  printf '# Widget sprocket secret outside the Record\nwidget sprocket\n' \
+    > "$home/outside/secret.md"
+  ln -s "$home/outside/secret.md" "$home/data/swapped/report.md"
+  mkdir -p "$home/data/dangling"
+  ln -s "$home/data/dangling/missing.md" "$home/data/dangling/report.md"
+  out=$(recall_json "$home" --title "widget sprocket" --surface pointers)
+  printf '%s\n' "$out" | python3 -c '
+import json,sys
+p=json.load(sys.stdin)
+ids=[h["id"] for h in p.get("hits") or []]
+assert "swapped" not in ids, p
+assert "dangling" not in ids, p
+assert "real" in ids, p
+assert "secret" not in json.dumps(p), p
+'
+  pass "fm-recall.sh: a report replaced by a symlink is skipped, never read through"
+}
+
+test_malformed_metadata_is_diagnosed() {
+  local home out
+  home="$TMP_ROOT/malformed"
+  mkdir -p "$home/data/bad"
+  {
+    printf '# Widget sprocket malformed\n'
+    printf 'date: garbage\n'
+    printf 'status: reported\n'
+    printf 'widget sprocket body.\n'
+  } > "$home/data/bad/report.md"
+  out=$(recall_json "$home" --title "widget sprocket" --surface pointers)
+  printf '%s\n' "$out" | python3 -c '
+import json,sys
+p=json.load(sys.stdin)
+assert p["status"]=="ok", p
+assert any("malformed date" in d for d in p.get("diagnostics") or []), p
+line=p["rendered"]
+assert "date unknown" in line or "unknown" in line, line
+'
+  pass "fm-recall.sh: a malformed declared date is diagnosed, never ranked as valid"
+}
+
+test_alias_cycle_terminates_with_one_pointer() {
+  local home out
+  home="$TMP_ROOT/alias-cycle"
+  mkdir -p "$home/data/loop-a" "$home/data/loop-b"
+  printf '%s\n' 'target: loop-b' > "$home/data/loop-a/POINTER.md"
+  printf '%s\n' 'target: loop-a' > "$home/data/loop-b/POINTER.md"
+  write_report "$home" loop-a "Cycle widget sprocket" 2026-01-01 reported
+  write_report "$home" loop-b "Cycle widget sprocket" 2026-01-01 reported
+  out=$(recall_json "$home" --title "cycle widget sprocket" --surface pointers)
+  printf '%s\n' "$out" | python3 -c '
+import json,sys
+p=json.load(sys.stdin)
+ids=[h["id"] for h in p.get("hits") or []]
+assert len(ids)==len(set(ids)), p
+assert len(ids)<=2, p
+assert p["status"] in ("ok","empty"), p
+'
+  pass "fm-recall.sh: an alias cycle terminates and never duplicates a pointer"
+}
+
+test_flat_archive_row_is_indexed() {
+  local home out
+  home="$TMP_ROOT/flat-archive"
+  mkdir -p "$home/data"
+  printf -- '- [x] flat-one - Widget sprocket flat row (done 2026-01-05)\n  body text.\n' \
+    > "$home/data/done-archive.md"
+  out=$(recall_json "$home" --title "widget sprocket flat row" --surface pointers)
+  printf '%s\n' "$out" | python3 -c '
+import json,sys
+p=json.load(sys.stdin)
+hits=p.get("hits") or []
+assert [h["id"] for h in hits]==["flat-one"], p
+assert hits[0]["path"].startswith("data/done-archive.md:"), p
+'
+  pass "fm-recall.sh: a flat archive row without a heading still ranks"
+}
+
+test_tight_session_budget_takes_the_shorter_hit() {
+  local home queries out
+  home="$TMP_ROOT/session-tight"
+  mkdir -p "$home/data"
+  write_report "$home" big \
+    "Widget sprocket with an extremely long descriptive title that consumes the entire session token budget" \
+    2026-01-01 reported
+  write_report "$home" sm "Widget short" 2026-01-01 reported
+  queries="$TMP_ROOT/session-tight.json"
+  printf '%s\n' '[{"id":"item1","title":"widget sprocket","body":""}]' > "$queries"
+  out=$(recall_json "$home" --session-batch "$queries" --token-budget 95)
+  printf '%s\n' "$out" | python3 -c '
+import json,sys
+p=json.load(sys.stdin)
+ids=[h["id"] for h in p.get("hits") or []]
+assert ids==["sm"], p
+text=p["rendered"]
+assert -(-len(text.encode("utf-8"))//3) <= 95, (len(text), text)
+'
+  pass "fm-recall.sh: a tight session budget keeps a shorter lower-ranked pointer"
+}
+
 test_corrupted_expectation_exits_nonzero() {
   local bad status
   bad="$TMP_ROOT/probe-bad.tsv"
@@ -459,6 +563,11 @@ test_deadline_is_unavailable_not_empty_success
 test_partial_body_is_diagnosed
 test_thirteen_probe_floors
 test_extracted_identity_excludes_the_same_canonical_token
+test_symlinked_report_is_skipped_without_traceback
+test_malformed_metadata_is_diagnosed
+test_alias_cycle_terminates_with_one_pointer
+test_flat_archive_row_is_indexed
+test_tight_session_budget_takes_the_shorter_hit
 test_corrupted_expectation_exits_nonzero
 
 echo "# all fm-recall tests passed"

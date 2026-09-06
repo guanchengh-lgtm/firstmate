@@ -864,6 +864,68 @@ test_direct_pr_requires_internal_only_surface() {
   pass "fm-brief.sh: product/mixed/uncertain/omitted + direct-PR refuse; internal-only and no-mistakes product still work"
 }
 
+test_recall_refresh_manifest_and_status_contracts() {
+  local home task brief out count receipt i
+  home="$TMP_ROOT/recall-contracts-home"
+  mkdir -p "$home/data/held-prior" "$home/config" "$home/state"
+  printf '7500\n' > "$home/config/startup-memory-budget"
+  printf '%s\n' '# Carburetor gadget study' 'date: 2020-01-01' 'status: reported' \
+    'Carburetor gadget study body.' > "$home/data/held-prior/report.md"
+  cat > "$home/data/backlog.md" <<'EOF'
+# Backlog
+
+## Queued
+- [ ] held-prior - Carburetor gadget study (repo: firstmate) (kind: ship) (hold: captain choice pending) (hold-kind: captain)
+EOF
+  task="$home/task.md"
+  printf '%s\n' '# Task' 'Continue the carburetor gadget study.' > "$task"
+
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" brief-status-ship firstmate \
+    --mode no-mistakes --task-file "$task" 2>&1) \
+    || fail "ship --task-file should scaffold"
+  brief="$home/data/brief-status-ship/brief.md"
+  assert_grep "data/held-prior/report.md" "$brief" "the prior carburetor report was not recalled"
+  assert_grep "; held)" "$brief" "the current held backlog state did not win over the stored status"
+  assert_no_grep "check-freshness" "$brief" "a held row was marked check-freshness"
+  assert_contains "$out" "no usable session recall manifest" \
+    "an absent session recall manifest did not warn"
+
+  printf 'home=%s\n' "$home" > "$home/state/.session-recall-identities"
+  printf 'session=%s\n' 999999 >> "$home/state/.session-recall-identities"
+  printf 'task:held-prior\n' >> "$home/state/.session-recall-identities"
+  printf '%s\n' 424242 > "$home/state/.lock"
+  out=$(FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall ship "$brief" 2>&1) \
+    || fail "refresh-recall should succeed with a stale manifest"
+  assert_contains "$out" "no usable session recall manifest (stale session)" \
+    "a stale session manifest did not warn"
+  assert_grep "data/held-prior/report.md" "$brief" \
+    "a stale manifest wrongly deduplicated a pointer"
+
+  i=0
+  while [ "$i" -lt 3 ]; do
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall ship "$brief" >/dev/null 2>&1 &
+    i=$((i + 1))
+  done
+  wait
+  count=$(grep -c '^# Recalled pointers$' "$brief")
+  [ "$count" -eq 1 ] \
+    || fail "concurrent refreshes left $count recalled-pointers headings"
+  assert_grep "# Setup" "$brief" "a concurrent refresh truncated the brief"
+
+  receipt="$home/data/brief-status-ship/recall.json"
+  assert_present "$receipt" "the concurrent refresh left no recall receipt"
+  python3 - "$receipt" <<'PYX'
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert isinstance(p["named_sources"], list), p
+assert len(p["named_sources"]) <= 10, p
+assert len(p["preexisting_cited_paths"]) <= 10, p
+assert all(len(entry) <= 200 for entry in p["preexisting_cited_paths"]), p
+assert "receipt bound:" in p["receipt_bound"], p
+PYX
+  pass "fm-brief.sh: manifest warnings, current backlog state, concurrent refresh, and receipt bounds hold"
+}
+
 test_task_file_and_refresh_recall_routes() {
   local home task brief out
   home="$TMP_ROOT/recall-brief-home"
@@ -951,3 +1013,4 @@ test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
 test_scout_and_secondmate_scaffold
 test_task_file_and_refresh_recall_routes
+test_recall_refresh_manifest_and_status_contracts
