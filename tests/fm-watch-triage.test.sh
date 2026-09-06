@@ -3865,6 +3865,8 @@ test_own_pane_exclusion() {
   case "$shape" in
     herdr) a=default:w1:p2; b=default:w1:p3; backend=herdr
       identity=(HERDR_ENV=1 HERDR_PANE_ID=w1:p2 HERDR_SESSION=default) ;;
+    collision) a=test:fm-a.b; b=test:fm-a/b
+      identity=(FM_SUPERVISOR_TARGET=test:fm-a.b) ;;
     override) identity=(FM_SUPERVISOR_TARGET=test:fm-a) ;;
     tmux) identity=(TMUX_PANE=%7)
       mv "$fakebin/tmux" "$fakebin/tmux-original"
@@ -3951,6 +3953,7 @@ test_own_pane_event_subscription() {
 }
 
 test_own_pane_exclusion herdr
+test_own_pane_exclusion collision
 test_own_pane_exclusion override
 test_own_pane_exclusion tmux
 test_own_pane_exclusion fallback

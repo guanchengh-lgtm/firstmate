@@ -1752,14 +1752,15 @@ EOF
 }
 
 task_render_spared_roots() {  # <dir>...
-  local dir pid cwd separator=
+  local dir root pid cwd separator=
   for dir in "$@"; do
     [ -n "$dir" ] || continue
+    root=$(CDPATH='' cd -- "$dir" 2>/dev/null && pwd -P) || continue
     while IFS= read -r pid; do
       [ -n "$pid" ] || continue
       cwd=${TASK_PID_CWDS[pid]:-}
       case "$cwd" in
-        "$dir"|"$dir"/*)
+        "$root"|"$root"/*)
           printf '%s%s' "$separator" "$dir"
           separator=' and '
           break

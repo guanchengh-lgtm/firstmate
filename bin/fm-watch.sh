@@ -611,11 +611,11 @@ window_is_own_pane() {  # <window>
   local w=$1 key task marker
   [ -n "$own_pane_target" ] && [ "$w" = "$own_pane_target" ] || return 1
   key=$(window_key "$w")
-  marker="$STATE/.hash-$key"
-  if [ "$(cat "$marker" 2>/dev/null || true)" != own-pane ]; then
+  marker="$STATE/.own-pane-$key"
+  if [ "$(cat "$marker" 2>/dev/null || true)" != "$w" ]; then
     task=$(window_to_task "$w" "$STATE")
     triage_log "absorbed own-pane window $w recorded by task $task: the live firstmate occupies it; teardown will name the host"
-    printf '%s' own-pane > "$marker"
+    printf '%s' "$w" > "$marker"
   fi
   return 0
 }

@@ -2745,11 +2745,14 @@ EOF
 }
 
 test_host_session_under_tasktmp_is_spared() {
-  local case_dir rc host_pid child_pid i=0
+  local case_dir physical_tasktmp rc host_pid child_pid i=0
   case_dir=$(make_case host-session-tasktmp-spared)
   write_meta "$case_dir" no-mistakes ship
   printf '%s\n' "tasktmp=$case_dir/tasktmp" >> "$case_dir/state/task-x1.meta"
-  mkdir -p "$case_dir/tasktmp"
+  mkdir -p "$case_dir/tasktmp-real"
+  ln -s tasktmp-real "$case_dir/tasktmp"
+  physical_tasktmp=$(CDPATH='' cd -- "$case_dir/tasktmp" && pwd -P)
+  [ "$physical_tasktmp" != "$case_dir/tasktmp" ] || fail "host-session-tasktmp-spared: tasktmp alias did not diverge"
   land_shippable_commit "$case_dir"
 
   (
@@ -2779,7 +2782,7 @@ test_host_session_under_tasktmp_is_spared() {
   fi
   kill -KILL "$host_pid" "$child_pid" 2>/dev/null || true
   expect_code 1 "$rc" "host-session-tasktmp-spared: teardown should refuse the tasktmp removal"
-  assert_grep "cwd=$case_dir/tasktmp" "$case_dir/stderr" "host-session-tasktmp-spared: cwd missing"
+  assert_grep "cwd=$physical_tasktmp" "$case_dir/stderr" "host-session-tasktmp-spared: physical cwd missing"
   assert_grep "Clear it: exit that session or relocate its host shell out of $case_dir/tasktmp" "$case_dir/stderr" \
     "host-session-tasktmp-spared: remedy named the wrong protected root"
   assert_present "$case_dir/state/task-x1.meta" "host-session-tasktmp-spared: teardown removed task metadata"
