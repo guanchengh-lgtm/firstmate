@@ -1416,11 +1416,26 @@ cmd_land_related() {
   GIT_INDEX_FILE="$CAND_INDEX" git --git-dir="$GIT_DIR_ABS" read-tree "$cand_sha" \
     || finish 8 configuration-error detail=read-tree
   payloads="$CAND_WORK/../scan"
-  extract_index_payloads "$CAND_INDEX" "$payloads" || finish 5 scan-blocked
-  "$SCRIPT_DIR/fm-record-scan.sh" chain --dir "$payloads" || finish 5 scan-blocked
+  extract_index_payloads "$CAND_INDEX" "$payloads" || {
+    git --git-dir="$GIT_DIR_ABS" update-ref -d refs/fm-land-related/candidate >/dev/null 2>&1 || true
+    finish 5 scan-blocked
+  }
+  "$SCRIPT_DIR/fm-record-scan.sh" chain --dir "$payloads" || {
+    git --git-dir="$GIT_DIR_ABS" update-ref -d refs/fm-land-related/candidate >/dev/null 2>&1 || true
+    finish 5 scan-blocked
+  }
+  live=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD) \
+    || finish 8 configuration-error detail=head
+  if [ "$live" != "$expected" ]; then
+    git --git-dir="$GIT_DIR_ABS" update-ref -d refs/fm-land-related/candidate >/dev/null 2>&1 || true
+    finish 8 configuration-error detail=head-moved
+  fi
   GIT_TERMINAL_PROMPT=0 git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" \
     merge --ff-only --no-edit refs/fm-land-related/candidate \
-    || finish 8 configuration-error detail=fast-forward
+    || {
+      git --git-dir="$GIT_DIR_ABS" update-ref -d refs/fm-land-related/candidate >/dev/null 2>&1 || true
+      finish 8 configuration-error detail=fast-forward
+    }
   git --git-dir="$GIT_DIR_ABS" update-ref -d refs/fm-land-related/candidate >/dev/null 2>&1 || true
   CAPTURED_HEAD=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD) \
     || finish 8 configuration-error detail=head
