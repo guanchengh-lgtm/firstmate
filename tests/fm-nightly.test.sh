@@ -1,0 +1,557 @@
+#!/usr/bin/env bash
+# Behavior tests for bin/fm-nightly.sh through the public executable.
+set -u
+
+# shellcheck source=tests/lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+NIGHTLY="$ROOT/bin/fm-nightly.sh"
+RECORD="$ROOT/bin/fm-record.sh"
+TMP_ROOT=$(fm_test_tmproot fm-nightly)
+OUTER_STATUS_BEFORE=$(git -C "$ROOT" status --short --untracked-files=all)
+fm_git_identity fmtest fmtest@example.invalid
+export FM_RECORD_SETTLE_SECONDS=${FM_RECORD_SETTLE_SECONDS:-0}
+export FM_RECORD_LOCK_WAIT_SECONDS=${FM_RECORD_LOCK_WAIT_SECONDS:-1}
+export FM_RECORD_PUSH_TIMEOUT=${FM_RECORD_PUSH_TIMEOUT:-5}
+export NIGHTLY_TICK_RETRY_SECONDS=0
+export NIGHTLY_RUN_BOUND_SECONDS=30
+
+NOW=2026-09-07T03:00:00Z
+DATE=2026-09-07
+
+new_home() {
+  local name=$1 home origin
+  home="$TMP_ROOT/$name/home"
+  origin="$TMP_ROOT/$name/origin.git"
+  mkdir -p "$home/data" "$home/state" "$home/config" "$TMP_ROOT/$name/logs"
+  git init --quiet --bare --initial-branch=main "$origin"
+  printf '%s\t%s\n' "$home" "$origin"
+}
+
+run_rec() {
+  local home=$1
+  shift
+  set +e
+  OUT=$(
+    HOME="$TMP_ROOT/empty-home" \
+    FM_HOME="$home" \
+    FM_ROOT_OVERRIDE="$ROOT" \
+    FM_DATA_OVERRIDE="$home/data" \
+    FM_STATE_OVERRIDE="$home/state" \
+    FM_CONFIG_OVERRIDE="$home/config" \
+    FM_RECORD_SETTLE_SECONDS="${FM_RECORD_SETTLE_SECONDS}" \
+    FM_RECORD_LOCK_WAIT_SECONDS="${FM_RECORD_LOCK_WAIT_SECONDS}" \
+    FM_RECORD_PUSH_TIMEOUT="${FM_RECORD_PUSH_TIMEOUT}" \
+    "$RECORD" "$@" 2>&1
+  )
+  RC=$?
+  set -e
+}
+
+setup_record() {
+  local home=$1 origin=$2
+  mkdir -p "$TMP_ROOT/empty-home"
+  run_rec "$home" setup --init --origin "file://$origin" --code-root "$ROOT"
+  expect_code 0 "$RC" "setup $home"
+  # A live Record always has a pushed first commit before any night runs.
+  run_rec "$home" tick
+  expect_code 0 "$RC" "first tick $home"
+}
+
+setup_minimal_record() {
+  local home=$1
+  mkdir -p "$home/data" "$home/state" "$home/config"
+  if [ ! -d "$home/data/.git" ]; then
+    git init --quiet -b main "$home/data"
+    printf '# record\n' > "$home/data/README.md"
+    git -C "$home/data" add README.md
+    git -C "$home/data" commit --quiet -m initial
+  fi
+}
+
+make_code_root() {
+  local dest=$1
+  mkdir -p "$dest"
+  cp -R "$ROOT/bin" "$dest/bin"
+  git init --quiet --initial-branch=main "$dest"
+  git -C "$dest" add bin
+  git -C "$dest" commit --quiet -m 'nightly code root'
+}
+
+run_nightly() {
+  set +e
+  OUT=$(
+    HOME="${NIGHTLY_HOME:-$TMP_ROOT/empty-home}" \
+    FM_ROOT_OVERRIDE="$ROOT" \
+    "$NIGHTLY" "$@" 2>&1
+  )
+  RC=$?
+  set -e
+}
+
+write_restic_double() {
+  local fakebin=$1
+  cat > "$fakebin/restic" <<'SH'
+#!/usr/bin/env bash
+if [ -n "${FAKE_RESTIC_ARGV:-}" ]; then
+  {
+    printf '%s\0' "$@"
+    printf '\n'
+  } >> "$FAKE_RESTIC_ARGV"
+fi
+mode=backup
+for a in "$@"; do
+  case "$a" in
+    backup) mode=backup ;;
+    check) mode=check ;;
+    restore) mode=restore ;;
+    init) mode=init ;;
+  esac
+done
+case "$mode" in
+  check)
+    rc=${FAKE_RESTIC_CHECK_EXIT:-${FAKE_RESTIC_EXIT:-0}}
+    out=${FAKE_RESTIC_CHECK_STDOUT:-${FAKE_RESTIC_STDOUT:-}}
+    ;;
+  restore)
+    rc=${FAKE_RESTIC_RESTORE_EXIT:-${FAKE_RESTIC_EXIT:-0}}
+    out=${FAKE_RESTIC_RESTORE_STDOUT:-${FAKE_RESTIC_STDOUT:-}}
+    ;;
+  *)
+    rc=${FAKE_RESTIC_EXIT:-0}
+    out=${FAKE_RESTIC_STDOUT-}
+    ;;
+esac
+if [ -z "$out" ] && [ "$mode" = backup ]; then
+  out='{"message_type":"summary","snapshot_id":"testsnap001"}'
+fi
+[ -n "$out" ] && printf '%s\n' "$out"
+exit "$rc"
+SH
+  chmod +x "$fakebin/restic"
+}
+
+write_named_double() {
+  local fakebin=$1 name=$2 argv_var=$3 exit_var=$4 stdout_var=$5
+  cat > "$fakebin/$name" <<SH
+#!/usr/bin/env bash
+if [ -n "\${$argv_var:-}" ]; then
+  {
+    printf '%s\\0' "\$@"
+    printf '\\n'
+  } >> "\$$argv_var"
+fi
+out=\${$stdout_var:-}
+[ -n "\$out" ] && printf '%s\\n' "\$out"
+exit \${$exit_var:-0}
+SH
+  chmod +x "$fakebin/$name"
+}
+
+write_tool_doubles() {
+  local fakebin=$1
+  write_restic_double "$fakebin"
+  write_named_double "$fakebin" rclone FAKE_RCLONE_ARGV FAKE_RCLONE_EXIT FAKE_RCLONE_STDOUT
+  write_named_double "$fakebin" launchctl FAKE_LAUNCHCTL_ARGV FAKE_LAUNCHCTL_EXIT FAKE_LAUNCHCTL_STDOUT
+  write_named_double "$fakebin" plutil FAKE_PLUTIL_ARGV FAKE_PLUTIL_EXIT FAKE_PLUTIL_STDOUT
+  write_named_double "$fakebin" gbrain FAKE_GBRAIN_ARGV FAKE_GBRAIN_EXIT FAKE_GBRAIN_STDOUT
+  write_named_double "$fakebin" graphify FAKE_GRAPHIFY_ARGV FAKE_GRAPHIFY_EXIT FAKE_GRAPHIFY_STDOUT
+}
+
+test_help_lists_subcommands() {
+  run_nightly --help
+  expect_code 0 "$RC" 'nightly --help'
+  assert_contains "$OUT" 'fm-nightly.sh run --fm-home PATH' 'help names run'
+  assert_contains "$OUT" 'fm-nightly.sh archive --fm-home PATH' 'help names archive'
+  assert_contains "$OUT" 'fm-nightly.sh restore --fm-home PATH --target DIR' 'help names restore'
+  assert_contains "$OUT" 'fm-nightly.sh install --fm-home PATH' 'help names install'
+  assert_contains "$OUT" 'fm-nightly.sh status --fm-home PATH' 'help names status'
+  pass "fm-nightly: --help prints the operator contract"
+}
+
+test_install_renders_plist() {
+  local home origin plist code_root logs
+  IFS=$(printf '\t') read -r home origin < <(new_home install-plist)
+  setup_minimal_record "$home"
+  plist="$TMP_ROOT/install-plist/nightly.plist"
+  logs="$TMP_ROOT/install-plist/logs"
+  mkdir -p "$logs"
+  code_root="$TMP_ROOT/install-plist/code"
+  make_code_root "$code_root"
+  FM_NIGHTLY_PLIST="$plist" FM_NIGHTLY_LOG_DIR="$logs" \
+    run_nightly install --fm-home "$home" --hour 4 --minute 15 --code-root "$code_root"
+  expect_code 0 "$RC" 'install'
+  assert_present "$plist" 'rendered plist'
+  python3 - "$plist" "$code_root" "$home" "$logs" <<'PY' || fail 'plist keys'
+import plistlib, sys
+with open(sys.argv[1], "rb") as fh:
+    job = plistlib.load(fh)
+assert job["Label"] == "com.firstmate.nightly"
+assert job["ProgramArguments"] == [sys.argv[2] + "/bin/fm-nightly.sh", "run", "--fm-home", sys.argv[3]]
+assert job["EnvironmentVariables"]["FM_HOME"] == sys.argv[3]
+assert "PATH" in job["EnvironmentVariables"]
+assert job["StartCalendarInterval"]["Hour"] == 4
+assert job["StartCalendarInterval"]["Minute"] == 15
+assert job["ProcessType"] == "Background"
+assert job["LimitLoadToSessionType"] == "Aqua"
+assert "RunAtLoad" not in job
+assert "KeepAlive" not in job
+assert job["StandardOutPath"] == sys.argv[4] + "/firstmate-nightly.stdout.log"
+assert job["StandardErrorPath"] == sys.argv[4] + "/firstmate-nightly.stderr.log"
+PY
+  grep -Fq 'firstmate-nightly-v1' "$plist" || fail 'missing nightly marker'
+  if command -v plutil >/dev/null 2>&1; then
+    plutil -lint "$plist" >/dev/null || fail 'plutil -lint failed'
+  fi
+  pass "fm-nightly: install renders a parsable LaunchAgent plist"
+}
+
+test_install_refuses_unknown_plist() {
+  local home origin plist code_root before
+  IFS=$(printf '\t') read -r home origin < <(new_home install-unknown)
+  setup_minimal_record "$home"
+  plist="$TMP_ROOT/install-unknown/nightly.plist"
+  printf 'not-our-job\n' > "$plist"
+  before=$(cat "$plist")
+  code_root="$TMP_ROOT/install-unknown/code"
+  make_code_root "$code_root"
+  FM_NIGHTLY_PLIST="$plist" \
+    run_nightly install --fm-home "$home" --code-root "$code_root"
+  expect_code 8 "$RC" 'unknown plist'
+  [ "$(cat "$plist")" = "$before" ] || fail 'unknown plist was rewritten'
+  pass "fm-nightly: install leaves an unknown LaunchAgent untouched"
+}
+
+test_install_invalid_hour() {
+  local home origin plist code_root
+  IFS=$(printf '\t') read -r home origin < <(new_home install-hour)
+  setup_minimal_record "$home"
+  plist="$TMP_ROOT/install-hour/nightly.plist"
+  code_root="$TMP_ROOT/install-hour/code"
+  make_code_root "$code_root"
+  FM_NIGHTLY_PLIST="$plist" \
+    run_nightly install --fm-home "$home" --hour 24 --code-root "$code_root"
+  expect_code 2 "$RC" 'hour 24'
+  assert_absent "$plist" 'invalid hour wrote a plist'
+  FM_NIGHTLY_PLIST="$plist" \
+    run_nightly install --fm-home "$home" --minute 60 --code-root "$code_root"
+  expect_code 2 "$RC" 'minute 60'
+  pass "fm-nightly: install refuses an invalid hour or minute"
+}
+
+test_install_refuses_worktree_code_root() {
+  local home origin plist code_root linked
+  IFS=$(printf '\t') read -r home origin < <(new_home install-worktree)
+  setup_minimal_record "$home"
+  plist="$TMP_ROOT/install-worktree/nightly.plist"
+  code_root="$TMP_ROOT/install-worktree/code"
+  make_code_root "$code_root"
+  linked="$TMP_ROOT/install-worktree/linked"
+  git -C "$code_root" worktree add --quiet --detach "$linked"
+  FM_NIGHTLY_PLIST="$plist" \
+    run_nightly install --fm-home "$home" --code-root "$linked"
+  expect_code 8 "$RC" 'worktree code-root'
+  assert_contains "$OUT" 'primary code checkout' 'worktree refusal'
+  assert_absent "$plist" 'worktree install wrote a plist'
+  pass "fm-nightly: install refuses a worktree code root"
+}
+
+test_install_bootstrap_records_launchctl() {
+  local home origin plist code_root fakebin logs
+  IFS=$(printf '\t') read -r home origin < <(new_home install-boot)
+  setup_minimal_record "$home"
+  plist="$TMP_ROOT/install-boot/nightly.plist"
+  logs="$TMP_ROOT/install-boot/logs"
+  mkdir -p "$logs"
+  code_root="$TMP_ROOT/install-boot/code"
+  make_code_root "$code_root"
+  fakebin=$(fm_fakebin "$TMP_ROOT/install-boot")
+  write_tool_doubles "$fakebin"
+  FAKE_LAUNCHCTL_ARGV="$TMP_ROOT/install-boot/launchctl.argv" \
+    FM_NIGHTLY_PLIST="$plist" FM_NIGHTLY_LOG_DIR="$logs" \
+    PATH="$fakebin:$PATH" \
+    run_nightly install --fm-home "$home" --code-root "$code_root" --bootstrap
+  expect_code 0 "$RC" 'bootstrap install'
+  python3 - "$TMP_ROOT/install-boot/launchctl.argv" "$plist" <<'PY' || fail 'launchctl argv'
+import sys
+raw = open(sys.argv[1], "rb").read().split(b"\n")
+chunks = [c.split(b"\0") for c in raw if c]
+flat = [part.decode() for chunk in chunks for part in chunk if part]
+joined = " ".join(flat)
+assert "bootout" in joined
+assert "bootstrap" in joined
+assert sys.argv[2] in joined
+PY
+  pass "fm-nightly: --bootstrap records launchctl bootout and bootstrap"
+}
+
+test_dry_run_lists_every_stage() {
+  local home origin
+  IFS=$(printf '\t') read -r home origin < <(new_home dry)
+  setup_minimal_record "$home"
+  mkdir -p "$TMP_ROOT/empty-home"
+  run_nightly run --fm-home "$home" --dry-run --now "$NOW"
+  expect_code 0 "$RC" 'dry-run'
+  for name in config lock reconcile-local reconcile lint rollout fold views \
+    gbrain graphify archive weekly-check injected-measures drift receipt \
+    checkpoint verify; do
+    assert_contains "$OUT" "dry-run	$name	" "dry-run lists $name"
+  done
+  assert_contains "$OUT" $'dry-run\treconcile\twould: skip home path' 'home path skip'
+  assert_contains "$OUT" $'dry-run\tarchive\twould: skip not-configured' 'archive not-configured'
+  assert_contains "$OUT" $'dry-run\tgbrain\twould: skip not-configured' 'gbrain not-configured'
+  assert_contains "$OUT" $'dry-run\tgraphify\twould: skip not-configured' 'graphify not-configured'
+  assert_contains "$OUT" $'dry-run\tweekly-check\twould: skip not-configured' 'weekly-check not-configured'
+  assert_absent "$home/data/.git/nightly/stages.tsv" 'dry-run wrote stages.tsv'
+  pass "fm-nightly: dry-run lists every stage and writes nothing"
+}
+
+test_dry_run_record_only_skips_cloud() {
+  local clone
+  clone="$TMP_ROOT/dry-ro/clone"
+  mkdir -p "$clone"
+  git init --quiet -b main "$clone"
+  printf 'x\n' > "$clone/README.md"
+  git -C "$clone" add README.md
+  git -C "$clone" commit --quiet -m init
+  run_nightly run --record-only --record "$clone" --dry-run --now "$NOW"
+  expect_code 0 "$RC" 'record-only dry-run'
+  for name in reconcile-local archive gbrain graphify injected-measures weekly-check; do
+    assert_contains "$OUT" "dry-run	$name	would: skip cloud scope" "cloud skip $name"
+  done
+  pass "fm-nightly: record-only dry-run skips cloud-ok stages from the table"
+}
+
+test_refuse_home_with_record_only() {
+  local home origin clone
+  IFS=$(printf '\t') read -r home origin < <(new_home refuse-combo)
+  setup_minimal_record "$home"
+  clone="$home/data"
+  run_nightly run --fm-home "$home" --record-only --record "$clone" --dry-run --now "$NOW"
+  expect_code 2 "$RC" 'combined flags'
+  mkdir -p "$TMP_ROOT/empty-home"
+  set +e
+  OUT=$(
+    cd "$home" || exit 1
+    HOME="$TMP_ROOT/empty-home" FM_ROOT_OVERRIDE="$ROOT" "$NIGHTLY" run --dry-run --now "$NOW" 2>&1
+  )
+  RC=$?
+  set -e
+  expect_code 2 "$RC" 'missing --fm-home'
+  pass "fm-nightly: refuses combined home/record flags and does not infer cwd"
+}
+
+test_busy_exit_3() {
+  local home origin holder
+  IFS=$(printf '\t') read -r home origin < <(new_home busy)
+  setup_minimal_record "$home"
+  mkdir -p "$home/data/.git/nightly" "$home/state"
+  FM_HOME="$home" FM_STATE_OVERRIDE="$home/state" FM_ROOT_OVERRIDE="$ROOT" \
+    bash -c '
+      . "$1/bin/fm-wake-lib.sh"
+      fm_lock_try_acquire "$2" || exit 1
+      sleep 120
+    ' _ "$ROOT" "$home/data/.git/nightly/lock" &
+  holder=$!
+  i=0
+  while [ "$i" -lt 50 ]; do
+    if [ -e "$home/data/.git/nightly/lock" ]; then
+      break
+    fi
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ -e "$home/data/.git/nightly/lock" ] || fail 'holder did not acquire the lock'
+  run_nightly run --fm-home "$home" --now "$NOW"
+  expect_code 3 "$RC" 'busy run'
+  assert_contains "$OUT" 'busy' 'busy printed'
+  kill "$holder" 2>/dev/null || true
+  wait "$holder" 2>/dev/null || true
+  pass "fm-nightly: a held lock prints busy and exits 3"
+}
+
+test_restore_refuses_nonempty_and_implicit_latest() {
+  local home origin target
+  IFS=$(printf '\t') read -r home origin < <(new_home restore-refuse)
+  setup_minimal_record "$home"
+  target="$TMP_ROOT/restore-refuse/out"
+  mkdir -p "$target"
+  printf 'keep\n' > "$target/file"
+  run_nightly restore --fm-home "$home" --target "$target"
+  expect_code 2 "$RC" 'non-empty target'
+  run_nightly restore --fm-home "$home" --target "$TMP_ROOT/restore-refuse/empty"
+  expect_code 2 "$RC" 'missing snapshot'
+  assert_not_contains "$OUT" 'latest' 'implicit latest was used'
+  pass "fm-nightly: restore refuses a non-empty target and implicit latest"
+}
+
+test_status_reads_local_files() {
+  local home origin plist
+  IFS=$(printf '\t') read -r home origin < <(new_home status)
+  setup_minimal_record "$home"
+  mkdir -p "$home/data/.git/nightly"
+  printf 'date=%s\nresult=ok\n' "$DATE" > "$home/data/.git/nightly/last-attempt"
+  printf 'date=%s\n' "$DATE" > "$home/data/.git/nightly/last-complete"
+  printf '{"last_complete_snapshot":"abc","last_exit":0,"last_result":"ok","families":{}}\n' \
+    > "$home/data/.git/nightly/archive.json"
+  printf '{"subset":2,"next_due":"2026-09-14","last_result":"ok"}\n' \
+    > "$home/data/.git/nightly/weekly-check.json"
+  plist="$TMP_ROOT/status/nightly.plist"
+  FM_NIGHTLY_PLIST="$plist" run_nightly status --fm-home "$home"
+  expect_code 0 "$RC" 'status'
+  assert_contains "$OUT" 'last-attempt:' 'status last-attempt'
+  assert_contains "$OUT" 'abc' 'status archive id'
+  assert_contains "$OUT" 'weekly-check:' 'status weekly'
+  assert_contains "$OUT" 'plist: absent' 'status missing plist'
+  pass "fm-nightly: status prints last-attempt, archive, weekly-check, and plist"
+}
+
+test_full_run_on_record_home() {
+  local home origin fakebin trans
+  IFS=$(printf '\t') read -r home origin < <(new_home full-run)
+  setup_record "$home" "$origin"
+  trans="$TMP_ROOT/full-run/trans-home"
+  mkdir -p "$trans/.claude/projects" "$trans/.codex/sessions" \
+    "$trans/.pi/agent/sessions" "$trans/.grok/sessions"
+  printf 'hi\n' > "$trans/.claude/projects/a.txt"
+  fakebin=$(fm_fakebin "$TMP_ROOT/full-run")
+  write_tool_doubles "$fakebin"
+  printf 'NIGHTLY_RESTIC_REPO=rclone:fixture:%s/repo\n' "$TMP_ROOT/full-run" > "$home/config/nightly.env"
+  printf 'NIGHTLY_RCLONE_CONFIG=%s/rclone.conf\n' "$TMP_ROOT/full-run" >> "$home/config/nightly.env"
+  printf 'NIGHTLY_RESTIC_PASSWORD_COMMAND=cat %s/pw\n' "$TMP_ROOT/full-run" >> "$home/config/nightly.env"
+  printf '[fixture]\ntype = local\n' > "$TMP_ROOT/full-run/rclone.conf"
+  printf 'pw\n' > "$TMP_ROOT/full-run/pw"
+  FAKE_RESTIC_ARGV="$TMP_ROOT/full-run/restic.argv" \
+    NIGHTLY_HOME="$trans" PATH="$fakebin:$PATH" \
+    run_nightly run --fm-home "$home" --now "$NOW"
+  expect_code 0 "$RC" 'full run'
+  assert_present "$home/data/.git/nightly/stages.tsv" 'stages.tsv'
+  assert_grep $'config\tok\t' "$home/data/.git/nightly/stages.tsv" 'config ok'
+  if [ -d "$home/data/wiki/views/maintenance" ]; then
+    assert_present "$home/data/wiki/views/maintenance" 'receipt dir'
+  fi
+  git --git-dir="$origin" log -1 --format=%s | grep -Fq "maintain $DATE" \
+    || git -C "$home/data" log -1 --format=%s | grep -Fq "maintain $DATE" \
+    || fail 'maintain commit subject missing'
+  pass "fm-nightly: full run on a Record home writes stages, receipt, and a maintain commit"
+}
+
+test_lint_finding_does_not_stop_archive() {
+  local home origin fakebin trans
+  IFS=$(printf '\t') read -r home origin < <(new_home lint-find)
+  setup_record "$home" "$origin"
+  printf -- '- [ ] T9 - pending later\n' >> "$home/data/backlog.md"
+  git -C "$home/data" add backlog.md
+  git -C "$home/data" commit --quiet -m 'deferral'
+  trans="$TMP_ROOT/lint-find/trans-home"
+  mkdir -p "$trans/.claude/projects"
+  printf 'x\n' > "$trans/.claude/projects/a.txt"
+  fakebin=$(fm_fakebin "$TMP_ROOT/lint-find")
+  write_tool_doubles "$fakebin"
+  printf 'NIGHTLY_RESTIC_REPO=rclone:fixture:%s/repo\n' "$TMP_ROOT/lint-find" > "$home/config/nightly.env"
+  printf 'NIGHTLY_RCLONE_CONFIG=%s/rclone.conf\n' "$TMP_ROOT/lint-find" >> "$home/config/nightly.env"
+  printf 'NIGHTLY_RESTIC_PASSWORD_COMMAND=cat %s/pw\n' "$TMP_ROOT/lint-find" >> "$home/config/nightly.env"
+  printf '[fixture]\ntype = local\n' > "$TMP_ROOT/lint-find/rclone.conf"
+  printf 'pw\n' > "$TMP_ROOT/lint-find/pw"
+  FAKE_RESTIC_ARGV="$TMP_ROOT/lint-find/restic.argv" \
+    NIGHTLY_HOME="$trans" PATH="$fakebin:$PATH" \
+    run_nightly run --fm-home "$home" --now "$NOW"
+  [ -f "$TMP_ROOT/lint-find/restic.argv" ] || fail 'lint finding skipped archive'
+  pass "fm-nightly: a lint finding does not stop archive"
+}
+
+test_missing_restic_still_runs_record_stages() {
+  local home origin path_dir dir tool name path_dirs
+  IFS=$(printf '\t') read -r home origin < <(new_home no-restic)
+  setup_record "$home" "$origin"
+  printf 'NIGHTLY_RESTIC_REPO=rclone:fixture:%s/repo\n' "$TMP_ROOT/no-restic" > "$home/config/nightly.env"
+  printf 'NIGHTLY_RCLONE_CONFIG=%s/rclone.conf\n' "$TMP_ROOT/no-restic" >> "$home/config/nightly.env"
+  printf '[fixture]\ntype = local\n' > "$TMP_ROOT/no-restic/rclone.conf"
+  path_dir="$TMP_ROOT/no-restic/path"
+  mkdir -p "$path_dir"
+  # Mirror the real PATH minus the two archive tools so only their absence changes.
+  IFS=: read -r -a path_dirs <<< "$PATH"
+  for dir in "${path_dirs[@]}"; do
+    [ -d "$dir" ] || continue
+    for tool in "$dir"/*; do
+      name=$(basename "$tool")
+      case "$name" in restic | rclone) continue ;; esac
+      [ -x "$tool" ] && [ ! -e "$path_dir/$name" ] && ln -s "$tool" "$path_dir/$name"
+    done
+  done
+  PATH="$path_dir" run_nightly run --fm-home "$home" --now "$NOW"
+  expect_code 0 "$RC" 'run without restic'
+  assert_grep $'archive\tnot-configured\t' "$home/data/.git/nightly/stages.tsv" 'archive not-configured'
+  assert_grep $'lint\t' "$home/data/.git/nightly/stages.tsv" 'lint ran'
+  pass "fm-nightly: missing restic leaves archive not-configured and still runs Record stages"
+}
+
+test_record_only_views_commit() {
+  local home origin clone fakebin
+  IFS=$(printf '\t') read -r home origin < <(new_home ro-views)
+  setup_record "$home" "$origin"
+  clone="$TMP_ROOT/ro-views/clone"
+  git clone --quiet "file://$origin" "$clone"
+  fakebin=$(fm_fakebin "$TMP_ROOT/ro-views")
+  write_tool_doubles "$fakebin"
+  PATH="$fakebin:$PATH" \
+    run_nightly run --record-only --record "$clone" --now "$NOW"
+  expect_code 0 "$RC" 'record-only run'
+  assert_grep $'archive\tskipped\t' "$clone/.git/nightly/stages.tsv" 'archive skipped'
+  assert_grep $'cloud scope' "$clone/.git/nightly/stages.tsv" 'cloud scope detail'
+  git --git-dir="$origin" log -1 --format=%s | grep -Fq "maintain $DATE" \
+    || fail 'record-only did not push a maintain commit'
+  pass "fm-nightly: record-only commits views and skips archive"
+}
+
+test_record_only_racing_push() {
+  local home origin clone_a clone_b
+  IFS=$(printf '\t') read -r home origin < <(new_home ro-race)
+  setup_record "$home" "$origin"
+  clone_a="$TMP_ROOT/ro-race/a"
+  clone_b="$TMP_ROOT/ro-race/b"
+  git clone --quiet "file://$origin" "$clone_a"
+  git clone --quiet "file://$origin" "$clone_b"
+  printf 'from-a\n' > "$clone_a/local-note.md"
+  git -C "$clone_a" add local-note.md
+  git -C "$clone_a" commit --quiet -m 'A local'
+  printf 'from-b\n' > "$clone_b/wiki-seed.md"
+  git -C "$clone_b" add wiki-seed.md
+  git -C "$clone_b" commit --quiet -m 'B wins'
+  git -C "$clone_b" push --quiet origin HEAD
+  run_nightly run --record-only --record "$clone_a" --now "$NOW"
+  expect_code 1 "$RC" 'diverged run reports failure'
+  assert_grep $'reconcile\tfailed\t0\tdiverged' "$clone_a/.git/nightly/stages.tsv" 'race diverged'
+  assert_grep $'views\tskipped\t' "$clone_a/.git/nightly/stages.tsv" 'no Record writes after divergence'
+  git -C "$clone_a" log --format=%s | grep -Fq 'A local' || fail 'local commit lost'
+  [ "$(cat "$clone_a/local-note.md")" = from-a ] || fail 'local file changed'
+  git --git-dir="$origin" log --format=%s | grep -Fq 'B wins' || fail 'origin lost B'
+  git --git-dir="$origin" log --format=%s | grep -Fq 'A local' && fail 'diverged local commit was pushed'
+  pass "fm-nightly: record-only keeps a local commit when a racing push wins"
+}
+
+test_outer_repository_stays_clean() {
+  local after
+  after=$(git -C "$ROOT" status --short --untracked-files=all)
+  [ "$after" = "$OUTER_STATUS_BEFORE" ] || fail "outer repository changed: $after"
+  pass "fm-nightly: the outer repository stays clean"
+}
+
+test_help_lists_subcommands
+test_install_renders_plist
+test_install_refuses_unknown_plist
+test_install_invalid_hour
+test_install_refuses_worktree_code_root
+test_install_bootstrap_records_launchctl
+test_dry_run_lists_every_stage
+test_dry_run_record_only_skips_cloud
+test_refuse_home_with_record_only
+test_busy_exit_3
+test_restore_refuses_nonempty_and_implicit_latest
+test_status_reads_local_files
+test_full_run_on_record_home
+test_lint_finding_does_not_stop_archive
+test_missing_restic_still_runs_record_stages
+test_record_only_views_commit
+test_record_only_racing_push
+test_outer_repository_stays_clean
