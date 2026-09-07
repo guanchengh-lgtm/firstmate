@@ -53,6 +53,13 @@
 # Local run files live under <Record>/.git/nightly/ and are not tracked:
 # lock, stages.tsv, last-attempt, last-complete, archive.json,
 # weekly-check.json. Tracked writes stay under wiki/views/.
+# Stage rows collect in a private temp file until the lock is held, so a
+# busy run (exit 3) touches none of them and the in-flight run's table and
+# last-attempt survive. A run that exits before every stage was walked
+# records "aborted failed run-aborted" and result=failed, never a
+# last-complete. When NIGHTLY_RUN_BOUND_SECONDS expires, the in-flight
+# stage's process tree is terminated before the lock is released, and the
+# run records "interrupted interrupted bound-hit".
 #
 # Stage table (name|scope). scope is local, record, or cloud-ok.
 # --dry-run and --record-only derive skipped lines from this table.
@@ -153,6 +160,9 @@ CONFIG_PRESENT=0
 RECORD_WRITES=1
 LOCK_HELD=0
 LOCK_PATH=
+RUN_STARTED=0
+RUN_COMPLETED=0
+STAGE_PID=
 LOCK_LIBS_LOADED=0
 FINALIZED=0
 INTERRUPTED=0
@@ -311,8 +321,11 @@ run_external() {
   : > "$STAGE_STDERR"
   start=$(date +%s)
   set +e
-  fm_run_timed "$bound" "$@" > "$STAGE_STDOUT" 2> "$STAGE_STDERR"
+  fm_run_timed "$bound" "$@" > "$STAGE_STDOUT" 2> "$STAGE_STDERR" &
+  STAGE_PID=$!
+  wait "$STAGE_PID"
   STAGE_RC=$?
+  STAGE_PID=
   set -e
   finish=$(date +%s)
   STAGE_ELAPSED=$((finish - start))
@@ -640,12 +653,12 @@ PY
 }
 
 read_weekly_state() {
-  local dest=$NIGHTLY_DIR/weekly-check.json
+  local dest=$NIGHTLY_DIR/weekly-check.json state
   WEEKLY_SUBSET=1
   WEEKLY_NEXT_DUE=
   [ -f "$dest" ] || return 0
-  eval "$(python3 - "$dest" <<'PY'
-import json, sys
+  state=$(python3 - "$dest" <<'PY'
+import json, re, sys
 try:
     data = json.load(open(sys.argv[1], encoding="utf-8"))
 except Exception:
@@ -657,11 +670,16 @@ except Exception:
     subset = 1
 if subset < 1 or subset > 4:
     subset = 1
-print("WEEKLY_SUBSET=%d" % subset)
-nd = data.get("next_due") or ""
-print("WEEKLY_NEXT_DUE=%s" % json.dumps(nd))
+nd = data.get("next_due")
+if not isinstance(nd, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", nd):
+    nd = ""
+print(subset)
+print(nd)
 PY
-)"
+) || return 0
+  [ -n "$state" ] || return 0
+  WEEKLY_SUBSET=$(printf '%s\n' "$state" | sed -n '1p')
+  WEEKLY_NEXT_DUE=$(printf '%s\n' "$state" | sed -n '2p')
 }
 
 write_weekly_json() {
@@ -810,6 +828,23 @@ release_nightly_lock() {
   fi
 }
 
+signal_tree() {
+  local sig=$1 pid=$2 child
+  for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+    signal_tree "$sig" "$child"
+  done
+  kill "-$sig" "$pid" 2>/dev/null || true
+}
+
+stop_stage_child() {
+  [ -n "$STAGE_PID" ] || return 0
+  signal_tree TERM "$STAGE_PID"
+  sleep 0.2
+  signal_tree KILL "$STAGE_PID"
+  wait "$STAGE_PID" 2>/dev/null || true
+  STAGE_PID=
+}
+
 finalize_run() {
   local result=ok
   [ "$FINALIZED" -eq 0 ] || return 0
@@ -819,12 +854,15 @@ finalize_run() {
     kill -TERM "$DEADLINE_PID" 2>/dev/null || true
     DEADLINE_PID=
   fi
+  stop_stage_child
   if [ "$INTERRUPTED" -eq 1 ] || [ -f "${DEADLINE_FLAG:-}" ]; then
     if [ -n "$STAGES_TSV" ]; then
       stage_record interrupted interrupted 0 bound-hit
     fi
+  elif [ "$RUN_STARTED" -eq 1 ] && [ "$RUN_COMPLETED" -eq 0 ]; then
+    stage_record aborted failed 0 run-aborted
   fi
-  if [ -n "$NIGHTLY_DIR" ] && [ "$DRY_RUN" -eq 0 ]; then
+  if [ "$RUN_STARTED" -eq 1 ] && [ "$LOCK_HELD" -eq 1 ]; then
     if tsv_has_problem; then
       result=failed
     fi
@@ -866,6 +904,10 @@ stage_lock() {
     exit 3
   fi
   LOCK_HELD=1
+  if [ "$STAGES_TSV" != "$NIGHTLY_DIR/stages.tsv" ]; then
+    cat "$STAGES_TSV" > "$NIGHTLY_DIR/stages.tsv"
+    STAGES_TSV="$NIGHTLY_DIR/stages.tsv"
+  fi
   stage_record lock ok 0 acquired
 }
 
@@ -1387,7 +1429,7 @@ prepare_run_paths() {
   : > "$STAGE_STDERR"
   NIGHTLY_DIR="$RECORD/.git/nightly"
   mkdir -p "$NIGHTLY_DIR"
-  STAGES_TSV="$NIGHTLY_DIR/stages.tsv"
+  STAGES_TSV="$TMP_DIR/stages.tsv"
   LINT_JSON="$NIGHTLY_DIR/lint.json"
   ROLLOUT_JSON="$NIGHTLY_DIR/rollout.json"
 }
@@ -1429,9 +1471,11 @@ cmd_run() {
   prepare_run_paths
   trap finalize_run EXIT
   trap on_term TERM
+  RUN_STARTED=1
   arm_deadline
   : > "$STAGES_TSV"
   walk_stages
+  RUN_COMPLETED=1
   if tsv_has_problem; then
     result=failed
   fi
@@ -1510,7 +1554,7 @@ write_nightly_plist() {
   if [ -f "$plist" ] && ! grep -Fq 'firstmate-nightly-v1' "$plist"; then
     die 8 "existing LaunchAgent is not the nightly job; leaving it untouched"
   fi
-  mkdir -p "$(dirname "$plist")" "$logdir"
+  mkdir -p "$(dirname "$plist")"
   script=$(printf '%s' "$code_root/bin/fm-nightly.sh" | xml_escape | sed_replacement)
   stdout_log=$(printf '%s' "$logdir/firstmate-nightly.stdout.log" | xml_escape | sed_replacement)
   stderr_log=$(printf '%s' "$logdir/firstmate-nightly.stderr.log" | xml_escape | sed_replacement)
@@ -1526,8 +1570,12 @@ write_nightly_plist() {
     -e "s|__MINUTE__|$MINUTE|g" "$template" > "$tmp"
   chmod 644 "$tmp"
   if command -v plutil >/dev/null 2>&1; then
-    plutil -lint "$tmp" >/dev/null || die 8 "rendered nightly plist failed plutil -lint"
+    if ! plutil -lint "$tmp" >/dev/null; then
+      rm -f "$tmp"
+      die 8 "rendered nightly plist failed plutil -lint"
+    fi
   fi
+  mkdir -p "$logdir"
   mv -f "$tmp" "$plist"
 }
 

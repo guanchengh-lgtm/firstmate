@@ -65,6 +65,7 @@ Rules, all report-only:
      A whole-word case-insensitive pending, TBD, or later in the row body
      requires a "hold:" token with nonempty trigger text and an evaluator
      token, either "evaluator: <name>" or "(evaluator <name>)".
+     Quotes are backtick or double-quote spans; an apostrophe never quotes.
      no hold          -> finding deferral-without-hold
      hold, no eval    -> finding hold-without-evaluator
      word only quoted -> unknown deferral-word-in-quote
@@ -91,6 +92,8 @@ Rules, all report-only:
      It needs POINTER.md whose first non-empty line holds exactly one path,
      as a [text](path) link or a bare path, resolving through normpath from
      the twin dir to an existing regular file inside R.
+     A bare path carries a "/" or a file extension; URLs and abbreviations
+     such as "e.g." are prose, not paths.
      missing, escaping, or symlinked outside R -> finding pointer-broken
      pointer chain that returns to itself      -> finding pointer-cycle
      more than one path on the first line      -> finding pointer-ambiguous
@@ -124,9 +127,10 @@ rollout
   Both are JSON objects with mode, clean_dates, rule_fingerprint,
   transition_evidence, last_result, last_cloud_result, created, and updated.
   Modes are report and enforce; a missing pair reads as not-configured.
-  init      creates both in report mode, and exits 2 if the local record
+  init      creates both in report mode, and exits 2 if either record
             already exists.
-  advance   reads a lint JSON and applies one scheduled day:
+  advance   reads a lint JSON and applies one scheduled day; a payload with
+            no rule_fingerprint, or a local one missing any of R1-R5, exits 2:
             coverage cloud            -> last_cloud_result only, no streak move
             finding or unknown        -> clean_dates reset to []
             changed rule_fingerprint  -> clean_dates reset, new fingerprint
@@ -140,7 +144,9 @@ rollout
                                          fingerprint, dates}
             enforce never reverts to report.
             A local record missing while the durable copy exists exits 2 with
-            rollout-record-missing-after-activation.
+            rollout-record-missing-after-activation, and so does init.
+            A record that is not a JSON object with mode report or enforce
+            exits 2 with rollout-record-unreadable.
             Neither present prints mode=not-configured and exits 0 unwritten.
   status    prints mode, clean_dates, rule_fingerprint, transition_evidence,
             and last_result.
@@ -157,8 +163,12 @@ fold
   Counts bound R2 sidecars, POINTER.md files, exact duplicate fact lines
   (identical after whitespace normalisation) across captain.md, learnings.md,
   and memory-archive.md, and "duplicate of" marks in memory-archive.md.
-  A duplicate fact and a resolvable mark become proposals carrying both
-  locators; an unresolvable mark becomes a question. Nothing is deleted.
+  A mark resolves only when its target equals a whole top-level bullet in
+  captain.md or learnings.md after whitespace normalisation.
+  A duplicate fact and a resolvable mark become proposals carrying every
+  locator plus the canonical one (the first copy in captain.md, learnings.md,
+  memory-archive.md order, or the matched bullet); an unresolvable mark
+  becomes a question. Nothing is deleted.
   JSON: {"type":"maintain-fold","receipt":{"present","date","path"},"counts",
   "proposals":[...],"questions":[...]}.
   Exit 0 unless the input is invalid.
@@ -167,7 +177,8 @@ views
   Builds every generated view into a staging dir outside R (mkdtemp by
   default), then with --apply replaces each file under R/wiki/views/ through a
   temp file in the target directory and os.replace.
-  Nothing outside wiki/views/ is ever written.
+  Nothing outside wiki/views/ is ever written; a symlink anywhere on a view's
+  path makes the run exit 2 before any file lands.
   The staging dir is always reported as stage_dir so a caller can scan it.
   A --stage-dir you name stays yours; an unnamed one belongs to this run and is
   reclaimed once --apply has landed every file.
@@ -196,8 +207,9 @@ measure
                because an unobserved task has no week.
   rediscovery  reads answer_classification from the recall receipt: answered
                needs answer_location and answer_date, not_answered is taken as
-               written, and anything else is unknown. Lexical overlap is never
-               an inference source.
+               written, and anything else is unknown. A week in which no
+               receipt carries the field is not measured. Lexical overlap is
+               never an inference source.
   succession   counts an older decision once when an explicit Supersedes or
                Superseded by link resolves at both ends to existing decision
                files; self links and cycles are rejected. The week is the
@@ -231,14 +243,16 @@ digest
   missing file  -> "Nightly maintenance: no receipt published yet."
   corrupt JSON  -> "Nightly maintenance: receipt unreadable; run
                    bin/fm-nightly.sh status."
-  stale         -> first line "Nightly maintenance: last receipt <date>
-                   (stale)."
+  stale host    -> "Nightly maintenance (<host>): last receipt <date>
+                   (stale)." judged per host, and no clean line for it
   incomplete    -> "Nightly <date> (<host>): run incomplete; ..."
   clean         -> "Nightly <date> (<host>): clean."
-  otherwise     -> one sanitized line per issue, "Nightly <date> (<host>):
+  otherwise     -> one line per issue, "Nightly <date> (<host>):
                    <observation>; <consequence>; <next>", cut at --line-chars
   over budget   -> last line "Nightly maintenance: <k> more issue(s) omitted;
-                   see wiki/views/maintenance/<date>-<host>.md"
+                   see wiki/views/maintenance/<date>-<host>.md", where k
+                   also counts lines the receipt writer already capped
+  Every line, host name and date included, is sanitized and cut.
   Exit 0 unless the arguments are invalid.
 """
 
@@ -286,7 +300,7 @@ DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 FENCE_RE = re.compile(r"^\s{0,3}(`{3,}|~{3,})")
 ROW_RE = re.compile(r"^- \[( |x|-)\] (\S+) - (.*)$")
 DEFERRAL_RE = re.compile(r"(?i)\b(pending|tbd|later)\b")
-QUOTED_RE = re.compile(r"`[^`]*`|\"[^\"]*\"|'[^']*'")
+QUOTED_RE = re.compile(r"`[^`]*`|\"[^\"]*\"")
 HOLD_RE = re.compile(r"hold:\s*([^)\n]*)")
 EVALUATOR_RE = re.compile(r"evaluator:\s*(\S+)|\(evaluator\s+([^)]+)\)")
 BULLET_RE = re.compile(r"^(\s*)- +(\S.*)$")
@@ -294,6 +308,7 @@ LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 BACKTICK_RE = re.compile(r"`([^`]+)`")
 BARE_PATH_RE = re.compile(r"[A-Za-z0-9._~/+-]+")
 URL_RE = re.compile(r"https?://\S+")
+FILE_NAME_RE = re.compile(r".+\.[A-Za-z0-9]{2,}")
 TIMELESS_RE = re.compile(r"(?i)\[timeless\]|\(timeless\)|tier:\s*timeless")
 BRIEF_SHA_RE = re.compile(r"(?m)^brief-sha256:\s*([0-9a-fA-F]+)\s*$")
 LAUNCHED_AT_RE = re.compile(r"(?m)^launched_at=(.+)$")
@@ -450,8 +465,10 @@ class Rollout:
     def from_dict(payload):
         rollout = Rollout()
         if not isinstance(payload, dict):
-            return rollout
-        rollout.mode = payload.get("mode") or "report"
+            raise InputError("rollout record is not a JSON object")
+        rollout.mode = payload.get("mode")
+        if rollout.mode not in ("report", "enforce"):
+            raise InputError("rollout record mode must be report or enforce")
         dates = payload.get("clean_dates")
         rollout.clean_dates = [d for d in dates if isinstance(d, str)] if dates else []
         rollout.rule_fingerprint = payload.get("rule_fingerprint") or ""
@@ -654,7 +671,7 @@ def parse_day(text):
 def parse_moment(value):
     """Read an RFC3339 instant, a bare day, or an epoch number as UTC."""
     if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(value, timezone.utc)
+        return epoch_moment(value)
     if not isinstance(value, str):
         return None
     text = value.strip()
@@ -665,8 +682,15 @@ def parse_moment(value):
     if day:
         return datetime(day.year, day.month, day.day, tzinfo=timezone.utc)
     try:
-        return datetime.fromtimestamp(int(text), timezone.utc)
+        return epoch_moment(int(text))
     except ValueError:
+        return None
+
+
+def epoch_moment(value):
+    try:
+        return datetime.fromtimestamp(value, timezone.utc)
+    except (OverflowError, ValueError, OSError):
         return None
 
 
@@ -791,7 +815,7 @@ def looks_like_path(token):
     cleaned = token.strip().rstrip(".,;:)")
     if not cleaned or cleaned.startswith("http"):
         return ""
-    if "/" not in cleaned and "." not in cleaned:
+    if "/" not in cleaned and not FILE_NAME_RE.fullmatch(cleaned):
         return ""
     if not re.search(r"[A-Za-z]", cleaned):
         return ""
@@ -808,7 +832,7 @@ def first_line_paths(text):
     if not line:
         return []
     paths = [match.group(1) for match in LINK_RE.finditer(line)]
-    rest = LINK_RE.sub(" ", line)
+    rest = URL_RE.sub(" ", LINK_RE.sub(" ", line))
     candidates = [match.group(1) for match in BACKTICK_RE.finditer(rest)]
     rest = BACKTICK_RE.sub(" ", rest)
     candidates.extend(match.group(0) for match in BARE_PATH_RE.finditer(rest))
@@ -1178,6 +1202,7 @@ def lint_payload(record, rules, now_text):
         "now": now_text,
         "record_commit": record.commit(),
         "rule_fingerprint": rule_fingerprint(rules),
+        "rules": [rule.id for rule in rules],
         "results": [result.as_dict() for result in results],
         "summary": summary,
     }
@@ -1244,10 +1269,10 @@ def load_rollout(record):
             return None, "rollout-record-unreadable"
     if os.path.exists(durable):
         try:
-            payload = read_json(durable)
+            rollout = Rollout.from_dict(read_json(durable))
         except InputError:
             return None, "rollout-record-unreadable"
-        return Rollout.from_dict(payload), "rollout-record-missing-after-activation"
+        return rollout, "rollout-record-missing-after-activation"
     return None, None
 
 
@@ -1266,10 +1291,20 @@ def atomic_write(target, text):
     os.replace(handle.name, target)
 
 
+def refuse_symlinked(record, rel):
+    """Reject a Record-relative write path when any component is a symlink."""
+    current = record.root
+    for part in rel.split("/"):
+        current = os.path.join(current, part)
+        if os.path.islink(current):
+            raise InputError("refusing to write through symlink %s" % rel)
+
+
 def save_rollout(record, rollout):
     local = rollout_local_path(record)
     if not os.path.isdir(os.path.dirname(local)):
         raise InputError("no .git directory in %s" % record.root)
+    refuse_symlinked(record, "%s/maintain-rollout.json" % VIEWS_DIR)
     atomic_write(
         local, json.dumps(rollout.as_dict(False), sort_keys=True, indent=2) + "\n"
     )
@@ -1304,6 +1339,8 @@ def rollout_text(payload, extra=()):
 def command_rollout_init(args, record):
     if os.path.exists(rollout_local_path(record)):
         raise InputError("rollout record already exists")
+    if os.path.exists(rollout_durable_path(record)):
+        raise InputError("rollout-record-missing-after-activation")
     rollout = Rollout(created=args.now, updated=args.now)
     save_rollout(record, rollout)
     payload = rollout.as_dict(False)
@@ -1324,7 +1361,15 @@ def command_rollout_advance(args, record):
     summary = lint.get("summary")
     if not isinstance(summary, dict):
         raise InputError("--lint-json has no summary")
-    fingerprint = lint.get("rule_fingerprint") or ""
+    fingerprint = lint.get("rule_fingerprint")
+    if not isinstance(fingerprint, str) or not fingerprint:
+        raise InputError("--lint-json has no rule_fingerprint")
+    covered = lint.get("rules")
+    if args.coverage == "local" and (
+        not isinstance(covered, list)
+        or any(rule.id not in covered for rule in RULES)
+    ):
+        raise InputError("--lint-json does not cover every rule R1-R5")
     clean = not summary.get("finding") and not summary.get("unknown")
     rollout, error = load_rollout(record)
     if error:
@@ -1445,29 +1490,33 @@ def fold_payload(record):
         proposals.append(
             {
                 "kind": "duplicate-fact",
+                "canonical": entries[0][0],
                 "locators": [locator for locator, _ in entries],
                 "text": text[:FACT_CUT],
             }
         )
     questions = []
     archive = read_text(record.path("memory-archive.md"))
-    elsewhere = "\n".join(
-        read_text(record.path(name))
-        for name in FOLD_FILES
-        if name != "memory-archive.md"
-    )
+    elsewhere = {}
+    for name in FOLD_FILES:
+        if name == "memory-archive.md":
+            continue
+        for line, indent, content in iter_bullets(read_text(record.path(name))):
+            if not indent:
+                elsewhere.setdefault(normalize_fact(content), "%s:%d" % (name, line))
     marks = 0
     for line, _, content in iter_bullets(archive):
         match = DUPLICATE_OF_RE.search(content)
         if not match:
             continue
         marks += 1
-        target = match.group(1).strip().strip("`")
+        target = normalize_fact(match.group(1).strip().strip("`"))
         locator = "memory-archive.md:%d" % line
         if target and target in elsewhere:
             proposals.append(
                 {
                     "kind": "marked-duplicate",
+                    "canonical": elsewhere[target],
                     "locators": [locator],
                     "text": target[:FACT_CUT],
                 }
@@ -1590,6 +1639,8 @@ class StagedViews:
     def land(self, apply_changes):
         written = []
         unchanged = []
+        for rel in self.staged:
+            refuse_symlinked(self.record, "%s/%s" % (VIEWS_DIR, rel))
         for rel in self.staged:
             staged_text = read_text(os.path.join(self.stage_dir, rel))
             target = self.record.path(VIEWS_DIR, rel)
@@ -1940,9 +1991,11 @@ def week_bucket(record, week, receipts, edges, injected):
     reuse_count = 0
     answers = {"answered": 0, "not_answered": 0, "unknown": 0}
     rediscovery_evidence = []
+    classified = False
     for task, receipt, moment in receipts:
         if moment is None or not week.contains(moment):
             continue
+        classified = classified or "answer_classification" in receipt
         answers[classify_answer(receipt)] += 1
         rediscovery_evidence.append(
             {
@@ -1979,7 +2032,7 @@ def week_bucket(record, week, receipts, edges, injected):
     )
     bucket["rediscovery"] = (
         "not measured"
-        if not receipts
+        if not classified
         else {"counts": answers, "evidence": rediscovery_evidence}
     )
     bucket["succession"] = (
@@ -2419,29 +2472,30 @@ def digest_lines(record, args):
              if isinstance(entry, dict)]
     if not hosts:
         return ["Nightly maintenance: no receipt published yet."], 0
-    days = [parse_day(entry.get("date") or "") for _, entry in hosts]
-    newest = max([day for day in days if day], default=None)
     lines = []
-    if newest and (record.now.date() - newest).days > args.stale_days:
-        lines.append(
-            "Nightly maintenance: last receipt %s (stale)." % newest.isoformat()
-        )
     budget = args.max_lines
     omitted = 0
     omitted_host = hosts[0]
+
+    def emit(text):
+        lines.append(sanitize_line(text, args.line_chars))
+
     for name, entry in hosts:
-        day = entry.get("date") or "date unknown"
+        day = entry.get("date") if isinstance(entry.get("date"), str) else ""
+        parsed = parse_day(day)
+        stale = parsed is None or (record.now.date() - parsed).days > args.stale_days
+        day = day or "date unknown"
         issues = [line for line in (entry.get("lines") or []) if isinstance(line, dict)]
+        omitted += count_or_zero(entry.get("omitted"))
+        if stale:
+            emit("Nightly maintenance (%s): last receipt %s (stale)." % (name, day))
         if not entry.get("complete", True):
-            lines.append(
-                sanitize_line(
-                    "Nightly %s (%s): run incomplete; see %s/maintenance/%s-%s.md"
-                    % (day, name, VIEWS_DIR, day, name),
-                    args.line_chars,
-                )
+            emit(
+                "Nightly %s (%s): run incomplete; see %s/maintenance/%s-%s.md"
+                % (day, name, VIEWS_DIR, day, name)
             )
-        elif not issues:
-            lines.append("Nightly %s (%s): clean." % (day, name))
+        elif not issues and not stale:
+            emit("Nightly %s (%s): clean." % (day, name))
         for issue in issues:
             if budget <= 0:
                 if omitted == 0:
@@ -2449,26 +2503,30 @@ def digest_lines(record, args):
                 omitted += 1
                 continue
             budget -= 1
-            lines.append(
-                sanitize_line(
-                    "Nightly %s (%s): %s; %s; %s"
-                    % (
-                        day,
-                        name,
-                        issue.get("observation", ""),
-                        issue.get("consequence", ""),
-                        issue.get("next", ""),
-                    ),
-                    args.line_chars,
+            emit(
+                "Nightly %s (%s): %s; %s; %s"
+                % (
+                    day,
+                    name,
+                    issue.get("observation", ""),
+                    issue.get("consequence", ""),
+                    issue.get("next", ""),
                 )
             )
     if omitted:
         name, entry = omitted_host
-        lines.append(
+        day = entry.get("date") if isinstance(entry.get("date"), str) else ""
+        emit(
             "Nightly maintenance: %d more issue(s) omitted; see %s/maintenance/%s-%s.md"
-            % (omitted, VIEWS_DIR, entry.get("date") or "date unknown", name)
+            % (omitted, VIEWS_DIR, day or "date unknown", name)
         )
     return lines, omitted
+
+
+def count_or_zero(value):
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return max(0, value)
 
 
 def command_digest(args, record):
@@ -2597,6 +2655,9 @@ def main(argv=None):
         return 2
     except BrokenPipeError:
         return 0
+    except Exception as exc:
+        sys.stderr.write("fm-maintain: execution failure: %s\n" % type(exc).__name__)
+        return 2
 
 
 if __name__ == "__main__":

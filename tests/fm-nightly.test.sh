@@ -362,12 +362,64 @@ test_busy_exit_3() {
     i=$((i + 1))
   done
   [ -e "$home/data/.git/nightly/lock" ] || fail 'holder did not acquire the lock'
+  printf 'archive\tfailed\t3\texit-1\n' > "$home/data/.git/nightly/stages.tsv"
+  printf 'date=2026-09-06\nresult=failed\n' > "$home/data/.git/nightly/last-attempt"
   run_nightly run --fm-home "$home" --now "$NOW"
   expect_code 3 "$RC" 'busy run'
   assert_contains "$OUT" 'busy' 'busy printed'
+  [ "$(cat "$home/data/.git/nightly/stages.tsv")" = $'archive\tfailed\t3\texit-1' ] \
+    || fail 'a busy run rewrote the live stage table'
+  [ "$(cat "$home/data/.git/nightly/last-attempt")" = $'date=2026-09-06\nresult=failed' ] \
+    || fail 'a busy run rewrote last-attempt'
+  assert_absent "$home/data/.git/nightly/last-complete" 'a busy run claimed a complete night'
   kill "$holder" 2>/dev/null || true
   wait "$holder" 2>/dev/null || true
-  pass "fm-nightly: a held lock prints busy and exits 3"
+  pass "fm-nightly: a held lock prints busy, exits 3, and leaves the live run files alone"
+}
+
+test_run_bound_stops_the_in_flight_stage() {
+  local home origin fakebin trans pidfile i
+  IFS=$(printf '\t') read -r home origin < <(new_home run-bound)
+  setup_minimal_record "$home"
+  trans="$TMP_ROOT/run-bound/trans-home"
+  mkdir -p "$trans/.claude/projects"
+  printf 'hi\n' > "$trans/.claude/projects/a.txt"
+  fakebin=$(fm_fakebin "$TMP_ROOT/run-bound")
+  write_tool_doubles "$fakebin"
+  pidfile="$TMP_ROOT/run-bound/restic.pid"
+  cat > "$fakebin/restic" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$\$" > "$pidfile"
+sleep 30
+SH
+  chmod +x "$fakebin/restic"
+  {
+    printf 'NIGHTLY_RESTIC_REPO=rclone:fixture:%s/repo\n' "$TMP_ROOT/run-bound"
+    printf 'NIGHTLY_RCLONE_CONFIG=%s/rclone.conf\n' "$TMP_ROOT/run-bound"
+    printf 'NIGHTLY_RESTIC_PASSWORD_COMMAND=cat %s/pw\n' "$TMP_ROOT/run-bound"
+    printf 'NIGHTLY_RUN_BOUND_SECONDS=1\n'
+  } > "$home/config/nightly.env"
+  printf '[fixture]\ntype = local\n' > "$TMP_ROOT/run-bound/rclone.conf"
+  printf 'pw\n' > "$TMP_ROOT/run-bound/pw"
+  mkdir -p "$home/data/.git/nightly"
+  printf 'date=2026-09-06\n' > "$home/data/.git/nightly/last-complete"
+  NIGHTLY_HOME="$trans" PATH="$fakebin:$PATH" \
+    run_nightly archive --fm-home "$home" --now "$NOW"
+  expect_code 1 "$RC" 'bounded archive run'
+  assert_grep $'interrupted\tinterrupted\t0\tbound-hit' "$home/data/.git/nightly/stages.tsv" \
+    'run bound recorded'
+  assert_grep 'result=failed' "$home/data/.git/nightly/last-attempt" 'bounded run is not ok'
+  [ "$(cat "$home/data/.git/nightly/last-complete")" = 'date=2026-09-06' ] \
+    || fail 'a bounded run overwrote the prior success'
+  assert_present "$pidfile" 'restic double started'
+  i=0
+  while [ "$i" -lt 20 ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  kill -0 "$(cat "$pidfile")" 2>/dev/null && fail 'the in-flight restic outlived the run bound'
+  assert_absent "$home/data/.git/nightly/lock" 'lock released after the bound'
+  pass "fm-nightly: the run bound stops the in-flight stage and keeps the prior success"
 }
 
 test_restore_refuses_nonempty_and_implicit_latest() {
@@ -547,6 +599,7 @@ test_dry_run_lists_every_stage
 test_dry_run_record_only_skips_cloud
 test_refuse_home_with_record_only
 test_busy_exit_3
+test_run_bound_stops_the_in_flight_stage
 test_restore_refuses_nonempty_and_implicit_latest
 test_status_reads_local_files
 test_full_run_on_record_home

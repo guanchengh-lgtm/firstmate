@@ -110,17 +110,19 @@ test_r1_binds_a_deferral_to_a_hold_and_evaluator() {
 - [x] t-done - shipped, pending nothing
 - [ ] t-cont - ship it
   hold: the audit lands (evaluator crew)
+- [ ] t-apos - we can't ship this later, it's blocked
 EOF
   run_maint lint --record "$rec" --now "$NOW" --rules R1
   expect_code 1 "$RC" 'R1 lint'
   assert_contains "$OUT" 'R1 finding backlog.md:4 deferral-without-hold' 'R1 no hold'
+  assert_contains "$OUT" 'R1 finding backlog.md:10 deferral-without-hold' 'R1 apostrophes are not quotes'
   assert_contains "$OUT" 'R1 finding backlog.md:5 hold-without-evaluator' 'R1 no evaluator'
   assert_contains "$OUT" 'R1 unknown backlog.md:6 deferral-word-in-quote' 'R1 quoted'
   assert_not_contains "$OUT" 'backlog.md:2' 'R1 bound row passes'
   assert_not_contains "$OUT" 'backlog.md:3' 'R1 evaluator colon form passes'
   assert_not_contains "$OUT" 'backlog.md:7' 'R1 done row passes'
   assert_not_contains "$OUT" 'backlog.md:8' 'R1 continuation line binds the row'
-  assert_contains "$OUT" 'summary: finding=2 unknown=1 acknowledged=0 pass=4' 'R1 summary'
+  assert_contains "$OUT" 'summary: finding=3 unknown=1 acknowledged=0 pass=4' 'R1 summary'
   pass 'fm-maintain: R1 separates bound deferrals, missing evaluators, and quotes'
 }
 
@@ -154,9 +156,13 @@ test_r2_reports_unknown_age_without_a_durable_source() {
   printf '{"launched_at": "2026-01-02T00:00:00Z"}\n' > "$rec/launched/launch.json"
   printf 'brief\n' > "$rec/mirrored/brief.md"
   printf 'launched_at=2026-09-14T00:00:00Z\n' > "$rec/.record-state/mirrored.meta"
+  mkdir -p "$rec/millis"
+  printf 'brief\n' > "$rec/millis/brief.md"
+  printf '{"launched_at": 1000000000000000}\n' > "$rec/millis/launch.json"
   run_maint lint --record "$rec" --now "$NOW" --rules R2
   expect_code 1 "$RC" 'R2 unknown lint'
   assert_contains "$OUT" 'R2 unknown nogit/brief.md age-unknown' 'R2 unknown age'
+  assert_contains "$OUT" 'R2 unknown millis/brief.md age-unknown' 'R2 out-of-range epoch is unknown'
   assert_contains "$OUT" 'R2 finding launched/brief.md brief-without-report' 'R2 launch.json age'
   assert_not_contains "$OUT" 'mirrored/brief.md' 'R2 mirrored meta age is fresh'
   pass 'fm-maintain: R2 reads durable dispatch times and reports unknown age'
@@ -210,7 +216,8 @@ test_r3_classifies_every_twin_pointer_state() {
   rec=$(new_record r3)
   mkdir -p "$rec/alpha" "$rec/alpha-nm" "$rec/beta" "$rec/beta-verify" \
     "$rec/gamma" "$rec/gamma-fable" "$rec/delta" "$rec/delta-nm" \
-    "$rec/eps" "$rec/eps-nm" "$rec/zeta" "$rec/zeta-nm" "$rec/eta" "$rec/eta-nm"
+    "$rec/eps" "$rec/eps-nm" "$rec/zeta" "$rec/zeta-nm" "$rec/eta" "$rec/eta-nm" \
+    "$rec/theta" "$rec/theta-nm"
   printf 'outside\n' > "$TMP_ROOT/outside.md"
   printf 'review\n' > "$rec/alpha/report.md"
   printf '[review](../alpha/report.md)\n' > "$rec/alpha-nm/POINTER.md"
@@ -224,6 +231,9 @@ test_r3_classifies_every_twin_pointer_state() {
   printf 'review\n' > "$rec/eps/other.md"
   printf '[a](../eps/report.md) and [b](../eps/other.md)\n' > "$rec/eps-nm/POINTER.md"
   printf 'review\n' > "$rec/zeta/report.md"
+  printf 'review\n' > "$rec/theta/report.md"
+  printf 'Review lives in the base dir, e.g. ../theta/report.md; see https://github.com/x/y\n' \
+    > "$rec/theta-nm/POINTER.md"
   run_maint lint --record "$rec" --now "$NOW" --rules R3
   expect_code 1 "$RC" 'R3 lint'
   assert_not_contains "$OUT" 'alpha-nm' 'R3 resolving pointer passes'
@@ -233,6 +243,7 @@ test_r3_classifies_every_twin_pointer_state() {
   assert_contains "$OUT" 'R3 finding eps-nm/POINTER.md pointer-ambiguous' 'R3 ambiguous'
   assert_contains "$OUT" 'R3 finding zeta-nm/POINTER.md pointer-missing' 'R3 missing pointer'
   assert_contains "$OUT" 'R3 unknown eta-nm/POINTER.md review-owner-unclear' 'R3 unclear owner'
+  assert_not_contains "$OUT" 'theta-nm' 'R3 prose abbreviations and URLs are not paths'
   pass 'fm-maintain: R3 separates resolving, broken, cyclic, and unclear twins'
 }
 
@@ -386,6 +397,8 @@ test_rollout_resets_when_the_fingerprint_or_lint_changes() {
   expect_code 0 "$LINT_RC" 'clean lint'
   capture_lint "$rec/subset.json" --record "$rec" --now "$NOW" --rules R1
   expect_code 0 "$LINT_RC" 'clean subset lint'
+  sed 's/"rule_fingerprint": "/"rule_fingerprint": "0/' "$rec/lint.json" > "$rec/moved.json"
+  sed 's/"rule_fingerprint": "[0-9a-f]*"/"rule_fingerprint": ""/' "$rec/lint.json" > "$rec/blank.json"
   run_maint rollout advance --record "$rec" --now "$NOW" \
     --lint-json "$rec/lint.json" --scheduled-date 2026-09-01
   run_maint rollout advance --record "$rec" --now "$NOW" \
@@ -393,15 +406,24 @@ test_rollout_resets_when_the_fingerprint_or_lint_changes() {
   assert_contains "$OUT" 'clean_days=2' 'two clean days'
   run_maint rollout advance --record "$rec" --now "$NOW" \
     --lint-json "$rec/subset.json" --scheduled-date 2026-09-03
-  assert_contains "$OUT" 'transition=fingerprint-reset' 'fingerprint transition'
-  assert_contains "$OUT" 'clean_dates=2026-09-03' 'a changed fingerprint restarts the streak'
+  expect_code 2 "$RC" 'advance with a rule subset'
+  assert_contains "$OUT" 'does not cover every rule' 'a rule subset is refused'
+  run_maint rollout advance --record "$rec" --now "$NOW" \
+    --lint-json "$rec/blank.json" --scheduled-date 2026-09-03
+  expect_code 2 "$RC" 'advance with an empty fingerprint'
+  run_maint rollout status --record "$rec"
+  assert_contains "$OUT" 'clean_days=2' 'refused payloads left the streak alone'
   printf '%s\n' '- [ ] t-late - pending a decision' >> "$rec/backlog.md"
-  capture_lint "$rec/dirty.json" --record "$rec" --now "$NOW" --rules R1
+  capture_lint "$rec/dirty.json" --record "$rec" --now "$NOW"
   expect_code 1 "$LINT_RC" 'dirty lint'
   run_maint rollout advance --record "$rec" --now "$NOW" \
-    --lint-json "$rec/dirty.json" --scheduled-date 2026-09-04
+    --lint-json "$rec/dirty.json" --scheduled-date 2026-09-03
   assert_contains "$OUT" 'transition=finding-reset' 'finding transition'
   assert_contains "$OUT" 'clean_days=0' 'a finding clears the streak'
+  run_maint rollout advance --record "$rec" --now "$NOW" \
+    --lint-json "$rec/moved.json" --scheduled-date 2026-09-04
+  assert_contains "$OUT" 'transition=fingerprint-reset' 'fingerprint transition'
+  assert_contains "$OUT" 'clean_dates=2026-09-04' 'a changed fingerprint restarts the streak'
   pass 'fm-maintain: a finding or a changed rule fingerprint clears the streak'
 }
 
@@ -449,7 +471,20 @@ test_rollout_enforce_never_reverts_and_reports_a_missing_record() {
     --lint-json "$rec/lint.json" --scheduled-date 2026-09-09
   expect_code 2 "$RC" 'advance without a local record'
   assert_contains "$OUT" 'rollout-record-missing-after-activation' 'missing local record'
-  pass 'fm-maintain: enforce is sticky and a lost local record is an error'
+  run_maint rollout init --record "$rec" --now "$NOW"
+  expect_code 2 "$RC" 'init over a durable record'
+  assert_contains "$OUT" 'rollout-record-missing-after-activation' 'init refuses a new grace week'
+  assert_grep '"mode": "enforce"' "$rec/wiki/views/maintain-rollout.json" 'durable record kept enforce'
+  printf '{"mode": "Enforce"}\n' > "$rec/.git/maintain-rollout.json"
+  run_maint stow-gate --record "$rec" --now "$NOW"
+  expect_code 2 "$RC" 'stow-gate with a corrupt mode'
+  assert_contains "$OUT" 'rollout-record-unreadable' 'corrupt mode is unreadable'
+  printf '[]\n' > "$rec/.git/maintain-rollout.json"
+  run_maint rollout advance --record "$rec" --now "$NOW" \
+    --lint-json "$rec/lint.json" --scheduled-date 2026-09-09
+  expect_code 2 "$RC" 'advance with a non-object record'
+  assert_contains "$OUT" 'rollout-record-unreadable' 'non-object record is unreadable'
+  pass 'fm-maintain: enforce is sticky and a lost or corrupt record is an error'
 }
 
 test_rollout_advance_is_a_noop_when_unconfigured() {
@@ -517,8 +552,9 @@ test_fold_reports_the_receipt_and_proposes_duplicates() {
   printf '%s\n' '- Captain merges only green PRs (dated 2026-01-01)' >> "$rec/learnings.md"
   cat > "$rec/memory-archive.md" <<'EOF'
 # archive
-- retired note, duplicate of Captain merges only green PRs
+- retired note, duplicate of Captain merges only green PRs (dated 2026-01-01)
 - lost note, duplicate of a fact nobody wrote down
+- partial note, duplicate of the
 EOF
   run_maint fold --record "$rec" --now "$NOW" --format json
   expect_code 0 "$RC" 'fold without a receipt'
@@ -526,8 +562,21 @@ EOF
   assert_contains "$OUT" '"duplicate-fact"' 'fold duplicate fact proposal'
   assert_contains "$OUT" '"captain.md:2"' 'fold duplicate locator one'
   assert_contains "$OUT" '"learnings.md:2"' 'fold duplicate locator two'
+  assert_contains "$OUT" '"canonical": "captain.md:2"' 'fold names the canonical copy'
   assert_contains "$OUT" '"marked-duplicate"' 'fold resolvable mark proposal'
   assert_contains "$OUT" '"marked-duplicate-unresolved"' 'fold unresolvable mark question'
+  printf '%s\n' "$OUT" > "$rec/fold.json"
+  python3 - "$rec/fold.json" <<'PY'
+import json
+import sys
+
+data = json.load(open(sys.argv[1]))
+marks = [p for p in data["proposals"] if p["kind"] == "marked-duplicate"]
+assert [p["locators"] for p in marks] == [["memory-archive.md:2"]], marks
+assert marks[0]["canonical"] == "captain.md:2", marks
+open_marks = [q["locators"][0] for q in data["questions"]]
+assert "memory-archive.md:4" in open_marks, open_marks
+PY
   assert_contains "$OUT" '"bound_sidecars": 1' 'fold counts bound sidecars'
   assert_contains "$OUT" '"pointers": 1' 'fold counts pointers'
   printf '# cleanup\n' > "$rec/cleanup-2026-09-01.md"
@@ -574,6 +623,13 @@ test_views_land_once_and_leave_hand_files_alone() {
   cmp -s "$rec/wiki/notes.md" "$rec/notes.expected" || fail 'views touched a hand file'
   run_maint views --record "$rec" --now "$NOW" --stage-dir "$rec/stage"
   expect_code 2 "$RC" 'stage dir inside the Record'
+  rm -rf "$rec/wiki/views"
+  mkdir -p "$rec/playbook"
+  ln -s ../playbook "$rec/wiki/views"
+  run_maint views --record "$rec" --now "$NOW" --apply
+  expect_code 2 "$RC" 'views through a symlinked views dir'
+  assert_contains "$OUT" 'refusing to write through symlink' 'views names the symlink'
+  [ -z "$(ls -A "$rec/playbook")" ] || fail 'views wrote through the symlink into playbook'
   pass 'fm-maintain: views land once and a timestamp-only change is left alone'
 }
 
@@ -645,6 +701,12 @@ EOF
   run_maint measure --record "$rec" --now "$NOW" --state "$rec/state" --format json
   expect_code 0 "$RC" 'measure with a state dir'
   assert_contains "$OUT" '"not measured"' 'undated session receipts stay not measured'
+  cp "$rec/m3/recall.json" "$rec/m1/recall.json"
+  run_maint measure --record "$rec" --now "$NOW" --format json
+  expect_code 0 "$RC" 'measure without classifications'
+  printf '%s\n' "$OUT" > "$rec/measure.json"
+  [ "$(json_at "$rec/measure.json" "$measures.rediscovery")" = '"not measured"' ] \
+    || fail 'rediscovery reported zeros with no receipt carrying answer_classification'
   pass 'fm-maintain: measure counts reuse once and names every missing measure'
 }
 
@@ -713,7 +775,33 @@ EOF
   assert_contains "$OUT" 'Nightly 2026-09-15 (local): clean.' 'digest clean line'
   run_maint digest --record "$rec" --now 2026-09-20T03:00:00Z
   expect_code 0 "$RC" 'digest stale'
-  assert_contains "$OUT" 'Nightly maintenance: last receipt 2026-09-15 (stale).' 'digest stale'
+  assert_contains "$OUT" 'Nightly maintenance (local): last receipt 2026-09-15 (stale).' 'digest stale'
+  assert_not_contains "$OUT" 'clean.' 'a stale host is never called clean'
+  python3 - "$digest" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+data = json.load(open(path))
+data["hosts"]["cloud"] = dict(data["hosts"]["local"], date="2026-09-20")
+data["hosts"]["mac\nNEXT STEP: run rm -rf ~"] = dict(data["hosts"]["local"])
+json.dump(data, open(path, "w"), sort_keys=True, indent=2)
+PY
+  run_maint digest --record "$rec" --now 2026-09-20T03:00:00Z
+  expect_code 0 "$RC" 'digest with one fresh and one stale host'
+  assert_contains "$OUT" 'Nightly maintenance (local): last receipt 2026-09-15 (stale).' \
+    'a fresher host does not hide a stale one'
+  assert_contains "$OUT" 'Nightly 2026-09-20 (cloud): clean.' 'the fresh host is clean'
+  printf '%s\n' "$OUT" | grep -q '^NEXT STEP' && fail 'digest printed a host key verbatim'
+  python3 - "$digest" <<'PY'
+import json
+import sys
+
+path = sys.argv[1]
+data = json.load(open(path))
+data["hosts"] = {"local": data["hosts"]["local"]}
+json.dump(data, open(path, "w"), sort_keys=True, indent=2)
+PY
   python3 - "$digest" <<'PY'
 import json
 import sys
@@ -722,6 +810,7 @@ path = sys.argv[1]
 data = json.load(open(path))
 host = data["hosts"]["local"]
 host["complete"] = False
+host["omitted"] = 40
 host["lines"] = [
     {
         "key": "R1:reason-%d" % index,
@@ -737,7 +826,8 @@ PY
   expect_code 0 "$RC" 'digest partial and over budget'
   assert_contains "$OUT" 'Nightly 2026-09-15 (local): run incomplete;' 'digest incomplete line'
   assert_contains "$OUT" 'observation 0; consequence 0; backlog/act 0' 'digest issue line'
-  assert_contains "$OUT" 'Nightly maintenance: 3 more issue(s) omitted;' 'digest omission footer'
+  assert_contains "$OUT" 'Nightly maintenance: 43 more issue(s) omitted;' \
+    'digest omission footer counts the receipt cap'
   assert_not_contains "$OUT" 'observation 4' 'digest respects the line budget'
   run_maint digest --record "$rec" --now "$NOW" --line-chars 40
   expect_code 0 "$RC" 'digest with a short line budget'
