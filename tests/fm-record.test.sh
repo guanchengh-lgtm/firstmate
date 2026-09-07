@@ -1615,6 +1615,176 @@ test_health_reads_current_pending_commits_and_age() {
   pass 'fm-record: read-only health reports current commits and age while retaining delivery receipts'
 }
 
+seed_authored_record() {
+  local home=$1
+  mkdir -p "$home/data/decisions"
+  printf '# Captain\n\nFleet memory.\n' > "$home/data/captain.md"
+  printf '# Old\n\nPrior choice.\n' > "$home/data/decisions/old.md"
+}
+
+commit_footer_candidate() {
+  local live=$1 dest=$2 out
+  git clone --quiet "$live" "$dest"
+  out="$dest.out"
+  python3 "$ROOT/bin/fm-record-links.py" propose --root "$dest" --out "$out"
+  python3 "$ROOT/bin/fm-record-links.py" apply --root "$dest" --plan "$out/manifest.json"
+  git -C "$dest" add -A
+  git -C "$dest" commit --quiet -m 'related footer'
+}
+
+test_land_related_disabled_home_is_noop() {
+  local home origin
+  IFS=$(printf '\t') read -r home origin < <(new_home land-disabled)
+  run_rec "$home" land-related --candidate "$TMP_ROOT/missing" --expected-head deadbeef
+  expect_code 0 "$RC" 'disabled land-related'
+  assert_contains "$OUT" 'state=disabled' 'disabled land-related state'
+  pass "fm-record: a disabled home is a no-op for land-related"
+}
+
+test_land_related_lands_one_footer_commit() {
+  local home origin expected candidate landed remote
+  IFS=$(printf '\t') read -r home origin < <(new_home land-ok)
+  setup_record "$home" "$origin"
+  seed_authored_record "$home"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'land seed tick'
+  expected=$(git --git-dir="$home/data/.git" rev-parse HEAD)
+  remote=$(git --git-dir="$origin" rev-parse main)
+  candidate="$TMP_ROOT/land-ok/candidate"
+  commit_footer_candidate "$home/data" "$candidate"
+  run_rec "$home" land-related --candidate "$candidate" --expected-head "$expected"
+  expect_code 0 "$RC" 'land-related success'
+  assert_contains "$OUT" 'state=committed-local' 'land-related state'
+  assert_contains "$OUT" 'detail=land-related' 'land-related detail'
+  landed=$(git --git-dir="$home/data/.git" rev-parse HEAD)
+  [ "$landed" = "$(git -C "$candidate" rev-parse HEAD)" ] \
+    || fail 'live HEAD is not the candidate commit'
+  [ "$(git --git-dir="$home/data/.git" rev-parse HEAD^)" = "$expected" ] \
+    || fail 'landed commit parent is not the expected HEAD'
+  [ "$(git --git-dir="$origin" rev-parse main)" = "$remote" ] \
+    || fail 'land-related pushed'
+  git --git-dir="$home/data/.git" --work-tree="$home/data" diff --quiet \
+    || fail 'land-related left a dirty worktree'
+  grep -q '^Related: supersedes: none; cites: none; relates: none$' "$home/data/captain.md" \
+    || fail 'landed captain.md is missing the Related footer'
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'tick after land-related'
+  assert_contains "$OUT" 'state=pushed' 'tick after land-related should push'
+  [ "$(git --git-dir="$origin" rev-parse main)" = "$landed" ] \
+    || fail 'next tick did not push the landed commit'
+  pass "fm-record: land-related fast-forwards one footer-only commit and leaves push to tick"
+}
+
+test_land_related_refuses_lock_dirty_and_advanced_head() {
+  local home origin expected candidate lock pid before
+  IFS=$(printf '\t') read -r home origin < <(new_home land-refuse)
+  setup_record "$home" "$origin"
+  seed_authored_record "$home"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'refuse seed tick'
+  expected=$(git --git-dir="$home/data/.git" rev-parse HEAD)
+  candidate="$TMP_ROOT/land-refuse/candidate"
+  commit_footer_candidate "$home/data" "$candidate"
+
+  lock="$home/data/.git/firstmate-record.lock"
+  mkdir -p "$lock"
+  sleep 30 &
+  pid=$!
+  printf '%s\n' "$pid" > "$lock/pid"
+  run_rec "$home" land-related --candidate "$candidate" --expected-head "$expected"
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+  expect_code 3 "$RC" 'busy land-related'
+  assert_contains "$OUT" 'state=busy' 'busy land-related state'
+  [ "$(git --git-dir="$home/data/.git" rev-parse HEAD)" = "$expected" ] \
+    || fail 'busy land-related moved HEAD'
+  [ "$(git -C "$candidate" rev-parse HEAD)" != "$expected" ] \
+    || fail 'busy land-related consumed the candidate'
+
+  printf 'dirty\n' >> "$home/data/captain.md"
+  run_rec "$home" land-related --candidate "$candidate" --expected-head "$expected"
+  expect_code 8 "$RC" 'dirty land-related'
+  [ "$(git --git-dir="$home/data/.git" rev-parse HEAD)" = "$expected" ] \
+    || fail 'dirty land-related moved HEAD'
+  grep -q dirty "$home/data/captain.md" || fail 'dirty land-related discarded live edits'
+  git -C "$home/data" checkout --quiet -- captain.md
+
+  printf 'later\n' > "$home/data/later.md"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'advanced live tick'
+  before=$(git --git-dir="$home/data/.git" rev-parse HEAD)
+  run_rec "$home" land-related --candidate "$candidate" --expected-head "$expected"
+  expect_code 8 "$RC" 'advanced HEAD land-related'
+  [ "$(git --git-dir="$home/data/.git" rev-parse HEAD)" = "$before" ] \
+    || fail 'advanced-HEAD land-related replaced live work'
+  [ "$(git -C "$candidate" rev-parse HEAD^)" = "$expected" ] \
+    || fail 'advanced-HEAD land-related rewrote the candidate'
+  pass "fm-record: land-related refuses a busy lock, dirty worktree, and advanced HEAD"
+}
+
+test_land_related_scan_git_failure_and_push_pending() {
+  local home origin expected candidate secret before landed
+  IFS=$(printf '\t') read -r home origin < <(new_home land-scan)
+  setup_record "$home" "$origin"
+  seed_authored_record "$home"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'scan seed tick'
+  secret=$(secret_fixture github-classic)
+  printf '%s\n' "$secret" > "$home/data/leaky.md"
+  git -C "$home/data" add leaky.md
+  git -C "$home/data" commit --no-verify --quiet -m leak
+  expected=$(git --git-dir="$home/data/.git" rev-parse HEAD)
+  candidate="$TMP_ROOT/land-scan/candidate"
+  commit_footer_candidate "$home/data" "$candidate"
+  run_rec "$home" land-related --candidate "$candidate" --expected-head "$expected"
+  expect_code 5 "$RC" 'scan-blocked land-related'
+  assert_contains "$OUT" 'scan-blocked' 'scan-blocked land-related state'
+  [ "$(git --git-dir="$home/data/.git" rev-parse HEAD)" = "$expected" ] \
+    || fail 'scan-blocked land-related created a live commit'
+  git -C "$candidate" rev-parse --verify HEAD >/dev/null \
+    || fail 'scan-blocked land-related removed the candidate'
+
+  IFS=$(printf '\t') read -r home origin < <(new_home land-fetch)
+  setup_record "$home" "$origin"
+  seed_authored_record "$home"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'fetch-fail seed tick'
+  expected=$(git --git-dir="$home/data/.git" rev-parse HEAD)
+  candidate="$TMP_ROOT/land-fetch/candidate"
+  commit_footer_candidate "$home/data" "$candidate"
+  rm -rf "$candidate/.git/objects"
+  before=$(git --git-dir="$home/data/.git" rev-parse HEAD)
+  run_rec "$home" land-related --candidate "$candidate" --expected-head "$expected"
+  expect_code 8 "$RC" 'failed fetch land-related'
+  [ "$(git --git-dir="$home/data/.git" rev-parse HEAD)" = "$before" ] \
+    || fail 'failed Git land-related moved HEAD'
+
+  IFS=$(printf '\t') read -r home origin < <(new_home land-pending)
+  setup_record "$home" "$origin"
+  seed_authored_record "$home"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'pending seed tick'
+  expected=$(git --git-dir="$home/data/.git" rev-parse HEAD)
+  candidate="$TMP_ROOT/land-pending/candidate"
+  commit_footer_candidate "$home/data" "$candidate"
+  run_rec "$home" land-related --candidate "$candidate" --expected-head "$expected"
+  expect_code 0 "$RC" 'pending land-related'
+  landed=$(git --git-dir="$home/data/.git" rev-parse HEAD)
+  mv "$origin" "$origin.away"
+  run_rec "$home" tick
+  expect_code 6 "$RC" 'tick after land-related while remote is away'
+  assert_contains "$OUT" 'push-pending' 'push-pending after land-related'
+  [ "$(git --git-dir="$home/data/.git" rev-parse HEAD)" = "$landed" ] \
+    || fail 'push-pending tick lost the landed commit'
+  mv "$origin.away" "$origin"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'retry push after land-related'
+  assert_contains "$OUT" 'state=pushed' 'retry after land-related should push'
+  [ "$(git --git-dir="$origin" rev-parse main)" = "$landed" ] \
+    || fail 'retry tick did not push the landed commit'
+  pass "fm-record: land-related scan refusal, Git failure, and push-pending keep both copies"
+}
+
 test_outer_repository_stays_clean() {
   local after
   after=$(git -C "$ROOT" status --short --untracked-files=all)
@@ -1666,5 +1836,9 @@ test_index_publication_restart_preserves_user_staging
 test_index_recovery_locks_before_comparing_staged_content
 test_index_recovery_accepts_a_status_refresh
 test_health_reads_current_pending_commits_and_age
+test_land_related_disabled_home_is_noop
+test_land_related_lands_one_footer_commit
+test_land_related_refuses_lock_dirty_and_advanced_head
+test_land_related_scan_git_failure_and_push_pending
 
 test_outer_repository_stays_clean
