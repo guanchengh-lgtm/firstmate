@@ -754,6 +754,54 @@ EOF
   pass "context digest distinguishes ABSENT, empty-but-present, and populated files"
 }
 
+test_nightly_digest_section_is_conditional_and_bounded() {
+  local rec root home fakebin out views
+  rec=$(new_world nightly-digest)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_not_contains "$out" "Nightly maintenance" "a home that never activated maintenance printed a nightly section"
+
+  views="$home/data/wiki/views"
+  mkdir -p "$views"
+  cat > "$views/nightly-digest.json" <<'JSON'
+{
+  "type": "nightly-digest",
+  "hosts": {
+    "studio": {
+      "date": "2099-01-01",
+      "generated": "2099-01-01T03:10:00Z",
+      "input_commit": "abc123",
+      "complete": true,
+      "omitted": 0,
+      "lines": [
+        {
+          "key": "R2:brief-without-report",
+          "observation": "2 briefs older than 14 days have no report",
+          "consequence": "recall cannot answer from them",
+          "next": "captain rules on each brief"
+        }
+      ]
+    }
+  }
+}
+JSON
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "Nightly maintenance" "an activated home did not print the nightly section"
+  assert_contains "$out" "2 briefs older than 14 days have no report" "the digest line was not rendered from the published receipt"
+  assert_contains "$out" "captain rules on each brief" "the digest line lost its next owner"
+
+  printf '{not json' > "$views/nightly-digest.json"
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  assert_contains "$out" "receipt unreadable" "a corrupt receipt did not print its distinct message"
+
+  pass "nightly digest section prints only for an activated home and renders bounded receipt lines"
+}
+
 # --- lock refusal: read-only path --------------------------------------------
 
 test_lock_refusal_read_only_path() {
@@ -3260,5 +3308,6 @@ test_session_recall_dedupes_emitted_identities
 test_session_recall_skips_when_budget_is_exhausted
 test_session_recall_read_only_does_not_write_receipts
 test_session_recall_manifest_carries_shown_identities
+test_nightly_digest_section_is_conditional_and_bounded
 
 echo "# fm-session-start.test.sh: all assertions passed"

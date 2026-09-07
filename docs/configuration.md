@@ -361,7 +361,8 @@ An earlier outgoing commit can block a push even when the current working tree i
 Do not force-push or automatically rebase to clear a delivery failure.
 Keep LFS installation local to the Record repository through `setup`.
 The next tick retries one bounded push even when the working tree is clean.
-A diverged origin needs a later reconciliation owner, not an automatic rebase.
+`reconcile` fetches origin, fast-forwards only a clean behind-only Record, reports ahead-only history for the next tick, and reports a two-sided divergence without merging, rebasing, resetting, or stashing; `verify` proves working tree, index, `HEAD`, and the freshly fetched origin are equal.
+A reported divergence still needs a person to choose the reconciliation; neither command ever forces one.
 
 After interrupted index publication, the next checkpoint or tick retries the saved journal under the Git index lock.
 A Git status refresh alone does not prevent recovery, but conflicting HEAD or staged content causes an `index-recovery` refusal.
@@ -373,6 +374,54 @@ To restore onto another machine, clone the private Record remote into the new ho
 Git does not clone the pre-commit hook, a machine with global LFS filters installs the Git LFS hooks during the clone, setup accepts those LFS-owned hooks, and setup must use the restored branch and the stable code checkout on that machine.
 Fetch the required LFS objects before checkpointing or ticking; unresolved payloads fail closed even when their pointer files are present.
 `.record-state` in that clone is historical mirror input, not proof that a worker is still alive.
+
+## Nightly maintenance and transcript archive (config/nightly.env)
+
+The single consented night task is [`bin/fm-nightly.sh`](../bin/fm-nightly.sh), and its deterministic Record checks, generated views, measures, and digest are [`bin/fm-maintain.py`](../bin/fm-maintain.py).
+Their headers and `--help` own the exact subcommands, flags, stage order, rule ids, exit codes, rollout transitions, config keys, and restore syntax.
+This section owns operator setup, activation, private credential locations, supported limits, and how to stop the job.
+[`docs/verification/nightly-maintenance.md`](verification/nightly-maintenance.md) owns the maintained evidence for the fixture, local transport, and live checks.
+
+Landing the code activates nothing.
+Activation is a firstmate home operation, in this order, each step requiring the consent already recorded for it:
+
+1. Install `restic` and `rclone` with Homebrew (the runner never installs packages).
+2. In the captain's sitting, run `rclone config` for a remote named `fm-transcripts` with `type = drive` and `scope = drive.file`, using a personal OAuth client when the shared client is unavailable, and keep that configuration file private under the home's `config/`.
+3. Store the restic repository password in the login Keychain under service `com.firstmate.transcript-archive` for the login account, and verify the captain can recover both the password and the rclone configuration on a machine other than this Mac before trusting the archive for loss-of-Mac recovery.
+4. Run `restic -r rclone:fm-transcripts:restic init --repository-version 2` once through the configured remote, so the archive root is created by the file-scoped identity that must later see it.
+5. Write `config/nightly.env` under the home with the keys the runner header lists, then run `FM_HOME=<home> <code-root>/bin/fm-nightly.sh run --fm-home <home> --dry-run` and read every stage line.
+6. Run `python3 <code-root>/bin/fm-maintain.py rollout init --record <home>/data --now <RFC3339>` to start the lint rollout in `report` mode.
+7. Run one manual `run --fm-home <home>` with a larger reviewed bound for the first seed archive, then `install --fm-home <home> --hour 3 --minute 0 --bootstrap` from the stable primary code checkout.
+
+`install` renders `com.firstmate.nightly` with a 03:00 `StartCalendarInterval`, no `KeepAlive`, and no `RunAtLoad`; it refuses to replace a LaunchAgent it did not write.
+A run missed because the Mac was powered off is not replayed; run the command by hand.
+Stop the job with `launchctl bootout gui/$UID/com.firstmate.nightly` and delete the rendered plist; nothing else needs cleanup.
+Only one local run executes at a time; a second trigger reports busy.
+
+The archive backs up every snapshot of the five transcript families under `$HOME`: `.claude/projects`, `.codex/sessions`, `.pi/agent/sessions`, each `.cursor/projects/*/agent-transcripts` match, and `.grok/sessions`.
+Each family is recorded separately; a family that disappears after it was archived is a visible coverage finding, not a silent shrink.
+The job never runs `forget`, `prune`, `rewrite`, source deletion, or automatic `unlock`, so every snapshot, including partial ones, is retained.
+A restic exit of 3 is an incomplete snapshot: it is kept but never recorded as the last complete recovery point.
+The weekly `check --read-data-subset=n/4` advances `n` only after a successful check; a missed or failed week stays due.
+Drive capacity, token renewal, and upload throughput are not measured by fixtures; record them during activation.
+Transcript payloads may contain credentials and are archived encrypted as they are; the Record scanner runs only on the sanitized receipts and views that enter the Record, never on transcript payloads.
+
+Restore follows the T21 recipe: on the recovery machine, after restoring the private rclone configuration and the password, run `fm-nightly.sh restore --fm-home <home> --target <new empty directory>`.
+The default snapshot is the id recorded by the last complete backup; pass `--snapshot latest` only deliberately, because a newer partial snapshot may be selected by it.
+Restore never writes onto the active home.
+
+Lint runs in `report` mode until seven consecutive scheduled local dates produce a clean result under one unchanged rule fingerprint; the seventh latches `enforce`, after which findings block a successful stow receipt but never the Record checkpoint that preserves captured knowledge.
+A cloud run never advances that streak.
+The historical brief-only directories acknowledged by the T11 cleanup carry a `status` sidecar bound to the brief's content hash; a changed brief or a sidecar without that binding is reported again.
+
+The cloud fallback is one bot routine with Record scope only.
+It runs `fm-nightly.sh run --record-only --record <cloud Record clone>` from the reviewed code revision after the local run's bound, and it does no duplicate work when the fetched Record already carries that date's local receipt.
+Its skipped stages are explicit in its receipt: local reconcile, transcript archive, compilers, and injected-size measures.
+A rejected push preserves its local commit and reports the conflict; it never force-pushes.
+The routine's Git credential and its actual schedule binding are proven at activation; connector access alone is not evidence.
+
+Compiler ownership is one sentence: graphify compiles code structure per repository into `graphify-out/`; gbrain compiles Record knowledge pages, entities, and timeline into `data/wiki/` except `data/wiki/views/`; the nightly task owns `data/wiki/views/`; `playbook/`, `captain.md`, `learnings.md`, and the map remain hand-owned; generic Record ingestion reads only `.md`, `.txt`, `.csv`, and `.json`.
+Until T10 and T17 supply validated commands in `config/nightly.env`, the compiler stages report `not-configured` and the receipt never claims compiler freshness.
 
 ## Secondmate routes (data/secondmates.md)
 
