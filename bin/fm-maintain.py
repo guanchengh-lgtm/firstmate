@@ -36,7 +36,8 @@ Common flags:
 
 Exit codes:
   0  clean.
-  1  findings or unknowns; only lint and stow-gate ever return it.
+  1  findings or unknowns; lint and stow-gate return it for rule results,
+     views and measure return it when an input changed while they ran.
   2  invalid input, unreadable required input, or execution failure.
 
 Generic scanning skips .git, .record-state, wiki/views, graphify-out, raw, and
@@ -53,7 +54,8 @@ lint
   fingerprint is sha256:<hex> over that result's evidence text.
   owner is backlog, stow, t11-fold, or captain.
   rule_fingerprint is the sha256 of the selected rule ids, versions, and
-  thresholds, so a rule change or a --rules subset changes it.
+  thresholds in R1..R5 order, so a rule change or a --rules subset changes
+  it and the order given to --rules does not.
   Text: one line per non-pass result "R2 finding <locator> <reason>", then
   "summary: finding=n unknown=n acknowledged=n pass=n".
   Exit 1 when any finding or unknown is present.
@@ -79,6 +81,8 @@ Rules, all report-only:
      An mtime is never an age source.
      no report, age > 14d      -> finding brief-without-report
      no report, age unknown    -> unknown age-unknown
+     (a launched_at that is not a string or number, a boolean included,
+     is an unknown age)
      no report, age <= 14d     -> pass
      report present            -> pass
      The historical acknowledgement sidecar is <task>/status whose first line
@@ -92,8 +96,9 @@ Rules, all report-only:
      It needs POINTER.md whose first non-empty line holds exactly one path,
      as a [text](path) link or a bare path, resolving through normpath from
      the twin dir to an existing regular file inside R.
-     A bare path carries a "/" or a file extension; URLs and abbreviations
-     such as "e.g." are prose, not paths.
+     A bare path carries a "/", or is a dotted file name that exists in
+     the directory holding the pointer; URLs, abbreviations such as
+     "e.g.", and version strings such as "v1.10" are prose, not paths.
      missing, escaping, or symlinked outside R -> finding pointer-broken
      pointer chain that returns to itself      -> finding pointer-cycle
      more than one path on the first line      -> finding pointer-ambiguous
@@ -110,7 +115,9 @@ Rules, all report-only:
      some rows resolve, some not  -> unknown mixed-table
      no row resolves              -> pass
      A first-column entry resolves when it names an existing decisions/<x>.md
-     or an existing task dir, by link target or bare id.
+     or an existing task dir (a child dir holding brief.md), by link target
+     or bare id. Any other existing file or dir, for example backlog.md or
+     t2/report.md in a data-model table, does not resolve.
   R5 unqualified memory fact (owner captain, captain.md and learnings.md).
      Fact bullets are top-level "- " lines outside fenced blocks.
      A fact is qualified by a YYYY-MM-DD date anywhere in the line, by a
@@ -188,10 +195,18 @@ views
   A view whose content matches the landed file once every generated timestamp
   is stripped counts as unchanged and is left alone, so a nightly makes no
   commit churn.
+  Before building, the sha256 of every input the views read (backlog.md,
+  done-archive.md, captain.md, learnings.md, memory-archive.md,
+  vr-reports/INDEX.md, decisions/*.md, each child dir's brief.md, report.md,
+  status, launch.json, and recall.json, .record-state/*.meta, and the child
+  dir listing) is recorded as the input manifest; it is re-read immediately
+  before landing, and on any difference every staged view is discarded,
+  nothing is written, changed_input lists the differing paths, and the exit
+  is 1. measure applies the same manifest rule.
   Views: decisions.md, completed-tasks.md, brief-only.md, duplicates.md,
   memory-lint.md, video-index.md.
   JSON: {"type":"maintain-views","written":[...],"unchanged":[...],
-  "stage_dir":"<path>"}.
+  "changed_input":[...],"stage_dir":"<path>"}.
 
 measure
   Writes wiki/views/recall-compounding.json and recall-compounding.md under
@@ -226,7 +241,9 @@ receipt
   interrupted.
   Writes wiki/views/maintenance/<YYYY-MM-DD>-<host>.md with the stage table,
   lint mode, coverage, problem list, input commit, tool fingerprint, and
-  per-stage completion, then merges its own host key into
+  per-stage completion, plus the note that the checkpoint and verify
+  stages run after this receipt and are recorded locally in
+  .git/nightly/last-attempt, then merges its own host key into
   wiki/views/nightly-digest.json:
   {"type":"nightly-digest","hosts":{"<host>":{"date","generated",
   "input_commit","lines":[{"key","observation","consequence","next"}],
@@ -239,7 +256,11 @@ receipt
   complete is false when any stage failed, timed out, or was interrupted.
 
 digest
-  Reads only wiki/views/nightly-digest.json, with no git and no network.
+  Reads wiki/views/nightly-digest.json and, when present, the local
+  .git/nightly/last-attempt written by bin/fm-nightly.sh, with no git and
+  no network.
+  last-attempt  -> first line "Nightly maintenance: last local run <date>
+                   result=<result>; verify <state and equality tokens>"
   missing file  -> "Nightly maintenance: no receipt published yet."
   corrupt JSON  -> "Nightly maintenance: receipt unreadable; run
                    bin/fm-nightly.sh status."
@@ -251,7 +272,11 @@ digest
                    <observation>; <consequence>; <next>", cut at --line-chars
   over budget   -> last line "Nightly maintenance: <k> more issue(s) omitted;
                    see wiki/views/maintenance/<date>-<host>.md", where k
-                   also counts lines the receipt writer already capped
+                   also counts lines the receipt writer already capped and
+                   host is the host with the most capped or dropped lines
+  Every emitted line, the per-host stale, incomplete, and clean lines
+  included, is charged against --max-lines; only the omitted footer is
+  free, so at most --max-lines + 1 lines are printed.
   Every line, host name and date included, is sanitized and cut.
   Exit 0 unless the arguments are invalid.
 """
@@ -670,6 +695,8 @@ def parse_day(text):
 
 def parse_moment(value):
     """Read an RFC3339 instant, a bare day, or an epoch number as UTC."""
+    if isinstance(value, bool):
+        return None
     if isinstance(value, (int, float)):
         return epoch_moment(value)
     if not isinstance(value, str):
@@ -811,18 +838,21 @@ def is_quoted(span, spans):
     return any(start <= span[0] and span[1] <= end for start, end in spans)
 
 
-def looks_like_path(token):
+def looks_like_path(token, base_dir=None):
     cleaned = token.strip().rstrip(".,;:)")
     if not cleaned or cleaned.startswith("http"):
         return ""
-    if "/" not in cleaned and not FILE_NAME_RE.fullmatch(cleaned):
-        return ""
+    if "/" not in cleaned:
+        if not FILE_NAME_RE.fullmatch(cleaned):
+            return ""
+        if base_dir is not None and not os.path.exists(os.path.join(base_dir, cleaned)):
+            return ""
     if not re.search(r"[A-Za-z]", cleaned):
         return ""
     return cleaned
 
 
-def first_line_paths(text):
+def first_line_paths(text, base_dir=None):
     """Return the distinct path tokens on a pointer's first non-empty line."""
     line = ""
     for _, candidate in iter_lines_outside_fences(text):
@@ -837,7 +867,7 @@ def first_line_paths(text):
     rest = BACKTICK_RE.sub(" ", rest)
     candidates.extend(match.group(0) for match in BARE_PATH_RE.finditer(rest))
     for candidate in candidates:
-        cleaned = looks_like_path(candidate)
+        cleaned = looks_like_path(candidate, base_dir)
         if cleaned:
             paths.append(cleaned)
     ordered = []
@@ -985,7 +1015,7 @@ def follow_pointer(record, pointer_path, token):
         if real in seen:
             return "pointer-cycle"
         seen.add(real)
-        onward = first_line_paths(read_text(candidate))
+        onward = first_line_paths(read_text(candidate), os.path.dirname(candidate))
         if len(onward) > 1:
             return "pointer-ambiguous"
         if not onward:
@@ -1023,7 +1053,7 @@ def rule_twin_pointer(record, rule):
                 )
             continue
         evidence = read_text(pointer)
-        paths = first_line_paths(evidence)
+        paths = first_line_paths(evidence, record.path(name))
         if len(paths) > 1:
             results.append(
                 rule.result("finding", pointer_rel, "pointer-ambiguous", evidence)
@@ -1050,6 +1080,7 @@ def resolves_to_record_entry(record, md_rel, cell):
     rest = BACKTICK_RE.sub(" ", rest)
     tokens.extend(match.group(0) for match in BARE_PATH_RE.finditer(rest))
     parent = os.path.dirname(record.path(md_rel))
+    decisions_dir = os.path.realpath(record.path("decisions"))
     for token in tokens:
         cleaned = token.strip().strip("`").rstrip(".,;:)")
         if not cleaned:
@@ -1061,9 +1092,18 @@ def resolves_to_record_entry(record, md_rel, cell):
         for candidate in candidates:
             if not record.inside(candidate):
                 continue
-            if os.path.realpath(candidate) == record.real_root:
+            real = os.path.realpath(candidate)
+            if real == record.real_root:
                 continue
-            if os.path.isfile(candidate) or os.path.isdir(candidate):
+            if (
+                os.path.isfile(candidate)
+                and real.endswith(".md")
+                and os.path.dirname(real) == decisions_dir
+            ):
+                return True
+            if os.path.isdir(candidate) and os.path.isfile(
+                os.path.join(candidate, "brief.md")
+            ):
                 return True
     return False
 
@@ -1175,7 +1215,8 @@ def select_rules(spec):
 def rule_fingerprint(rules):
     payload = [
         {"id": rule.id, "version": rule.version, "thresholds": rule.thresholds}
-        for rule in rules
+        for rule in RULES
+        if rule in rules
     ]
     return sha256_hex(json.dumps(payload, sort_keys=True).encode("utf-8"))
 
@@ -1617,6 +1658,34 @@ def canonical_view(rel, text):
     return "\n".join(kept)
 
 
+MANIFEST_FILES = (
+    "backlog.md",
+    "done-archive.md",
+    "captain.md",
+    "learnings.md",
+    "memory-archive.md",
+    "vr-reports/INDEX.md",
+)
+TASK_INPUTS = ("brief.md", "report.md", "status", "launch.json", "recall.json")
+
+
+def input_manifest(record):
+    """sha256 of every file the views read, keyed by Record-relative path."""
+    children = record.child_dirs()
+    rels = list(MANIFEST_FILES)
+    rels.extend(record.decision_files())
+    for name in children:
+        rels.extend("%s/%s" % (name, leaf) for leaf in TASK_INPUTS)
+    rels.extend(
+        sorted(record.rel(p) for p in glob.glob(record.path(".record-state", "*.meta")))
+    )
+    manifest = {"child-dirs": sha256_hex("\n".join(children).encode("utf-8"))}
+    for rel in rels:
+        data = read_bytes(record.path(rel))
+        manifest[rel] = sha256_hex(data) if data is not None else None
+    return manifest
+
+
 class StagedViews:
     """Stage generated files outside the Record, then land them atomically."""
 
@@ -1625,6 +1694,10 @@ class StagedViews:
         self.stage_dir = stage_dir
         self.owned = owned
         self.staged = []
+        self.manifest = None
+
+    def bind_inputs(self):
+        self.manifest = input_manifest(self.record)
 
     def add(self, rel, content):
         rel = rel.strip("/")
@@ -1641,6 +1714,22 @@ class StagedViews:
         unchanged = []
         for rel in self.staged:
             refuse_symlinked(self.record, "%s/%s" % (VIEWS_DIR, rel))
+        if self.manifest is not None:
+            current = input_manifest(self.record)
+            changed = sorted(
+                rel
+                for rel in set(current) | set(self.manifest)
+                if current.get(rel) != self.manifest.get(rel)
+            )
+            if changed:
+                if self.owned:
+                    shutil.rmtree(self.stage_dir, ignore_errors=True)
+                return {
+                    "written": [],
+                    "unchanged": [],
+                    "changed_input": changed,
+                    "stage_dir": self.stage_dir,
+                }
         for rel in self.staged:
             staged_text = read_text(os.path.join(self.stage_dir, rel))
             target = self.record.path(VIEWS_DIR, rel)
@@ -1658,6 +1747,7 @@ class StagedViews:
         return {
             "written": written,
             "unchanged": unchanged,
+            "changed_input": [],
             "stage_dir": self.stage_dir,
         }
 
@@ -1865,6 +1955,7 @@ def view_video_index(record, now_text):
 
 
 def build_views(record, now_text, stage):
+    stage.bind_inputs()
     results = run_rules(record, list(RULES))
     r2 = [r for r in results if r.rule == "R2"]
     r5 = [r for r in results if r.rule == "R5"]
@@ -1885,6 +1976,8 @@ def views_text(payload):
         lines.append("written %s" % rel)
     for rel in payload["unchanged"]:
         lines.append("unchanged %s" % rel)
+    for rel in payload.get("changed_input") or []:
+        lines.append("changed-input %s" % rel)
     return "\n".join(lines) + "\n"
 
 
@@ -1898,7 +1991,7 @@ def command_views(args, record):
         emit_json(payload)
     else:
         sys.stdout.write(views_text(payload))
-    return 0
+    return 1 if landed["changed_input"] else 0
 
 
 def load_recall_receipt(record, task):
@@ -2081,15 +2174,18 @@ def load_injected(state_dir):
                 break
         if moment is None:
             continue
-        entries.append(
-            {
-                "moment": moment,
-                "digest_bytes": int(payload.get("digest_bytes") or 0),
-                "bytes": int(payload.get("bytes") or 0),
-                "estimated_tokens": int(payload.get("estimated_tokens") or 0),
-                "evidence": os.path.basename(path),
-            }
-        )
+        sizes = {}
+        for key in ("digest_bytes", "bytes", "estimated_tokens"):
+            value = payload.get(key) or 0
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                sizes = None
+                break
+            sizes[key] = int(value)
+        if sizes is None:
+            continue
+        entry = {"moment": moment, "evidence": os.path.basename(path)}
+        entry.update(sizes)
+        entries.append(entry)
     return entries
 
 
@@ -2167,6 +2263,7 @@ def measure_view(payload, now_text):
 
 def command_measure(args, record):
     stage = open_stage(record, args.stage_dir)
+    stage.bind_inputs()
     payload = measure_payload(record, args.now, args.state)
     stage.add(
         "recall-compounding.json",
@@ -2185,7 +2282,7 @@ def command_measure(args, record):
             "weeks: current=%s previous=%s\n"
             % (payload["current_week"]["label"], payload["previous_week"]["label"])
         )
-    return 0
+    return 1 if landed["changed_input"] else 0
 
 
 REASON_LINES = {
@@ -2364,10 +2461,12 @@ def receipt_markdown(now_text, host, day, stages, lint, mode, args, lines):
     return (
         view_header("receipt", "%s stages" % host, now_text)
         + "\n# Nightly maintenance %s (%s)\n\n" % (day, host)
-        + "- input commit: %s\n" % args.input_commit
+        + "- input commit: %s\n" % sanitize_line(args.input_commit, 200)
         + "- tool fingerprint: %s\n" % sanitize_line(args.tool_fingerprint, 200)
-        + "- lint mode: %s\n" % mode
+        + "- lint mode: %s\n" % sanitize_line(mode, 200)
         + "- coverage: %s\n" % host
+        + "- checkpoint and verify: run after this receipt; their outcome is"
+        " recorded locally in .git/nightly/last-attempt\n"
         + "- lint summary: finding=%s unknown=%s acknowledged=%s pass=%s\n"
         % (
             summary.get("finding", 0),
@@ -2455,10 +2554,35 @@ def command_receipt(args, record):
     return 0
 
 
+def last_attempt_line(record):
+    """The local run's date, result, and verify tokens, or None when absent."""
+    text = read_text(record.path(".git", "nightly", "last-attempt"))
+    if not text:
+        return None
+    fields = {}
+    for line in text.splitlines():
+        if "=" in line:
+            key, value = line.split("=", 1)
+            fields[key.strip()] = value.strip()
+    verify = [
+        token
+        for token in fields.get("verify", "").split()
+        if token.startswith(("state=", "equal=", "class="))
+    ]
+    return "Nightly maintenance: last local run %s result=%s; verify %s" % (
+        fields.get("date") or "date unknown",
+        fields.get("result") or "unknown",
+        " ".join(verify) or "not recorded",
+    )
+
+
 def digest_lines(record, args):
     path = record.path(VIEWS_DIR, "nightly-digest.json")
+    local_line = last_attempt_line(record)
     if not os.path.exists(path):
-        return ["Nightly maintenance: no receipt published yet."], 0
+        lines = [local_line] if local_line else []
+        lines.append("Nightly maintenance: no receipt published yet.")
+        return [sanitize_line(line, args.line_chars) for line in lines], 0
     unreadable = [
         "Nightly maintenance: receipt unreadable; run bin/fm-nightly.sh status."
     ]
@@ -2474,36 +2598,41 @@ def digest_lines(record, args):
         return ["Nightly maintenance: no receipt published yet."], 0
     lines = []
     budget = args.max_lines
-    omitted = 0
-    omitted_host = hosts[0]
+    omitted_by_host = {name: 0 for name, _ in hosts}
 
-    def emit(text):
+    def emit(name, text):
+        nonlocal budget
+        if budget <= 0:
+            omitted_by_host[name] += 1
+            return
+        budget -= 1
         lines.append(sanitize_line(text, args.line_chars))
 
+    if local_line:
+        emit(hosts[0][0], local_line)
     for name, entry in hosts:
         day = entry.get("date") if isinstance(entry.get("date"), str) else ""
         parsed = parse_day(day)
         stale = parsed is None or (record.now.date() - parsed).days > args.stale_days
         day = day or "date unknown"
         issues = [line for line in (entry.get("lines") or []) if isinstance(line, dict)]
-        omitted += count_or_zero(entry.get("omitted"))
+        omitted_by_host[name] += count_or_zero(entry.get("omitted"))
         if stale:
-            emit("Nightly maintenance (%s): last receipt %s (stale)." % (name, day))
+            emit(
+                name,
+                "Nightly maintenance (%s): last receipt %s (stale)." % (name, day),
+            )
         if not entry.get("complete", True):
             emit(
+                name,
                 "Nightly %s (%s): run incomplete; see %s/maintenance/%s-%s.md"
-                % (day, name, VIEWS_DIR, day, name)
+                % (day, name, VIEWS_DIR, day, name),
             )
         elif not issues and not stale:
-            emit("Nightly %s (%s): clean." % (day, name))
+            emit(name, "Nightly %s (%s): clean." % (day, name))
         for issue in issues:
-            if budget <= 0:
-                if omitted == 0:
-                    omitted_host = (name, entry)
-                omitted += 1
-                continue
-            budget -= 1
             emit(
+                name,
                 "Nightly %s (%s): %s; %s; %s"
                 % (
                     day,
@@ -2511,14 +2640,21 @@ def digest_lines(record, args):
                     issue.get("observation", ""),
                     issue.get("consequence", ""),
                     issue.get("next", ""),
-                )
+                ),
             )
+    omitted = sum(omitted_by_host.values())
     if omitted:
-        name, entry = omitted_host
+        name, entry = max(hosts, key=lambda item: omitted_by_host[item[0]])
         day = entry.get("date") if isinstance(entry.get("date"), str) else ""
-        emit(
-            "Nightly maintenance: %d more issue(s) omitted; see %s/maintenance/%s-%s.md"
-            % (omitted, VIEWS_DIR, day or "date unknown", name)
+        footer = (
+            "Nightly maintenance: %d more issue(s) omitted;"
+            " see %s/maintenance/%s-%s.md"
+        )
+        lines.append(
+            sanitize_line(
+                footer % (omitted, VIEWS_DIR, day or "date unknown", name),
+                args.line_chars,
+            )
         )
     return lines, omitted
 

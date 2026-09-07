@@ -293,6 +293,7 @@ The command prints the home's maintenance mode first.
 In `not-configured` mode the receipt records that the home has not activated maintenance and nothing else changes.
 In `report` mode the receipt lists every finding and unknown as maintenance work for the nightly task or the captain, and stow can still complete.
 In `enforce` mode a nonzero exit prevents a successful stow receipt: list the findings, report the stow as incomplete, and never rewrite a memory fact or task record to make the check pass.
+When the command exits 2, or prints no `mode=` line at all, treat the result as blocking: report the stow as incomplete with the command's one-line error, because an unreadable rollout record or a lint failure in an activated home is never evidence that the home is clean.
 Whatever the mode, still run the Record checkpoint below so the session's newly captured knowledge is preserved; a lint result never blocks that capture.
 A secondmate runs the same command against its own configured Record after its own curation; the primary never runs it for another home.
 

@@ -66,12 +66,15 @@
 # working-tree edits cannot hide staged credentials.
 #
 # Reconcile takes the Record lock in wait mode. A failed fetch is
-# remote-unknown. Uncommitted staged, unstaged, or untracked files
+# remote-unknown; an origin that has no bound branch yet is reconciled
+# detail=remote-branch-missing and leaves the first push to tick.
+# Uncommitted staged, unstaged, or untracked files
 # (including .record-state/) are local-changes and move no refs.
 # HEAD equal to origin/<branch> is reconciled detail=equal. Ahead-only
 # is reconciled detail=ahead. Behind-only fast-forwards with
-# merge --ff-only on the Record work tree and is reconciled
-# detail=fast-forwarded; a failed fast-forward is configuration-error
+# merge --ff-only on the Record work tree under the push timeout with
+# terminal prompts disabled and is reconciled detail=fast-forwarded; a
+# failed or timed-out fast-forward is configuration-error
 # detail=fast-forward. Ahead and behind together is diverged and
 # moves nothing. A fast-forward removes .git/record-clean-head so the
 # next transaction re-inventories. Verify prints one
@@ -1560,6 +1563,9 @@ fetch_bound_origin() {
     return 6
   fi
   case "$out" in
+    *"couldn't find remote ref"*)
+      printf 'remote-branch-missing\n'
+      ;;
     *'Authentication'* | *'authentication'* | *'Permission denied'* | *'403'* | *'401'*)
       printf 'auth\n'
       ;;
@@ -1649,15 +1655,15 @@ cmd_reconcile() {
   begin_record_command health
   class=
   class=$(fetch_bound_origin) || rc=$?
-  if [ "$rc" -ne 0 ]; then
+  if [ "$rc" -ne 0 ] && [ "$class" != remote-branch-missing ]; then
     finish 6 remote-unknown "class=${class:-offline}"
   fi
   load_record_compare || finish 8 configuration-error detail=compare
-  if [ "$REMOTE_SHA" = none ]; then
-    finish 6 remote-unknown class=offline
-  fi
   if [ "$STAGED_COUNT" -ne 0 ] || [ "$UNSTAGED_COUNT" -ne 0 ] || [ "$UNTRACKED_COUNT" -ne 0 ]; then
     finish 4 local-changes
+  fi
+  if [ "$class" = remote-branch-missing ] || [ "$REMOTE_SHA" = none ]; then
+    finish 0 reconciled detail=remote-branch-missing "ahead=$AHEAD_COUNT"
   fi
   if [ "$HEAD_SHA" != none ] && [ "$HEAD_SHA" = "$REMOTE_SHA" ]; then
     finish 0 reconciled detail=equal
@@ -1672,7 +1678,8 @@ cmd_reconcile() {
     rc=0
     (
       cd "$RECORD_WORK" || exit 1
-      git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" \
+      GIT_TERMINAL_PROMPT=0 fm_run_timed "$PUSH_TIMEOUT" \
+        git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" \
         merge --ff-only --quiet "origin/$BOUND_BRANCH"
     ) || rc=$?
     if [ "$rc" -ne 0 ]; then
@@ -1690,7 +1697,7 @@ cmd_verify() {
   begin_record_command emit
   class=
   class=$(fetch_bound_origin) || rc=$?
-  if [ "$rc" -ne 0 ]; then
+  if [ "$rc" -ne 0 ] && [ "$class" != remote-branch-missing ]; then
     emit remote-unknown "class=${class:-offline}"
     exit 6
   fi

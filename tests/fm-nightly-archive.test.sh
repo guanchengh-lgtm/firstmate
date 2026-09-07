@@ -73,6 +73,7 @@ if [ -z "$out" ] && [ "$mode" = backup ]; then
   out='{"message_type":"summary","snapshot_id":"testsnap001"}'
 fi
 [ -n "$out" ] && printf '%s\n' "$out"
+[ -n "${FAKE_RESTIC_STDERR:-}" ] && printf '%s\n' "$FAKE_RESTIC_STDERR" >&2
 exit "$rc"
 SH
   chmod +x "$fakebin/restic"
@@ -269,6 +270,131 @@ PY
   pass "fm-nightly: restic exit 1 is failed"
 }
 
+seed_archive_state() {
+  local home=$1
+  mkdir -p "$home/data/.git/nightly"
+  printf '{"last_complete_snapshot":"keep123","last_exit":0,"last_result":"ok","families":{}}\n' \
+    > "$home/data/.git/nightly/archive.json"
+}
+
+archive_state_is() {
+  python3 - "$1" "$2" "$3" <<'PY'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+assert data["last_result"] == sys.argv[2], data["last_result"]
+assert (data.get("last_complete_snapshot") or "") == sys.argv[3], data.get("last_complete_snapshot")
+PY
+}
+
+test_locked_repository_is_its_own_class() {
+  local home fakebin trans
+  home=$(new_home locked)
+  write_config "$home" locked
+  trans="$TMP_ROOT/locked/trans"
+  seed_families "$trans"
+  fakebin=$(fm_fakebin "$TMP_ROOT/locked")
+  write_restic_double "$fakebin"
+  write_rclone_double "$fakebin"
+  seed_archive_state "$home"
+  FAKE_RESTIC_EXIT=11 \
+    NIGHTLY_HOME="$trans" PATH="$fakebin:$PATH" \
+    run_nightly archive --fm-home "$home" --now "$NOW"
+  expect_code 1 "$RC" 'locked archive fails the run'
+  assert_grep $'archive\tfailed\t' "$home/data/.git/nightly/stages.tsv" 'exit 11 is failed'
+  assert_grep $'\tlocked' "$home/data/.git/nightly/stages.tsv" 'exit 11 is the locked class'
+  assert_no_grep 'exit-11' "$home/data/.git/nightly/stages.tsv" 'locked is not a bare exit code'
+  assert_grep $'weekly-check\tskipped\t0\tarchive-failed' "$home/data/.git/nightly/stages.tsv" \
+    'a failed archive skips the weekly check'
+  archive_state_is "$home/data/.git/nightly/archive.json" locked keep123 || fail 'locked state or lost snapshot id'
+
+  home=$(new_home locked-old)
+  write_config "$home" locked-old
+  trans="$TMP_ROOT/locked-old/trans"
+  seed_families "$trans"
+  fakebin=$(fm_fakebin "$TMP_ROOT/locked-old")
+  write_restic_double "$fakebin"
+  write_rclone_double "$fakebin"
+  FAKE_RESTIC_EXIT=1 \
+    FAKE_RESTIC_STDERR='Fatal: unable to open repository: repository is already locked by PID 4242 on host secret-host' \
+    NIGHTLY_HOME="$trans" PATH="$fakebin:$PATH" \
+    run_nightly archive --fm-home "$home" --now "$NOW"
+  expect_code 1 "$RC" 'older locked marker fails the run'
+  assert_grep $'\tlocked' "$home/data/.git/nightly/stages.tsv" 'stderr marker is the locked class'
+  assert_no_grep 'secret-host' "$home/data/.git/nightly/stages.tsv" 'restic stderr text entered the stage table'
+  assert_not_contains "$OUT" 'secret-host' 'restic stderr text was printed'
+  archive_state_is "$home/data/.git/nightly/archive.json" locked "" || fail 'older locked state'
+  pass "fm-nightly: a locked repository is recorded as locked and keeps the last complete snapshot"
+}
+
+test_exit_zero_without_snapshot_id_keeps_the_previous_id() {
+  local home fakebin trans
+  home=$(new_home nosnap)
+  write_config "$home" nosnap
+  trans="$TMP_ROOT/nosnap/trans"
+  seed_families "$trans"
+  fakebin=$(fm_fakebin "$TMP_ROOT/nosnap")
+  write_restic_double "$fakebin"
+  write_rclone_double "$fakebin"
+  seed_archive_state "$home"
+  FAKE_RESTIC_STDOUT='{"message_type":"status","percent_done":1}' \
+    NIGHTLY_HOME="$trans" PATH="$fakebin:$PATH" \
+    run_nightly archive --fm-home "$home" --now "$NOW"
+  expect_code 0 "$RC" 'exit 0 without an id is a finding, not a failure'
+  assert_grep $'archive\tfinding\t' "$home/data/.git/nightly/stages.tsv" 'missing id is a finding'
+  assert_grep 'no-snapshot-id' "$home/data/.git/nightly/stages.tsv" 'missing id detail'
+  archive_state_is "$home/data/.git/nightly/archive.json" finding keep123 \
+    || fail 'exit 0 without an id erased the previous snapshot id'
+  pass "fm-nightly: restic exit 0 without a summary id never replaces the last complete snapshot"
+}
+
+test_no_sources_skips_weekly_check() {
+  local home fakebin trans
+  home=$(new_home nosrc)
+  write_config "$home" nosrc
+  trans="$TMP_ROOT/nosrc/trans"
+  mkdir -p "$trans"
+  fakebin=$(fm_fakebin "$TMP_ROOT/nosrc")
+  write_restic_double "$fakebin"
+  write_rclone_double "$fakebin"
+  FAKE_RESTIC_ARGV="$TMP_ROOT/nosrc/restic.argv" \
+    NIGHTLY_HOME="$trans" PATH="$fakebin:$PATH" \
+    run_nightly archive --fm-home "$home" --now "$NOW"
+  expect_code 0 "$RC" 'no sources is not a failed run'
+  assert_grep $'archive\tfinding\t0\tno-sources' "$home/data/.git/nightly/stages.tsv" 'no-sources finding'
+  assert_grep $'weekly-check\tskipped\t0\tno-sources' "$home/data/.git/nightly/stages.tsv" \
+    'weekly check skipped without sources'
+  assert_absent "$TMP_ROOT/nosrc/restic.argv" 'restic was invoked with no sources'
+  pass "fm-nightly: every family absent skips both restic backup and restic check"
+}
+
+test_corrupt_weekly_state_is_a_visible_reset() {
+  local home fakebin trans
+  home=$(new_home weekly-corrupt)
+  write_config "$home" weekly-corrupt
+  trans="$TMP_ROOT/weekly-corrupt/trans"
+  seed_families "$trans"
+  fakebin=$(fm_fakebin "$TMP_ROOT/weekly-corrupt")
+  write_restic_double "$fakebin"
+  write_rclone_double "$fakebin"
+  mkdir -p "$home/data/.git/nightly"
+  printf '{"subset":3,' > "$home/data/.git/nightly/weekly-check.json"
+  FAKE_RESTIC_ARGV="$TMP_ROOT/weekly-corrupt/restic.argv" \
+    NIGHTLY_HOME="$trans" PATH="$fakebin:$PATH" \
+    run_nightly archive --fm-home "$home" --now "$NOW" --scheduled-date "$DATE"
+  assert_grep $'weekly-check\tfinding\t0\tstate-unreadable' "$home/data/.git/nightly/stages.tsv" \
+    'unreadable state is recorded'
+  assert_grep $'weekly-check\tok\t' "$home/data/.git/nightly/stages.tsv" 'the check still runs'
+  argv_has_literal "$TMP_ROOT/weekly-corrupt/restic.argv" "--read-data-subset=1/4" \
+    || fail 'the reset did not restart at subset 1'
+  python3 - "$home/data/.git/nightly/weekly-check.json" <<'PY' || fail 'reset state not rewritten'
+import json, sys
+data = json.load(open(sys.argv[1], encoding="utf-8"))
+assert data["subset"] == 2, data
+assert data["next_due"] == "2026-09-14", data
+PY
+  pass "fm-nightly: a corrupt weekly-check.json records state-unreadable before restarting the rotation"
+}
+
 test_weekly_check_due_missed_advance() {
   local home fakebin trans
   home=$(new_home weekly)
@@ -452,6 +578,10 @@ test_archive_argv_five_families
 test_cursor_zero_and_n_matches
 test_restic_exit_3_incomplete
 test_restic_exit_1_failed
+test_locked_repository_is_its_own_class
+test_exit_zero_without_snapshot_id_keeps_the_previous_id
+test_no_sources_skips_weekly_check
+test_corrupt_weekly_state_is_a_visible_reset
 test_weekly_check_due_missed_advance
 test_coverage_regression
 test_restore_refuses_nonempty_and_implicit_latest

@@ -24,8 +24,10 @@
 #
 # --fm-home and --record-only/--record are mutually exclusive. A home is
 # never inferred from the working directory. --now is RFC3339 UTC, for
-# example 2026-09-07T03:00:00Z. --scheduled-date defaults to the UTC date
-# of --now. --dry-run prints one dry-run line per stage and writes nothing.
+# example 2026-09-07T03:00:00Z. --scheduled-date defaults to the local
+# calendar date of --now in the host time zone (TZ is honoured), which is
+# the streak key the rollout counts. --dry-run prints one dry-run line per
+# stage and writes nothing.
 #
 # Config is $FM_HOME/config/nightly.env, KEY=VALUE lines, parsed without
 # source. Keys:
@@ -34,21 +36,20 @@
 #   NIGHTLY_RESTIC_PASSWORD_COMMAND (default
 #     /usr/bin/security find-generic-password -s com.firstmate.transcript-archive -a $USER -w)
 #   NIGHTLY_ARCHIVE_HOST (default hostname -s)
-#   NIGHTLY_TRANSCRIPT_ROOTS (space-separated family specs relative to
-#     $HOME, or absolute). Default families:
-#     .claude/projects
-#     .codex/sessions
-#     .pi/agent/sessions
-#     .cursor/projects/*/agent-transcripts
-#     .grok/sessions
-#     Only the * in .cursor/projects/*/agent-transcripts is expanded,
-#     with nullglob, into real directories passed after --. Zero matches
-#     are a missing family. A symlinked family root is symlink-skipped.
 #   NIGHTLY_RUN_BOUND_SECONDS (default 7200)
 #   NIGHTLY_STAGE_BOUND_SECONDS (default 1800)
-#   NIGHTLY_GBRAIN_SYNC_CMD (empty -> not-configured, awaiting T17)
-#   NIGHTLY_GRAPHIFY_REPOS (empty -> not-configured, awaiting T10)
 #   NIGHTLY_HOUR NIGHTLY_MINUTE (install defaults 3 and 0)
+#
+# The archive covers exactly five transcript families under $HOME; no
+# config key adds, removes, or relocates one:
+#   .claude/projects
+#   .codex/sessions
+#   .pi/agent/sessions
+#   .cursor/projects/*/agent-transcripts
+#   .grok/sessions
+# Only the * in .cursor/projects/*/agent-transcripts is expanded, with
+# nullglob, into real directories passed after --. Zero matches are a
+# missing family. A symlinked family root is symlink-skipped.
 #
 # Local run files live under <Record>/.git/nightly/ and are not tracked:
 # lock, stages.tsv, last-attempt, last-complete, archive.json,
@@ -59,7 +60,10 @@
 # records "aborted failed run-aborted" and result=failed, never a
 # last-complete. When NIGHTLY_RUN_BOUND_SECONDS expires, the in-flight
 # stage's process tree is terminated before the lock is released, and the
-# run records "interrupted interrupted bound-hit".
+# run records "interrupted interrupted bound-hit"; any other SIGTERM
+# records "interrupted interrupted signal-term". last-attempt carries
+# verify=<line> with the night's equality proof, and the session-start
+# digest reads that line from the local file.
 #
 # Stage table (name|scope). scope is local, record, or cloud-ok.
 # --dry-run and --record-only derive skipped lines from this table.
@@ -72,24 +76,37 @@
 #   lint|record
 #   rollout|record
 #   fold|record
-#   views|record               skipped when RECORD_WRITES=0
-#   gbrain|cloud-ok
-#   graphify|cloud-ok
+#   views|record               skipped when RECORD_WRITES=0; exit 1 is
+#                              finding changed-input (an input changed
+#                              while the views were built, nothing landed)
 #   archive|cloud-ok
-#   weekly-check|cloud-ok
+#   weekly-check|cloud-ok      skipped when archive found no sources or
+#                              failed
 #   injected-measures|cloud-ok skipped when RECORD_WRITES=0
 #   drift|record
-#   receipt|record
-#   checkpoint|record
+#   receipt|record             skipped when RECORD_WRITES=0
+#   checkpoint|record          skipped when RECORD_WRITES=0
 #   verify|record
+#
+# RECORD_WRITES=0 follows a reconcile that failed (remote-unknown,
+# local-changes, diverged, or a detached HEAD in --record-only), so no
+# Record transformation lands on an unreconciled clone; the archive and
+# the local last-attempt receipt still run.
 #
 # archive --fm-home runs only config, lock, archive, and weekly-check.
 # restic backup uses --compression auto --json --host HOST --tag
 # fm-transcripts and never forget, prune, unlock, or rewrite. restic
-# exit 0 records last_complete_snapshot. exit 3 is finding incomplete
-# and keeps the snapshot out of last_complete_snapshot. A previously
-# present family that is now absent is finding coverage-regressed; every
-# family absent is finding no-sources and restic is not invoked.
+# exit 0 with a summary snapshot id records last_complete_snapshot; exit 0
+# without one is finding no-snapshot-id and keeps the previous id. exit 3
+# is finding incomplete and keeps the snapshot out of
+# last_complete_snapshot. A locked repository (restic exit 11, or the
+# "repository is already locked" stderr marker on older builds) is failed
+# locked and archive.json last_result=locked; the job never unlocks. A
+# previously present family that is now absent is finding
+# coverage-regressed; every family absent is finding no-sources and
+# restic is not invoked, and weekly-check is skipped. An unreadable
+# weekly-check.json records "weekly-check finding state-unreadable" and
+# the rotation restarts at subset 1.
 # Raw restic and rclone stderr never enter the Record. stages.tsv holds
 # exit codes and a class string of at most 200 characters.
 #
@@ -130,8 +147,6 @@ STAGES=(
   "rollout|record"
   "fold|record"
   "views|record"
-  "gbrain|cloud-ok"
-  "graphify|cloud-ok"
   "archive|cloud-ok"
   "weekly-check|cloud-ok"
   "injected-measures|cloud-ok"
@@ -189,18 +204,26 @@ CONCURRENT_PATHS=
 REGRESSED=0
 PREV_PRESENT=
 FAMILIES_FILE=
+ARCHIVE_STATE=
+WEEKLY_SUBSET=1
+WEEKLY_NEXT_DUE=
+WEEKLY_STATE_UNREADABLE=0
 SOURCES=()
 FAMILY_ROWS=()
+FAMILIES=(
+  ".claude/projects"
+  ".codex/sessions"
+  ".pi/agent/sessions"
+  ".cursor/projects/*/agent-transcripts"
+  ".grok/sessions"
+)
 
 NIGHTLY_RESTIC_REPO=rclone:fm-transcripts:restic
 NIGHTLY_RCLONE_CONFIG=
 NIGHTLY_RESTIC_PASSWORD_COMMAND="/usr/bin/security find-generic-password -s com.firstmate.transcript-archive -a ${USER:-} -w"
 NIGHTLY_ARCHIVE_HOST=
-NIGHTLY_TRANSCRIPT_ROOTS=".claude/projects .codex/sessions .pi/agent/sessions .cursor/projects/*/agent-transcripts .grok/sessions"
 : "${NIGHTLY_RUN_BOUND_SECONDS:=7200}"
 : "${NIGHTLY_STAGE_BOUND_SECONDS:=1800}"
-NIGHTLY_GBRAIN_SYNC_CMD=
-NIGHTLY_GRAPHIFY_REPOS=
 NIGHTLY_HOUR=3
 NIGHTLY_MINUTE=0
 NIGHTLY_TICK_RETRY_SECONDS=${NIGHTLY_TICK_RETRY_SECONDS:-5}
@@ -346,13 +369,13 @@ parse_now() {
   local raw=$1
   python3 -c '
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 raw = sys.argv[1]
 for fmt in ("%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S+00:00"):
     try:
         dt = datetime.strptime(raw, fmt)
         print(dt.strftime("%Y-%m-%dT%H:%M:%SZ"))
-        print(dt.strftime("%Y-%m-%d"))
+        print(dt.replace(tzinfo=timezone.utc).astimezone().strftime("%Y-%m-%d"))
         sys.exit(0)
     except ValueError:
         pass
@@ -375,11 +398,8 @@ assign_config() {
     NIGHTLY_RCLONE_CONFIG) NIGHTLY_RCLONE_CONFIG=$val ;;
     NIGHTLY_RESTIC_PASSWORD_COMMAND) NIGHTLY_RESTIC_PASSWORD_COMMAND=$val ;;
     NIGHTLY_ARCHIVE_HOST) NIGHTLY_ARCHIVE_HOST=$val ;;
-    NIGHTLY_TRANSCRIPT_ROOTS) NIGHTLY_TRANSCRIPT_ROOTS=$val ;;
     NIGHTLY_RUN_BOUND_SECONDS) NIGHTLY_RUN_BOUND_SECONDS=$val ;;
     NIGHTLY_STAGE_BOUND_SECONDS) NIGHTLY_STAGE_BOUND_SECONDS=$val ;;
-    NIGHTLY_GBRAIN_SYNC_CMD) NIGHTLY_GBRAIN_SYNC_CMD=$val ;;
-    NIGHTLY_GRAPHIFY_REPOS) NIGHTLY_GRAPHIFY_REPOS=$val ;;
     NIGHTLY_HOUR) NIGHTLY_HOUR=$val ;;
     NIGHTLY_MINUTE) NIGHTLY_MINUTE=$val ;;
     *) ;;
@@ -471,10 +491,7 @@ is_cursor_spec() {
 }
 
 family_path() {
-  case "$1" in
-    /*) printf '%s\n' "$1" ;;
-    *) printf '%s/%s\n' "$HOME_DIR" "$1" ;;
-  esac
+  printf '%s/%s\n' "$HOME_DIR" "$1"
 }
 
 path_via_symlink() {
@@ -507,11 +524,7 @@ collect_transcript_sources() {
   local spec path coverage d any=0
   SOURCES=()
   FAMILY_ROWS=()
-  set -f
-  # shellcheck disable=SC2086
-  set -- $NIGHTLY_TRANSCRIPT_ROOTS
-  set +f
-  for spec in "$@"; do
+  for spec in "${FAMILIES[@]}"; do
     if is_cursor_spec "$spec"; then
       collect_cursor_matches
       coverage=missing
@@ -656,13 +669,16 @@ read_weekly_state() {
   local dest=$NIGHTLY_DIR/weekly-check.json state
   WEEKLY_SUBSET=1
   WEEKLY_NEXT_DUE=
+  WEEKLY_STATE_UNREADABLE=0
   [ -f "$dest" ] || return 0
   state=$(python3 - "$dest" <<'PY'
 import json, re, sys
 try:
     data = json.load(open(sys.argv[1], encoding="utf-8"))
 except Exception:
-    sys.exit(0)
+    sys.exit(1)
+if not isinstance(data, dict):
+    sys.exit(1)
 subset = data.get("subset", 1)
 try:
     subset = int(subset)
@@ -676,8 +692,8 @@ if not isinstance(nd, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", nd):
 print(subset)
 print(nd)
 PY
-) || return 0
-  [ -n "$state" ] || return 0
+) || { WEEKLY_STATE_UNREADABLE=1; return 0; }
+  [ -n "$state" ] || { WEEKLY_STATE_UNREADABLE=1; return 0; }
   WEEKLY_SUBSET=$(printf '%s\n' "$state" | sed -n '1p')
   WEEKLY_NEXT_DUE=$(printf '%s\n' "$state" | sed -n '2p')
 }
@@ -747,18 +763,6 @@ skip_reason() {
         return 0
       fi
       ;;
-    gbrain)
-      if [ -z "$NIGHTLY_GBRAIN_SYNC_CMD" ]; then
-        printf 'not-configured'
-        return 0
-      fi
-      ;;
-    graphify)
-      if [ -z "$NIGHTLY_GRAPHIFY_REPOS" ]; then
-        printf 'not-configured'
-        return 0
-      fi
-      ;;
   esac
   return 0
 }
@@ -774,8 +778,6 @@ would_text() {
     rollout) printf 'fm-maintain.py rollout advance' ;;
     fold) printf 'fm-maintain.py fold' ;;
     views) printf 'fm-maintain.py views --apply' ;;
-    gbrain) printf 'NIGHTLY_GBRAIN_SYNC_CMD' ;;
-    graphify) printf 'graphify update' ;;
     archive) printf 'restic backup' ;;
     weekly-check) printf 'restic check --read-data-subset' ;;
     injected-measures) printf 'fm-maintain.py measure --apply' ;;
@@ -857,7 +859,11 @@ finalize_run() {
   stop_stage_child
   if [ "$INTERRUPTED" -eq 1 ] || [ -f "${DEADLINE_FLAG:-}" ]; then
     if [ -n "$STAGES_TSV" ]; then
-      stage_record interrupted interrupted 0 bound-hit
+      if [ -f "${DEADLINE_FLAG:-}" ]; then
+        stage_record interrupted interrupted 0 bound-hit
+      else
+        stage_record interrupted interrupted 0 signal-term
+      fi
     fi
   elif [ "$RUN_STARTED" -eq 1 ] && [ "$RUN_COMPLETED" -eq 0 ]; then
     stage_record aborted failed 0 run-aborted
@@ -967,9 +973,18 @@ stage_reconcile_local() {
   esac
 }
 
+record_branch() {
+  git -C "$RECORD" symbolic-ref -q --short HEAD 2>/dev/null
+}
+
 stage_reconcile_git() {
   local branch ahead=0 behind=0
-  branch=$(git -C "$RECORD" rev-parse --abbrev-ref HEAD)
+  branch=$(record_branch) || branch=
+  if [ -z "$branch" ]; then
+    RECORD_WRITES=0
+    stage_record reconcile failed 0 detached-head
+    return 0
+  fi
   export GIT_TERMINAL_PROMPT=0
   stage_run reconcile "$NIGHTLY_STAGE_BOUND_SECONDS" git -C "$RECORD" fetch origin
   if [ "$STAGE_OUTCOME" != ok ]; then
@@ -1038,6 +1053,10 @@ stage_lint() {
 }
 
 stage_rollout() {
+  if [ "$RECORD_WRITES" -eq 0 ]; then
+    stage_record rollout skipped 0 writes-disabled
+    return 0
+  fi
   if ! require_maintain; then
     stage_record rollout failed 0 maintain-missing
     return 0
@@ -1071,48 +1090,12 @@ stage_views() {
     stage_record views failed 0 maintain-missing
     return 0
   fi
+  STAGE_FINDING_CODES="1"
+  STAGE_FINDING_DETAIL=changed-input
   stage_run views "$NIGHTLY_STAGE_BOUND_SECONDS" python3 "$MAINTAIN_PY" views \
     --record "$RECORD" --now "$NOW_ARG" --apply
-}
-
-stage_gbrain() {
-  stage_run gbrain "$NIGHTLY_STAGE_BOUND_SECONDS" bash -c "$NIGHTLY_GBRAIN_SYNC_CMD"
-}
-
-stage_graphify() {
-  local repo name marker head dirty recorded any=0
-  set -f
-  # shellcheck disable=SC2086
-  set -- $NIGHTLY_GRAPHIFY_REPOS
-  set +f
-  for repo in "$@"; do
-    any=1
-    name=$(basename "$repo")
-    marker="$NIGHTLY_DIR/graphify-$name"
-    if [ ! -d "$repo/.git" ]; then
-      stage_record graphify skipped 0 "missing-$name"
-      continue
-    fi
-    dirty=$(git -C "$repo" status --porcelain)
-    if [ -n "$dirty" ]; then
-      stage_record graphify skipped 0 "dirty-$name"
-      continue
-    fi
-    head=$(git -C "$repo" rev-parse HEAD)
-    recorded=
-    [ -f "$marker" ] && recorded=$(cat "$marker")
-    if [ -n "$recorded" ] && [ "$recorded" = "$head" ]; then
-      stage_record graphify skipped 0 "unchanged-$name"
-      continue
-    fi
-    stage_run graphify "$NIGHTLY_STAGE_BOUND_SECONDS" graphify update "$repo"
-    if [ "$STAGE_OUTCOME" = ok ]; then
-      printf '%s\n' "$head" > "$marker"
-    fi
-  done
-  if [ "$any" -eq 0 ]; then
-    stage_record graphify not-configured 0 empty
-  fi
+  STAGE_FINDING_CODES=
+  STAGE_FINDING_DETAIL=
 }
 
 stage_archive() {
@@ -1131,6 +1114,7 @@ stage_archive() {
     STAGE_DETAIL=no-sources
     stage_record archive finding 0 no-sources
     last_result=finding
+    ARCHIVE_STATE=no-sources
   else
     STAGE_FINDING_CODES="3"
     STAGE_FINDING_DETAIL=incomplete
@@ -1141,17 +1125,27 @@ stage_archive() {
     STAGE_FINDING_DETAIL=
     last_exit=$STAGE_RC
     snap=$(parse_snapshot_id "$STAGE_STDOUT")
-    if [ "$STAGE_RC" -eq 0 ]; then
+    if [ "$STAGE_RC" -eq 0 ] && [ -z "$snap" ]; then
+      STAGE_OUTCOME=finding
+      STAGE_DETAIL=no-snapshot-id
+      stage_rerecord_last archive finding "$STAGE_ELAPSED" no-snapshot-id
+      last_result=finding
+    elif [ "$STAGE_RC" -eq 0 ]; then
       last_result=ok
       prev_snap=$snap
     elif [ "$STAGE_RC" -eq 3 ]; then
       last_result=incomplete
     elif [ "$STAGE_RC" -eq 124 ]; then
       last_result=timeout
+    elif [ "$STAGE_RC" -eq 11 ] || grep -q -e 'repository is already locked' -e 'unable to create lock' "$STAGE_STDERR"; then
+      STAGE_DETAIL=locked
+      stage_rerecord_last archive failed "$STAGE_ELAPSED" locked
+      last_result=locked
     else
       last_result=failed
     fi
   fi
+  [ "$ARCHIVE_STATE" = no-sources ] || ARCHIVE_STATE=$last_result
   if [ "$REGRESSED" -eq 1 ]; then
     case "$STAGE_OUTCOME" in
       failed | timeout) ;;
@@ -1173,7 +1167,20 @@ stage_archive() {
 
 stage_weekly_check() {
   local due=1
+  case "$ARCHIVE_STATE" in
+    no-sources)
+      stage_record weekly-check skipped 0 no-sources
+      return 0
+      ;;
+    failed | timeout | locked)
+      stage_record weekly-check skipped 0 archive-failed
+      return 0
+      ;;
+  esac
   read_weekly_state
+  if [ "$WEEKLY_STATE_UNREADABLE" -eq 1 ]; then
+    stage_record weekly-check finding 0 state-unreadable
+  fi
   if [ -n "$WEEKLY_NEXT_DUE" ] && [ "$WEEKLY_NEXT_DUE" \> "$SCHEDULED_DATE" ]; then
     due=0
   fi
@@ -1203,8 +1210,12 @@ stage_measure() {
     stage_record injected-measures failed 0 maintain-missing
     return 0
   fi
+  STAGE_FINDING_CODES="1"
+  STAGE_FINDING_DETAIL=changed-input
   stage_run injected-measures "$NIGHTLY_STAGE_BOUND_SECONDS" python3 "$MAINTAIN_PY" measure \
     --record "$RECORD" --now "$NOW_ARG" --state "$FM_HOME/state" --apply
+  STAGE_FINDING_CODES=
+  STAGE_FINDING_DETAIL=
 }
 
 stage_drift() {
@@ -1234,6 +1245,10 @@ EOF
 
 stage_receipt() {
   local fingerprint input_commit rollout_arg
+  if [ "$RECORD_WRITES" -eq 0 ]; then
+    stage_record receipt skipped 0 writes-disabled
+    return 0
+  fi
   if ! require_maintain; then
     stage_record receipt failed 0 maintain-missing
     return 0
@@ -1262,16 +1277,13 @@ stage_receipt() {
 }
 
 retry_tick() {
-  local i=1 rc=0
+  local i=1
   while [ "$i" -le "$NIGHTLY_TICK_RETRIES" ]; do
-    set +e
-    env FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" \
+    run_external "$NIGHTLY_STAGE_BOUND_SECONDS" env \
+      FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" \
       FM_DATA_OVERRIDE="$RECORD" FM_STATE_OVERRIDE="${FM_STATE_OVERRIDE:-$FM_HOME/state}" \
-      "$RECORD_SH" tick > "$STAGE_STDOUT" 2> "$STAGE_STDERR"
-    rc=$?
-    set -e
-    if [ "$rc" -ne 3 ]; then
-      STAGE_RC=$rc
+      "$RECORD_SH" tick
+    if [ "$STAGE_RC" -ne 3 ]; then
       return 0
     fi
     i=$((i + 1))
@@ -1279,10 +1291,13 @@ retry_tick() {
       sleep "$NIGHTLY_TICK_RETRY_SECONDS"
     fi
   done
-  STAGE_RC=$rc
 }
 
 stage_checkpoint_home() {
+  if [ "$RECORD_WRITES" -eq 0 ]; then
+    stage_record checkpoint skipped 0 writes-disabled
+    return 0
+  fi
   [ -x "$RECORD_SH" ] || { stage_record checkpoint failed 0 record-missing; return 0; }
   stage_run checkpoint "$NIGHTLY_STAGE_BOUND_SECONDS" env \
     FM_HOME="$FM_HOME" FM_ROOT_OVERRIDE="$FM_ROOT" \
@@ -1301,21 +1316,24 @@ stage_checkpoint_home() {
 
 stage_checkpoint_record_only() {
   local branch
-  branch=$(git -C "$RECORD" rev-parse --abbrev-ref HEAD)
-  if [ -d "$RECORD/wiki/views" ]; then
-    git -C "$RECORD" add -- "wiki/views"
-    if [ -x "$SCAN_SH" ]; then
-      stage_run checkpoint "$NIGHTLY_STAGE_BOUND_SECONDS" "$SCAN_SH" chain --dir "$RECORD/wiki/views"
-      if [ "$STAGE_OUTCOME" != ok ]; then
-        return 0
-      fi
-    fi
-  fi
-  if git -C "$RECORD" diff --cached --quiet && git -C "$RECORD" diff --quiet; then
-    stage_rerecord_last checkpoint ok 0 unchanged
+  if [ "$RECORD_WRITES" -eq 0 ]; then
+    stage_record checkpoint skipped 0 writes-disabled
     return 0
   fi
-  git -C "$RECORD" add -- "wiki/views" 2>/dev/null || true
+  branch=$(record_branch) || branch=
+  if [ -z "$branch" ]; then
+    stage_record checkpoint failed 0 detached-head
+    return 0
+  fi
+  if [ -d "$RECORD/wiki/views" ] && [ -x "$SCAN_SH" ]; then
+    stage_run checkpoint "$NIGHTLY_STAGE_BOUND_SECONDS" "$SCAN_SH" chain --dir "$RECORD/wiki/views"
+    if [ "$STAGE_OUTCOME" != ok ]; then
+      return 0
+    fi
+  fi
+  if [ -d "$RECORD/wiki/views" ]; then
+    git -C "$RECORD" add -- "wiki/views"
+  fi
   if git -C "$RECORD" diff --cached --quiet; then
     stage_rerecord_last checkpoint ok 0 unchanged
     return 0
@@ -1325,8 +1343,13 @@ stage_checkpoint_record_only() {
     commit --quiet -m "maintain $SCHEDULED_DATE: lint, folds, archive, and measures"
   export GIT_TERMINAL_PROMPT=0
   stage_run checkpoint "$NIGHTLY_STAGE_BOUND_SECONDS" git -C "$RECORD" push origin "HEAD:refs/heads/$branch"
-  if [ "$STAGE_OUTCOME" != ok ]; then
+  if [ "$STAGE_OUTCOME" = ok ]; then
+    stage_rerecord_last checkpoint ok "$STAGE_ELAPSED" pushed
+  elif [ "$STAGE_OUTCOME" = failed ] \
+    && grep -q -e '\[rejected\]' -e 'non-fast-forward' -e 'fetch first' "$STAGE_STDERR"; then
     stage_rerecord_last checkpoint failed "$STAGE_ELAPSED" diverged
+  else
+    stage_rerecord_last checkpoint "$STAGE_OUTCOME" "$STAGE_ELAPSED" "$STAGE_DETAIL"
   fi
 }
 
@@ -1346,9 +1369,19 @@ stage_verify_home() {
 
 stage_verify_record_only() {
   local branch head remote
-  branch=$(git -C "$RECORD" rev-parse --abbrev-ref HEAD)
+  branch=$(record_branch) || branch=
+  if [ -z "$branch" ]; then
+    VERIFY_LINE="fm-nightly: state=detached-head equal=no"
+    stage_record verify failed 0 detached-head
+    return 0
+  fi
   export GIT_TERMINAL_PROMPT=0
   stage_run verify "$NIGHTLY_STAGE_BOUND_SECONDS" git -C "$RECORD" fetch origin
+  if [ "$STAGE_OUTCOME" != ok ]; then
+    VERIFY_LINE="fm-nightly: state=remote-unknown equal=no class=fetch-$STAGE_DETAIL"
+    stage_rerecord_last verify failed "$STAGE_ELAPSED" "fetch-$STAGE_DETAIL"
+    return 0
+  fi
   head=$(git -C "$RECORD" rev-parse HEAD)
   remote=$(git -C "$RECORD" rev-parse "origin/$branch" 2>/dev/null || printf 'none\n')
   VERIFY_LINE="fm-nightly: state=verified equal=$([ "$head" = "$remote" ] && printf yes || printf no) head=$head remote=$remote"
@@ -1370,8 +1403,6 @@ run_named_stage() {
     rollout) stage_rollout ;;
     fold) stage_fold ;;
     views) stage_views ;;
-    gbrain) stage_gbrain ;;
-    graphify) stage_graphify ;;
     archive) stage_archive ;;
     weekly-check) stage_weekly_check ;;
     injected-measures) stage_measure ;;
@@ -1639,7 +1670,13 @@ cmd_status() {
     printf 'archive:\n'
     python3 - "$NIGHTLY_DIR/archive.json" <<'PY'
 import json, sys
-data = json.load(open(sys.argv[1], encoding="utf-8"))
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("not an object")
+except Exception:
+    print("archive: unreadable")
+    sys.exit(0)
 print("last_complete_snapshot=%s" % (data.get("last_complete_snapshot") or ""))
 print("last_exit=%s" % data.get("last_exit"))
 print("last_result=%s" % data.get("last_result"))

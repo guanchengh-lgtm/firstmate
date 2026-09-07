@@ -1351,11 +1351,6 @@ families_for_changed_path() {
       printf '%s\n' "__script__:fm-nightly.test.sh"
       printf '%s\n' "__script__:fm-nightly-archive.test.sh"
       ;;
-    bin/fm-record.sh|bin/fm-record-scan.sh|bin/launchd/com.firstmate.record-tick.plist.template)
-      printf '%s\n' "__script__:fm-record.test.sh"
-      printf '%s\n' "__script__:fm-record-scan.test.sh"
-      printf '%s\n' "__script__:fm-nightly.test.sh"
-      ;;
     bin/fm-lint.sh|bin/fm-lint-workflows.sh|bin/fm-install-shellcheck.sh|\
     bin/fm-install-actionlint.sh|bin/fm-install-ruff.sh|\
     bin/fm-brief.sh|bin/fm-dod-lib.sh|bin/fm-ensure-agents-md.sh|bin/fm-crew-state.sh|\

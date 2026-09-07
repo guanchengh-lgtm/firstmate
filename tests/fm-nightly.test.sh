@@ -154,8 +154,6 @@ write_tool_doubles() {
   write_named_double "$fakebin" rclone FAKE_RCLONE_ARGV FAKE_RCLONE_EXIT FAKE_RCLONE_STDOUT
   write_named_double "$fakebin" launchctl FAKE_LAUNCHCTL_ARGV FAKE_LAUNCHCTL_EXIT FAKE_LAUNCHCTL_STDOUT
   write_named_double "$fakebin" plutil FAKE_PLUTIL_ARGV FAKE_PLUTIL_EXIT FAKE_PLUTIL_STDOUT
-  write_named_double "$fakebin" gbrain FAKE_GBRAIN_ARGV FAKE_GBRAIN_EXIT FAKE_GBRAIN_STDOUT
-  write_named_double "$fakebin" graphify FAKE_GRAPHIFY_ARGV FAKE_GRAPHIFY_EXIT FAKE_GRAPHIFY_STDOUT
 }
 
 test_help_lists_subcommands() {
@@ -293,14 +291,14 @@ test_dry_run_lists_every_stage() {
   run_nightly run --fm-home "$home" --dry-run --now "$NOW"
   expect_code 0 "$RC" 'dry-run'
   for name in config lock reconcile-local reconcile lint rollout fold views \
-    gbrain graphify archive weekly-check injected-measures drift receipt \
+    archive weekly-check injected-measures drift receipt \
     checkpoint verify; do
     assert_contains "$OUT" "dry-run	$name	" "dry-run lists $name"
   done
   assert_contains "$OUT" $'dry-run\treconcile\twould: skip home path' 'home path skip'
   assert_contains "$OUT" $'dry-run\tarchive\twould: skip not-configured' 'archive not-configured'
-  assert_contains "$OUT" $'dry-run\tgbrain\twould: skip not-configured' 'gbrain not-configured'
-  assert_contains "$OUT" $'dry-run\tgraphify\twould: skip not-configured' 'graphify not-configured'
+  assert_not_contains "$OUT" 'gbrain' 'no gbrain stage'
+  assert_not_contains "$OUT" 'graphify' 'no graphify stage'
   assert_contains "$OUT" $'dry-run\tweekly-check\twould: skip not-configured' 'weekly-check not-configured'
   assert_absent "$home/data/.git/nightly/stages.tsv" 'dry-run wrote stages.tsv'
   pass "fm-nightly: dry-run lists every stage and writes nothing"
@@ -316,7 +314,7 @@ test_dry_run_record_only_skips_cloud() {
   git -C "$clone" commit --quiet -m init
   run_nightly run --record-only --record "$clone" --dry-run --now "$NOW"
   expect_code 0 "$RC" 'record-only dry-run'
-  for name in reconcile-local archive gbrain graphify injected-measures weekly-check; do
+  for name in reconcile-local archive injected-measures weekly-check; do
     assert_contains "$OUT" "dry-run	$name	would: skip cloud scope" "cloud skip $name"
   done
   pass "fm-nightly: record-only dry-run skips cloud-ok stages from the table"
@@ -390,14 +388,14 @@ test_run_bound_stops_the_in_flight_stage() {
   cat > "$fakebin/restic" <<SH
 #!/usr/bin/env bash
 printf '%s\n' "\$\$" > "$pidfile"
-sleep 30
+sleep 60
 SH
   chmod +x "$fakebin/restic"
   {
     printf 'NIGHTLY_RESTIC_REPO=rclone:fixture:%s/repo\n' "$TMP_ROOT/run-bound"
     printf 'NIGHTLY_RCLONE_CONFIG=%s/rclone.conf\n' "$TMP_ROOT/run-bound"
     printf 'NIGHTLY_RESTIC_PASSWORD_COMMAND=cat %s/pw\n' "$TMP_ROOT/run-bound"
-    printf 'NIGHTLY_RUN_BOUND_SECONDS=1\n'
+    printf 'NIGHTLY_RUN_BOUND_SECONDS=3\n'
   } > "$home/config/nightly.env"
   printf '[fixture]\ntype = local\n' > "$TMP_ROOT/run-bound/rclone.conf"
   printf 'pw\n' > "$TMP_ROOT/run-bound/pw"
@@ -575,11 +573,133 @@ test_record_only_racing_push() {
   expect_code 1 "$RC" 'diverged run reports failure'
   assert_grep $'reconcile\tfailed\t0\tdiverged' "$clone_a/.git/nightly/stages.tsv" 'race diverged'
   assert_grep $'views\tskipped\t' "$clone_a/.git/nightly/stages.tsv" 'no Record writes after divergence'
+  assert_grep $'rollout\tskipped\t0\twrites-disabled' "$clone_a/.git/nightly/stages.tsv" 'rollout skipped'
+  assert_grep $'receipt\tskipped\t0\twrites-disabled' "$clone_a/.git/nightly/stages.tsv" 'receipt skipped'
+  assert_grep $'checkpoint\tskipped\t0\twrites-disabled' "$clone_a/.git/nightly/stages.tsv" 'checkpoint skipped'
+  [ "$(git -C "$clone_a" log --format=%s | grep -c "maintain $DATE")" = 0 ] \
+    || fail 'an unreconciled clone gained a maintain commit'
+  assert_absent "$clone_a/wiki/views/nightly-digest.json" 'a receipt was written on an unreconciled clone'
   git -C "$clone_a" log --format=%s | grep -Fq 'A local' || fail 'local commit lost'
   [ "$(cat "$clone_a/local-note.md")" = from-a ] || fail 'local file changed'
   git --git-dir="$origin" log --format=%s | grep -Fq 'B wins' || fail 'origin lost B'
   git --git-dir="$origin" log --format=%s | grep -Fq 'A local' && fail 'diverged local commit was pushed'
   pass "fm-nightly: record-only keeps a local commit when a racing push wins"
+}
+
+test_record_only_detached_head_pushes_nothing() {
+  local home origin clone
+  IFS=$(printf '\t') read -r home origin < <(new_home ro-detached)
+  setup_record "$home" "$origin"
+  clone="$TMP_ROOT/ro-detached/clone"
+  git clone --quiet "file://$origin" "$clone"
+  git -C "$clone" checkout --quiet --detach HEAD
+  run_nightly run --record-only --record "$clone" --now "$NOW"
+  expect_code 1 "$RC" 'detached record-only run fails'
+  assert_grep $'reconcile\tfailed\t0\tdetached-head' "$clone/.git/nightly/stages.tsv" 'detached reconcile'
+  assert_grep $'checkpoint\tskipped\t0\twrites-disabled' "$clone/.git/nightly/stages.tsv" 'detached checkpoint'
+  assert_grep $'verify\tfailed\t0\tdetached-head' "$clone/.git/nightly/stages.tsv" 'detached verify'
+  git --git-dir="$origin" show-ref --verify --quiet refs/heads/HEAD && fail 'a branch named HEAD was pushed'
+  [ "$(git --git-dir="$origin" for-each-ref --format='%(refname)' refs/heads | wc -l | tr -d ' ')" = 1 ] \
+    || fail 'origin gained a branch from a detached clone'
+  pass "fm-nightly: a detached record-only clone pushes nothing and records detached-head"
+}
+
+test_record_only_verify_reports_fetch_failure() {
+  local home origin clone
+  IFS=$(printf '\t') read -r home origin < <(new_home ro-fetch)
+  setup_record "$home" "$origin"
+  clone="$TMP_ROOT/ro-fetch/clone"
+  git clone --quiet "file://$origin" "$clone"
+  git -C "$clone" remote set-url origin "file://$TMP_ROOT/ro-fetch/missing.git"
+  run_nightly run --record-only --record "$clone" --now "$NOW"
+  expect_code 1 "$RC" 'unreachable origin fails the run'
+  assert_grep $'reconcile\tfailed\t' "$clone/.git/nightly/stages.tsv" 'reconcile failed'
+  assert_grep $'verify\tfailed\t' "$clone/.git/nightly/stages.tsv" 'verify failed'
+  assert_grep 'fetch-exit-' "$clone/.git/nightly/stages.tsv" 'verify names the fetch failure'
+  assert_no_grep 'equal=yes' "$clone/.git/nightly/stages.tsv" 'a failed fetch never proves equality'
+  assert_grep 'verify=fm-nightly: state=remote-unknown' "$clone/.git/nightly/last-attempt" 'last-attempt verify line'
+  assert_absent "$clone/.git/nightly/last-complete" 'an unverified night claimed completion'
+  pass "fm-nightly: record-only verify records a failed fetch instead of a stale equality"
+}
+
+test_scheduled_date_defaults_to_local_date() {
+  local home origin
+  IFS=$(printf '\t') read -r home origin < <(new_home local-date)
+  setup_minimal_record "$home"
+  mkdir -p "$TMP_ROOT/empty-home"
+  TZ=Pacific/Honolulu run_nightly archive --fm-home "$home" --now "$NOW"
+  expect_code 0 "$RC" 'west of UTC run'
+  assert_grep 'date=2026-09-06' "$home/data/.git/nightly/last-attempt" 'west of UTC counts the previous local date'
+  TZ=Asia/Tokyo run_nightly archive --fm-home "$home" --now "$NOW"
+  expect_code 0 "$RC" 'east of UTC run'
+  assert_grep 'date=2026-09-07' "$home/data/.git/nightly/last-attempt" 'east of UTC keeps the UTC date'
+  TZ=Pacific/Honolulu run_nightly archive --fm-home "$home" --now "$NOW" --scheduled-date 2026-09-07
+  expect_code 0 "$RC" 'explicit scheduled date'
+  assert_grep 'date=2026-09-07' "$home/data/.git/nightly/last-attempt" 'an explicit --scheduled-date wins'
+  pass "fm-nightly: the default scheduled date is the local calendar date of --now"
+}
+
+test_external_term_records_signal_term() {
+  local home origin fakebin trans pidfile nightly_pid i rc
+  IFS=$(printf '\t') read -r home origin < <(new_home term)
+  setup_minimal_record "$home"
+  trans="$TMP_ROOT/term/trans-home"
+  mkdir -p "$trans/.claude/projects"
+  printf 'hi\n' > "$trans/.claude/projects/a.txt"
+  fakebin=$(fm_fakebin "$TMP_ROOT/term")
+  write_tool_doubles "$fakebin"
+  pidfile="$TMP_ROOT/term/restic.pid"
+  cat > "$fakebin/restic" <<SH
+#!/usr/bin/env bash
+printf '%s\n' "\$\$" > "$pidfile"
+sleep 60
+SH
+  chmod +x "$fakebin/restic"
+  {
+    printf 'NIGHTLY_RESTIC_REPO=rclone:fixture:%s/repo\n' "$TMP_ROOT/term"
+    printf 'NIGHTLY_RCLONE_CONFIG=%s/rclone.conf\n' "$TMP_ROOT/term"
+    printf 'NIGHTLY_RESTIC_PASSWORD_COMMAND=cat %s/pw\n' "$TMP_ROOT/term"
+  } > "$home/config/nightly.env"
+  printf '[fixture]\ntype = local\n' > "$TMP_ROOT/term/rclone.conf"
+  printf 'pw\n' > "$TMP_ROOT/term/pw"
+  HOME="$trans" FM_ROOT_OVERRIDE="$ROOT" PATH="$fakebin:$PATH" \
+    "$NIGHTLY" archive --fm-home "$home" --now "$NOW" > "$TMP_ROOT/term/out" 2>&1 &
+  nightly_pid=$!
+  i=0
+  while [ "$i" -lt 100 ] && [ ! -f "$pidfile" ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  [ -f "$pidfile" ] || fail 'restic double did not start'
+  kill -TERM "$nightly_pid"
+  set +e
+  wait "$nightly_pid"
+  rc=$?
+  set -e
+  [ "$rc" -ne 0 ] || fail 'a terminated run exited 0'
+  assert_grep $'interrupted\tinterrupted\t0\tsignal-term' "$home/data/.git/nightly/stages.tsv" \
+    'external TERM is signal-term'
+  assert_no_grep 'bound-hit' "$home/data/.git/nightly/stages.tsv" 'external TERM is not a bound hit'
+  assert_grep 'result=failed' "$home/data/.git/nightly/last-attempt" 'terminated run is not ok'
+  pass "fm-nightly: an external SIGTERM is recorded as signal-term, not bound-hit"
+}
+
+test_status_survives_corrupt_archive_json() {
+  local home origin plist
+  IFS=$(printf '\t') read -r home origin < <(new_home status-corrupt)
+  setup_minimal_record "$home"
+  mkdir -p "$home/data/.git/nightly"
+  printf '{"last_complete_snapshot": "abc"' > "$home/data/.git/nightly/archive.json"
+  printf '{"subset":2,"next_due":"2026-09-14","last_result":"ok"}\n' \
+    > "$home/data/.git/nightly/weekly-check.json"
+  plist="$TMP_ROOT/status-corrupt/nightly.plist"
+  FM_NIGHTLY_PLIST="$plist" run_nightly status --fm-home "$home"
+  expect_code 0 "$RC" 'status with a corrupt archive.json'
+  assert_contains "$OUT" 'archive: unreadable' 'status names the unreadable archive state'
+  assert_contains "$OUT" 'weekly-check:' 'status still prints weekly-check'
+  assert_contains "$OUT" 'plist: absent' 'status still prints the plist line'
+  assert_not_contains "$OUT" 'Traceback' 'status printed a traceback'
+  pass "fm-nightly: status reports an unreadable archive.json and keeps going"
 }
 
 test_outer_repository_stays_clean() {
@@ -607,4 +727,9 @@ test_lint_finding_does_not_stop_archive
 test_missing_restic_still_runs_record_stages
 test_record_only_views_commit
 test_record_only_racing_push
+test_record_only_detached_head_pushes_nothing
+test_record_only_verify_reports_fetch_failure
+test_scheduled_date_defaults_to_local_date
+test_external_term_records_signal_term
+test_status_survives_corrupt_archive_json
 test_outer_repository_stays_clean

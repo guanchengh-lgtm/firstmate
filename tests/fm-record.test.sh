@@ -1868,6 +1868,30 @@ test_maintain_checkpoint_uses_summary_subject() {
   pass "fm-record: maintain checkpoint uses the summary subject"
 }
 
+test_reconcile_names_a_missing_remote_branch() {
+  local home origin
+  IFS=$(printf '\t') read -r home origin < <(new_home remote-branch-missing)
+  run_rec "$home" setup --init --origin "file://$origin" --code-root "$ROOT"
+  expect_code 0 "$RC" 'setup without a first tick'
+  printf 'seed\n' > "$home/data/captain.md"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'local checkpoint before any push'
+  run_rec "$home" reconcile
+  expect_code 0 "$RC" 'reconcile with no remote branch'
+  assert_contains "$OUT" 'state=reconciled' 'a missing remote branch is not remote-unknown'
+  assert_contains "$OUT" 'detail=remote-branch-missing' 'missing remote branch detail'
+  assert_not_contains "$OUT" 'class=offline' 'missing remote branch is not offline'
+  run_rec "$home" verify
+  expect_code 1 "$RC" 'verify with no remote branch'
+  assert_contains "$OUT" 'remote=none' 'verify names the missing remote branch'
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'first tick pushes'
+  run_rec "$home" reconcile
+  expect_code 0 "$RC" 'reconcile after the first push'
+  assert_contains "$OUT" 'detail=equal' 'equal after the first push'
+  pass 'fm-record: an origin without the bound branch is reconciled detail=remote-branch-missing'
+}
+
 test_reconcile_equal_ahead_fast_forward_and_local_changes() {
   local home origin other before head origin_head
   IFS=$(printf '\t') read -r home origin < <(new_home reconcile-states)
@@ -2073,6 +2097,7 @@ test_land_related_scan_git_failure_and_push_pending
 test_land_related_accepts_whitespace_tail_and_non_ascii_path
 test_land_related_refuses_body_byte_rewrite
 test_maintain_checkpoint_uses_summary_subject
+test_reconcile_names_a_missing_remote_branch
 test_reconcile_equal_ahead_fast_forward_and_local_changes
 test_reconcile_remote_unknown_when_origin_is_gone
 test_tick_two_clone_race_preserves_local_bytes

@@ -416,12 +416,13 @@ The historical brief-only directories acknowledged by the T11 cleanup carry a `s
 
 The cloud fallback is one bot routine with Record scope only.
 It runs `fm-nightly.sh run --record-only --record <cloud Record clone>` from the reviewed code revision after the local run's bound, and it does no duplicate work when the fetched Record already carries that date's local receipt.
-Its skipped stages are explicit in its receipt: local reconcile, transcript archive, compilers, and injected-size measures.
+Its skipped stages are explicit in its receipt: local reconcile, transcript archive, and injected-size measures.
 A rejected push preserves its local commit and reports the conflict; it never force-pushes.
 The routine's Git credential and its actual schedule binding are proven at activation; connector access alone is not evidence.
 
 Compiler ownership is one sentence: graphify compiles code structure per repository into `graphify-out/`; gbrain compiles Record knowledge pages, entities, and timeline into `data/wiki/` except `data/wiki/views/`; the nightly task owns `data/wiki/views/`; `playbook/`, `captain.md`, `learnings.md`, and the map remain hand-owned; generic Record ingestion reads only `.md`, `.txt`, `.csv`, and `.json`.
-Until T10 and T17 supply validated commands in `config/nightly.env`, the compiler stages report `not-configured` and the receipt never claims compiler freshness.
+The nightly runner has no graphify or gbrain stage and no config key for either; T10 and T17 add their own integration when they land.
+The five transcript families are fixed in the runner header; no config key adds, removes, or relocates one.
 
 ## Secondmate routes (data/secondmates.md)
 
