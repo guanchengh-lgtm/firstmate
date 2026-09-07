@@ -3,14 +3,21 @@
 #
 # One command prepares the live-state mirror, settles candidate bytes, scans
 # them, commits one Git snapshot at $FM_HOME/data, and (tick only) attempts one
-# bounded push. Session, stow, completion, and teardown call checkpoint.
-# Only tick pushes. land-related lands one reviewed footer-only candidate
-# commit without pushing. The deadman stays a read-only probe.
+# bounded push. Session, stow, completion, teardown, and maintain call
+# checkpoint. --summary is required for maintain and refused otherwise.
+# A maintain commit subject is `maintain <summary>`. Only tick pushes.
+# land-related lands one reviewed footer-only candidate commit without
+# pushing. Reconcile fetches the bound origin branch and classifies the
+# Record against that fresh tip. Verify repeats the fetch and prints one
+# proof line without writing health. The deadman stays a read-only probe.
 #
 # Usage:
 #   fm-record.sh tick
-#   fm-record.sh checkpoint --reason session-start|stow|complete|teardown [--required]
+#   fm-record.sh checkpoint --reason session-start|stow|complete|teardown|maintain
+#                          [--required] [--summary LINE]
 #   fm-record.sh land-related --candidate <local-copy> --expected-head <sha>
+#   fm-record.sh reconcile
+#   fm-record.sh verify
 #   fm-record.sh health
 #   fm-record.sh setup [--init] [--origin URL] [--branch NAME] [--code-root PATH]
 #                    [--write-plist] [--bootstrap]
@@ -58,24 +65,40 @@
 # or rebases. The pre-commit hook scans the complete staged tree, so
 # working-tree edits cannot hide staged credentials.
 #
+# Reconcile takes the Record lock in wait mode. A failed fetch is
+# remote-unknown. Uncommitted staged, unstaged, or untracked files
+# (including .record-state/) are local-changes and move no refs.
+# HEAD equal to origin/<branch> is reconciled detail=equal. Ahead-only
+# is reconciled detail=ahead. Behind-only fast-forwards with
+# merge --ff-only on the Record work tree and is reconciled
+# detail=fast-forwarded; a failed fast-forward is configuration-error
+# detail=fast-forward. Ahead and behind together is diverged and
+# moves nothing. A fast-forward removes .git/record-clean-head so the
+# next transaction re-inventories. Verify prints one
+# state=verified equal=yes|no line and exits 0 only when equal.
+#
 # Exit codes:
-#   0  disabled, unchanged, committed-local, or pushed
+#   0  disabled, unchanged, committed-local, pushed, or reconciled
+#   1  verify found the Record not equal to origin
 #   2  usage
 #   3  busy (another transaction holds the Record lock)
-#   4  unsettled (candidate changed during the settle window)
+#   4  unsettled, or local-changes (reconcile)
 #   5  scan-blocked
-#   6  push-pending (local commit kept)
+#   6  push-pending, or remote-unknown (fetch failed)
 #   7  diverged (non-fast-forward; no force or rebase)
 #   8  configuration-error
 #   9  required checkpoint could not obtain a durable local commit
 # The pre-commit entry point instead returns 1 for a blocked scan or an
 # unresolved indexed payload. --required does not remap every refusal to 9.
+# Reconcile writes health. Verify emits only. A failed fetch is class
+# timeout, auth, or offline and never trusts a cached origin tip.
 #
 # The local lock is $FM_HOME/data/.git/firstmate-record.lock and uses the
-# shared process-owned lock owner. Tick is non-blocking. Checkpoint waits
-# FM_RECORD_LOCK_WAIT_SECONDS (default 10). The settle window is
-# FM_RECORD_SETTLE_SECONDS (default 2). Tick push uses the shared timeout
-# owner with FM_RECORD_PUSH_TIMEOUT (default 15) and GIT_TERMINAL_PROMPT=0.
+# shared process-owned lock owner. Tick is non-blocking. Checkpoint,
+# reconcile, and verify wait FM_RECORD_LOCK_WAIT_SECONDS (default 10).
+# The settle window is FM_RECORD_SETTLE_SECONDS (default 2). Tick push
+# and reconcile/verify fetch use the shared timeout owner with
+# FM_RECORD_PUSH_TIMEOUT (default 15) and GIT_TERMINAL_PROMPT=0.
 # Health lives under .git/record-health and is not tracked.
 # docs/configuration.md owns the health fields and delivery interpretation.
 set -eu
@@ -119,6 +142,15 @@ HEALTH_TMP=
 START_HEAD=
 CAPTURED_HEAD=
 PUSH_HEAD=
+CHECKPOINT_SUMMARY=
+BOUND_BRANCH=
+HEAD_SHA=
+REMOTE_SHA=
+STAGED_COUNT=
+UNSTAGED_COUNT=
+UNTRACKED_COUNT=
+AHEAD_COUNT=
+BEHIND_COUNT=
 
 usage() {
   awk '
@@ -785,7 +817,7 @@ import os, sys
 info = os.stat(sys.argv[1])
 print(info.st_dev, info.st_ino)
 PYLOCK
-  message="record: ${reason}"
+  message=$(checkpoint_commit_subject "$reason")
   GIT_INDEX_FILE="$CAND_INDEX" git --git-dir="$GIT_DIR_ABS" --work-tree="$CAND_WORK" \
     commit --quiet --no-verify -m "$message" || return 8
   CAPTURED_HEAD=$(git --git-dir="$GIT_DIR_ABS" rev-parse HEAD) || return 8
@@ -1446,12 +1478,41 @@ cmd_tick() {
   run_transaction tick tick try
 }
 
+checkpoint_commit_subject() { # <reason>
+  case "$1" in
+    maintain)
+      printf 'maintain %s\n' "$CHECKPOINT_SUMMARY"
+      ;;
+    *)
+      printf 'record: %s\n' "$1"
+      ;;
+  esac
+}
+
+validate_maintain_summary() { # <summary>
+  local summary=$1 bytes
+  [ -n "$summary" ] || die 2 "checkpoint --reason maintain requires --summary"
+  bytes=$(printf '%s' "$summary" | wc -c | tr -d ' ')
+  [ "$bytes" -le 200 ] || die 2 "checkpoint --summary must be at most 200 characters"
+  case "$summary" in
+    *[$'\001'-$'\037']* | *$'\177'*)
+      die 2 "checkpoint --summary must be a single line"
+      ;;
+  esac
+}
+
 cmd_checkpoint() {
-  local reason='' required=0 lock_mode=wait
+  local reason='' required=0 lock_mode=wait summary=''
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --reason)
+        [ "$#" -ge 2 ] || die 2 "checkpoint --reason requires a value"
         reason=$2
+        shift 2
+        ;;
+      --summary)
+        [ "$#" -ge 2 ] || die 2 "checkpoint --summary requires a value"
+        summary=$2
         shift 2
         ;;
       --required)
@@ -1462,8 +1523,14 @@ cmd_checkpoint() {
     esac
   done
   case "$reason" in
-    session-start | stow | complete | teardown) ;;
-    *) die 2 "checkpoint --reason must be session-start, stow, complete, or teardown" ;;
+    session-start | stow | complete | teardown)
+      [ -z "$summary" ] || die 2 "checkpoint --summary is only valid with --reason maintain"
+      ;;
+    maintain)
+      validate_maintain_summary "$summary"
+      CHECKPOINT_SUMMARY=$summary
+      ;;
+    *) die 2 "checkpoint --reason must be session-start, stow, complete, teardown, or maintain" ;;
   esac
   case "$(binding_state)" in
     absent)
@@ -1474,6 +1541,179 @@ cmd_checkpoint() {
   refuse_git_overrides
   [ "$required" -eq 0 ] || lock_mode=required
   run_transaction checkpoint "$reason" "$lock_mode"
+}
+
+fetch_bound_origin() {
+  local rc=0 out branch
+  branch=$(sed -n '1p' "$GIT_DIR_ABS/record-branch")
+  require_lock_libs
+  set +e
+  out=$(GIT_TERMINAL_PROMPT=0 fm_run_timed "$PUSH_TIMEOUT" \
+    git --git-dir="$GIT_DIR_ABS" fetch --quiet origin "$branch" 2>&1)
+  rc=$?
+  set -e
+  if [ "$rc" -eq 0 ]; then
+    return 0
+  fi
+  if [ "$rc" -eq 124 ]; then
+    printf 'timeout\n'
+    return 6
+  fi
+  case "$out" in
+    *'Authentication'* | *'authentication'* | *'Permission denied'* | *'403'* | *'401'*)
+      printf 'auth\n'
+      ;;
+    *)
+      printf 'offline\n'
+      ;;
+  esac
+  return 6
+}
+
+count_named_paths() {
+  local out
+  out=$(git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" "$@") || return 1
+  if [ -z "$out" ]; then
+    printf '0\n'
+    return 0
+  fi
+  printf '%s\n' "$out" | awk 'END { print NR }'
+}
+
+load_record_compare() {
+  BOUND_BRANCH=$(sed -n '1p' "$GIT_DIR_ABS/record-branch")
+  HEAD_SHA=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD 2>/dev/null || true)
+  [ -n "$HEAD_SHA" ] || HEAD_SHA=none
+  if git --git-dir="$GIT_DIR_ABS" rev-parse --verify "origin/$BOUND_BRANCH" >/dev/null 2>&1; then
+    REMOTE_SHA=$(git --git-dir="$GIT_DIR_ABS" rev-parse "origin/$BOUND_BRANCH")
+  else
+    REMOTE_SHA=none
+  fi
+  STAGED_COUNT=$(count_named_paths diff --cached --name-only) || return 1
+  UNSTAGED_COUNT=$(count_named_paths diff --name-only) || return 1
+  UNTRACKED_COUNT=$(count_named_paths ls-files --others --exclude-standard) || return 1
+  if [ "$HEAD_SHA" != none ] && [ "$REMOTE_SHA" != none ]; then
+    AHEAD_COUNT=$(git --git-dir="$GIT_DIR_ABS" rev-list --count "$REMOTE_SHA..$HEAD_SHA")
+    BEHIND_COUNT=$(git --git-dir="$GIT_DIR_ABS" rev-list --count "$HEAD_SHA..$REMOTE_SHA")
+  elif [ "$HEAD_SHA" != none ]; then
+    AHEAD_COUNT=$(git --git-dir="$GIT_DIR_ABS" rev-list --count HEAD)
+    BEHIND_COUNT=0
+  elif [ "$REMOTE_SHA" != none ]; then
+    AHEAD_COUNT=0
+    BEHIND_COUNT=$(git --git-dir="$GIT_DIR_ABS" rev-list --count "origin/$BOUND_BRANCH")
+  else
+    AHEAD_COUNT=0
+    BEHIND_COUNT=0
+  fi
+}
+
+begin_record_command() { # health|emit
+  local health_mode=$1 rc=0
+  [ "$#" -eq 1 ] || die 2 "internal begin_record_command usage"
+  case "$(binding_state)" in
+    absent)
+      emit disabled
+      exit 0
+      ;;
+  esac
+  refuse_git_overrides
+  validate_binding
+  acquire_record_lock wait || rc=$?
+  case "$rc" in
+    0) ;;
+    3)
+      if [ "$health_mode" = health ]; then
+        finish 3 busy
+      fi
+      emit busy
+      exit 3
+      ;;
+    *)
+      if [ "$health_mode" = health ]; then
+        finish 8 configuration-error detail=lock
+      fi
+      die 8 "cannot lock the Record"
+      ;;
+  esac
+  recover_index_publication || {
+    if [ "$health_mode" = health ]; then
+      finish 8 configuration-error detail=index-recovery
+    fi
+    die 8 "cannot recover Record index publication"
+  }
+}
+
+cmd_reconcile() {
+  local class rc=0
+  [ "$#" -eq 0 ] || die 2 "reconcile does not accept arguments"
+  begin_record_command health
+  class=
+  class=$(fetch_bound_origin) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    finish 6 remote-unknown "class=${class:-offline}"
+  fi
+  load_record_compare || finish 8 configuration-error detail=compare
+  if [ "$REMOTE_SHA" = none ]; then
+    finish 6 remote-unknown class=offline
+  fi
+  if [ "$STAGED_COUNT" -ne 0 ] || [ "$UNSTAGED_COUNT" -ne 0 ] || [ "$UNTRACKED_COUNT" -ne 0 ]; then
+    finish 4 local-changes
+  fi
+  if [ "$HEAD_SHA" != none ] && [ "$HEAD_SHA" = "$REMOTE_SHA" ]; then
+    finish 0 reconciled detail=equal
+  fi
+  if [ "$AHEAD_COUNT" -gt 0 ] && [ "$BEHIND_COUNT" -gt 0 ]; then
+    finish 7 diverged "ahead=$AHEAD_COUNT" "behind=$BEHIND_COUNT"
+  fi
+  if [ "$AHEAD_COUNT" -gt 0 ] && [ "$BEHIND_COUNT" -eq 0 ]; then
+    finish 0 reconciled detail=ahead "ahead=$AHEAD_COUNT"
+  fi
+  if [ "$BEHIND_COUNT" -gt 0 ] && [ "$AHEAD_COUNT" -eq 0 ]; then
+    rc=0
+    (
+      cd "$RECORD_WORK" || exit 1
+      git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" \
+        merge --ff-only --quiet "origin/$BOUND_BRANCH"
+    ) || rc=$?
+    if [ "$rc" -ne 0 ]; then
+      finish 8 configuration-error detail=fast-forward
+    fi
+    rm -f "$GIT_DIR_ABS/record-clean-head"
+    finish 0 reconciled detail=fast-forwarded "behind=$BEHIND_COUNT"
+  fi
+  finish 8 configuration-error detail=reconcile
+}
+
+cmd_verify() {
+  local class rc=0 equal=no remote
+  [ "$#" -eq 0 ] || die 2 "verify does not accept arguments"
+  begin_record_command emit
+  class=
+  class=$(fetch_bound_origin) || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    emit remote-unknown "class=${class:-offline}"
+    exit 6
+  fi
+  load_record_compare || die 8 "cannot compare the Record to origin"
+  if [ "$REMOTE_SHA" = none ]; then
+    remote=none
+  else
+    remote=$REMOTE_SHA
+  fi
+  if [ "$HEAD_SHA" != none ] && [ "$HEAD_SHA" = "$REMOTE_SHA" ] &&
+    [ "$STAGED_COUNT" -eq 0 ] && [ "$UNSTAGED_COUNT" -eq 0 ] &&
+    [ "$UNTRACKED_COUNT" -eq 0 ] && [ "$AHEAD_COUNT" -eq 0 ] &&
+    [ "$BEHIND_COUNT" -eq 0 ]; then
+    equal=yes
+  fi
+  emit verified "equal=$equal" "head=$HEAD_SHA" "remote=$remote" \
+    "staged=$STAGED_COUNT" "unstaged=$UNSTAGED_COUNT" \
+    "untracked=$UNTRACKED_COUNT" "ahead=$AHEAD_COUNT" \
+    "behind=$BEHIND_COUNT" "branch=$BOUND_BRANCH"
+  if [ "$equal" = yes ]; then
+    exit 0
+  fi
+  exit 1
 }
 
 case "${1:-}" in
@@ -1492,6 +1732,14 @@ case "${1:-}" in
   land-related)
     shift
     cmd_land_related "$@"
+    ;;
+  reconcile)
+    shift
+    cmd_reconcile "$@"
+    ;;
+  verify)
+    shift
+    cmd_verify "$@"
     ;;
   health)
     shift
