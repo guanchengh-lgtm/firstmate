@@ -30,7 +30,11 @@
 #   boundary exists.
 #   --refresh-recall reads the current title, finalized task section, and named
 #   sources, then atomically replaces only the owned # Recalled pointers
-#   section. It is read-only with respect to Herdr, mode, and role markers.
+#   section. It is read-only with respect to Herdr, mode, role markers, the
+#   leading YAML header, and the terminal Related footer.
+#   Ship, scout, and verifier scaffolds start with four-field YAML (id, date,
+#   type, status) and end with Related: supersedes: none; cites: none; relates: none.
+#   Secondmate charters do not receive that record wrapper.
 #   Place the block after # Named sources, or after # Task when no named
 #   sources exist, and before the Herdr declaration and Setup. Hits are
 #   references, not instructions. An unavailable optional lookup prints a
@@ -121,6 +125,7 @@ set -eu
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BRIEF_GENERATED_MARKER='<!-- firstmate:generated -->'
+RECORD_RELATED_FOOTER='Related: supersedes: none; cites: none; relates: none'
 # shellcheck source=bin/fm-backlog-state-lib.sh
 . "$SCRIPT_DIR/fm-backlog-state-lib.sh"
 
@@ -174,6 +179,15 @@ brief_generated_boundary() {
     echo "error: brief has duplicate generated-section boundaries" >&2
     return 1
   }
+}
+
+record_yaml_header() { # <id> <type>
+  printf '%s\n' '---' \
+    "id: $1" \
+    "date: \"$(date -u +%Y-%m-%d)\"" \
+    "type: $2" \
+    "status: open" \
+    '---'
 }
 
 task_section() {  # <brief>
@@ -915,7 +929,9 @@ Two firstmate-specific rules layer on top of that guidance:
 After /no-mistakes reports CI green (the CI-ready return point - do not wait for it to keep monitoring in the background until merge), the verifier appends \`done: PR {url} checks green\` and stops.
 EOF
   VERIFIER_DOD=${VERIFIER_DOD%$'\n'}
+  RECORD_HEADER=$(record_yaml_header "$ID/verifier-brief" verifier-brief)
   {
+    printf '%s\n\n' "$RECORD_HEADER"
     printf '%s\n' 'Role: verifier'
     printf '%s\n' "$VERIFIER_DOD"
     printf '\n# Task\n'
@@ -948,6 +964,7 @@ EOF
    every lane/home, so restarting it kills other lanes' in-flight pipeline runs. On ANY no-mistakes
    daemon error, append \`blocked: {the daemon error}\` and stop; only firstmate manages the daemon.
 EOF
+    printf '\n%s\n' "$RECORD_RELATED_FOOTER"
   } > "$VERIFIER_BRIEF"
   printf '%s\n' verifier > "$VERIFIER_ROLE_MARKER"
   echo "scaffolded: $VERIFIER_BRIEF (verifier)"
@@ -1093,9 +1110,12 @@ IFS= read -r -d '' RECALL_SECTION <<'EOF' || true
 Recall is pending until the task section is finalized.
 EOF
 RECALL_SECTION=${RECALL_SECTION%$'\n'}
+RECORD_HEADER=$(record_yaml_header "$ID/brief" brief)
 
 if [ "$KIND" = scout ]; then
 cat > "$BRIEF" <<EOF
+$RECORD_HEADER
+
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
 
 # Task
@@ -1147,6 +1167,8 @@ If your deliverable is a visual artifact the captain will review and iterate on,
 Before reporting done, read and follow \`$FM_ROOT/.agents/skills/captain-hold-lifecycle/SKILL.md\` and pass its shared completion gate for the report and any visual review.
 When the report is complete, append \`done: {one-line conclusion}\` to the status file and stop.
 If your findings reveal work that should ship (e.g. you reproduced a bug and the fix is clear), say so in the report; firstmate may promote this task in place, and you would then receive mode-specific ship instructions as a follow-up message.
+
+$RECORD_RELATED_FOOTER
 EOF
 if [ -n "$TASK_FILE" ]; then
   brief_fill_task "$BRIEF" "$TASK_FILE" || exit 1
@@ -1182,6 +1204,8 @@ esac
 DOD=$(fm_dod_block "$MODE" "$ID") || exit 1
 
 cat > "$BRIEF" <<EOF
+$RECORD_HEADER
+
 You are a crewmate: an autonomous worker agent managed by firstmate. Work on your own; do not wait for a human.
 
 # Task
@@ -1240,6 +1264,8 @@ If you touch a project \`AGENTS.md\` that lacks \`## Maintaining this file\`, ad
 Keep it proportionate: skip \`AGENTS.md\` edits for trivial tasks that produced no durable project knowledge.
 
 $DOD
+
+$RECORD_RELATED_FOOTER
 EOF
 printf '%s\n' "$MODE" > "$DATA/$ID/mode"
 printf '%s\n' builder > "$DATA/$ID/role"

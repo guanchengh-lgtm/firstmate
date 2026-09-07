@@ -698,7 +698,13 @@ test_verifier_brief_leads_with_verifier_contract() {
   grep -qx builder "$home/data/$id/role" \
     || fail "--verifier overwrote the builder role marker"
   first=$(head -n 1 "$verifier")
-  [ "$first" = "Role: verifier" ] || fail "verifier-brief.md must start with Role: verifier (got: $first)"
+  [ "$first" = "---" ] || fail "verifier-brief.md must start with YAML frontmatter (got: $first)"
+  grep -qx "id: $id/verifier-brief" "$verifier" \
+    || fail "verifier-brief.md missing id"
+  grep -qx "type: verifier-brief" "$verifier" \
+    || fail "verifier-brief.md missing type"
+  grep -qx "Role: verifier" "$verifier" \
+    || fail "verifier-brief.md missing Role: verifier"
   assert_grep "# Definition of done" "$verifier" "verifier-brief.md missing Definition of done"
   assert_grep "The fresh verifier drives no-mistakes by responding to its gates" "$verifier" \
     "verifier-brief.md did not lead with the verifier contract"
@@ -1234,6 +1240,64 @@ PYFOREIGN
   pass "foreign brief citations preserve local recall eligibility"
 }
 
+test_authored_briefs_get_yaml_header_and_related_footer() {
+  local home brief scout charter today last
+  home="$TMP_ROOT/record-wrapper-home"
+  mkdir -p "$home/data"
+  today=$(date -u +%Y-%m-%d)
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" wrap-ship firstmate --mode no-mistakes >/dev/null \
+    || fail "ship scaffold for record wrapper"
+  brief="$home/data/wrap-ship/brief.md"
+  [ "$(head -n 1 "$brief")" = "---" ] || fail "ship brief did not start with YAML"
+  grep -qx "id: wrap-ship/brief" "$brief" || fail "ship brief missing id"
+  grep -qx "date: \"$today\"" "$brief" || fail "ship brief date was not UTC today"
+  grep -qx "type: brief" "$brief" || fail "ship brief missing type"
+  grep -qx "status: open" "$brief" || fail "ship brief missing status"
+  grep -qx "# Task" "$brief" || fail "ship brief lost # Task"
+  grep -qx "# Recalled pointers" "$brief" || fail "ship brief lost recalled pointers"
+  grep -qx "# Herdr lifecycle declaration - NOT ENABLED" "$brief" || fail "ship brief lost Herdr"
+  last=$(awk 'NF { line=$0 } END { print line }' "$brief")
+  [ "$last" = "Related: supersedes: none; cites: none; relates: none" ] \
+    || fail "ship brief terminal line was not the Related none footer (got: $last)"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" wrap-scout firstmate --scout --source data/named.md >/dev/null \
+    || fail "scout scaffold for record wrapper"
+  scout="$home/data/wrap-scout/brief.md"
+  grep -qx "id: wrap-scout/brief" "$scout" || fail "scout brief missing id"
+  grep -qx "# Named sources" "$scout" || fail "scout brief lost named sources"
+  last=$(awk 'NF { line=$0 } END { print line }' "$scout")
+  [ "$last" = "Related: supersedes: none; cites: none; relates: none" ] \
+    || fail "scout brief terminal line was not the Related none footer (got: $last)"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" wrap-ship --verifier >/dev/null \
+    || fail "verifier scaffold for record wrapper"
+  last=$(awk 'NF { line=$0 } END { print line }' "$home/data/wrap-ship/verifier-brief.md")
+  [ "$last" = "Related: supersedes: none; cites: none; relates: none" ] \
+    || fail "verifier brief terminal line was not the Related none footer (got: $last)"
+
+  FM_SECONDMATE_CHARTER='Supervise wrapping.' \
+    FM_HOME="$home" "$ROOT/bin/fm-brief.sh" wrap-sm --secondmate firstmate >/dev/null \
+    || fail "secondmate scaffold for record wrapper"
+  charter="$home/data/wrap-sm/brief.md"
+  [ "$(head -n 1 "$charter")" = "You are a persistent second mate managed by the main firstmate. Work on your own; do not wait for a human." ] \
+    || fail "secondmate charter received a record wrapper"
+  ! grep -q '^Related:' "$charter" || fail "secondmate charter gained a Related footer"
+
+  printf '%s\n' '# Task' 'Continue the wrap-ship work.' > "$home/task.md"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" wrap-refresh firstmate --mode no-mistakes \
+    --task-file "$home/task.md" >/dev/null \
+    || fail "task-file ship scaffold for footer refresh"
+  brief="$home/data/wrap-refresh/brief.md"
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" --refresh-recall ship "$brief" >/dev/null \
+    || fail "refresh-recall after wrapper"
+  [ "$(head -n 1 "$brief")" = "---" ] || fail "refresh-recall dropped the YAML header"
+  last=$(awk 'NF { line=$0 } END { print line }' "$brief")
+  [ "$last" = "Related: supersedes: none; cites: none; relates: none" ] \
+    || fail "refresh-recall dropped the Related footer"
+  grep -qx "# Task" "$brief" || fail "refresh-recall moved # Task"
+  pass "fm-brief: ship, scout, and verifier records get YAML and Related; refresh keeps them"
+}
+
 if [ "${1:-}" = recall ]; then
   test_legacy_generated_briefs_keep_their_boundary
   test_foreign_citation_does_not_hide_local_brief_recall
@@ -1281,4 +1345,5 @@ test_scout_and_secondmate_load_decision_hold_policy
 test_scout_and_secondmate_scaffold
 test_task_file_and_refresh_recall_routes
 test_recall_refresh_manifest_and_status_contracts
+test_authored_briefs_get_yaml_header_and_related_footer
 test_generated_boundary_owns_every_brief_consumer
