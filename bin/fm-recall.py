@@ -5,6 +5,8 @@ This file is the only parser, ranker, deduper, and pointer renderer.
 bin/fm-recall.sh is the public command: it resolves the home, applies the
 safety timeout, and passes explicit inputs here.
 The script header on bin/fm-recall.sh owns the operator help contract.
+Leading YAML and a terminal Related footer are metadata only: they are
+stripped before first_heading and rank_lines and never expand the corpus.
 """
 
 from __future__ import annotations
@@ -78,10 +80,11 @@ TITLE_CUT_RE = re.compile(
 DONE_DATE = re.compile(r"\((?:done|merged|reported) (\d{4}-\d{2}-\d{2})\)")
 DONE_STATUS = re.compile(r"\((done|merged|reported) \d{4}-\d{2}-\d{2}\)")
 META_DATE = re.compile(
-    r"(?im)^(?:date|completed|archive-date)\s*:\s*(\d{4}-\d{2}-\d{2})\s*$"
+    r"(?im)^(?:date|completed|archive-date)\s*:\s*[\"']?(\d{4}-\d{2}-\d{2})[\"']?\s*$"
 )
 META_STATUS = re.compile(r"(?im)^(?:status|state|amendment)\s*:\s*(\S+)\s*$")
 META_DATE_RAW = re.compile(r"(?im)^(?:date|completed|archive-date)\s*:\s*(\S+)\s*$")
+UNKNOWN_DATE_TOKENS = frozenset(("unknown", "null"))
 RANK_META_RE = re.compile(
     r"(?i)^\s*(?:date|completed|archive-date|status|state|amendment|type|id|related)"
     r"\s*:\s*\S"
@@ -154,11 +157,12 @@ def tokens(text, use_stem=True):
 def parse_iso_date(value):
     if not value:
         return None
+    text = value.strip().strip("\"'")
     try:
-        datetime.strptime(value, "%Y-%m-%d")
+        datetime.strptime(text, "%Y-%m-%d")
     except ValueError:
         return None
-    return value
+    return text
 
 
 def normalize_text(value):
@@ -292,6 +296,40 @@ def first_heading(lines):
         if line.startswith("#"):
             return line.lstrip("#").strip()
     return ""
+
+
+def split_frontmatter_lines(lines):
+    if not lines or lines[0].strip() != "---":
+        return [], list(lines)
+    for index in range(1, len(lines)):
+        if lines[index].strip() == "---":
+            return list(lines[: index + 1]), list(lines[index + 1 :])
+    return [], list(lines)
+
+
+def split_terminal_related(lines):
+    index = len(lines) - 1
+    while index >= 0 and not lines[index].strip():
+        index -= 1
+    if index >= 0 and lines[index].lstrip().startswith("Related:"):
+        return list(lines[:index]), lines[index]
+    return list(lines), None
+
+
+def split_record_layers(lines, tail):
+    header, body = split_frontmatter_lines(lines)
+    body, footer = split_terminal_related(body)
+    tail_lines = tail.splitlines() if tail else []
+    if footer is None:
+        tail_lines, footer = split_terminal_related(tail_lines)
+    return header, body, footer, tail_lines
+
+
+def metadata_text(header, body, footer, tail_lines):
+    parts = list(header) + list(body) + list(tail_lines)
+    if footer is not None:
+        parts.append(footer)
+    return "\n".join(parts)
 
 
 def first_meaningful_heading(text):
@@ -434,8 +472,14 @@ def parse_metadata(text):
     if dates:
         date = dates[0]
     if statuses:
-        status = statuses[0].strip().strip(".,;")
+        status = statuses[0].strip().strip(".,;\"'")
+        if status.lower() in UNKNOWN_DATE_TOKENS:
+            status = None
     raw_date = raw_dates[0] if raw_dates else None
+    if raw_date is not None:
+        raw_date = raw_date.strip().strip("\"'")
+        if raw_date.lower() in UNKNOWN_DATE_TOKENS:
+            raw_date = None
     return date, status, raw_date
 
 
@@ -585,7 +629,7 @@ class Corpus(object):
                 chosen = candidate
                 kind = label
                 break
-        if raw and not parse_iso_date(raw):
+        if raw and raw.lower() not in UNKNOWN_DATE_TOKENS and not parse_iso_date(raw):
             self.note(
                 "metadata", "%s has a malformed date %s" % (doc_path_of(doc), raw)
             )
@@ -709,7 +753,7 @@ def load_archive(corpus):
         display = "data/done-archive.md:%s" % entry_line
         src = "archive"
         heading = ""
-        report_lines = []
+        report_body = []
         if (
             os.path.isfile(report_path)
             and not os.path.islink(report_path)
@@ -726,11 +770,14 @@ def load_archive(corpus):
                         "data/%s/report.md truncated at %s bytes"
                         % (canonical, HEAD_LIMIT),
                     )
-                heading = first_heading(report_lines)
+                header, report_body, footer, tail_lines = split_record_layers(
+                    report_lines, tail
+                )
+                heading = first_heading(report_body)
                 display = "data/%s/report.md" % canonical
                 src = "archive+report"
                 meta_date, meta_status, meta_raw_date = parse_metadata(
-                    "\n".join(report_lines) + "\n" + tail
+                    metadata_text(header, report_body, footer, tail_lines)
                 )
             else:
                 meta_date, meta_status, meta_raw_date = None, None, None
@@ -741,8 +788,8 @@ def load_archive(corpus):
         )
         title_text = canonical + " " + title + " " + heading
         body_text = "\n".join(rank_lines(DONE_DATE.sub("", body).splitlines()))
-        if report_lines:
-            body_text = body_text + "\n" + "\n".join(rank_lines(report_lines))
+        if report_body:
+            body_text = body_text + "\n" + "\n".join(rank_lines(report_body))
         ident = Identity("task", canonical, display)
         doc = Document(
             canonical,
@@ -864,9 +911,10 @@ def load_decisions(corpus):
                 "data/decisions/%s truncated at %s bytes" % (name, HEAD_LIMIT),
             )
         slug = name[:-3]
-        heading = first_heading(lines)
+        header, body, footer, tail_lines = split_record_layers(lines, tail)
+        heading = first_heading(body)
         meta_date, meta_status, meta_raw_date = parse_metadata(
-            "\n".join(lines) + "\n" + tail
+            metadata_text(header, body, footer, tail_lines)
         )
         filename_date = None
         date_match = DATE_RE.search(slug)
@@ -882,7 +930,7 @@ def load_decisions(corpus):
             None,
             "decision",
             DATE_RE.sub("", slug).replace("-", " ") + " " + heading,
-            "\n".join(rank_lines(lines)),
+            "\n".join(rank_lines(body)),
             ident,
         )
         raw_date = meta_raw_date or filename_date
@@ -930,9 +978,10 @@ def load_orphan_reports(corpus):
                 "partial-input",
                 "data/%s/report.md truncated at %s bytes" % (canonical, HEAD_LIMIT),
             )
-        heading = first_heading(lines)
+        header, body, footer, tail_lines = split_record_layers(lines, tail)
+        heading = first_heading(body)
         meta_date, meta_status, meta_raw_date = parse_metadata(
-            "\n".join(lines) + "\n" + tail
+            metadata_text(header, body, footer, tail_lines)
         )
         sidecar = load_status_sidecar(
             corpus.root, os.path.join(corpus.root, canonical), corpus.root_fd
@@ -947,7 +996,7 @@ def load_orphan_reports(corpus):
             None,
             "report",
             canonical.replace("-", " ") + " " + heading,
-            "\n".join(rank_lines(lines)),
+            "\n".join(rank_lines(body)),
             ident,
         )
         corpus.apply_date_rules(doc, meta_date, None, None, meta_raw_date)
