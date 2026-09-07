@@ -317,10 +317,21 @@ After a home is activated, `data/` is also the Record repository: one Git snapsh
 [`bin/fm-record.sh`](../bin/fm-record.sh)'s header and `--help` own the exact flags, exit codes, settle window, lock, scan entry points, LFS rules, and scheduler prerequisites.
 This section owns only operator setup and recovery.
 
-A home that has never enabled Record returns an explicit disabled no-op for checkpoints, ticks, and health checks.
+A home that has never enabled Record returns an explicit disabled no-op for checkpoints, ticks, land-related, and health checks.
 An activated home refuses these commands if its Git metadata is missing.
 Do not initialize, commit, or push the live home from a worker checkout.
 Live activation is a separate approved home operation after the shared code has landed.
+
+Related footer inference is a one-time prepare, apply, and land path, not a live-home edit.
+Copy the Record, run `bin/fm-record-links.py propose --root <copy> --out <dir>`, and review the dry-run artifacts.
+Apply the reviewed plan only to that isolated copy with `apply --root <copy> --plan <manifest>`.
+Land the resulting one-commit candidate with `bin/fm-record.sh land-related --candidate <copy> --expected-head <sha>` when the live Record is clean and still at that SHA.
+If HEAD moved, the worktree is dirty, or the scan refuses, leave both copies intact and regenerate from the current HEAD.
+`land-related` does not push; the next `tick` retries delivery.
+`bin/fm-record-links.py lint --root <Record> --json` is the advisory nightly entry point and never rewrites records.
+Footer grammar, classification, and flags are owned by `bin/fm-record-links.py --help`.
+When gbrain 0.47.9.0 and graphify extract are installed, a consumer smoke is gbrain import then extract all `--source db`, plus graphify `extract_markdown` with that extract module's scan-root set to the Record copy.
+Those packages are not CI dependencies.
 
 Use a stable shared code checkout and set `FM_HOME` explicitly when the operational home differs from that checkout.
 For an existing Record repository, run `FM_HOME=<home> <code-root>/bin/fm-record.sh setup --branch <branch>` with its existing branch and origin, preserving its history.
