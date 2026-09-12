@@ -70,7 +70,7 @@ Local no-mistakes Test is intent-targeted and must not re-run every `tests/*.tes
 The pipeline publishes that evidence itself, so never hand-commit `.no-mistakes/` paths onto a feature branch; CI rejects them as tracked personal fleet paths.
 
 A Cursor Cloud Agent provisions this toolbelt automatically: `.cursor/environment.json` runs `.cursor/install.sh`, which installs the pinned tools that `bin/fm-lint.sh` and `bin/fm-test-run.sh` expect on the default base image.
-The pins stay owned by `bin/fm-install-*.sh`, `bin/fm-lint.sh`, and `.github/workflows/ci.yml`; `.cursor/install.sh` only calls or mirrors them and never defines a version of its own.
+`.cursor/install.sh` calls `bin/fm-install-*.sh` for ShellCheck, Ruff, and actionlint, mirrors the Gitleaks, Pi, and TypeScript pins from `.github/workflows/ci.yml`, and pins tasks-axi itself at or above `FM_TASKS_AXI_MIN` in `bin/fm-tasks-axi-lib.sh`.
 
 Check and test the toolbelt before pushing:
 
