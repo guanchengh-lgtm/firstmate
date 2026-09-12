@@ -1634,6 +1634,7 @@ def apply_plan(root, plan_path, state_root):
         raise ApplyRefuse("apply root is not a safe directory")
     manifest = load_manifest(plan_path)
     wanted = {item["path"]: item["sha256"] for item in manifest["source_paths"]}
+    writes = []
     for proposal in manifest["proposals"]:
         path = proposal.get("path")
         footer = proposal.get("proposed_footer")
@@ -1655,7 +1656,9 @@ def apply_plan(root, plan_path, state_root):
             continue
         if sha256_bytes(current) != wanted.get(path):
             raise ApplyRefuse("source hash changed: %s" % path)
-        write_atomic(full, append_footer_bytes(current, footer))
+        writes.append((full, append_footer_bytes(current, footer)))
+    for full, data in writes:
+        write_atomic(full, data)
     return 0
 
 

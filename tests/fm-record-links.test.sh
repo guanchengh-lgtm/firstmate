@@ -319,6 +319,25 @@ PY
   pass "fm-record-links.py: changed input and altered plans refuse apply"
 }
 
+test_apply_refuses_before_any_write() {
+  local rec copy out
+  rec="$TMP_ROOT/g6-atomic"
+  seed_base "$rec"
+  out=$(out_dir "$rec")
+  run_links propose --root "$rec" --out "$out"
+  expect_code 0 "$RC" "atomic propose"
+  copy="$TMP_ROOT/g6-atomic-copy"
+  copy_record "$rec" "$copy"
+  printf 'changed\n' >> "$copy/task-alpha/report.md"
+  run_links apply --root "$copy" --plan "$out/manifest.json"
+  expect_code 1 "$RC" "later hash mismatch"
+  assert_contains "$OUT" "source hash changed" "refusal reason"
+  if grep -rl '^Related:' "$copy" >/dev/null; then
+    fail "apply wrote footers before refusing on a later hash mismatch"
+  fi
+  pass "fm-record-links.py: a later hash mismatch refuses apply with no earlier writes"
+}
+
 test_apply_preserves_body_and_is_idempotent() {
   local rec copy out before after
   rec="$TMP_ROOT/g7"
@@ -489,6 +508,7 @@ test_cites_relates_supersedes_and_ambiguous_amendment
 test_duplicate_self_cycle_shadow_slug
 test_existing_footer_none_stable_rerun
 test_apply_hash_and_altered_plan
+test_apply_refuses_before_any_write
 test_apply_preserves_body_and_is_idempotent
 test_apply_preserves_non_utf8_body_bytes
 test_lint_findings_exit_zero_and_missing_root_unavailable
