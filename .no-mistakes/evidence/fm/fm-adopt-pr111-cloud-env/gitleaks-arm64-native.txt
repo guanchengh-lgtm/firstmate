@@ -1,0 +1,7 @@
+### native arm64 (GNU sha256sum on PATH via gsha256sum; no other shims)
+uname -m => arm64
+install: installing pinned Gitleaks 8.30.1
+/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-cloud-install.YurUby/gitleaks_8.30.1_linux_arm64.tar.gz: OK
+block exit ok; staged gitleaks: 20775096 bytes
+/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-cloud-install.YurUby/gitleaks: ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, BuildID[sha1]=df69b0b235cbe6b06626321e02ce98814892caa5, stripped
+exit=0

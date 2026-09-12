@@ -1,0 +1,6 @@
+### riscv64 unsupported arch (uname shim)
+uname -m => riscv64
+install: unsupported architecture riscv64 for gitleaks; skipping
+block exit ok; staged gitleaks: 
+/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-cloud-install.nMes30/gitleaks: cannot open `/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-cloud-install.nMes30/gitleaks' (No such file or directory)
+exit=0

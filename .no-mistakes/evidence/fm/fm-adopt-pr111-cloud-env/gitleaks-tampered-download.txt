@@ -1,0 +1,6 @@
+### tampered download (curl shim writes garbage)
+uname -m => arm64
+install: installing pinned Gitleaks 8.30.1
+/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-cloud-install.eerVg3/gitleaks_8.30.1_linux_arm64.tar.gz: FAILED
+sha256sum: WARNING: 1 computed checksum did NOT match
+exit=1

@@ -1,0 +1,12 @@
+### report block stdout/stderr split (stubbed tool binaries)
+stdout bytes:        0
+stderr:
+install: installed toolbelt:
+  shellcheck 9.9.9
+  ruff 9.9.9
+  actionlint version: 9.9.9 9.9.9
+  gitleaks version: 9.9.9 9.9.9
+  ruby 9.9.9
+  tasks-axi version: 9.9.9 9.9.9
+  pi version: 9.9.9 9.9.9
+  tsc 9.9.9
