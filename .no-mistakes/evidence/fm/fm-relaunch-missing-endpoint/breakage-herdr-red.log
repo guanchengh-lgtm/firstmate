@@ -1,0 +1,15 @@
+FM_TEST_BEGIN 2026-09-12T17:32:40Z tests/fm-control-herdr-smoke.test.sh family=real-herdr-gated expected_gate_skip=herdr
+ok - real herdr: exit on a pane with no registered agent is idempotent success
+ok - real herdr: interrupt refuses when herdr's own agent registry reports no agent
+ok - real herdr: interrupt delivers the harness's key and proves the agent survived it
+ok - real herdr: no control verb removed the endpoint or the task's local copy
+ok - real herdr: an agent that does not stop fails closed instead of being reported as stopped
+ok - real herdr: crew-state reads backend target gone after the pane is closed
+not ok - relaunch after a closed pane should mint and succeed: error: broken mint
+error: the replacement agent for hsmoke could not be launched on claude
+error: hsmoke's recorded endpoint was missing and the replacement did not launch; the prior record was kept, no agent is running, and its work plus the recorded progress note are preserved at /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-control-herdr.AZ0v5J/wt
+fm-herdr-lab: missing fleet-state tripwire for 'fm-lab-control-smoke-81724'; refusing destructive calls
+FM_TEST_END 2026-09-12T17:33:14Z tests/fm-control-herdr-smoke.test.sh exit=1 duration_ms=34300 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=34359
+FM_TEST_SUMMARY_FAMILY family=real-herdr-gated count=1 duration_ms=34300 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-control-herdr-smoke.test.sh duration_ms=34300
