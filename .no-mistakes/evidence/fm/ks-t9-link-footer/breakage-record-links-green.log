@@ -1,0 +1,14 @@
+ok - fm-record-links.py: --help prints the header contract
+ok - fm-record-links.py: invalid invocation exits 2
+ok - fm-record-links.py: classification covers authored, generated, raw, active, and unknown
+ok - fm-record-links.py: path, markdown, wiki, outside, missing, and fenced citations classify
+ok - fm-record-links.py: cites, relates, supersedes, and ambiguous amendments
+ok - fm-record-links.py: self cite, self relate, self supersede, cycle, shadow, slug, and duplicate id stay report-only
+ok - fm-record-links.py: existing footers, none defaults, and stable reruns
+ok - fm-record-links.py: changed input and altered plans refuse apply
+ok - fm-record-links.py: a later hash mismatch refuses apply with no earlier writes
+ok - fm-record-links.py: apply is footer-only, dry-run is inert, and reruns are idempotent
+ok - fm-record-links.py: apply preserves non-UTF-8 body bytes
+ok - fm-record-links.py: lint findings exit 0 and a missing root is unavailable
+ok - fm-record-links.py: lint stays advisory across seven clean runs
+ok - fm-record-links.py: mixed legacy citations yield deterministic footer-only proposals

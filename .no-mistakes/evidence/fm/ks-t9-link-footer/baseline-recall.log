@@ -1,0 +1,71 @@
+ok - archive bodies preserve their contiguous byte prefix and stop at the limit
+ok - complete foreign references never become local exclusions
+ok - brief limits stop at five while pointer limits remain configurable
+ok - ranking reads the 16 KiB head and metadata reads the bounded footer
+ok - decision filename dates affect display but never scores
+ok - plain recall publishes diagnostics on stderr
+ok - alias-cycle exclusions use the corpus canonical identity
+ok - archive completion annotations do not change relevance
+ok - Unicode task and decision identities round trip through exclusion
+ok - archive locators exclude only their row across supported forms
+ok - session trimming preserves round-robin allocation order
+ok - probe corpus remains independent from the expectations
+ok - fm-recall.sh: valid input returns bounded relevant pointers
+ok - fm-recall.sh: empty query is an explicit empty result
+ok - fm-recall.sh: missing corpus is unavailable, never empty success
+ok - fm-recall.sh: POINTER.md aliases collapse to one canonical pointer
+ok - fm-recall.sh: equal relevance keeps identity order when dates change
+ok - fm-recall.sh: freshness marks older-than-30-day dates and never exact-30-day or unknown dates
+ok - fm-recall.sh: held and parked documents keep state and never receive check-freshness
+ok - fm-recall.sh: long titles keep a usable path inside the pointer line
+ok - fm-recall.sh: a tight deadline stays bounded and never pretends to be empty success
+ok - fm-recall.sh: oversized task body emits a partial-input diagnostic
+metric probe=1 mode=A elapsed_ms=82 rendered_bytes=412 expected_rank=1 top1=ov-kb-feeder
+metric probe=2 mode=A elapsed_ms=81 rendered_bytes=344 expected_rank=2 top1=kb-graphify-tv
+metric probe=3 mode=A elapsed_ms=87 rendered_bytes=430 expected_rank=1 top1=ov-kb-agentsmd
+metric probe=4 mode=A elapsed_ms=81 rendered_bytes=410 expected_rank=1 top1=ov-fm-lock-clear
+metric probe=5 mode=A elapsed_ms=81 rendered_bytes=426 expected_rank=1 top1=kb-graphify-tv
+metric probe=5 mode=B elapsed_ms=90 rendered_bytes=423 expected_rank=1 top1=ov-kb-graphify
+metric probe=5 mode=C elapsed_ms=93 rendered_bytes=174 expected_rank=1 top1=ov-kb-graphify
+metric probe=6 mode=A elapsed_ms=92 rendered_bytes=260 expected_rank=1 top1=kb-feeder-vault-ship
+metric probe=6 mode=B elapsed_ms=92 rendered_bytes=175 expected_rank=1 top1=ov-kb-feeder
+metric probe=6 mode=C elapsed_ms=90 rendered_bytes=175 expected_rank=1 top1=ov-kb-feeder
+metric probe=7 mode=A elapsed_ms=91 rendered_bytes=425 expected_rank=1 top1=fm-lock-clear-reclaim
+metric probe=7 mode=B elapsed_ms=92 rendered_bytes=414 expected_rank=1 top1=ov-fm-lock-clear
+metric probe=7 mode=C elapsed_ms=95 rendered_bytes=178 expected_rank=1 top1=ov-fm-lock-clear
+metric probe=8 mode=A elapsed_ms=91 rendered_bytes=448 expected_rank=1 top1=kb-agentsmd-backpass
+metric probe=8 mode=B elapsed_ms=91 rendered_bytes=444 expected_rank=1 top1=agentsmd-budget-2026-08-31
+metric probe=8 mode=C elapsed_ms=90 rendered_bytes=350 expected_rank=1 top1=agentsmd-budget-2026-08-31
+metric probe=9 mode=A elapsed_ms=91 rendered_bytes=453 expected_rank=1 top1=fm-fork-value-audit
+metric probe=9 mode=B elapsed_ms=92 rendered_bytes=461 expected_rank=1 top1=fm-refuse-hooks-audit
+metric probe=9 mode=C elapsed_ms=96 rendered_bytes=265 expected_rank=1 top1=fm-refuse-hooks-audit
+metric probe=10 mode=A elapsed_ms=91 rendered_bytes=402 expected_rank=1 top1=ov-merge-slices
+metric probe=11 mode=A elapsed_ms=91 rendered_bytes=470 expected_rank=1 top1=fm-drop-prcheck-migrate
+metric probe=11 mode=B elapsed_ms=92 rendered_bytes=450 expected_rank=1 top1=fm-fork-drop-set-2026-09-01
+metric probe=11 mode=C elapsed_ms=92 rendered_bytes=450 expected_rank=1 top1=fm-fork-drop-set-2026-09-01
+metric probe=12 mode=A elapsed_ms=96 rendered_bytes=402 expected_rank=1 top1=ov-s3-s6-plan
+metric probe=12 mode=B elapsed_ms=91 rendered_bytes=410 expected_rank=1 top1=ov-s3-s6-plan
+metric probe=12 mode=C elapsed_ms=91 rendered_bytes=410 expected_rank=1 top1=ov-s3-s6-plan
+metric probe=13 mode=A elapsed_ms=89 rendered_bytes=402 expected_rank=1 top1=fm-merge-slice-3
+metric probe=13 mode=B elapsed_ms=91 rendered_bytes=408 expected_rank=1 top1=ov-s3-refresh
+metric probe=13 mode=C elapsed_ms=90 rendered_bytes=408 expected_rank=1 top1=ov-s3-refresh
+ok - fm-recall.sh: 13-probe floors A@3 13/13, C@3 8/8, B@5 8/8 over the synthetic corpus
+ok - fm-recall.sh: extracted identities exclude the same canonical token
+ok - recall keeps descriptor protection during a file replacement
+ok - fm-recall.sh: a malformed declared date is diagnosed, never ranked as valid
+ok - fm-recall.sh: an alias cycle terminates and never duplicates a pointer
+ok - fm-recall.sh: a flat archive row without a heading still ranks
+ok - fm-recall.sh: a tight session budget keeps a shorter lower-ranked pointer
+ok - fm-recall.sh: a block that costs exactly the cap is still emitted
+ok - fm-recall.sh: an item that cannot fit a pointer never blocks another item
+ok - fm-recall.sh: malformed session batch field types are a structured unavailable result
+ok - fm-recall.sh: session query truncation reaches partial_input, not only diagnostics
+ok - fm-recall.sh: an oversized first archive row keeps its bounded prefix and still ranks
+ok - fm-recall.sh: declared status metadata never changes relevance order
+ok - fm-recall.sh: an alias identity exclusion removes its canonical document
+ok - recall keeps descriptor protection during a directory replacement
+ok - recall keeps descriptor protection during a root replacement
+corrupt probe expectation: '1\t2026-08-31\tov-kb-feeder\t\t\n'
+ok - fm-recall.sh: a corrupted fixed expectation fails the executable harness
+ok - fm-recall: YAML headers and Related footers preserve title, score, and caps
+# all fm-recall tests passed

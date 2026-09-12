@@ -1,0 +1,7 @@
+ok - fm-control relaunch: a same-harness relaunch replaces the agent in the same endpoint and worktree
+ok - fm-control relaunch: an ordinary Pi worker regains its Calm scope without moving the project copy
+ok - fm-control relaunch: durable task metadata survives replacement launch publication
+ok - fm-control relaunch: delivery and concurrent task metadata publication serialize
+ok - fm-control relaunch: disabling tracing clears metadata and pane context
+ok - fm-control relaunch: the progress note lands in the instructions the replacement reads
+not ok - the Related footer must stay the last nonblank line, got: second note

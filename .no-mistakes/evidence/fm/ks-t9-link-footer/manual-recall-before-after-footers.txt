@@ -1,0 +1,9 @@
+rec old ok [('old', 'Old', 4.0), ('new', 'New', 1.0), ('task-w', 'Working', 1.0)] 3
+copy old ok [('old', 'Old', 4.0), ('new', 'New', 1.0), ('task-w', 'Working', 1.0)] 3
+rec brief ok [('task-a', 'Report', 1.0)] 1
+copy brief ok [('task-a', 'Report', 1.0)] 1
+rec report ok [('task-a', 'Report', 4.0), ('task-self', 'Self', 1.0)] 2
+copy report ok [('task-a', 'Report', 4.0), ('task-self', 'Self', 1.0)] 2
+rec cyc ok [('cyc-a', 'Cyc A', 4.0), ('cyc-b', 'Cyc B', 4.0)] 2
+copy cyc ok [('cyc-a', 'Cyc A', 4.0), ('cyc-b', 'Cyc B', 4.0)] 2
+ok [('cyc-a', 1.0), ('cyc-b', 1.0), ('new', 1.0)]

@@ -1,0 +1,115 @@
+keys ['ambiguous_ids', 'candidates', 'classification_counts', 'cycles', 'excluded', 'existing_footers', 'files', 'partial_replacements', 'path_shadows', 'proposals', 'slug_collisions', 'source_commit', 'source_paths', 'tool_sha256', 'unknown_metadata', 'unresolved']
+candidates [
+ {
+  "confidence": "question",
+  "key": null,
+  "line": 3,
+  "path": "decisions/badfooter.md",
+  "reason": "malformed existing Related footer",
+  "target": null,
+  "text": "Related: cites=foo"
+ },
+ {
+  "confidence": "question",
+  "key": null,
+  "line": 3,
+  "path": "decisions/cyc-a.md",
+  "reason": "supersession cycle",
+  "target": null,
+  "text": "Supersedes: decisions/cyc-b.md"
+ },
+ {
+  "confidence": "high",
+  "key": "cites",
+  "line": 3,
+  "path": "decisions/cyc-a.md",
+  "reason": "prose citation",
+  "target": "decisions/cyc-b.md",
+  "text": "Supersedes: decisions/cyc-b.md"
+ },
+ {
+  "confidence": "question",
+  "key": null,
+  "line": 3,
+  "path": "decisions/cyc-b.md",
+  "reason": "supersession cycle",
+  "target": null,
+  "text": "Supersedes: decisions/cyc-a.md"
+ },
+ {
+  "confidence": "high",
+  "key": "cites",
+  "line": 3,
+  "path": "decisions/cyc-b.md",
+  "reason": "prose citation",
+  "target": "decisions/cyc-a.md",
+  "text": "Supersedes: decisions/cyc-a.md"
+ },
+ {
+  "confidence": "question",
+  "key": null,
+  "line": 3,
+  "path": "decisions/missing.md",
+  "reason": "missing target",
+  "target": null,
+  "text": "See decisions/nowhere.md."
+ },
+ {
+  "confidence": "high",
+  "key": "cites",
+  "line": 3,
+  "path": "decisions/new.md",
+  "reason": "prose citation",
+  "target": "decisions/old.md",
+  "text": "Supersedes: decisions/old.md"
+ },
+ {
+  "confidence": "high",
+  "key": "supersedes",
+  "line": 3,
+  "path": "decisions/new.md",
+  "reason": "anchored or explicit replacement",
+  "target": "decisions/old.md",
+  "text": "Supersedes: decisions/old.md"
+ },
+ {
+  "confidence": "high",
+  "key": "relates",
+  "line": 1,
+  "path": "task-a/brief.md",
+  "reason": "same-task pair",
+  "target": "task-a/report.md",
+  "text": "task-a/brief.md <-> task-a/report.md"
+ },
+ {
+  "confidence": "high",
+  "key": "cites",
+  "line": 3,
+  "path": "task-a/brief.md",
+  "reason": "prose citation",
+  "target": "decisions/new.md",
+  "text": "See data/decisions/new.md and `decisions/old.md`."
+ },
+ {
+  "confidence": "high",
+  "key": "cites",
+  "line": 3,
+  "path": "task-a/brief.md",
+  "reason": "backtick citation",
+  "target": "decisions/old.md",
+  "text": "See data/decisions/new.md and `decisions/old.md`."
+ },
+ {
+  "confidence": "high",
+  "key": "relates",
+  "line": 1,
+  "path": "task-a/report.md",
+  "reason": "same-task pair",
+  "target": "task-a/brief.md",
+  "text": "task-a/report.md <-> task-a/brief.md"
+ },
+ {
+  "confidence": "high",
+  "key": "cites",
+  "line": 3,
+  "path": "task-a/report

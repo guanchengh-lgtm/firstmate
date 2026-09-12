@@ -1,0 +1,9 @@
+ok - fm-record-links.py: --help prints the header contract
+ok - fm-record-links.py: invalid invocation exits 2
+ok - fm-record-links.py: classification covers authored, generated, raw, active, and unknown
+ok - fm-record-links.py: path, markdown, wiki, outside, missing, and fenced citations classify
+ok - fm-record-links.py: cites, relates, supersedes, and ambiguous amendments
+Traceback (most recent call last):
+  File "<stdin>", line 13, in <module>
+AssertionError: set()
+not ok - g4 graph contract failed

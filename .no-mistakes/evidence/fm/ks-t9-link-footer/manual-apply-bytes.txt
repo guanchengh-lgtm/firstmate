@@ -1,0 +1,11 @@
+00000080: 7369 6f6e 732f 6e65 772e 6d64 5d5d 2c20  sions/new.md]], 
+00000090: 5b5b 6465 6369 7369 6f6e 732f 6f6c 642e  [[decisions/old.
+000000a0: 6d64 5d5d 3b20 7265 6c61 7465 733a 205b  md]]; relates: [
+000000b0: 5b74 6173 6b2d 612f 7265 706f 7274 2e6d  [task-a/report.m
+000000c0: 645d 5d0a                                d]].
+
+00000000: 2320 4c61 7469 6e0a 0a43 6166 e920 626f  # Latin..Caf. bo
+00000010: 6479 2e0a 5265 6c61 7465 643a 2073 7570  dy..Related: sup
+00000020: 6572 7365 6465 733a 206e 6f6e 653b 2063  ersedes: none; c
+00000030: 6974 6573 3a20 6e6f 6e65 3b20 7265 6c61  ites: none; rela
+00000040: 7465 733a 206e 6f6e 650a                 tes: none.

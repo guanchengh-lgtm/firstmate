@@ -1,0 +1,102 @@
+## setup
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+  -> rc=0
+## seed tick
+fm-record: state=pushed commit=ed40f01
+pending=0
+last_push_at=2026-09-12T22:29:49Z
+delivery=pushed
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+  -> rc=0
+expected=ed40f01a1dcc88bf9ae48faf18425cda21fcf928
+## propose+apply in a clone
+    related footers
+
+ captain.md       | 1 +
+ decisions/new.md | 1 +
+ decisions/old.md | 1 +
+ task-x/brief.md  | 1 +
+ task-x/report.md | 1 +
+ 5 files changed, 5 insertions(+)
+## adversarial: candidate is the live tree
+fm-record: state=configuration-error detail=candidate-is-live
+pending=0
+last_push_at=2026-09-12T22:29:49Z
+delivery=pushed
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+  -> rc=8
+## adversarial: wrong expected head
+fatal: Needed a single revision
+fm-record: state=configuration-error detail=expected-head
+pending=0
+last_push_at=2026-09-12T22:29:49Z
+delivery=pushed
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+  -> rc=8
+## adversarial: candidate rewrites body bytes
+fm-record: state=configuration-error detail=not-footer-only
+pending=0
+last_push_at=2026-09-12T22:29:49Z
+delivery=pushed
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+  -> rc=8
+live HEAD still expected: yes
+## land the real candidate
+From /private/tmp/t9-land.Oy7T/cand/
+ * [new ref]         0d0155ad9c2ab79813e18ef7de92d8dc34b8acf6 -> refs/fm-land-related/candidate
+Updating ed40f01..0d0155a
+Fast-forward
+ captain.md       | 1 +
+ decisions/new.md | 1 +
+ decisions/old.md | 1 +
+ task-x/brief.md  | 1 +
+ task-x/report.md | 1 +
+ 5 files changed, 5 insertions(+)
+fm-record: state=committed-local commit=0d0155a detail=land-related
+pending=1
+last_push_at=2026-09-12T22:29:49Z
+delivery=pending
+failure_class=none
+pending_since=1789252192
+pending_age_seconds=0
+  -> rc=0
+live HEAD=0d0155ad9c2ab79813e18ef7de92d8dc34b8acf6 cand=0d0155ad9c2ab79813e18ef7de92d8dc34b8acf6
+origin main before tick: ed40f01a1dcc88bf9ae48faf18425cda21fcf928
+       0
+## rerun land on same candidate (head moved)
+fm-record: state=configuration-error detail=head-moved
+pending=1
+last_push_at=2026-09-12T22:29:49Z
+delivery=pending
+failure_class=none
+pending_since=1789252192
+pending_age_seconds=0
+  -> rc=8
+## tick pushes
+fm-record: state=pushed commit=0d0155a
+pending=0
+last_push_at=2026-09-12T22:29:53Z
+delivery=pushed
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+  -> rc=0
+origin main after tick: 0d0155ad9c2ab79813e18ef7de92d8dc34b8acf6
+## live files after land
+Related: supersedes: none; cites: [[decisions/old.md]]; relates: none
+00000020: 6c61 7465 643a 2073 7570 6572 7365 6465  lated: supersede
+00000030: 733a 206e 6f6e 653b 2063 6974 6573 3a20  s: none; cites: 
+00000040: 6e6f 6e65 3b20 7265 6c61 7465 733a 205b  none; relates: [
+00000050: 5b74 6173 6b2d 782f 7265 706f 7274 2e6d  [task-x/report.m
+00000060: 645d 5d0a                                d]].
+## lint on live after land
+{"active_writer":0,"already_linked":5,"edges":{"cites":2,"relates":2,"supersedes":1},"eligible":0,"exempt":0,"findings":[],"generated":0,"invalid":0,"missing":0,"needs_review":0,"orphans":0,"raw":0,"scanned":5,"status":"ok","unresolved":0}

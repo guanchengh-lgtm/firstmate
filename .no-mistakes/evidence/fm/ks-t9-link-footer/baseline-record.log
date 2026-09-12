@@ -1,0 +1,51 @@
+ok - fm-record: a disabled home is an explicit no-op
+ok - fm-record: a disabled home does not require hash tools
+ok - fm-record: the first tick commits and pushes a clean Record
+ok - fm-record: unchanged ticks do not create commits
+ok - fm-record: inherited Git overrides and a wrong root refuse
+ok - fm-record: every effective push destination must match the binding
+ok - fm-record: LFS configuration cannot redirect uploads from the bound origin
+ok - fm-record: setup and transactions refuse redirected hook directories
+ok - fm-record: a live lock owner makes tick busy
+ok - fm-record: an abandoned lock is recovered
+ok - fm-record: an unstable settle window does not commit
+ok - fm-record: the scan chain blocks the commit without echoing secrets
+ok - fm-record: the state mirror updates and keeps history
+ok - fm-record: special names commit and outside links refuse
+ok - fm-record: validation omits untrusted paths and cleans transaction files on every exit
+ok - fm-record: LFS attributes are literal and survive shrink and repeated setup
+ok - fm-record: push failure keeps local commits and the next tick retries
+ok - fm-record: a non-fast-forward push reports diverged and keeps both histories
+ok - fm-record: the LaunchAgent plist is a validated 60-second sibling job
+ok - fm-record: job preflight requires tools, stable code, and a valid binding
+ok - fm-record: the new root commit keeps the old data/ tip as an ancestor
+ok - fm-record: the installed pre-commit hook blocks a direct git commit
+ok - fm-record: a required checkpoint refuses when the lock stays live
+ok - fm-record: required checkpoints refuse commit and publication failures
+ok - fm-record: the Git index lock protects the commit and index publication
+ok - fm-record: failed data and inbox enumeration cannot commit deletions
+ok - fm-record: copied bytes must match the settled inventory
+ok - fm-record: cleanup retains the lock until candidate removal finishes
+ok - fm-record: an unchanged tick retries unconfirmed first delivery
+ok - fm-record: push retains credential helpers and reports LFS upload failure
+ok - fm-record: manual LFS commits scan resolved bytes and refuse absent objects
+ok - fm-record: publication recovery retains LFS rules when files shrink before or after retry
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - fm-record: ticks and checkpoints scan resolved LFS payloads after a restore
+ok - fm-record: indexed archive links retain their types without outside traversal
+ok - fm-record: manual hooks reject prohibited paths and tick scans outgoing history
+ok - fm-record: activation, root ownership, private modes, and existing hooks are enforced
+ok - fm-record: fixed scope preserves durable files and refuses ambiguous filenames
+ok - fm-record: quiet ticks skip corpus work and changed bytes still receive content checks
+ok - fm-record: changed HEAD refuses the frozen snapshot without replacing competing work
+ok - fm-record: restart recovers prepared publication while preserving competing staging
+ok - fm-record: recovery holds the index lock throughout staged-content checks and publication
+ok - fm-record: recovery accepts stat refreshes before and after index publication
+ok - fm-record: read-only health reports current commits and age while retaining delivery receipts
+ok - fm-record: a disabled home is a no-op for land-related
+ok - fm-record: land-related fast-forwards one footer-only commit and leaves push to tick
+ok - fm-record: land-related refuses a busy lock, dirty worktree, and advanced HEAD
+ok - fm-record: land-related scan refusal, Git failure, and push-pending keep both copies
+ok - fm-record: land-related accepts a whitespace-tail body and a non-ASCII path
+ok - fm-record: land-related refuses a candidate that rewrites body bytes under a footer
+ok - fm-record: fixtures leave the outer repository unchanged
