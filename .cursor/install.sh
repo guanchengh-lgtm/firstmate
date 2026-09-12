@@ -41,7 +41,7 @@ case "$(uname -m)" in
     ;;
   aarch64 | arm64)
     gl_asset="gitleaks_${GITLEAKS_VERSION}_linux_arm64.tar.gz"
-    gl_sha256=
+    gl_sha256=e4a487ee7ccd7d3a7f7ec08657610aa3606637dab924210b3aee62570fb4b080
     ;;
   *)
     log "unsupported architecture $(uname -m) for gitleaks; skipping"
@@ -55,7 +55,8 @@ if [ -n "$gl_asset" ]; then
   if [ -n "$gl_sha256" ]; then
     printf '%s  %s\n' "$gl_sha256" "$STAGE/$gl_asset" | sha256sum --check
   else
-    log "no pinned checksum for this architecture; installing without verification"
+    log "no pinned checksum for $(uname -m); refusing unverified install"
+    exit 1
   fi
   tar -xzf "$STAGE/$gl_asset" -C "$STAGE" gitleaks
 fi
@@ -120,7 +121,9 @@ ensure_capable_node
 # 6. Node-based dev dependencies, installed into this node's global root so both
 #    PATH and `npm root -g` (which the Pi tests use to locate the package) agree.
 #    tasks-axi is the tracked backlog backend (.tasks.toml); the Pi package and
-#    TypeScript back the Pi extension typecheck tests. Pins match ci.yml.
+#    TypeScript back the Pi extension typecheck tests. tasks-axi is pinned to
+#    0.2.5, at or above FM_TASKS_AXI_MIN in bin/fm-tasks-axi-lib.sh, while CI
+#    floats to the latest release.
 log "installing node global dev dependencies (tasks-axi, Pi, TypeScript)"
 npm install -g \
   tasks-axi@0.2.5 \
@@ -129,7 +132,7 @@ npm install -g \
 
 # 7. Report the resulting toolbelt for a quick sanity read in setup logs.
 log "installed toolbelt:"
-shellcheck --version | awk '/^version:/ {print "  shellcheck " $2}'
+shellcheck --version | awk '/^version:/ {print "  shellcheck " $2}' >&2
 printf '  ruff %s\n' "$(ruff version | awk '{print $2}')" >&2
 printf '  actionlint %s\n' "$(actionlint -version | head -1)" >&2
 [ -n "$gl_asset" ] && printf '  gitleaks %s\n' "$(gitleaks version)" >&2
