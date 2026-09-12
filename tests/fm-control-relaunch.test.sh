@@ -532,6 +532,27 @@ test_relaunch_appends_the_progress_note_to_the_instructions() {
   pass "fm-control relaunch: the progress note lands in the instructions the replacement reads"
 }
 
+test_relaunch_note_stays_above_the_related_footer() {
+  local dir out rc brief last
+  dir=$(new_case footer rl2f)
+  add_ship_task "$dir" rl2f claude
+  brief="$dir/home/data/rl2f/brief.md"
+  printf '\nRelated: supersedes: none; cites: none; relates: none\n' >> "$brief"
+  out=$(run_control "$dir" rl2f relaunch --note "first note"); rc=$?
+  expect_code 0 "$rc" "footer relaunch should succeed"$'\n'"$out"
+  out=$(run_control "$dir" rl2f relaunch --note "second note"); rc=$?
+  expect_code 0 "$rc" "second footer relaunch should succeed"$'\n'"$out"
+  assert_grep "Do the thing." "$brief" "the original instructions must survive"
+  assert_grep "first note" "$brief" "the first note must survive the second relaunch"
+  assert_grep "second note" "$brief" "the second note text should reach the replacement"
+  last=$(awk '/[^[:space:]]/ { line = $0 } END { print line }' "$brief")
+  [ "$last" = "Related: supersedes: none; cites: none; relates: none" ] \
+    || fail "the Related footer must stay the last nonblank line, got: $last"
+  [ "$(grep -c '^Related: supersedes: ' "$brief")" = 1 ] \
+    || fail "the footer must not be duplicated"
+  pass "fm-control relaunch: progress notes are inserted above the terminal Related footer"
+}
+
 test_relaunch_requires_a_note_for_a_ship_task() {
   local dir out rc before
   dir=$(new_case nonote rl3)
@@ -1880,6 +1901,7 @@ test_relaunch_preserves_durable_task_metadata
 test_relaunch_serializes_concurrent_durable_metadata_publication
 test_disabled_relaunch_clears_prior_trace_context
 test_relaunch_appends_the_progress_note_to_the_instructions
+test_relaunch_note_stays_above_the_related_footer
 test_relaunch_requires_a_note_for_a_ship_task
 test_a_value_taking_flag_refuses_under_its_own_spelling
 test_harness_switch_moves_the_record_and_clears_prior_wiring

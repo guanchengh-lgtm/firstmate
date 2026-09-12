@@ -1309,36 +1309,24 @@ def show(commit, path):
     )
     if result.returncode != 0:
         raise SystemExit(1)
-    return result.stdout.decode("utf-8", errors="surrogateescape")
+    return result.stdout
 
 
-def prefix(text):
-    if text and not text.endswith("\n"):
-        return text + "\n"
-    if text.endswith("\n\n"):
-        return text.rstrip("\n") + "\n"
-    return text
-
-
-status = git("diff", "--name-status", "--no-renames", expected, candidate)
-if not status.strip():
+status = git("diff", "--name-status", "--no-renames", "-z", expected, candidate)
+fields = status.split(b"\0")
+if fields and fields[-1] == b"":
+    fields.pop()
+if not fields or len(fields) % 2:
     raise SystemExit(1)
-for raw in status.splitlines():
-    line = raw.decode("utf-8", errors="replace")
-    kind, path = line.split("\t", 1)
-    if kind != "M" or not path.endswith(".md"):
+for kind, path in zip(fields[0::2], fields[1::2]):
+    if kind != b"M" or not path.endswith(b".md"):
         raise SystemExit(1)
-    old = show(expected, path)
-    new = show(candidate, path)
-    body, _line, footer = mod.strip_terminal_related(new)
-    if footer is None:
-        raise SystemExit(1)
-    old_body, _old_line, old_footer = mod.strip_terminal_related(old)
-    if old_footer is not None:
-        if old_body != body:
-            raise SystemExit(1)
-        continue
-    if body != prefix(old) and body != old:
+    old = show(expected, path.decode("utf-8", errors="surrogateescape"))
+    new = show(candidate, path.decode("utf-8", errors="surrogateescape"))
+    _lineno, line, footer = mod.terminal_related(
+        new.decode("utf-8", errors="replace")
+    )
+    if footer is None or new != mod.append_footer_bytes(old, line):
         raise SystemExit(1)
 PYFOOTER
 }

@@ -1785,6 +1785,38 @@ test_land_related_scan_git_failure_and_push_pending() {
   pass "fm-record: land-related scan refusal, Git failure, and push-pending keep both copies"
 }
 
+test_land_related_accepts_whitespace_tail_and_non_ascii_path() {
+  local home origin expected candidate landed accent
+  IFS=$(printf '\t') read -r home origin < <(new_home land-tail)
+  setup_record "$home" "$origin"
+  seed_authored_record "$home"
+  accent=$(printf 'caf\303\251.md')
+  printf '# Tail\n\nEnds with spaces.\n   \n' > "$home/data/decisions/tail.md"
+  printf '# Accent\n\nAccent in the name.\n' > "$home/data/decisions/$accent"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'tail seed tick'
+  expected=$(git --git-dir="$home/data/.git" rev-parse HEAD)
+  candidate="$TMP_ROOT/land-tail/candidate"
+  commit_footer_candidate "$home/data" "$candidate"
+  git -C "$candidate" diff --name-only "$expected" HEAD | grep -q 'tail.md' \
+    || fail 'whitespace-tail record was not proposed'
+  git -C "$candidate" diff --name-only "$expected" HEAD | grep -q 'caf' \
+    || fail 'non-ASCII path record was not proposed'
+  git -C "$candidate" -c core.quotePath=true diff --name-status "$expected" HEAD | grep -q '\\303\\251' \
+    || fail 'non-ASCII path was not quoted by git'
+  run_rec "$home" land-related --candidate "$candidate" --expected-head "$expected"
+  expect_code 0 "$RC" 'whitespace-tail and non-ASCII path land-related'
+  assert_contains "$OUT" 'state=committed-local' 'tail land-related state'
+  landed=$(git --git-dir="$home/data/.git" rev-parse HEAD)
+  [ "$landed" = "$(git -C "$candidate" rev-parse HEAD)" ] \
+    || fail 'tail land-related did not land the candidate'
+  python3 -c 'import sys; data=open(sys.argv[1], "rb").read(); assert data.startswith(b"# Tail\n\nEnds with spaces.\n   \nRelated: supersedes: "), data' \
+    "$home/data/decisions/tail.md" || fail 'landed tail record lost its whitespace line'
+  grep -q '^Related: supersedes: ' "$home/data/decisions/$accent" \
+    || fail 'landed non-ASCII path record has no footer'
+  pass "fm-record: land-related accepts a whitespace-tail body and a non-ASCII path"
+}
+
 test_land_related_refuses_body_byte_rewrite() {
   local home origin expected candidate
   IFS=$(printf '\t') read -r home origin < <(new_home land-bytes)
@@ -1864,6 +1896,7 @@ test_land_related_disabled_home_is_noop
 test_land_related_lands_one_footer_commit
 test_land_related_refuses_lock_dirty_and_advanced_head
 test_land_related_scan_git_failure_and_push_pending
+test_land_related_accepts_whitespace_tail_and_non_ascii_path
 test_land_related_refuses_body_byte_rewrite
 
 test_outer_repository_stays_clean

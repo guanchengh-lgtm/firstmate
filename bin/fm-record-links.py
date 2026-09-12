@@ -55,10 +55,10 @@
 # confidence. A later AMENDED block may supply evidence only when the
 # replacement is explicit and chronology is unambiguous. Clause-only,
 # negation, contradictory amendment, missing target, or ambiguous ordering is
-# a question. Reject self-supersession and cycles before proposing automatic
-# supersede edges. Do not infer from age, mtime, title similarity, shared
-# folder, or a generic related mention, and do not change either document's
-# status.
+# a question. Reject a self target for every key and supersede cycles before
+# proposing automatic edges. Do not infer from age, mtime, title similarity,
+# shared folder, or a generic related mention, and do not change either
+# document's status.
 # relates is automatic only for an explicit related/see-also association or a
 # same-task pair (<id>/brief.md <-> <id>/report.md).
 # Manual well-formed footers stay authoritative. Eligible footer-absent files
@@ -78,12 +78,9 @@
 #
 # apply refuses a planned source hash that does not match the current file,
 # a symlink escape, an unsafe target, or an altered plan. Footer-only means
-# the bytes before the new terminal Related: line equal the previous file
-# after stripping a previous terminal Related: line if and only if that line
-# was already a well-formed canonical footer being completed by this plan.
-# Typical add: previous bytes unchanged, then a newline if needed, then the
-# Related line and a trailing newline. A rerun against the already-applied
-# tree produces zero file changes.
+# the previous bytes are unchanged, followed by a newline if the file did
+# not end with one, then the Related line and a trailing newline. A rerun
+# against the already-applied tree produces zero file changes.
 #
 # lint --json is the T12 entry point. Ordinary findings exit 0 with
 # status=ok. Unreadable root, incomplete scan, or bad argv is
@@ -989,9 +986,6 @@ def infer_supersedes(path, text, root, inventory):
                 )
     seen = set()
     for target, lineno, line, raw in field_targets:
-        if target.value == path:
-            questions.append(Question(path, lineno, line, "self-supersession"))
-            continue
         if target.value in seen:
             continue
         seen.add(target.value)
@@ -1364,17 +1358,11 @@ def propose(root, out_dir, state_root):
             if item.confidence == "high"
         ]
         for item_e in high:
-            if item_e.key == "supersedes" and item_e.target == path:
+            if item_e.target == path:
                 questions.append(
-                    Question(
-                        path, item_e.line, item_e.text, "self-supersession"
-                    )
+                    Question(path, item_e.line, item_e.text, "self-target")
                 )
-        high = [
-            item_e
-            for item_e in high
-            if not (item_e.key == "supersedes" and item_e.target == path)
-        ]
+        high = [item_e for item_e in high if item_e.target != path]
         for item_e in high:
             shadows.extend(path_shadows(path, [item_e.target], inventory_set))
         proposed = build_footer(high)
@@ -1682,6 +1670,7 @@ def lint_root(root, state_root):
     outgoing = set()
     ids = {}
     supersede_edges = []
+    authored = []
     for item in items:
         path = item["path"]
         text = item["text"]
@@ -1689,6 +1678,8 @@ def lint_root(root, state_root):
         if kind is None:
             continue
         counts[kind] += 1
+        if kind in ("eligible", "already-linked"):
+            authored.append(path)
         ident = yaml_id(text)
         if ident:
             ids.setdefault(ident, []).append(path)
@@ -1762,12 +1753,6 @@ def lint_root(root, state_root):
                 "supersession cycle %s" % " -> ".join(loop),
             )
         )
-    authored = [
-        item["path"]
-        for item in items
-        if classify_relpath(item["path"], item["text"], state_root)[0]
-        in ("eligible", "already-linked")
-    ]
     orphans = 0
     for path in authored:
         if path not in outgoing and path not in incoming:

@@ -202,6 +202,12 @@ test_duplicate_self_cycle_shadow_slug() {
   write_file "$rec/decisions/self.md" \
     "# Self" \
     "Supersedes: data/decisions/self.md"
+  mkdir -p "$rec/task-self"
+  write_file "$rec/task-self/report.md" \
+    "# Self report" \
+    "This report lives at \`data/task-self/report.md\`." \
+    "See also [[task-self/report.md]]." \
+    "Cites [[decisions/old.md]]."
   write_file "$rec/decisions/a.md" \
     "# A" \
     "Supersedes: data/decisions/b.md"
@@ -239,6 +245,14 @@ data = json.load(open(sys.argv[1], encoding="utf-8"))
 by = {row["path"]: row for row in data["proposals"]}
 self_edges = [edge for edge in by["decisions/self.md"]["edges"] if edge["key"] == "supersedes"]
 assert self_edges == [], self_edges
+self_cites = [edge for edge in by["task-self/report.md"]["edges"] if edge["target"] == "task-self/report.md"]
+assert self_cites == [], self_cites
+assert by["task-self/report.md"]["proposed_footer"] == "Related: supersedes: none; cites: [[decisions/old.md]]; relates: none", by["task-self/report.md"]
+self_questions = {
+    row["reason"] for row in data["candidates"]
+    if row["path"] in ("task-self/report.md", "decisions/self.md") and row["confidence"] == "question"
+}
+assert self_questions == {"self-target"}, self_questions
 assert data["cycles"], data["cycles"]
 cycle_paths = {"decisions/a.md", "decisions/b.md"}
 for path in cycle_paths:
@@ -263,7 +277,7 @@ PY
   expect_code 0 "$RC" "g4 lint"
   python3 -c 'import json,sys; data=json.loads(sys.stdin.read()); assert data["status"]=="ok"; kinds={row["kind"] for row in data["findings"]}; assert "duplicate-id" in kinds or any("shared-id" in row["detail"] for row in data["findings"]), data["findings"]' <<< "$OUT" \
     || fail "g4 lint missed duplicate ids"
-  pass "fm-record-links.py: self, cycle, shadow, slug, and duplicate id stay report-only"
+  pass "fm-record-links.py: self cite, self relate, self supersede, cycle, shadow, slug, and duplicate id stay report-only"
 }
 
 test_existing_footer_none_stable_rerun() {

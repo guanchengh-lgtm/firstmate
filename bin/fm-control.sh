@@ -766,6 +766,32 @@ safe_checkpoint() {
   fi
 }
 
+# insert_note_above_related_footer <brief> <note-file>: a new-record brief ends
+# with a terminal Related: footer that must stay the last nonblank line, so the
+# note goes above that footer; a brief without one simply gets the note
+# appended.
+insert_note_above_related_footer() {
+  local brief=$1 note=$2 last
+  last=$(awk '/[^[:space:]]/ { line = $0 } END { print line }' "$brief") || return 1
+  case "$last" in
+    "Related: supersedes: "*)
+      awk -v note="$note" '
+        { lines[NR] = $0; if ($0 ~ /[^[:space:]]/) last = NR }
+        END {
+          for (i = 1; i < last; i++) print lines[i]
+          while ((getline row < note) > 0) print row
+          close(note)
+          print ""
+          print lines[last]
+        }' "$brief" > "$brief.tmp.$$" || return 1
+      mv "$brief.tmp.$$" "$brief" || return 1
+      ;;
+    *)
+      cat "$note" >> "$brief" || return 1
+      ;;
+  esac
+}
+
 # record_note: put the required progress note somewhere durable, and - for a
 # ship or scout, whose only record of the interrupted reasoning is the
 # conversation about to be discarded - into the instructions the replacement
@@ -793,8 +819,11 @@ record_note() {
         echo "$STATE/$ID.inbox/handled/. A steer sent before the relaunch survives there."
         echo
         printf '%s\n' "$NOTE"
-      } >> "$RELAUNCH_BRIEF" \
-        || die "could not append the progress note to task $ID's instructions"
+      } > "$NOTE_FILE.section" \
+        || die "could not write the progress note for task $ID's instructions"
+      insert_note_above_related_footer "$RELAUNCH_BRIEF" "$NOTE_FILE.section" \
+        || die "could not insert the progress note into task $ID's instructions"
+      rm -f "$NOTE_FILE.section"
       ;;
   esac
 }
