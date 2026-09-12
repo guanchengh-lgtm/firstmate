@@ -602,7 +602,7 @@ relaunch_rollback() {
           cp -p "$META_PRIOR" "$META" 2>/dev/null || true
         fi
         journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-kept" || true
-        echo "error: $ID's agent was stopped but the replacement did not launch; no agent is running, and its work plus the recorded progress note are preserved at $WT" >&2
+        echo "error: $ID's recorded endpoint was missing and the replacement did not launch; the prior record was kept, no agent is running, and its work plus the recorded progress note are preserved at $WT" >&2
         return 0
       fi
       if [ "$RELAUNCH_AGENT_CONFIRMED" = 1 ]; then

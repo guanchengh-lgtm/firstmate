@@ -1419,7 +1419,7 @@ test_promotion_participates_in_the_lifecycle_lock_before_metadata_resolution() {
   pass "fm-promote: promotion participates in lifecycle serialization"
 }
 
-# --- 6. fm-spawn --relaunch's own refusals -----------------------------------
+# --- 7. fm-spawn --relaunch's own refusals -----------------------------------
 
 test_spawn_relaunch_refuses_a_live_agent() {
   local dir out rc
@@ -1732,14 +1732,22 @@ test_missing_endpoint_mints_and_preserves_identity() {
 }
 
 test_missing_endpoint_preserves_a_dirty_worktree() {
-  local dir
+  local dir out rc before_window before_spawn
   dir=$(new_case miss-dirty rl51)
   add_ship_task "$dir" rl51 claude
+  printf 'spawn_gen=s-old\n' >> "$dir/home/state/rl51.meta"
   printf 'changed\n' > "$dir/wt/README.md"
   printf 'scratch\n' > "$dir/wt/untracked.txt"
   mark_endpoint_missing "$dir"
   printf '%s' "$dir/proj" > "$dir/fake/cwd"
-  run_control "$dir" rl51 relaunch --note "keep the dirty tree" >/dev/null
+  before_window=$(meta_field "$dir" rl51 window)
+  before_spawn=$(meta_field "$dir" rl51 spawn_gen)
+  out=$(run_control "$dir" rl51 relaunch --note "keep the dirty tree"); rc=$?
+  expect_code 0 "$rc" "a missing-endpoint relaunch on a dirty tree should mint and succeed"$'\n'"$out"
+  [ "$(meta_field "$dir" rl51 window)" != "$before_window" ] \
+    || fail "a minted endpoint must record a different window, got '$before_window'"
+  [ "$(meta_field "$dir" rl51 spawn_gen)" != "$before_spawn" ] \
+    || fail "a minted relaunch must record a new spawn_gen"
   [ -f "$dir/wt/untracked.txt" ] || fail "an untracked file must survive a missing-endpoint mint"
   grep -qx changed "$dir/wt/README.md" || fail "a modified tracked file must survive a missing-endpoint mint"
   [ "$(journal_field "$dir" rl51 worktree_dirty)" = yes ] \
@@ -1748,9 +1756,10 @@ test_missing_endpoint_preserves_a_dirty_worktree() {
 }
 
 test_missing_verifier_note_lands_in_verifier_brief() {
-  local dir brief
+  local dir brief out rc before_window before_spawn
   dir=$(new_case miss-verifier rl52)
   add_ship_task "$dir" rl52 claude
+  printf 'spawn_gen=s-old\n' >> "$dir/home/state/rl52.meta"
   printf 'verifier\n' > "$dir/home/data/rl52/verifier-role"
   printf '# Task\n\nVerify the change.\n' > "$dir/home/data/rl52/verifier-brief.md"
   sed -i.bak 's/^role=builder$/role=verifier/' "$dir/home/state/rl52.meta"
@@ -1758,7 +1767,14 @@ test_missing_verifier_note_lands_in_verifier_brief() {
   brief=$(cat "$dir/home/data/rl52/brief.md")
   mark_endpoint_missing "$dir"
   printf '%s' "$dir/proj" > "$dir/fake/cwd"
-  run_control "$dir" rl52 relaunch --note "continue verification" >/dev/null
+  before_window=$(meta_field "$dir" rl52 window)
+  before_spawn=$(meta_field "$dir" rl52 spawn_gen)
+  out=$(run_control "$dir" rl52 relaunch --note "continue verification"); rc=$?
+  expect_code 0 "$rc" "a missing verifier relaunch should mint and succeed"$'\n'"$out"
+  [ "$(meta_field "$dir" rl52 window)" != "$before_window" ] \
+    || fail "a minted endpoint must record a different window, got '$before_window'"
+  [ "$(meta_field "$dir" rl52 spawn_gen)" != "$before_spawn" ] \
+    || fail "a minted relaunch must record a new spawn_gen"
   [ "$(cat "$dir/home/data/rl52/brief.md")" = "$brief" ] \
     || fail "a verifier relaunch must not rewrite brief.md"
   assert_grep "continue verification" "$dir/home/data/rl52/verifier-brief.md" \
@@ -1824,14 +1840,19 @@ test_missing_mint_failure_kills_the_new_window_and_restores_the_record() {
 }
 
 test_dead_endpoint_still_adopts_and_never_mints() {
-  local dir
+  local dir out rc before_spawn
   dir=$(new_case miss-dead rl56)
   add_ship_task "$dir" rl56 claude
+  printf 'spawn_gen=s-old\n' >> "$dir/home/state/rl56.meta"
   printf 'zsh' > "$dir/fake/command"
   printf '%s' "$dir/wt" > "$dir/fake/cwd"
-  run_control "$dir" rl56 relaunch --note "adopt the dead pane" >/dev/null
+  before_spawn=$(meta_field "$dir" rl56 spawn_gen)
+  out=$(run_control "$dir" rl56 relaunch --note "adopt the dead pane"); rc=$?
+  expect_code 0 "$rc" "a dead-endpoint relaunch should adopt and succeed"$'\n'"$out"
   [ "$(meta_field "$dir" rl56 window)" = "fmses:fm-rl56" ] \
     || fail "a dead endpoint must be adopted, not minted"
+  [ "$(meta_field "$dir" rl56 spawn_gen)" != "$before_spawn" ] \
+    || fail "an adopted relaunch must record a new spawn_gen"
   [ ! -e "$dir/fake/created" ] || fail "a dead endpoint must not create a window"
   pass "fm-control relaunch: a dead endpoint still adopts and never mints"
 }
