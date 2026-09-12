@@ -33,6 +33,9 @@
 # relevance, then document id, then path. Recency, status, importance, and
 # freshness never affect rank. Date is display, historical --as-of filtering,
 # and the check-freshness mark only.
+# A leading YAML header and a terminal Related: footer are metadata only:
+# they are read for date and status, excluded from the title and ranking
+# text, and never followed to other documents.
 #
 # Limits. Each title or body input is capped at 64 KiB. Each archive document
 # is capped at 16 KiB. The ranking head is the first 16 KiB of each report or
