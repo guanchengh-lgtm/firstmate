@@ -46,7 +46,10 @@
 #              standing charter is never rewritten.
 #              Records a durable checkpoint and that note, exits the old agent,
 #              then delegates the launch to its single owner,
-#              bin/fm-spawn.sh --relaunch. A failure before publication keeps
+#              bin/fm-spawn.sh --relaunch. When the recorded endpoint reads
+#              missing, there is no agent to stop; the transaction records
+#              that, retires the stale busy generation, and still launches
+#              into the recorded worktree. A failure before publication keeps
 #              the prior durable record in place and reports the concrete
 #              state; it never leaves a half-transitioned task claiming to be
 #              running.
@@ -300,6 +303,7 @@ T=$FM_BACKEND_VALIDATED_TARGET
 LABEL="fm-$ID"
 RECORDED_HARNESS=$(fm_meta_get "$META" harness)
 KIND=$(fm_meta_get "$META" kind)
+ROLE=$(fm_meta_get "$META" role)
 WT=$(fm_meta_get "$META" worktree)
 [ -n "$KIND" ] || KIND=ship
 
@@ -508,6 +512,8 @@ BRIEF_PRIOR="$JOURNAL.brief-prior"
 NOTE_FILE="$JOURNAL.note"
 RELAUNCH_META_PUBLISHED=0
 RELAUNCH_AGENT_CONFIRMED=0
+RELAUNCH_ENDPOINT_MISSING=0
+RELAUNCH_SPAWN_OK=0
 RELAUNCH_TX=
 RELAUNCH_BRIEF=
 PRIOR_HARNESS=$HARNESS
@@ -585,7 +591,20 @@ relaunch_rollback() {
           ;;
       esac
       ;;
-    exited|launching)
+    endpoint-missing|exited|launching)
+      if [ "$RELAUNCH_ENDPOINT_MISSING" = 1 ] \
+         && [ "${RELAUNCH_SPAWN_OK:-0}" != 1 ] \
+         && [ "$RELAUNCH_AGENT_CONFIRMED" != 1 ]; then
+        # A mint that dies after creating an endpoint kills that endpoint in
+        # the launch owner; restore the prior record so the durable identity
+        # is not left pointing at a pane that no longer exists.
+        if [ -f "$META_PRIOR" ]; then
+          cp -p "$META_PRIOR" "$META" 2>/dev/null || true
+        fi
+        journal_write "failed:$RELAUNCH_PHASE" "rollback=prior-record-kept" || true
+        echo "error: $ID's agent was stopped but the replacement did not launch; no agent is running, and its work plus the recorded progress note are preserved at $WT" >&2
+        return 0
+      fi
       if [ "$RELAUNCH_AGENT_CONFIRMED" = 1 ]; then
         journal_write "failed:$RELAUNCH_PHASE" "rollback=none-new-agent-confirmed" || true
         echo "error: $ID's replacement is running on $TARGET_HARNESS, but transaction completion could not be persisted; its published record was retained for reconciliation" >&2
@@ -781,7 +800,7 @@ record_note() {
 }
 
 do_relaunch() {
-  local exit_result state note_line
+  local exit_result state note_line wt_branch
   local -a spawn_args
 
   require_state_verified_backend relaunch
@@ -789,7 +808,11 @@ do_relaunch() {
 
   case "$KIND" in
     ship|scout)
-      RELAUNCH_BRIEF="$DATA/$ID/brief.md"
+      if [ "$KIND" = ship ] && [ "$ROLE" = verifier ]; then
+        RELAUNCH_BRIEF="$DATA/$ID/verifier-brief.md"
+      else
+        RELAUNCH_BRIEF="$DATA/$ID/brief.md"
+      fi
       [ -f "$RELAUNCH_BRIEF" ] \
         || die "task $ID has no instructions at $RELAUNCH_BRIEF; refusing to relaunch a worker with nothing to work from"
       [ "$NOTE_SET" = 1 ] && [ -n "$NOTE" ] \
@@ -811,6 +834,9 @@ do_relaunch() {
     note_line="note=none"
   fi
   safe_checkpoint
+  wt_branch=$(git -C "$WT" branch --show-current 2>/dev/null || true)
+  [ -n "$wt_branch" ] || wt_branch=detached
+  CHECKPOINT_LINES+=("worktree_branch=$wt_branch")
   cp -p "$META" "$META_PRIOR" || die "could not preserve task $ID's durable record before relaunching"
   RELAUNCH_ACTIVE=1
   journal_write checkpoint "${CHECKPOINT_LINES[@]}" "$note_line"
@@ -818,9 +844,24 @@ do_relaunch() {
   record_note
   journal_write noted "${CHECKPOINT_LINES[@]}" "$note_line"
 
-  journal_write stopping "${CHECKPOINT_LINES[@]}" "$note_line"
-  exit_result=$(do_exit)
-  journal_write exited "${CHECKPOINT_LINES[@]}" "$note_line" "exit_result=$exit_result"
+  state=$(agent_state)
+  case "$state" in
+    alive|dead)
+      journal_write stopping "${CHECKPOINT_LINES[@]}" "$note_line"
+      exit_result=$(do_exit)
+      journal_write exited "${CHECKPOINT_LINES[@]}" "$note_line" "exit_result=$exit_result"
+      ;;
+    missing)
+      RELAUNCH_ENDPOINT_MISSING=1
+      CHECKPOINT_LINES+=("endpoint_missing=yes")
+      journal_write endpoint-missing "${CHECKPOINT_LINES[@]}" "$note_line"
+      retire_busy_incarnation
+      exit_result=
+      ;;
+    *)
+      die "task $ID's endpoint reads '$state' rather than a positively classified state; refusing to send a lifecycle command into an unattributed endpoint"
+      ;;
+  esac
 
   # The launch owner (fm-spawn --relaunch) clears the previous incarnation's
   # per-task harness wiring before arming the new one, so nothing to do here.
@@ -831,6 +872,7 @@ do_relaunch() {
   [ "$TARGET_EFFORT" = default ] || spawn_args+=(--effort "$TARGET_EFFORT")
   if FM_CONTROL_RELAUNCH_TX="$RELAUNCH_TX" \
       "$SCRIPT_DIR/fm-spawn.sh" "${spawn_args[@]}" >/dev/null; then
+    RELAUNCH_SPAWN_OK=1
     RELAUNCH_META_PUBLISHED=1
   else
     [ "$(fm_meta_get "$META" control_relaunch_tx)" != "$RELAUNCH_TX" ] \
@@ -838,12 +880,21 @@ do_relaunch() {
     die "the replacement agent for $ID could not be launched on $TARGET_HARNESS"
   fi
 
+  # A mint publishes a new endpoint; wait on that record, not the gone one.
+  fm_backend_validate_task_endpoint "$META" "$ID" \
+    || die "the replacement agent for $ID published a record whose endpoint could not be validated"
+  T=$FM_BACKEND_VALIDATED_TARGET
+
   state=$(wait_agent_state "$LAUNCH_WAIT" alive) || {
     die "the replacement agent for $ID did not come up within ${LAUNCH_WAIT}s (endpoint reads '$state')"
   }
   RELAUNCH_AGENT_CONFIRMED=1
 
-  journal_write complete "${CHECKPOINT_LINES[@]}" "$note_line" "exit_result=$exit_result"
+  if [ -n "$exit_result" ]; then
+    journal_write complete "${CHECKPOINT_LINES[@]}" "$note_line" "exit_result=$exit_result"
+  else
+    journal_write complete "${CHECKPOINT_LINES[@]}" "$note_line"
+  fi
   RELAUNCH_ACTIVE=0
   echo "relaunched $ID harness=$TARGET_HARNESS from=$PRIOR_RECORDED_HARNESS model=$TARGET_MODEL effort=$TARGET_EFFORT backend=$BACKEND endpoint=$T worktree=$WT"
 }

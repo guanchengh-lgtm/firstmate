@@ -45,6 +45,7 @@ SCRATCH=$(cd "$SCRATCH" && pwd)
 HOME_DIR="$SCRATCH/home"
 mkdir -p "$HOME_DIR/state" "$HOME_DIR/data/hsmoke"
 printf '# brief\n' > "$HOME_DIR/data/hsmoke/brief.md"
+printf 'builder\n' > "$HOME_DIR/data/hsmoke/role"
 
 # A real git worktree so the control plane's checkpoint has a real local copy.
 PROJ="$SCRATCH/proj"
@@ -77,11 +78,12 @@ EOF
   echo "worktree=$WT"
   echo "project=$PROJ"
   echo "harness=claude"
-  echo "kind=ship"
-  echo "mode=no-mistakes"
-  echo "yolo=off"
-  echo "model=default"
-  echo "effort=default"
+    echo "kind=ship"
+    echo "mode=no-mistakes"
+    echo "yolo=off"
+    echo "role=builder"
+    echo "model=default"
+    echo "effort=default"
   echo "backend=herdr"
   echo "herdr_session=$SESSION"
   echo "herdr_workspace_id=$WORKSPACE_ID"
@@ -92,6 +94,8 @@ EOF
 run_control() {
   env FM_HOME="$HOME_DIR" HERDR_SESSION="$SESSION" \
     FM_CONTROL_POLL=0.2 FM_CONTROL_EXIT_WAIT=2 \
+    FM_CONTROL_LAUNCH_WAIT="${FM_CONTROL_LAUNCH_WAIT:-8}" \
+    FM_SPAWN_NO_GUARD=1 \
     "$ROOT/bin/fm-control.sh" "$@" 2>&1
 }
 
@@ -146,4 +150,56 @@ case "$OUT" in
 esac
 pass "real herdr: an agent that does not stop fails closed instead of being reported as stopped"
 
-fm_backend_herdr_kill "$SESSION:$PANE_ID" 2>/dev/null || true
+# --- missing endpoint: close the pane, mint, then refuse a live replacement --
+
+herdr pane close "$PANE_ID" --session "$SESSION" >/dev/null 2>&1 \
+  || fm_backend_herdr_kill "$SESSION:$PANE_ID" 2>/dev/null \
+  || fail "could not close the recorded herdr pane through the CLI"
+
+CREW=$(env FM_HOME="$HOME_DIR" HERDR_SESSION="$SESSION" \
+  "$ROOT/bin/fm-crew-state.sh" hsmoke 2>&1) || true
+case "$CREW" in
+  *"backend target gone"*) : ;;
+  *) fail "crew-state should read backend target gone after the pane is closed, got: $CREW" ;;
+esac
+pass "real herdr: crew-state reads backend target gone after the pane is closed"
+
+OLD_PANE=$PANE_ID
+FM_CONTROL_LAUNCH_WAIT=15 run_control hsmoke relaunch --note "resume after the pane vanished" \
+  > "$SCRATCH/relaunch.out" 2>&1 &
+RELAUNCH_PID=$!
+i=0
+NEW_PANE=
+while [ "$i" -lt 75 ]; do
+  NEW_PANE=$(grep '^herdr_pane_id=' "$HOME_DIR/state/hsmoke.meta" | tail -1 | cut -d= -f2-)
+  if [ -n "$NEW_PANE" ] && [ "$NEW_PANE" != "$OLD_PANE" ]; then
+    herdr pane report-agent "$NEW_PANE" --source fm-control-smoke \
+      --agent fm-control-smoke-relaunch --state idle --session "$SESSION" \
+      >/dev/null 2>&1 || true
+    break
+  fi
+  /bin/sleep 0.2
+  i=$((i + 1))
+done
+wait "$RELAUNCH_PID"
+RELAUNCH_RC=$?
+RELAUNCH_OUT=$(cat "$SCRATCH/relaunch.out")
+[ "$RELAUNCH_RC" -eq 0 ] || fail "relaunch after a closed pane should mint and succeed: $RELAUNCH_OUT"
+[ "$NEW_PANE" != "$OLD_PANE" ] || fail "minted herdr_pane_id should differ from the closed pane"
+NEW_CWD=$(herdr pane get "$NEW_PANE" --session "$SESSION" 2>/dev/null \
+  | jq -r '.result.pane.foreground_cwd // empty')
+NEW_CWD_REAL=$(cd "$NEW_CWD" 2>/dev/null && pwd -P) || NEW_CWD_REAL=$NEW_CWD
+WT_REAL=$(cd "$WT" && pwd -P)
+[ "$NEW_CWD_REAL" = "$WT_REAL" ] \
+  || fail "the minted pane cwd should be the recorded worktree, got '$NEW_CWD'"
+pass "real herdr: relaunch mints a new pane in the recorded worktree after the old pane is gone"
+
+if OUT=$(env FM_HOME="$HOME_DIR" HERDR_SESSION="$SESSION" FM_SPAWN_NO_GUARD=1 \
+  "$ROOT/bin/fm-spawn.sh" hsmoke --relaunch --harness claude 2>&1); then
+  fail "direct spawn --relaunch should refuse a live herdr pane: $OUT"
+fi
+case "$OUT" in
+  *"positively agent-free"*) : ;;
+  *) fail "direct spawn --relaunch should demand an agent-free endpoint, got: $OUT" ;;
+esac
+pass "real herdr: direct fm-spawn --relaunch refuses a live pane"

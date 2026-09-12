@@ -14,7 +14,10 @@
 #   4. A refusal before the agent is stopped changes nothing.
 #   5. A launch failure after the agent is stopped keeps the prior record,
 #      reports the concrete state, and preserves the work.
-#   6. fm-spawn --relaunch refuses on its own: a live agent, a contradicting
+#   6. A structurally missing endpoint mints a fresh one in the recorded
+#      worktree, preserves identity and overlay metadata, and still refuses
+#      live, unreadable, foreign-checkout, and post-create launch failures.
+#   7. fm-spawn --relaunch refuses on its own: a live agent, a contradicting
 #      flag, an extra positional, or a backend that cannot prove the previous
 #      agent exited.
 set -u
@@ -76,6 +79,7 @@ case "${1:-}" in
           [ -z "${FM_FAKE_EXIT_TRANSPORT_FAIL_AFTER_STOP:-}" ] || exit 1
           ;;
         *'encode launch-brief'*)
+          [ -z "${FM_FAKE_LAUNCH_BRIEF_FAIL:-}" ] || exit 1
           cat "$D/becomes" > "$D/command"
           [ -z "${FM_FAKE_LAUNCH_TRANSPORT_FAIL_AFTER_START:-}" ] || exit 1
           ;;
@@ -83,6 +87,12 @@ case "${1:-}" in
     else
       printf '%s\n' "$payload" >> "$D/keys"
       case "$payload" in
+        'cd '*)
+          cwd=${payload#cd }
+          cwd=${cwd#\'}
+          cwd=${cwd%\'}
+          printf '%s' "$cwd" > "$D/cwd"
+          ;;
         'export GOTMPDIR='*)
           if [ -n "${FM_FAKE_TRACE_PREPARE:-}" ]; then
             : > "$FM_FAKE_TRACE_PREPARE"
@@ -110,7 +120,48 @@ case "${1:-}" in
     done
     printf 'fakepane\n'; exit 0 ;;
   capture-pane) printf '╭────╮\n│    │\n╰────╯\n'; exit 0 ;;
-  list-windows) [ -f "$D/windows" ] && cat "$D/windows"; exit 0 ;;
+  list-windows)
+    if [ -n "${FM_FAKE_LIST_WINDOWS_FAIL:-}" ]; then
+      echo "tmux: unexpected inventory failure" >&2
+      exit 1
+    fi
+    [ -f "$D/windows" ] && cat "$D/windows"
+    exit 0 ;;
+  new-window)
+    shift
+    name=
+    cwd=
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -n) name=$2; shift 2 ;;
+        -c) cwd=$2; shift 2 ;;
+        -t|-F) shift 2 ;;
+        -dP|-d|-P) shift ;;
+        *) shift ;;
+      esac
+    done
+    [ -n "$name" ] || exit 1
+    printf '%s\n' "$name" >> "$D/windows"
+    : > "$D/created"
+    [ -z "$cwd" ] || printf '%s' "$cwd" > "$D/cwd"
+    printf 'zsh' > "$D/command"
+    printf '@mint\n'
+    exit 0 ;;
+  kill-window)
+    target=
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -t) target=$2; shift 2 ;;
+        *) shift ;;
+      esac
+    done
+    win=${target##*:}
+    win=${win#=}
+    if [ -f "$D/windows" ] && [ -n "$win" ]; then
+      grep -vxF "$win" "$D/windows" > "$D/windows.tmp" || true
+      mv "$D/windows.tmp" "$D/windows"
+    fi
+    exit 0 ;;
 esac
 exit 0
 SH
@@ -175,6 +226,8 @@ run_control() {  # <case-dir> <args...>
     FM_FAKE_TRACE_RELEASE="${FM_FAKE_TRACE_RELEASE:-}" \
     FM_FAKE_META_WRITER_READY="${FM_FAKE_META_WRITER_READY:-}" \
     FM_FAKE_TRACE_EXPORTED="${FM_FAKE_TRACE_EXPORTED:-}" \
+    FM_FAKE_LIST_WINDOWS_FAIL="${FM_FAKE_LIST_WINDOWS_FAIL:-}" \
+    FM_FAKE_LAUNCH_BRIEF_FAIL="${FM_FAKE_LAUNCH_BRIEF_FAIL:-}" \
     "$CONTROL" "$@" 2>&1
 }
 
@@ -182,6 +235,8 @@ run_spawn() {  # <case-dir> <args...>
   local dir=$1; shift
   env PATH="$dir/fakebin:$PATH" FM_HOME="$dir/home" FM_FAKE_DIR="$dir/fake" \
     FM_SPAWN_NO_GUARD=1 GROK_HOME="$dir/grokhome" \
+    FM_FAKE_LIST_WINDOWS_FAIL="${FM_FAKE_LIST_WINDOWS_FAIL:-}" \
+    FM_FAKE_LAUNCH_BRIEF_FAIL="${FM_FAKE_LAUNCH_BRIEF_FAIL:-}" \
     "$SPAWN" "$@" 2>&1
 }
 
@@ -1616,6 +1671,171 @@ test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it() {
   pass "relaunch re-reads the backlog item instead of blindly re-running the transition"
 }
 
+add_cursor_agent_stub() {  # <case-dir>
+  cat > "$1/fakebin/cursor-agent" <<'SH'
+#!/usr/bin/env bash
+exit 0
+SH
+  chmod +x "$1/fakebin/cursor-agent"
+}
+
+mark_endpoint_missing() {  # <case-dir>
+  : > "$1/fake/windows"
+  rm -f "$1/fake/created"
+}
+
+# --- 6. missing endpoint -----------------------------------------------------
+
+test_missing_endpoint_mints_and_preserves_identity() {
+  local dir out rc before_window before_spawn
+  dir=$(new_case miss-mint rl50)
+  add_ship_task "$dir" rl50 claude
+  add_cursor_agent_stub "$dir"
+  {
+    printf '%s\n' 'surface=internal-only'
+    printf '%s\n' 'ov=ov-rl50'
+    printf '%s\n' 'ov_harness=codex'
+    printf '%s\n' 'map=maps/rl50.md'
+    printf '%s\n' 'map_next=rl50-next'
+    printf '%s\n' 'spawn_gen=s-old'
+  } >> "$dir/home/state/rl50.meta"
+  printf 'internal-only\n' > "$dir/home/data/rl50/surface"
+  mark_endpoint_missing "$dir"
+  printf '%s' "$dir/proj" > "$dir/fake/cwd"
+  printf 'cursor-agent' > "$dir/fake/becomes"
+  before_window=$(meta_field "$dir" rl50 window)
+  before_spawn=$(meta_field "$dir" rl50 spawn_gen)
+
+  out=$(run_control "$dir" rl50 relaunch --harness cursor --note "resume after the pane vanished"); rc=$?
+  expect_code 0 "$rc" "a missing-endpoint relaunch should mint and succeed"$'\n'"$out"
+  [ "$(meta_field "$dir" rl50 window)" != "$before_window" ] \
+    || fail "a minted endpoint must record a different window, got '$before_window'"
+  [ "$(meta_field "$dir" rl50 spawn_gen)" != "$before_spawn" ] \
+    || fail "a minted relaunch must record a new spawn_gen"
+  [ "$(meta_field "$dir" rl50 kind)" = ship ] || fail "kind must survive a mint"
+  [ "$(meta_field "$dir" rl50 mode)" = no-mistakes ] || fail "mode must survive a mint"
+  [ "$(meta_field "$dir" rl50 role)" = builder ] || fail "role must survive a mint"
+  [ "$(meta_field "$dir" rl50 surface)" = internal-only ] || fail "surface must survive a mint"
+  [ "$(meta_field "$dir" rl50 worktree)" = "$dir/wt" ] || fail "worktree must survive a mint"
+  [ "$(meta_field "$dir" rl50 project)" = "$dir/proj" ] || fail "project must survive a mint"
+  [ "$(meta_field "$dir" rl50 yolo)" = off ] || fail "yolo must survive a mint"
+  [ "$(meta_field "$dir" rl50 ov)" = ov-rl50 ] || fail "ov must be preserved from the record"
+  [ "$(meta_field "$dir" rl50 ov_harness)" = codex ] || fail "ov_harness must be preserved from the record"
+  [ "$(journal_field "$dir" rl50 endpoint_missing)" = yes ] \
+    || fail "the journal must record endpoint_missing=yes"
+  [ "$(journal_field "$dir" rl50 phase)" = complete ] \
+    || fail "the journal should end complete"
+  ! grep -Fqx /exit "$dir/fake/literal" \
+    || fail "a missing endpoint must not be sent /exit"
+  assert_grep "cursor-agent" "$dir/fake/literal" "the replacement should have been launched"
+  pass "fm-control relaunch: a missing endpoint mints a fresh one and keeps identity plus overlay metadata"
+}
+
+test_missing_endpoint_preserves_a_dirty_worktree() {
+  local dir
+  dir=$(new_case miss-dirty rl51)
+  add_ship_task "$dir" rl51 claude
+  printf 'changed\n' > "$dir/wt/README.md"
+  printf 'scratch\n' > "$dir/wt/untracked.txt"
+  mark_endpoint_missing "$dir"
+  printf '%s' "$dir/proj" > "$dir/fake/cwd"
+  run_control "$dir" rl51 relaunch --note "keep the dirty tree" >/dev/null
+  [ -f "$dir/wt/untracked.txt" ] || fail "an untracked file must survive a missing-endpoint mint"
+  grep -qx changed "$dir/wt/README.md" || fail "a modified tracked file must survive a missing-endpoint mint"
+  [ "$(journal_field "$dir" rl51 worktree_dirty)" = yes ] \
+    || fail "the journal must record worktree_dirty=yes"
+  pass "fm-control relaunch: a missing-endpoint mint leaves a dirty worktree untouched"
+}
+
+test_missing_verifier_note_lands_in_verifier_brief() {
+  local dir brief
+  dir=$(new_case miss-verifier rl52)
+  add_ship_task "$dir" rl52 claude
+  printf 'verifier\n' > "$dir/home/data/rl52/verifier-role"
+  printf '# Task\n\nVerify the change.\n' > "$dir/home/data/rl52/verifier-brief.md"
+  sed -i.bak 's/^role=builder$/role=verifier/' "$dir/home/state/rl52.meta"
+  rm -f "$dir/home/state/rl52.meta.bak"
+  brief=$(cat "$dir/home/data/rl52/brief.md")
+  mark_endpoint_missing "$dir"
+  printf '%s' "$dir/proj" > "$dir/fake/cwd"
+  run_control "$dir" rl52 relaunch --note "continue verification" >/dev/null
+  [ "$(cat "$dir/home/data/rl52/brief.md")" = "$brief" ] \
+    || fail "a verifier relaunch must not rewrite brief.md"
+  assert_grep "continue verification" "$dir/home/data/rl52/verifier-brief.md" \
+    "the progress note must land in verifier-brief.md"
+  pass "fm-control relaunch: a missing verifier writes the note to verifier-brief.md"
+}
+
+test_missing_foreign_common_dir_refuses_before_create() {
+  local dir out rc before
+  dir=$(new_case miss-foreign rl53)
+  add_ship_task "$dir" rl53 claude
+  mkdir -p "$dir/foreign"
+  git -C "$dir/foreign" init -q
+  printf 'other\n' > "$dir/foreign/README.md"
+  git -C "$dir/foreign" add README.md
+  git -C "$dir/foreign" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' \
+    commit -qm other
+  sed -i.bak "s#^project=$dir/proj\$#project=$dir/foreign#" "$dir/home/state/rl53.meta"
+  rm -f "$dir/home/state/rl53.meta.bak"
+  mark_endpoint_missing "$dir"
+  before=$(cat "$dir/home/state/rl53.meta")
+  out=$(run_control "$dir" rl53 relaunch --note "wrong checkout"); rc=$?
+  expect_code 1 "$rc" "a foreign common dir should refuse"$'\n'"$out"
+  assert_contains "$out" "belongs to another project" "the refusal should name the foreign checkout"
+  [ "$(cat "$dir/home/state/rl53.meta")" = "$before" ] \
+    || fail "a foreign-checkout refusal must leave the record byte-identical"
+  [ ! -e "$dir/fake/created" ] || fail "a foreign-checkout refusal must not create a window"
+  pass "fm-control relaunch: a missing endpoint with a foreign common dir refuses before mint"
+}
+
+test_missing_unreadable_state_refuses_and_keeps_the_record() {
+  local dir out rc before
+  dir=$(new_case miss-unread rl54)
+  add_ship_task "$dir" rl54 claude
+  mark_endpoint_missing "$dir"
+  before=$(cat "$dir/home/state/rl54.meta")
+  out=$(FM_FAKE_LIST_WINDOWS_FAIL=1 run_control "$dir" rl54 relaunch --note "unreadable"); rc=$?
+  expect_code 1 "$rc" "an unreadable endpoint should refuse"$'\n'"$out"
+  assert_contains "$out" "positively classified" "the refusal should name the missing attribution"
+  [ "$(cat "$dir/home/state/rl54.meta")" = "$before" ] \
+    || fail "an unreadable-endpoint refusal must leave the record byte-identical"
+  [ "$(cat "$dir/fake/command")" = claude ] || fail "an unreadable refusal must not stop an agent"
+  pass "fm-control relaunch: an unreadable endpoint refuses and keeps the record"
+}
+
+test_missing_mint_failure_kills_the_new_window_and_restores_the_record() {
+  local dir out rc before
+  dir=$(new_case miss-fail rl55)
+  add_ship_task "$dir" rl55 claude
+  mark_endpoint_missing "$dir"
+  printf '%s' "$dir/proj" > "$dir/fake/cwd"
+  before=$(cat "$dir/home/state/rl55.meta")
+  out=$(FM_FAKE_LAUNCH_BRIEF_FAIL=1 run_control "$dir" rl55 relaunch --note "abort the mint"); rc=$?
+  expect_code 1 "$rc" "a mint that fails after creation should fail closed"$'\n'"$out"
+  [ "$(cat "$dir/home/state/rl55.meta")" = "$before" ] \
+    || fail "a failed mint must restore the prior durable record"
+  [ "$(journal_field "$dir" rl55 phase)" = "failed:launching" ] \
+    || fail "the journal should record failed:launching, got '$(journal_field "$dir" rl55 phase)'"
+  if grep -qx "fm-rl55" "$dir/fake/windows"; then
+    fail "a failed mint must not leave an orphan window"
+  fi
+  pass "fm-control relaunch: a mint that fails after creation kills the new window and restores the record"
+}
+
+test_dead_endpoint_still_adopts_and_never_mints() {
+  local dir
+  dir=$(new_case miss-dead rl56)
+  add_ship_task "$dir" rl56 claude
+  printf 'zsh' > "$dir/fake/command"
+  printf '%s' "$dir/wt" > "$dir/fake/cwd"
+  run_control "$dir" rl56 relaunch --note "adopt the dead pane" >/dev/null
+  [ "$(meta_field "$dir" rl56 window)" = "fmses:fm-rl56" ] \
+    || fail "a dead endpoint must be adopted, not minted"
+  [ ! -e "$dir/fake/created" ] || fail "a dead endpoint must not create a window"
+  pass "fm-control relaunch: a dead endpoint still adopts and never mints"
+}
+
 test_relaunch_moves_a_drifted_item_back_in_flight() {
   local dir out rc=0
   command -v tasks-axi >/dev/null 2>&1 || {
@@ -1687,3 +1907,10 @@ test_spawn_relaunch_refuses_an_unrecorded_task
 test_spawn_relaunch_refuses_a_pane_outside_the_worktree
 test_relaunch_reverifies_an_already_in_flight_item_instead_of_rewriting_it
 test_relaunch_moves_a_drifted_item_back_in_flight
+test_missing_endpoint_mints_and_preserves_identity
+test_missing_endpoint_preserves_a_dirty_worktree
+test_missing_verifier_note_lands_in_verifier_brief
+test_missing_foreign_common_dir_refuses_before_create
+test_missing_unreadable_state_refuses_and_keeps_the_record
+test_missing_mint_failure_kills_the_new_window_and_restores_the_record
+test_dead_endpoint_still_adopts_and_never_mints

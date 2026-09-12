@@ -63,20 +63,26 @@
 #   refused as a flag value.
 #        fm-spawn.sh <task-id> --relaunch [--harness <name>] [--model <name>] [--effort <level>]
 #   --relaunch launches a replacement agent for an EXISTING task into that
-#   task's own recorded endpoint and worktree instead of creating either. It is
-#   the launch half of the control plane (bin/fm-control.sh relaunch), which
-#   owns the checkpoint, the progress note, stopping the previous agent, and the
-#   transaction; call fm-control rather than this flag directly unless you are
-#   deliberately re-launching an already-stopped task. Every identity axis -
-#   backend, kind, project or home, worktree, endpoint - comes from the task's
-#   validated state/<id>.meta, so --backend, --scout, --secondmate, a project
-#   positional, and batch pairs are all refused alongside it; only harness,
-#   model, and effort may change, which is what makes a harness switch one
-#   ordinary relaunch. It refuses unless the recorded endpoint is positively
-#   agent-free on a backend with a recovery-grade agent-state classifier (tmux
-#   or herdr), refuses unless the endpoint's shell is sitting in the recorded
-#   worktree, and clears the previous harness's per-task wiring before arming
-#   the new incarnation.
+#   task's own recorded endpoint and worktree. When the recorded endpoint still
+#   exists it adopts that endpoint; when it is structurally missing it mints a
+#   fresh endpoint in the recorded worktree after proving no live endpoint in
+#   this home owns the task. It is the launch half of the control plane
+#   (bin/fm-control.sh relaunch), which owns the checkpoint, the progress note,
+#   stopping the previous agent when one exists, and the transaction; call
+#   fm-control rather than this flag directly unless you are deliberately
+#   re-launching an already-stopped or missing-endpoint task. Every identity
+#   axis - backend, kind, project or home, worktree, endpoint - comes from the
+#   task's validated state/<id>.meta, so --backend, --scout, --secondmate, a
+#   project positional, and batch pairs are all refused alongside it; only
+#   harness, model, and effort may change, which is what makes a harness switch
+#   one ordinary relaunch. It refuses unless the recorded endpoint is
+#   positively agent-free or structurally missing on a backend with a
+#   recovery-grade agent-state classifier (tmux or herdr), refuses unless the
+#   adopted or minted shell is sitting in the recorded worktree, and clears the
+#   previous harness's per-task wiring before arming the new incarnation. The
+#   agent-state read and the later mint are not one atomic snapshot; both
+#   creators refuse a same-named live endpoint at creation time, so a race
+#   resolves to a loud refusal rather than two agents.
 #   --harness <name> is the explicit per-spawn harness/profile adapter. The old
 #   positional harness arg still works for back-compat.
 #   --model <name> and --effort <low|medium|high|xhigh|max|default> are concrete
@@ -409,6 +415,7 @@ SURFACE_SET=0
 YOLO_SET=0
 ROLE_SET=0
 RELAUNCH=0
+RELAUNCH_MINT=0
 TRACEPARENT_SET=0
 MAP_NEXT_SET=0
 MAP_SET=0
@@ -940,7 +947,9 @@ spawn_disarm_fresh_resources() {
 }
 
 spawn_arm_created_endpoint() {  # <backend> <target>
-  [ "$RELAUNCH" -eq 0 ] || return 0
+  if [ "$RELAUNCH" -eq 1 ] && [ "${RELAUNCH_MINT:-0}" -ne 1 ]; then
+    return 0
+  fi
   if [ "$VERIFIER_HANDOFF" -eq 1 ]; then
     VERIFIER_HANDOFF_ABORT_ENDPOINT=1
     VERIFIER_HANDOFF_ABORT_BACKEND=$1
@@ -1487,10 +1496,15 @@ if [ "$RELAUNCH" -eq 1 ]; then
     exit 1
   }
   RELAUNCH_STATE=$(fm_backend_agent_state "$BACKEND" "$RELAUNCH_TARGET")
-  [ "$RELAUNCH_STATE" = dead ] || {
-    echo "error: task $ID's endpoint reads '$RELAUNCH_STATE'; a relaunch requires a positively agent-free endpoint (stop the agent first with bin/fm-control.sh $ID exit)" >&2
-    exit 1
-  }
+  RELAUNCH_MINT=0
+  case "$RELAUNCH_STATE" in
+    dead) ;;
+    missing) RELAUNCH_MINT=1 ;;
+    *)
+      echo "error: task $ID's endpoint reads '$RELAUNCH_STATE'; a relaunch requires a positively agent-free endpoint (stop the agent first with bin/fm-control.sh $ID exit)" >&2
+      exit 1
+      ;;
+  esac
   RELAUNCH_PRIOR_HARNESS=$(fm_meta_get "$RELAUNCH_META" harness)
   KIND=$(fm_meta_get "$RELAUNCH_META" kind)
   [ -n "$KIND" ] || KIND=ship
@@ -2553,6 +2567,44 @@ git_common_dir_real() {  # <worktree>
   cd "$common" 2>/dev/null && pwd -P
 }
 
+spawn_relaunch_mint_preflight() {
+  local worktree_common project_common scan_session pane_target label pane_id pane_state journal want_label
+  if [ "$KIND" != secondmate ]; then
+    worktree_common=$(git_common_dir_real "$WT") || {
+      echo "error: task $ID's recorded worktree '$WT' has an unreadable Git repository" >&2
+      return 1
+    }
+    project_common=$(git_common_dir_real "$PROJ_ABS_REAL") || {
+      echo "error: task $ID's recorded project has an unreadable Git repository" >&2
+      return 1
+    }
+    if [ "$worktree_common" != "$project_common" ]; then
+      echo "error: task $ID's recorded worktree '$WT' belongs to another project; refusing to mint an endpoint there" >&2
+      return 1
+    fi
+  fi
+  [ "$BACKEND" = herdr ] || return 0
+  scan_session=$HERDR_SES
+  [ -n "$scan_session" ] || scan_session=$(fm_backend_herdr_session)
+  want_label="fm-$ID"
+  while IFS=$'\t' read -r pane_target label; do
+    [ "$label" = "$want_label" ] || continue
+    pane_id=${pane_target#*:}
+    pane_state=$(fm_backend_herdr_pane_agent_state "${pane_target%%:*}" "$pane_id")
+    case "$pane_state" in
+      live|unknown)
+        echo "error: task $ID already has a $pane_state endpoint at $pane_target; refusing to mint a second one" >&2
+        return 1
+        ;;
+    esac
+  done < <(fm_backend_herdr_list_live "$scan_session")
+  journal="$STATE/$ID.herdr-presentation"
+  if [ -e "$journal" ] || [ -L "$journal" ]; then
+    fm_backend_herdr_projection_recovery_allows_flat "$scan_session" "$journal" "$ID" || return 1
+  fi
+  return 0
+}
+
 
 verifier_handoff_preflight() {
   local meta=$1 prior_kind prior_mode prior_surface prior_surface_count prior_yolo prior_role
@@ -2795,16 +2847,27 @@ fi
 
 W="fm-$ID"
 if [ "$RELAUNCH" -eq 1 ]; then
-  # Adopt the recorded endpoint instead of creating one. This is what keeps a
-  # relaunch a REPLACEMENT rather than a second copy of the task: no new
-  # terminal, no second worktree, and every uncommitted change left exactly
-  # where the previous agent left it.
+  # Adopt the recorded endpoint unless it is structurally gone. A mint reuses
+  # the recorded worktree and falls through to the ordinary creation block.
   T=$RELAUNCH_TARGET
   # A secondmate's home already resolved WT above through the same validation a
   # fresh secondmate spawn uses; every other kind takes the recorded worktree.
   [ "$KIND" = secondmate ] || WT=$RELAUNCH_WT
   WT_TARGET=$T
   SES=${T%%:*}
+  if [ "${RELAUNCH_MINT:-0}" -eq 1 ]; then
+    spawn_relaunch_mint_preflight || exit 1
+    WT_TARGET=
+    if [ "$BACKEND" = herdr ]; then
+      HERDR_SES=
+      HERDR_WORKSPACE_ID=
+      HERDR_TAB_ID=
+      HERDR_PANE_ID=
+    fi
+  fi
+fi
+if [ "$RELAUNCH" -eq 1 ] && [ "${RELAUNCH_MINT:-0}" -ne 1 ]; then
+  :
 else
 if [ "$VERIFIER_HANDOFF" -eq 1 ] \
    && { [ -e "$STATE/$ID.herdr-presentation" ] \
@@ -3110,6 +3173,26 @@ spawn_current_path() {  # <target>
     cmux) fm_backend_cmux_current_path "$1" "$W" ;;
   esac
 }
+spawn_settle_shell_in_worktree() {  # <label> <wt>
+  local label=$1 wt=$2 wt_real seen
+  wt_real=$(real_path_or_raw "$wt")
+  spawn_send_text_line "$WT_TARGET" "cd $(shell_quote "$wt")"
+  seen=
+  for _ in $(seq 1 10); do
+    seen=$(spawn_current_path "$WT_TARGET" || true)
+    [ -z "$seen" ] || [ "$(real_path_or_raw "$seen")" != "$wt_real" ] || break
+    sleep 0.5
+  done
+  if [ -z "$seen" ] || [ "$(real_path_or_raw "$seen")" != "$wt_real" ]; then
+    if [ "$label" = "verifier handoff" ]; then
+      echo "error: verifier handoff refused: endpoint is in '${seen:-unknown}', not builder worktree '$wt'" >&2
+    else
+      echo "error: task $ID's endpoint is in '${seen:-unknown}', not its recorded worktree '$wt'; refusing to relaunch an agent outside the copy holding its work" >&2
+    fi
+    return 1
+  fi
+  return 0
+}
 spawn_send_literal() {  # <target> <text>
   case "$BACKEND" in
     tmux) fm_backend_tmux_send_literal "$1" "$2" ;;
@@ -3187,11 +3270,11 @@ kimi_spawn_fail() {  # <detail>
   echo "error: $1; inspect window $T" >&2
 }
 
-if [ "$RELAUNCH" -eq 1 ]; then
+if [ "$RELAUNCH" -eq 1 ] && [ "${RELAUNCH_MINT:-0}" -ne 1 ]; then
   # No worktree is acquired: the recorded one is reused as-is. What must be
   # proven instead is that the adopted endpoint's shell is actually sitting in
   # that worktree, so the replacement agent starts where the work is rather
-  # than wherever the pane happened to drift.
+  # than wherever the pane happened to drift. The adopt path must not send cd.
   relaunch_wt_real=$(real_path_or_raw "$WT")
   relaunch_seen=
   for _ in $(seq 1 10); do
@@ -3204,19 +3287,11 @@ if [ "$RELAUNCH" -eq 1 ]; then
     exit 1
   fi
   [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
+elif [ "$RELAUNCH" -eq 1 ]; then
+  spawn_settle_shell_in_worktree "relaunch" "$WT" || exit 1
+  [ "$KIND" = secondmate ] || validate_spawn_worktree "relaunch" "$T"
 elif [ "$VERIFIER_HANDOFF" -eq 1 ]; then
-  handoff_wt_real=$(real_path_or_raw "$WT")
-  spawn_send_text_line "$WT_TARGET" "cd $(shell_quote "$WT")"
-  handoff_seen=
-  for _ in $(seq 1 10); do
-    handoff_seen=$(spawn_current_path "$WT_TARGET" || true)
-    [ -z "$handoff_seen" ] || [ "$(real_path_or_raw "$handoff_seen")" != "$handoff_wt_real" ] || break
-    sleep 0.5
-  done
-  if [ -z "$handoff_seen" ] || [ "$(real_path_or_raw "$handoff_seen")" != "$handoff_wt_real" ]; then
-    echo "error: verifier handoff refused: endpoint is in '${handoff_seen:-unknown}', not builder worktree '$WT'" >&2
-    exit 1
-  fi
+  spawn_settle_shell_in_worktree "verifier handoff" "$WT" || exit 1
   validate_spawn_worktree "verifier handoff" "$T"
 elif [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ]; then
   spawn_send_text_line "$WT_TARGET" 'treehouse get'
@@ -3671,10 +3746,19 @@ if [ "$KIND" = ship ] && [ "${SURFACE_SET:-0}" -eq 1 ]; then
   }
 fi
 preserve_relaunch_meta() {
-  awk -F= '
+  awk -F= \
+    -v map_next_set="$MAP_NEXT_SET" \
+    -v map_set="$MAP_SET" \
+    -v ov_set="$OV_SET" '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode surface yolo role map_next map ov ov_harness session tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode surface yolo role session tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
       for (i in keys) owned[keys[i]] = 1
+      if (map_next_set == 1) owned["map_next"] = 1
+      if (map_set == 1) owned["map"] = 1
+      if (ov_set == 1) {
+        owned["ov"] = 1
+        owned["ov_harness"] = 1
+      }
     }
     !($1 in owned)
   ' "$RELAUNCH_META"
@@ -4010,6 +4094,9 @@ if [ -n "$SPAWN_DEFERRED_SIGNAL" ]; then
   exit "$SPAWN_DEFERRED_SIGNAL_STATUS"
 fi
 "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
+if [ "${RELAUNCH_MINT:-0}" -eq 1 ]; then
+  spawn_disarm_fresh_resources
+fi
 
 SPAWN_DELIVERY=
 if [ -n "$MODE" ]; then
