@@ -70,6 +70,7 @@ It is not deterministic across the verified adapters: codex and grok resume only
    A secondmate's own crewmates run in their own endpoints and outlive its relaunch; the relaunched secondmate reconciles them from its home's durable records at startup.
 3. **Record the note.**
    A ship or scout relaunch requires `--note`, because the replacement inherits the local copy but none of the conversation; the note is appended to the instructions it reads.
+   For a ship task recorded with `role=verifier`, those instructions are `data/<id>/verifier-brief.md`; every other ship or scout reads `data/<id>/brief.md`.
    A secondmate relaunch does not require one and never rewrites its standing charter.
 4. **Stop the old agent** through the `exit` verb, with its postcondition.
    When the recorded endpoint reads `missing`, there is no agent to stop; the transaction records that and proceeds to launch.
@@ -81,6 +82,7 @@ Switching harness is therefore one ordinary relaunch rather than a separate mech
 
 - A refusal **before** the agent is stopped leaves the durable record and the instructions byte-identical.
 - A launch failure **after** the agent is stopped restores the prior durable record, keeps the progress note so a later recovery still has it, marks the journal `failed:launching`, and reports plainly that no agent is running and where the work is preserved.
+- A mint failure after the recorded endpoint was found `missing` stops no agent, restores the prior durable record, keeps the progress note, marks the journal `failed:<phase>` with `rollback=prior-record-kept`, and reports that the recorded endpoint was missing and the replacement did not launch.
 - If the launch owner already published the new record but no running agent can be confirmed, the new record is kept: the task is recorded on the new harness with no agent confirmed, which is exactly what recovery reconciles.
   Rewriting it back to the old harness would be a second, worse inaccuracy.
 
