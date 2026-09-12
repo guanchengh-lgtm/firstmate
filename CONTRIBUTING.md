@@ -69,6 +69,9 @@ Firstmate's wrapper still matters: crewmates route every `ask-user` finding to f
 Local no-mistakes Test is intent-targeted and must not re-run every `tests/*.test.sh`; `.github/workflows/ci.yml` owns the broad behavior suite plus platform-specific compatibility lanes.
 The pipeline publishes that evidence itself, so never hand-commit `.no-mistakes/` paths onto a feature branch; CI rejects them as tracked personal fleet paths.
 
+A Cursor Cloud Agent provisions this toolbelt automatically: `.cursor/environment.json` runs `.cursor/install.sh`, which installs the pinned tools that `bin/fm-lint.sh` and `bin/fm-test-run.sh` expect on the default base image.
+The pins stay owned by `bin/fm-install-*.sh`, `bin/fm-lint.sh`, and `.github/workflows/ci.yml`; `.cursor/install.sh` only calls or mirrors them and never defines a version of its own.
+
 Check and test the toolbelt before pushing:
 
 ```sh
