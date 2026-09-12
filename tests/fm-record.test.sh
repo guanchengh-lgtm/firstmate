@@ -1785,6 +1785,30 @@ test_land_related_scan_git_failure_and_push_pending() {
   pass "fm-record: land-related scan refusal, Git failure, and push-pending keep both copies"
 }
 
+test_land_related_refuses_body_byte_rewrite() {
+  local home origin expected candidate
+  IFS=$(printf '\t') read -r home origin < <(new_home land-bytes)
+  setup_record "$home" "$origin"
+  seed_authored_record "$home"
+  printf '# Notes\n\nLatin-1 caf\xe9.\n' > "$home/data/notes.md"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'bytes seed tick'
+  expected=$(git --git-dir="$home/data/.git" rev-parse HEAD)
+  candidate="$TMP_ROOT/land-bytes/candidate"
+  git clone --quiet "$home/data" "$candidate"
+  printf '# Notes\n\nLatin-1 caf\xef\xbf\xbd.\nRelated: supersedes: none; cites: none; relates: none\n' \
+    > "$candidate/notes.md"
+  git -C "$candidate" add -A
+  git -C "$candidate" commit --quiet -m 'footer plus body rewrite'
+  run_rec "$home" land-related --candidate "$candidate" --expected-head "$expected"
+  expect_code 8 "$RC" 'body-rewrite land-related'
+  [ "$(git --git-dir="$home/data/.git" rev-parse HEAD)" = "$expected" ] \
+    || fail 'body-rewrite land-related moved HEAD'
+  python3 -c 'import sys; assert b"\xe9" in open(sys.argv[1], "rb").read()' "$home/data/notes.md" \
+    || fail 'body-rewrite land-related changed live body bytes'
+  pass "fm-record: land-related refuses a candidate that rewrites body bytes under a footer"
+}
+
 test_outer_repository_stays_clean() {
   local after
   after=$(git -C "$ROOT" status --short --untracked-files=all)
@@ -1840,5 +1864,6 @@ test_land_related_disabled_home_is_noop
 test_land_related_lands_one_footer_commit
 test_land_related_refuses_lock_dirty_and_advanced_head
 test_land_related_scan_git_failure_and_push_pending
+test_land_related_refuses_body_byte_rewrite
 
 test_outer_repository_stays_clean

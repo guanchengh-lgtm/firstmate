@@ -240,6 +240,21 @@ by = {row["path"]: row for row in data["proposals"]}
 self_edges = [edge for edge in by["decisions/self.md"]["edges"] if edge["key"] == "supersedes"]
 assert self_edges == [], self_edges
 assert data["cycles"], data["cycles"]
+cycle_paths = {"decisions/a.md", "decisions/b.md"}
+for path in cycle_paths:
+    kept = [edge for edge in by[path]["edges"] if edge["key"] == "supersedes"]
+    assert kept == [], kept
+    assert by[path]["proposed_footer"].startswith("Related: supersedes: none;"), by[path]
+stale = [
+    row for row in data["candidates"]
+    if row["path"] in cycle_paths and row["key"] == "supersedes"
+]
+assert stale == [], stale
+asked = {
+    row["path"] for row in data["candidates"]
+    if row["confidence"] == "question" and row["reason"] == "supersession cycle"
+}
+assert asked == cycle_paths, asked
 assert data["path_shadows"], data["path_shadows"]
 assert data["slug_collisions"], data["slug_collisions"]
 lint = json.loads(open(sys.argv[1], encoding="utf-8").read())
@@ -338,6 +353,36 @@ text = open(sys.argv[1], encoding="utf-8").read()
 assert text.count("Related:") == 1, text
 PY
   pass "fm-record-links.py: apply is footer-only, dry-run is inert, and reruns are idempotent"
+}
+
+test_apply_preserves_non_utf8_body_bytes() {
+  local rec copy out
+  rec="$TMP_ROOT/g7-bytes"
+  seed_base "$rec"
+  mkdir -p "$rec/task-bytes"
+  printf '# Bytes\n\nLatin-1 caf\xe9 cites [[other/report.md]].\n' > "$rec/task-bytes/report.md"
+  out=$(out_dir "$rec")
+  run_links propose --root "$rec" --out "$out"
+  expect_code 0 "$RC" "non-utf8 propose"
+  copy="$TMP_ROOT/g7-bytes-copy"
+  copy_record "$rec" "$copy"
+  run_links apply --root "$copy" --plan "$out/manifest.json"
+  expect_code 0 "$RC" "non-utf8 apply"
+  python3 - "$copy/task-bytes/report.md" "$rec/task-bytes/report.md" <<'PY' || fail "non-utf8 body bytes were rewritten"
+import sys
+new = open(sys.argv[1], "rb").read()
+old = open(sys.argv[2], "rb").read()
+assert b"\xe9" in old
+assert new.startswith(old), (old, new)
+tail = new[len(old):]
+assert tail.startswith(b"Related: ") and tail.endswith(b"\n"), tail
+assert b"\xef\xbf\xbd" not in new, new
+PY
+  run_links apply --root "$copy" --plan "$out/manifest.json"
+  expect_code 0 "$RC" "non-utf8 apply rerun"
+  [ "$(grep -c '^Related:' "$copy/task-bytes/report.md")" = "1" ] \
+    || fail "non-utf8 rerun appended a second footer"
+  pass "fm-record-links.py: apply preserves non-UTF-8 body bytes"
 }
 
 test_lint_findings_exit_zero_and_missing_root_unavailable() {
@@ -445,6 +490,7 @@ test_duplicate_self_cycle_shadow_slug
 test_existing_footer_none_stable_rerun
 test_apply_hash_and_altered_plan
 test_apply_preserves_body_and_is_idempotent
+test_apply_preserves_non_utf8_body_bytes
 test_lint_findings_exit_zero_and_missing_root_unavailable
 test_lint_never_rewrites_or_blocks
 test_acceptance_mixed_legacy_citations

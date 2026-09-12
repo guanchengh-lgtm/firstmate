@@ -1309,7 +1309,7 @@ def show(commit, path):
     )
     if result.returncode != 0:
         raise SystemExit(1)
-    return result.stdout.decode("utf-8", errors="replace")
+    return result.stdout.decode("utf-8", errors="surrogateescape")
 
 
 def prefix(text):

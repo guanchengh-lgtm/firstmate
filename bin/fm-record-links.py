@@ -1275,17 +1275,12 @@ def build_footer(evidence):
     )
 
 
-def apply_bytes(old_text, new_line, replace_canonical):
-    if replace_canonical:
-        body, _line, _footer = strip_terminal_related(old_text)
-    else:
-        body = old_text
-        if body and not body.endswith("\n"):
-            body += "\n"
-        elif body.endswith("\n\n"):
-            body = body.rstrip("\n") + "\n"
+def apply_bytes(old_text, new_line):
+    body = old_text
     if body and not body.endswith("\n"):
         body += "\n"
+    elif body.endswith("\n\n"):
+        body = body.rstrip("\n") + "\n"
     return body + new_line + "\n"
 
 
@@ -1408,22 +1403,9 @@ def propose(root, out_dir, state_root):
         }
         proposals.append(proposal)
         for item_e in high:
-            candidates.append(item_e.as_dict())
             if item_e.key == "supersedes":
                 supersede_edges.append((path, item_e.target))
-        for item_q in questions:
-            candidates.append(
-                {
-                    "confidence": "question",
-                    "key": None,
-                    "line": item_q.line,
-                    "path": item_q.path,
-                    "reason": item_q.why,
-                    "target": None,
-                    "text": item_q.text,
-                }
-            )
-            questions_all.append(item_q)
+        questions_all.extend(questions)
     cycle_list = supersede_cycles(supersede_edges)
     cycle_pairs = set()
     for loop in cycle_list:
@@ -1467,6 +1449,21 @@ def propose(root, out_dir, state_root):
             proposal["after_footer_bytes"] = proposal["proposed_footer"]
         filtered.append(proposal)
     proposals = filtered
+    for proposal in proposals:
+        for edge in proposal["edges"]:
+            candidates.append(dict(edge, path=proposal["path"]))
+    for item_q in questions_all:
+        candidates.append(
+            {
+                "confidence": "question",
+                "key": None,
+                "line": item_q.line,
+                "path": item_q.path,
+                "reason": item_q.why,
+                "target": None,
+                "text": item_q.text,
+            }
+        )
     collisions = slug_collisions(inventory_set)
     def by_path_line_token(item):
         return (item["path"], item["line"], item["token"])
@@ -1508,7 +1505,7 @@ def propose(root, out_dir, state_root):
     patch_chunks = []
     for proposal in manifest["proposals"]:
         path = proposal["path"]
-        new_text = apply_bytes(texts[path], proposal["proposed_footer"], False)
+        new_text = apply_bytes(texts[path], proposal["proposed_footer"])
         old_lines = texts[path].splitlines(True)
         if old_lines and not old_lines[-1].endswith("\n"):
             old_lines[-1] += "\n"
@@ -1527,9 +1524,13 @@ def propose(root, out_dir, state_root):
         if chunk:
             patch_chunks.append(chunk if chunk.endswith("\n") else chunk + "\n")
     report = render_report(manifest)
-    write_atomic(os.path.join(out_dir, "manifest.json"), dump_json(manifest))
-    write_atomic(os.path.join(out_dir, "changes.patch"), "".join(patch_chunks))
-    write_atomic(os.path.join(out_dir, "report.md"), report)
+    write_atomic(
+        os.path.join(out_dir, "manifest.json"), dump_json(manifest).encode("utf-8")
+    )
+    write_atomic(
+        os.path.join(out_dir, "changes.patch"), "".join(patch_chunks).encode("utf-8")
+    )
+    write_atomic(os.path.join(out_dir, "report.md"), report.encode("utf-8"))
     return 0
 
 
@@ -1590,10 +1591,19 @@ def render_report(manifest):
     return "\n".join(lines)
 
 
-def write_atomic(path, text):
+def append_footer_bytes(old, new_line):
+    body = old
+    if body and not body.endswith(b"\n"):
+        body += b"\n"
+    elif body.endswith(b"\n\n"):
+        body = body.rstrip(b"\n") + b"\n"
+    return body + new_line.encode("utf-8") + b"\n"
+
+
+def write_atomic(path, data):
     tmp = "%s.tmp.%s" % (path, os.getpid())
-    with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(text)
+    with open(tmp, "wb") as handle:
+        handle.write(data)
     os.replace(tmp, path)
 
 
@@ -1636,29 +1646,16 @@ def apply_plan(root, plan_path, state_root):
         if contained != path:
             raise ApplyRefuse("symlink escape or unsafe target: %s" % path)
         try:
-            current = read_text(full)
-            digest = sha256_file(full)
+            with open(full, "rb") as handle:
+                current = handle.read()
         except OSError as exc:
             raise ApplyRefuse("cannot read %s: %s" % (path, exc))
-        expected = wanted.get(path)
-        already = apply_bytes(current, footer, False)
-        if current == already or (
-            current.endswith("\n" + footer + "\n")
-            or current.endswith(footer + "\n")
-        ):
-            if parse_footer(terminal_related(current)[1] or "") is not None:
-                if terminal_related(current)[1] == footer:
-                    continue
-        if digest != expected:
-            body, _line, old_footer = strip_terminal_related(current)
-            rebuilt = None
-            if old_footer is not None:
-                rebuilt = apply_bytes(body, footer, False)
-            if rebuilt == current and old_footer is not None:
-                continue
+        current_text = current.decode("utf-8", errors="surrogateescape")
+        if terminal_related(current_text)[1] == footer:
+            continue
+        if sha256_bytes(current) != wanted.get(path):
             raise ApplyRefuse("source hash changed: %s" % path)
-        new_text = apply_bytes(current, footer, False)
-        write_atomic(full, new_text)
+        write_atomic(full, append_footer_bytes(current, footer))
     return 0
 
 
