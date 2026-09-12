@@ -56,7 +56,9 @@ test_promote_delivers_all_mode_dod_blocks() {
 
     actual=$(awk 'seen || /^# Definition of done$/ { seen = 1; print }' \
       "$actual_home/data/$id/ship-instructions.md")
-    expected=$(awk 'seen || /^# Definition of done$/ { seen = 1; print }' \
+    # The brief is a Record, so its terminal Related footer sits after the
+    # Definition of done; ship-instructions.md is not a Record and has none.
+    expected=$(awk '/^Related: / { exit } seen || /^# Definition of done$/ { seen = 1; print }' \
       "$expected_home/data/$id/brief.md")
     [ -n "$actual" ] || fail "$mode promotion omitted the Definition of done block"
     [ "$actual" = "$expected" ] \
