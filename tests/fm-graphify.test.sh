@@ -54,6 +54,14 @@ $2
 EOF
 }
 
+init_record() {
+  local dest=$1
+  mkdir -p "$dest"
+  git init --quiet -b main "$dest"
+  git -C "$dest" commit --quiet --allow-empty -m init
+  git -C "$dest" rev-parse HEAD
+}
+
 write_graph() {
   local dest=$1 commit=$2
   mkdir -p "$(dirname "$dest")"
@@ -88,8 +96,13 @@ test_inventory_dedupes_and_marks_absent() {
   init_repo "$extra" "https://github.com/guanchengh-lgtm/agent-skills.git" 'skills'
   init_repo "$world/fixture-origin" "https://example.invalid/fixture.git" 'origin'
   init_repo "$projects/extra-app" "$world/fixture-origin" 'clone'
+  init_repo "$world/ssh-clone" "git@github.com:guanchengh-lgtm/firstmate.git" 'ssh copy'
+  init_repo "$world/no-origin" "https://example.invalid/unused.git" 'primary'
+  git -C "$world/no-origin" remote remove origin
+  git -C "$world/no-origin" worktree add --quiet "$world/no-origin-wt" -b wt
   run_g inventory --projects-root "$projects" --record "$record" --registry "$registry" \
-    --home "$home" --extra "$extra" --extra "$world/fixture-origin"
+    --home "$home" --extra "$extra" --extra "$world/fixture-origin" \
+    --extra "$world/ssh-clone" --extra "$world/no-origin-wt" --extra "$world/no-origin"
   expect_code 0 "$RC" 'inventory'
   assert_contains "$OUT" $'record\trecord\tincomplete\tlocal-only' 'record without git is incomplete'
   assert_contains "$OUT" $'firstmate\tcode\tselected\tno-mistakes' 'firstmate is selected'
@@ -101,6 +114,10 @@ test_inventory_dedupes_and_marks_absent() {
   assert_contains "$OUT" 'captain-owned-unregistered' 'unregistered note names captain remote'
   assert_contains "$OUT" $'extra-app\tcode\tselected' 'file-origin clone is selected'
   assert_contains "$OUT" $'fixture-origin\tcode\tduplicate' 'file-origin extra matches the selected clone'
+  assert_contains "$OUT" $'ssh-clone\tcode\tduplicate' 'ssh origin dedupes against the https clone'
+  assert_contains "$OUT" $'no-origin-wt\tcode\tunregistered' 'remote-less worktree is unregistered'
+  assert_contains "$OUT" $'no-origin\tcode\tduplicate' 'primary checkout dedupes against its worktree by common dir'
+  assert_not_contains "$OUT" '/no-origin-wt	graphify-out' 'worktree path is not an identity'
   pass "fm-graphify: inventory dedupes clones and keeps absent vault explicit"
 }
 
@@ -113,9 +130,9 @@ test_eval_dedupes_nodes_and_rejects_archive() {
 2	2026-08-31	ov-kb-graphify		graphify project install hook-free shape
 EOF
   cat > "$world/graphify.raw" <<'EOF'
+NODE Archive [src=done-archive.md loc=12 community=Memory]
 NODE Install [src=ov-kb-graphify/report.md loc=1 community=Install]
 NODE Hook [src=ov-kb-graphify/report.md loc=8 community=Install]
-NODE Archive [src=done-archive.md loc=12 community=Memory]
 EOF
   cat > "$world/t2.raw" <<'EOF'
 ov-kb-graphify
@@ -127,8 +144,8 @@ EOF
   run_g eval --probes "$world/probes.tsv" --graphify-raw "$world/graphify.raw" \
     --t2-raw "$world/t2.raw" --graph "$world/graph.json"
   expect_code 0 "$RC" 'eval'
-  assert_contains "$OUT" $'2\tgraphify\t1\tY\tY\tY\t1.0000\tov-kb-graphify,miss:archive-without-block:done-archive.md' \
-    'graphify collapses duplicate nodes and refuses a bare archive hit'
+  assert_contains "$OUT" $'2\tgraphify\t2\t-\tY\tY\t0.5000\tmiss:archive-without-block:done-archive.md,ov-kb-graphify' \
+    'graphify collapses duplicate nodes and a top-ranked archive miss consumes rank 1'
   assert_contains "$OUT" $'2\tt2\t1\tY\tY\tY\t1.0000\tov-kb-graphify,other-doc' \
     't2 ranks the expected document first'
   pass "fm-graphify: eval maps nodes to documents and rejects archive-only hits"
@@ -172,7 +189,7 @@ PY
   expect_code 0 "$RC" 'cover'
   assert_contains "$OUT" $'.pine\t1\t0\t0\t0\t0\t1\t0\t0' 'pine stays unsupported'
   assert_contains "$OUT" $'.csv\t1\t0\t0\t0\t0\t1\t0\t0' 'csv stays unsupported'
-  assert_contains "$OUT" $'.py\t1\t1\t1\t1\t0\t0\t0\t0' 'python is represented'
+  assert_contains "$OUT" $'.py\t1\t0\t0\t1\t0\t0\t0\t0' 'python is represented but not claimed detected'
   pass "fm-graphify: cover counts pine and csv as unsupported"
 }
 
@@ -187,7 +204,7 @@ test_nightly_unchanged_skips_graphify() {
   init_repo "$repo" "https://github.com/guanchengh-lgtm/firstmate.git" 'code'
   commit=$(git -C "$repo" rev-parse HEAD)
   write_graph "$repo/graphify-out/graph.json" "$commit"
-  write_graph "$record/graphify-out/graph.json" "$commit"
+  write_graph "$record/graphify-out/graph.json" "$(init_record "$record")"
   write_graph "$record/graphify-out/merged-graph.json" "$commit"
   write_ledger "$record/knowledge-system-wayfinder/research/T10-graphify/inputs.tsv" \
 "record	record	selected	local-only	$commit	record	graphify-out/graph.json	record		ready	
@@ -216,7 +233,7 @@ test_nightly_code_edit_updates() {
   init_repo "$repo" "https://github.com/guanchengh-lgtm/firstmate.git" 'code'
   commit=$(git -C "$repo" rev-parse HEAD)
   write_graph "$repo/graphify-out/graph.json" "$commit"
-  write_graph "$record/graphify-out/graph.json" "$commit"
+  write_graph "$record/graphify-out/graph.json" "$(init_record "$record")"
   printf 'def x():\n    return 1\n' > "$repo/app.py"
   git -C "$repo" add app.py
   git -C "$repo" commit --quiet -m code
@@ -248,7 +265,7 @@ test_nightly_doc_edit_is_finding() {
   init_repo "$repo" "https://github.com/guanchengh-lgtm/firstmate.git" 'code'
   commit=$(git -C "$repo" rev-parse HEAD)
   write_graph "$repo/graphify-out/graph.json" "$commit"
-  write_graph "$record/graphify-out/graph.json" "$commit"
+  write_graph "$record/graphify-out/graph.json" "$(init_record "$record")"
   printf '# doc\n' > "$repo/NOTE.md"
   git -C "$repo" add NOTE.md
   git -C "$repo" commit --quiet -m docs
@@ -269,6 +286,109 @@ SH
   pass "fm-graphify: document edit is docs-stale and skips shell update"
 }
 
+test_nightly_docs_stale_survives_code_update() {
+  local world record projects fakebin repo commit
+  world="$TMP_ROOT/night-durable"
+  record="$world/record"
+  projects="$world/projects"
+  fakebin="$world/fakebin"
+  repo="$projects/firstmate"
+  mkdir -p "$fakebin" "$record" "$repo"
+  init_repo "$repo" "https://github.com/guanchengh-lgtm/firstmate.git" 'code'
+  commit=$(git -C "$repo" rev-parse HEAD)
+  write_graph "$repo/graphify-out/graph.json" "$commit"
+  write_graph "$record/graphify-out/graph.json" "$(init_record "$record")"
+  write_graph "$record/graphify-out/merged-graph.json" "$commit"
+  printf '# doc\n' > "$repo/NOTE.md"
+  printf 'def x():\n    return 1\n' > "$repo/app.py"
+  git -C "$repo" add NOTE.md app.py
+  git -C "$repo" commit --quiet -m both
+  write_ledger "$record/knowledge-system-wayfinder/research/T10-graphify/inputs.tsv" \
+"record	record	selected	local-only	$commit	record	graphify-out/graph.json	record		ready	
+firstmate	code	selected	no-mistakes	$commit	firstmate	graphify-out/graph.json	firstmate		ready	"
+  cat > "$fakebin/graphify" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$(dirname "$0")/log"
+if [ "$1" = update ]; then
+  python3 - "$(git rev-parse HEAD)" <<'PY'
+import json, sys
+json.dump({"built_at_commit": sys.argv[1], "nodes": [], "links": []}, open("graphify-out/graph.json", "w", encoding="utf-8"))
+PY
+fi
+exit 0
+SH
+  chmod +x "$fakebin/graphify"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
+  expect_code 1 "$RC" 'first night'
+  assert_contains "$OUT" $'status=finding\tdetail=docs-stale' 'mixed edit is docs-stale'
+  assert_grep 'update .' "$fakebin/log" 'mixed edit still ran the code update'
+  rm -f "$fakebin/log"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
+  expect_code 1 "$RC" 'second night'
+  assert_contains "$OUT" $'status=finding\tdetail=docs-stale' 'docs-stale survives the code update'
+  [ ! -f "$fakebin/log" ] || fail 'second night invoked graphify again'
+  python3 - "$repo/graphify-out/graph.json" "$(git -C "$repo" rev-parse HEAD)" <<'PY'
+import json, sys
+json.dump({"built_at_commit": sys.argv[2], "nodes": [{"id": "doc"}], "links": []}, open(sys.argv[1], "w", encoding="utf-8"))
+PY
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
+  expect_code 0 "$RC" 'third night'
+  assert_contains "$OUT" $'status=ok\tdetail=unchanged' 'host wiki rebuild clears docs-stale'
+  pass "fm-graphify: docs-stale stays until the host wiki rebuild replaces the graph"
+}
+
+test_nightly_unknown_built_at_updates() {
+  local world record projects fakebin repo commit
+  world="$TMP_ROOT/night-stale"
+  record="$world/record"
+  projects="$world/projects"
+  fakebin="$world/fakebin"
+  repo="$projects/firstmate"
+  mkdir -p "$fakebin" "$record" "$repo"
+  init_repo "$repo" "https://github.com/guanchengh-lgtm/firstmate.git" 'code'
+  commit=$(git -C "$repo" rev-parse HEAD)
+  write_graph "$repo/graphify-out/graph.json" "0000000000000000000000000000000000000000"
+  write_graph "$record/graphify-out/graph.json" "$(init_record "$record")"
+  write_ledger "$record/knowledge-system-wayfinder/research/T10-graphify/inputs.tsv" \
+"record	record	selected	local-only	$commit	record	graphify-out/graph.json	record		ready	
+firstmate	code	selected	no-mistakes	$commit	firstmate	graphify-out/graph.json	firstmate		ready	"
+  cat > "$fakebin/graphify" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$(dirname "$0")/log"
+exit 0
+SH
+  chmod +x "$fakebin/graphify"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
+  expect_code 1 "$RC" 'unknown built_at nightly'
+  assert_grep 'update .' "$fakebin/log" 'unknown built_at forces a code update'
+  pass "fm-graphify: a graph stamped with an unknown commit is rebuilt, not reported unchanged"
+}
+
+test_nightly_merge_keeps_paths_with_spaces() {
+  local world record projects fakebin commit
+  world="$TMP_ROOT/night space"
+  record="$world/record"
+  projects="$world/projects"
+  fakebin="$world/fakebin"
+  mkdir -p "$fakebin" "$projects"
+  commit=$(init_record "$record")
+  write_graph "$record/graphify-out/graph.json" "$commit"
+  write_ledger "$record/knowledge-system-wayfinder/research/T10-graphify/inputs.tsv" \
+"record	record	selected	local-only	$commit	record	graphify-out/graph.json	record		ready	"
+  cat > "$fakebin/graphify" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$#" "$@" > "$(dirname "$0")/log"
+exit 0
+SH
+  chmod +x "$fakebin/graphify"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
+  expect_code 0 "$RC" 'space merge nightly'
+  assert_contains "$OUT" $'status=ok\tdetail=merge-ready' 'ready set merges'
+  assert_contains "$(cat "$fakebin/log")" "$record/graphify-out/graph.json" 'graph path with a space is one argument'
+  [ "$(head -n 1 "$fakebin/log")" = 4 ] || fail 'merge-graphs receives exactly four arguments'
+  pass "fm-graphify: merge passes a graph path with a space as one argument"
+}
+
 test_nightly_rename_updates() {
   local world record projects fakebin repo commit
   world="$TMP_ROOT/night-rename"
@@ -283,7 +403,7 @@ test_nightly_rename_updates() {
   git -C "$repo" commit --quiet -m add
   commit=$(git -C "$repo" rev-parse HEAD)
   write_graph "$repo/graphify-out/graph.json" "$commit"
-  write_graph "$record/graphify-out/graph.json" "$commit"
+  write_graph "$record/graphify-out/graph.json" "$(init_record "$record")"
   git -C "$repo" mv app.py util.py
   git -C "$repo" commit --quiet -m rename
   write_ledger "$record/knowledge-system-wayfinder/research/T10-graphify/inputs.tsv" \
@@ -311,7 +431,7 @@ test_nightly_missing_ready_graph_refuses_merge() {
   mkdir -p "$fakebin" "$record/graphify-out" "$repo"
   init_repo "$repo" "https://github.com/guanchengh-lgtm/firstmate.git" 'code'
   commit=$(git -C "$repo" rev-parse HEAD)
-  write_graph "$record/graphify-out/graph.json" "$commit"
+  write_graph "$record/graphify-out/graph.json" "$(init_record "$record")"
   printf '%s\n' '{"ok":true}' > "$record/graphify-out/merged-graph.json"
   write_ledger "$record/knowledge-system-wayfinder/research/T10-graphify/inputs.tsv" \
 "record	record	selected	local-only	$commit	record	graphify-out/graph.json	record		ready	
@@ -338,7 +458,7 @@ test_nightly_pending_skips_merge() {
   projects="$world/projects"
   fakebin="$world/fakebin"
   mkdir -p "$fakebin" "$record" "$projects"
-  write_graph "$record/graphify-out/graph.json" "abc"
+  write_graph "$record/graphify-out/graph.json" "$(init_record "$record")"
   write_ledger "$record/knowledge-system-wayfinder/research/T10-graphify/inputs.tsv" \
 "record	record	selected	local-only	abc	record	graphify-out/graph.json	record		ready	
 firstmate	code	selected	no-mistakes		firstmate	graphify-out/graph.json	firstmate		pending	"
@@ -363,6 +483,9 @@ test_cover_counts_unsupported_pine
 test_nightly_unchanged_skips_graphify
 test_nightly_code_edit_updates
 test_nightly_doc_edit_is_finding
+test_nightly_docs_stale_survives_code_update
+test_nightly_unknown_built_at_updates
+test_nightly_merge_keeps_paths_with_spaces
 test_nightly_rename_updates
 test_nightly_missing_ready_graph_refuses_merge
 test_nightly_pending_skips_merge

@@ -5,6 +5,7 @@
 #   fm-graphify.py inventory --projects-root DIR --record DIR --registry FILE
 #                            [--home DIR] [--extra DIR]...
 #   fm-graphify.py plan --record DIR --projects-root DIR
+#   fm-graphify.py stamp --root DIR --docs-built-at COMMIT
 #   fm-graphify.py eval --probes FILE --mode replay --graphify-raw FILE
 #                       --t2-raw FILE [--graph FILE]
 #   fm-graphify.py cover --root DIR [--graph FILE] [--detect FILE]
@@ -27,6 +28,12 @@
 # path and never a disposable treehouse path.
 # Shell graphify update is a code rebuild only. A document-source change is
 # detail=docs-stale until the host assistant --update --wiki workflow runs.
+# stamp records graphify-out/code-only-build.tsv after a shell code rebuild:
+# the graph hash that rebuild produced and the commit whose documents the graph
+# still reflects. plan consults it only while the graph hash still matches, so
+# a host --update --wiki rebuild clears it without knowing it exists.
+# A graph whose built_at_commit is empty or unknown to the clone is stale and
+# gets a code rebuild.
 #
 # Exit codes:
 #   0  success, including an empty inventory or an unchanged plan
@@ -68,6 +75,8 @@ DOC_EXTS = {
     ".yml",
 }
 UNSUPPORTED_EXTS = {".pine", ".csv"}
+GRAPH_RELPATH = "graphify-out/graph.json"
+CODE_ONLY_MARKER = "graphify-out/code-only-build.tsv"
 CAPTAIN_ORIGIN_MARK = "github.com/guanchengh-lgtm"
 NODE_SRC_RE = re.compile(r"\[src=([^ \]]+)")
 COMMON_BASENAMES = {"readme.md", "changelog.md", "license", "license.md"}
@@ -99,6 +108,12 @@ def normalize_identity(raw: str) -> str:
         return ""
     if value.startswith("file://"):
         value = value[7:]
+    if value.startswith("ssh://"):
+        host_path = value[6:].split("@", 1)[-1]
+        value = "https://" + host_path
+    elif "://" not in value and ":" in value:
+        host, _, path = value.partition(":")
+        value = "https://%s/%s" % (host.split("@", 1)[-1], path.lstrip("/"))
     if value.startswith("/"):
         try:
             return str(Path(value).resolve())
@@ -143,8 +158,10 @@ def repo_facts(root: Path) -> dict[str, str]:
     primary = "yes" if (root / ".git").is_dir() else "no"
     if origin:
         identity = normalize_identity(origin)
+    elif common:
+        identity = normalize_identity(str(Path(common).parent))
     else:
-        identity = normalize_identity(top or common)
+        identity = normalize_identity(top)
     return {
         "toplevel": top,
         "common": common,
@@ -153,12 +170,6 @@ def repo_facts(root: Path) -> dict[str, str]:
         "identity": identity,
         "primary": primary,
     }
-
-
-def graph_relpath(kind: str) -> str:
-    if kind == "record":
-        return "graphify-out/graph.json"
-    return "graphify-out/graph.json"
 
 
 def graph_hash(graph: Path) -> str:
@@ -196,7 +207,7 @@ def empty_row(repo: str, kind: str) -> dict[str, str]:
         "delivery": "no-mistakes",
         "source_revision": "",
         "identity": "",
-        "graph_relpath": graph_relpath(kind),
+        "graph_relpath": GRAPH_RELPATH,
         "merge_tag": repo,
         "graph_hash": "",
         "publication": "none",
@@ -248,23 +259,18 @@ def cmd_inventory(args: argparse.Namespace) -> int:
     if record.exists():
         row = empty_row("record", "record")
         row["delivery"] = "local-only"
-        row["state"] = "incomplete" if not (record / ".git").exists() else "selected"
-        if row["state"] == "incomplete":
-            row["notes"] = "record-git-absent"
-        else:
-            row["notes"] = "record-root"
+        graph = record / row["graph_relpath"]
+        row["graph_hash"] = graph_hash(graph)
         if (record / ".git").exists():
             facts = repo_facts(record)
             row["source_revision"] = facts.get("head", "")
             row["identity"] = facts.get("identity", "")
             row["state"] = "selected"
             row["notes"] = "record-root"
-        graph = record / row["graph_relpath"]
-        row["graph_hash"] = graph_hash(graph)
-        row["publication"] = publication_for(
-            "selected" if row["state"] == "selected" else row["state"], graph
-        )
-        if row["state"] == "incomplete":
+            row["publication"] = publication_for("selected", graph)
+        else:
+            row["state"] = "incomplete"
+            row["notes"] = "record-git-absent"
             row["publication"] = "pending"
         rows.append(row)
 
@@ -365,18 +371,16 @@ def is_doc_path(rel: str) -> bool:
     return suffix in DOC_EXTS
 
 
-def changed_paths(root: Path, built_at: str) -> list[str]:
+def changed_paths(root: Path, baseline: str) -> list[str] | None:
     names: list[str] = []
-    if built_at:
-        diff = git_ok(root, "diff", "--name-only", built_at, "HEAD")
-        if diff:
-            names.extend(diff.splitlines())
-    dirty = git_ok(root, "diff", "--name-only")
-    if dirty:
-        names.extend(dirty.splitlines())
-    staged = git_ok(root, "diff", "--name-only", "--cached")
-    if staged:
-        names.extend(staged.splitlines())
+    if not baseline:
+        return None
+    diff = git(root, "diff", "--name-only", baseline, "HEAD")
+    if diff.returncode != 0:
+        return None
+    names.extend(diff.stdout.splitlines())
+    names.extend(git_ok(root, "diff", "--name-only").splitlines())
+    names.extend(git_ok(root, "diff", "--name-only", "--cached").splitlines())
     unique = []
     seen = set()
     for name in names:
@@ -397,6 +401,27 @@ def read_built_at(graph: Path) -> str:
     except (OSError, json.JSONDecodeError):
         return ""
     return str(data.get("built_at_commit") or "")
+
+
+def docs_built_at(root: Path, graph: Path, built_at: str) -> str:
+    marker = root / CODE_ONLY_MARKER
+    if not marker.is_file():
+        return built_at
+    cells = marker.read_text(encoding="utf-8").strip().split("\t")
+    if len(cells) != 2 or cells[0] != graph_hash(graph):
+        return built_at
+    return cells[1]
+
+
+def cmd_stamp(args: argparse.Namespace) -> int:
+    root = Path(args.root)
+    graph = root / GRAPH_RELPATH
+    digest = graph_hash(graph)
+    if not digest:
+        fail_usage("graph is not a file: %s" % graph)
+    marker = root / CODE_ONLY_MARKER
+    marker.write_text("%s\t%s\n" % (digest, args.docs_built_at), encoding="utf-8")
+    return 0
 
 
 def cmd_plan(args: argparse.Namespace) -> int:
@@ -425,14 +450,17 @@ def cmd_plan(args: argparse.Namespace) -> int:
                 pending.append(row["repo"])
             continue
         built_at = read_built_at(graph)
+        doc_baseline = docs_built_at(root, graph, built_at)
         changed = changed_paths(root, built_at)
-        docs = [path for path in changed if is_doc_path(path)]
-        code = [path for path in changed if not is_doc_path(path)]
+        doc_changed = changed_paths(root, doc_baseline)
+        code = changed is None or any(not is_doc_path(p) for p in changed)
+        docs = doc_changed is None or any(is_doc_path(p) for p in doc_changed)
         if code:
             code_changed.append(row["repo"])
             steps.append("step=update\t%s" % root)
             if row["kind"] == "code":
                 steps.append("step=wiki\t%s" % root)
+            steps.append("step=stamp\t%s\t%s" % (root, doc_baseline))
         if docs:
             docs_stale.append(row["repo"])
 
@@ -449,30 +477,17 @@ def cmd_plan(args: argparse.Namespace) -> int:
     if missing_ready:
         status = "failed"
         detail = "missing-input"
-    elif pending and not all(row["publication"] == "ready" for row in selected):
-        if any(row["publication"] == "pending" for row in selected):
-            status = "ok"
-            detail = "pending-inputs"
-        if docs_stale:
-            status = "finding"
-            detail = "docs-stale"
     elif docs_stale:
         status = "finding"
         detail = "docs-stale"
+    elif pending:
+        detail = "pending-inputs"
     elif code_changed:
-        status = "ok"
         detail = "code-updated"
-    else:
-        status = "ok"
-        detail = "unchanged"
 
-    all_ready = selected and all(row["publication"] == "ready" for row in selected)
     merged = record / "graphify-out/merged-graph.json"
-    if (
-        all_ready
-        and not missing_ready
-        and len(ready_selected) == len(selected)
-        and (code_changed or not merged.is_file())
+    if selected and len(ready_selected) == len(selected) and (
+        code_changed or not merged.is_file()
     ):
         steps.append("step=merge\t%s\t%s" % ("\t".join(ready_selected), merged))
         if detail == "unchanged":
@@ -591,9 +606,9 @@ def first_expected_rank(ranked: list[str], expected: list[str]) -> int | None:
     wanted = set(expected)
     position = 0
     for item in ranked:
+        position += 1
         if item.startswith("miss:"):
             continue
-        position += 1
         if item in wanted:
             return position
     return None
@@ -697,10 +712,7 @@ def cmd_cover(args: argparse.Namespace) -> int:
             if path.is_file():
                 source_bytes += path.stat().st_size
             posix = rel.replace("\\", "/")
-            if detected:
-                if posix in detected or str(path) in detected:
-                    detected_n += 1
-            elif ext not in UNSUPPORTED_EXTS:
+            if posix in detected or str(path) in detected:
                 detected_n += 1
             if posix in represented:
                 represented_n += 1
@@ -751,6 +763,10 @@ def build_parser() -> argparse.ArgumentParser:
     plan.add_argument("--record", required=True)
     plan.add_argument("--projects-root", required=True)
 
+    stamp = sub.add_parser("stamp")
+    stamp.add_argument("--root", required=True)
+    stamp.add_argument("--docs-built-at", required=True)
+
     ev = sub.add_parser("eval")
     ev.add_argument("--probes", required=True)
     ev.add_argument("--mode", choices=("replay",), default="replay")
@@ -775,6 +791,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_inventory(args)
     if args.cmd == "plan":
         return cmd_plan(args)
+    if args.cmd == "stamp":
+        return cmd_stamp(args)
     if args.cmd == "eval":
         return cmd_eval(args)
     if args.cmd == "cover":

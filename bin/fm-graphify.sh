@@ -17,7 +17,9 @@
 # It never installs or upgrades graphify, never writes a hook or user-scope
 # skill, never exports Obsidian or HTML, and never creates a second scheduler.
 # Shell `graphify update` is a code rebuild. Document extraction stays on the
-# host assistant `--update --wiki` workflow.
+# host assistant `--update --wiki` workflow. After a code rebuild the owner
+# stamps graphify-out/code-only-build.tsv so docs-stale stays reported until
+# that host workflow rebuilds the graph.
 # A missing selected ready graph refuses merge and leaves any prior merged
 # graph in place. Pending selected rows skip merge instead of publishing a
 # partial union.
@@ -118,7 +120,7 @@ cmd_nightly() {
   [ -n "$record" ] || { echo "graphify: nightly requires --record" >&2; return 2; }
   [ -n "$projects_root" ] || { echo "graphify: nightly requires --projects-root" >&2; return 2; }
 
-  local plan status detail line rc
+  local plan status detail line rc out
   plan=$(run_python plan --record "$record" --projects-root "$projects_root") || {
     rc=$?
     [ "$rc" -eq 2 ] && return 2
@@ -136,13 +138,17 @@ cmd_nightly() {
       step=wiki$'\t'*)
         run_wiki "${line#step=wiki	}" || return $?
         ;;
+      step=stamp$'\t'*)
+        local stamp_rest
+        stamp_rest=${line#step=stamp	}
+        run_python stamp --root "${stamp_rest%	*}" --docs-built-at "${stamp_rest##*	}" || return 11
+        ;;
       step=merge$'\t'*)
-        local rest out
-        rest=${line#step=merge	}
-        out=${rest##*	}
-        rest=${rest%	*}
-        # shellcheck disable=SC2086
-        run_merge "$out" $rest || return $?
+        local -a parts
+        IFS=$'\t' read -ra parts <<<"${line#step=merge	}"
+        out=${parts[${#parts[@]}-1]}
+        unset 'parts[${#parts[@]}-1]'
+        run_merge "$out" "${parts[@]}" || return $?
         ;;
     esac
   done <<EOF

@@ -424,6 +424,7 @@ Compiler ownership is one sentence: graphify compiles code structure per reposit
 The nightly runner walks a `graphify` stage after views when the Record holds `knowledge-system-wayfinder/research/T10-graphify/inputs.tsv`; the stage is cloud-ok and not-configured without that ledger, and no nightly.env key enables it.
 [`bin/fm-graphify.sh`](../bin/fm-graphify.sh) owns that invocation.
 Shell `graphify update` refreshes code only; a document-source change is a docs-stale finding until the host assistant `--update --wiki` workflow runs.
+The shell records that code-only rebuild in the ignored `graphify-out/code-only-build.tsv` so the finding stays reported across nights, and any rebuild that replaces the graph file retires the record.
 The gbrain phase inside the nightly views stage and its `config/gbrain.env` keys are owned by [`docs/gbrain.md`](gbrain.md).
 The five transcript families are fixed in the runner header; no config key adds, removes, or relocates one.
 
