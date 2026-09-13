@@ -1,0 +1,23 @@
+ok - fm-maintain: --now and --record are validated before any rule runs
+ok - fm-maintain: R1 separates bound deferrals, missing evaluators, and quotes
+ok - fm-maintain: R2 flags a brief only once dispatch is strictly over 14 days
+ok - fm-maintain: R2 reads durable dispatch times and reports unknown age
+ok - fm-maintain: R2 acknowledges a sidecar only while its brief hash holds
+ok - fm-maintain: touching a brief mtime leaves every R2 verdict identical
+ok - fm-maintain: R3 separates resolving, broken, cyclic, and unclear twins
+ok - fm-maintain: R4 flags resolving directory tables and spares option tables
+ok - fm-maintain: R5 marks unqualified facts unknown and rewrites nothing
+ok - fm-maintain: the rule fingerprint tracks the selected rules, not the clock
+ok - fm-maintain: seven consecutive clean days latch the rollout into enforce
+ok - fm-maintain: a gap resets the streak and a repeated date never advances it
+ok - fm-maintain: a finding or a changed rule fingerprint clears the streak
+ok - fm-maintain: cloud coverage is recorded without moving the streak
+ok - fm-maintain: enforce is sticky and a lost or corrupt record is an error
+ok - fm-maintain: an unconfigured rollout advance writes nothing and exits 0
+ok - fm-maintain: stow-gate reports in every mode and blocks only under enforce
+ok - fm-maintain: fold reports the latest cleanup receipt and proposes duplicates
+ok - fm-maintain: views land once and a timestamp-only change is left alone
+ok - fm-maintain: measure counts reuse once and names every missing measure
+ok - fm-maintain: a receipt merges its own host and preserves the others
+ok - fm-maintain: digest names each receipt state within its line budget
+ok - fm-maintain: fixtures leave the outer repository unchanged

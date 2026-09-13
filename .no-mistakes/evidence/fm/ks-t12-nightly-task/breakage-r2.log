@@ -1,0 +1,46 @@
+===== breakage archive: bin/fm-nightly.sh:1142 '-eq 11 ' -> '-eq 99 '
+ bin/fm-nightly.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+red run exit=1
+not ok - exit 11 is the locked class
+porcelain after restore: []
+green run exit=0
+0
+ok - fm-nightly-archive: the outer repository stays clean
+===== breakage maintain: bin/fm-maintain.py:1287 'if not os.path.isfile' -> 'if os.path.isfile'
+ bin/fm-maintain.py | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+red run exit=1
+not ok - unknown rule message (missing: 'unknown rule id: R9')
+porcelain after restore: []
+green run exit=0
+0
+ok - fm-maintain: fixtures leave the outer repository unchanged
+===== breakage nightly: bin/fm-nightly.sh:867 'signal-term' -> 'bound-hit'
+ bin/fm-nightly.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+red run exit=1
+not ok - external TERM is signal-term
+porcelain after restore: []
+green run exit=0
+0
+ok - fm-nightly: the outer repository stays clean
+===== breakage record: bin/fm-record.sh:1594 '= remote-branch-missing ]' -> '= remote-branch-missingX ]'
+ bin/fm-record.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+red run exit=1
+not ok - verify after the upstream branch vanished: expected exit 1, got 0
+porcelain after restore: []
+green run exit=0
+0
+ok - fm-record: fixtures leave the outer repository unchanged
+===== breakage session: bin/fm-session-start.sh:1276 'nightly-digest.json" ]' -> 'nightly-digest.jsonx" ]'
+ bin/fm-session-start.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+red run exit=1
+not ok - an activated home did not print the nightly section (missing: 'Nightly maintenance')
+porcelain after restore: []
+green run exit=0
+0
+# fm-session-start.test.sh: all assertions passed
+FINAL porcelain: []

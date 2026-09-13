@@ -1,0 +1,25 @@
+ok - fm-nightly: --help prints the operator contract
+ok - fm-nightly: install renders a parsable LaunchAgent plist
+ok - fm-nightly: install leaves an unknown LaunchAgent untouched
+ok - fm-nightly: install refuses an invalid hour or minute
+ok - fm-nightly: install refuses a worktree code root
+ok - fm-nightly: --bootstrap records launchctl bootout and bootstrap
+ok - fm-nightly: dry-run lists every stage and writes nothing
+ok - fm-nightly: record-only dry-run skips cloud-ok stages from the table
+ok - fm-nightly: refuses combined home/record flags and does not infer cwd
+ok - fm-nightly: a held lock prints busy, exits 3, and leaves the live run files alone
+ok - fm-nightly: the run bound stops the in-flight stage and keeps the prior success
+ok - fm-nightly: restore refuses a non-empty target and implicit latest
+ok - fm-nightly: the archive subcommand never writes last-attempt or last-complete
+ok - fm-nightly: status prints last-attempt, archive, weekly-check, and plist
+ok - fm-nightly: full run on a Record home writes stages, receipt, and a maintain commit
+ok - fm-nightly: a lint finding does not stop archive
+ok - fm-nightly: missing restic leaves archive not-configured and still runs Record stages
+ok - fm-nightly: record-only commits views and skips archive
+ok - fm-nightly: record-only keeps a local commit when a racing push wins
+ok - fm-nightly: a detached record-only clone pushes nothing and records detached-head
+ok - fm-nightly: record-only verify records a failed fetch instead of a stale equality
+ok - fm-nightly: the default scheduled date is the local calendar date of --now
+ok - fm-nightly: an external SIGTERM is recorded as signal-term, not bound-hit
+ok - fm-nightly: status reports an unreadable archive.json and keeps going
+ok - fm-nightly: the outer repository stays clean

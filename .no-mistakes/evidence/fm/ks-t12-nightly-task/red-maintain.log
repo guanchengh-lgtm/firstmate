@@ -1,0 +1,3 @@
+not ok - unknown rule message (missing: 'unknown rule id: R9')
+--- output ---
+fm-maintain: no backlog.md in Record /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-maintain.xVG3mx/strict-inputs

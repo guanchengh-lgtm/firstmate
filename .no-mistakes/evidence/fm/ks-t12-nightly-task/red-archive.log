@@ -1,0 +1,5 @@
+ok - fm-nightly: archive passes real family dirs after -- and records a snapshot id
+ok - fm-nightly: cursor 0 matches are missing and N matches are present
+ok - fm-nightly: restic exit 3 is incomplete and does not record last_complete_snapshot
+ok - fm-nightly: restic exit 1 is failed
+not ok - exit 11 is the locked class

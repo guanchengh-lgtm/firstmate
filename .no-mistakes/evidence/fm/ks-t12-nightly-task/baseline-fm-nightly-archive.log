@@ -1,0 +1,15 @@
+ok - fm-nightly: archive passes real family dirs after -- and records a snapshot id
+ok - fm-nightly: cursor 0 matches are missing and N matches are present
+ok - fm-nightly: restic exit 3 is incomplete and does not record last_complete_snapshot
+ok - fm-nightly: restic exit 1 is failed
+ok - fm-nightly: a locked repository is recorded as locked and keeps the last complete snapshot
+ok - fm-nightly: restic exit 0 without a summary id never replaces the last complete snapshot
+ok - fm-nightly: every family absent skips both restic backup and restic check
+ok - fm-nightly: a corrupt weekly-check.json records state-unreadable before restarting the rotation
+ok - fm-nightly: weekly-check skips when not due, stays due on failure, and advances on success
+ok - fm-nightly: a disappeared family is coverage-regressed
+ok - fm-nightly: restore refuses a non-empty target and latest unless --snapshot is passed
+ok - fm-nightly: --snapshot latest is passed to restic only when explicit
+ok - fm-nightly: a symlinked family root is symlink-skipped
+ok - fm-nightly: real restic archive and restore keep file bytes
+ok - fm-nightly-archive: the outer repository stays clean
