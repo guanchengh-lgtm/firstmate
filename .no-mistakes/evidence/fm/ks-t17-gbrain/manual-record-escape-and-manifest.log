@@ -1,0 +1,32 @@
+### GBRAIN_BRAIN under --record (record is not $FM_HOME/data)
+gbrain-maintain: GBRAIN_BRAIN points at the Record
+rc=1
+decisions
+### GBRAIN_HOME under --record
+gbrain-maintain: GBRAIN_HOME points at the Record
+rc=1
+### FM_HOME itself inside the record (candidate/previous/staging escape)
+gbrain-maintain: GBRAIN_HOME points at the Record
+rc=1
+ls: /tmp/fm-gb-manual.VnJX/rec/fmhome/state/gbrain: No such file or directory
+### clean config: run ok
+{
+  "exported": [
+    "conversations/sessions/s1.md"
+  ],
+  "ingested": 0,
+  "pages": 1,
+  "record_commit": "935374b50525981fefd577dfc83508e25b0d9f45",
+  "status": "ok",
+  "type": "gbrain-run",
+  "unclassified": []
+}
+rc=0
+### manifest shapes rejected (F9)
+gbrain-maintain: transcript manifest must be {"files": [...]}
+rc=1
+gbrain-maintain: transcript manifest must be {"files": [...]}
+rc=1
+### id alias for source_id is not honored
+gbrain-maintain: primary transcript row is incomplete
+rc=1

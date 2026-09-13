@@ -1,0 +1,25 @@
+FM_TEST_BEGIN 2026-09-13T17:59:26Z tests/fm-gbrain-maintain.test.sh family=unclassified expected_gate_skip=none
+ok - fm-gbrain-maintain: --help names the public commands
+ok - fm-gbrain-maintain: project reads committed blobs only
+ok - fm-gbrain-maintain: reserved names and text files become wrapped markdown
+ok - fm-gbrain-maintain: unsafe inputs and collisions fail closed
+ok - fm-gbrain-maintain: run publishes footer edges and ingests primaries only
+ok - fm-gbrain-maintain: a second invocation against a running run exits 3 and does not stop services
+ok - fm-gbrain-maintain: bootout is followed by a plist bootstrap on success and on failure
+ok - fm-gbrain-maintain: sync or scan failure restores the prior generation
+ok - fm-gbrain-maintain: install-archive checks the digest and will not mutate dest
+ok - fm-gbrain-maintain: write-plist is loopback-only and has no secrets
+ok - fm-gbrain-maintain: nightly dry-run stays silent and the brain stays off the Record
+ok - fm-gbrain-maintain: fixtures leave the outer repository unchanged
+FM_TEST_END 2026-09-13T17:59:36Z tests/fm-gbrain-maintain.test.sh exit=0 duration_ms=9309 gate_skip=false
+FM_TEST_BEGIN 2026-09-13T17:59:36Z tests/fm-gbrain-eval.test.sh family=unclassified expected_gate_skip=none
+ok - fm-gbrain-eval: help works and gold must be the 13-probe table
+ok - fm-gbrain-eval: official lanes call shipped recall and collapse chunks
+ok - fm-gbrain-eval: keyword and timeout rows keep overlap
+ok - fm-gbrain-eval: hit@5 regression and I5 note keep overlap
+ok - fm-gbrain-eval: fixtures leave the outer repository and gold file unchanged
+FM_TEST_END 2026-09-13T17:59:58Z tests/fm-gbrain-eval.test.sh exit=0 duration_ms=22300 gate_skip=false
+FM_TEST_SUMMARY total=2 failed=0 skipped_gate=0 duration_ms=31705
+FM_TEST_SUMMARY_FAMILY family=unclassified count=2 duration_ms=31609 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-gbrain-eval.test.sh duration_ms=22300
+FM_TEST_SLOWEST rank=2 script=tests/fm-gbrain-maintain.test.sh duration_ms=9309

@@ -1,0 +1,10 @@
+### F4: stage bound 63s -> inner --deadline-seconds 3 fires first; sync stub sleeps 20s
+rc=1 elapsed=9s
+views	failed	3	maintain-exit-1
+--- launchctl argv (restart completed under the inner deadline)
+bootout gui/502/com.firstmate.ks-t17-gbrain
+bootstrap gui/502 /tmp/fm-gb-manual.VnJX/night2/fakehome/Library/LaunchAgents/com.firstmate.ks-t17-gbrain.plist
+--- brain restored, no candidate/previous left
+brain
+home
+staging

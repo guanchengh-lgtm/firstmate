@@ -1,0 +1,54 @@
+### eval run, hybrid helper answers with known rankings (text output)
+eval overlap hybrid hit@5 regressed in A
+rc=0
+--- summary.json
+winner overlap | hybrid hit@5 regressed in A
+A.hybrid n=13 hit@5=0.23 mrr=0.19 complete=True
+A.overlap n=13 hit@5=1.00 mrr=0.96 complete=True
+B.hybrid n=8 hit@5=0.25 mrr=0.19 complete=True
+B.overlap n=8 hit@5=1.00 mrr=1.00 complete=True
+C.hybrid n=8 hit@5=0.25 mrr=0.19 complete=True
+C.overlap n=8 hit@5=1.00 mrr=1.00 complete=True
+retrieval_modes [('hybrid', 'hybrid'), ('overlap', 'overlap')]
+probe 8/11 B/C overlap rows: []
+hybrid identities collapsed: ['ov-kb-graphify', 'knowledge-stack-scout', 'kb-graphify-tv']
+
+### F6 adversarial: overlap arm slow (sleep 2s) with --deadline-ms 400, hybrid answers all
+winner overlap | overlap A is incomplete; no hybrid win
+A.overlap {'complete': False, 'hit@1': 0.0, 'hit@3': 0.0, 'hit@5': 0.0, 'n': 13, 'reciprocal_rank': 0.0}
+A.hybrid {'complete': True, 'hit@1': 0.15384615384615385, 'hit@3': 0.23076923076923078, 'hit@5': 0.23076923076923078, 'n': 13, 'reciprocal_rank': 0.19230769230769232}
+
+### hybrid helper timing out on one query
+eval overlap hybrid A is incomplete or degraded
+rc=0
+timeout rows: 1
+
+### keyword-only hybrid
+eval overlap hybrid A is incomplete or degraded
+rc=0
+
+### verdict: day0/day7 hybrid, day14 regression
+verdict overlap hybrid hit@5 regressed in A
+rc=0
+{
+  "brief_ranker": "overlap",
+  "day0": {
+    "run_id": "d0",
+    "winner": "hybrid"
+  },
+  "day14": {
+    "run_id": "d14",
+    "winner": "overlap"
+  },
+  "day7": {
+    "run_id": "d7",
+    "winner": "hybrid"
+  },
+  "note": "This verdict does not switch the brief. That change is I5.",
+  "reason": "hybrid hit@5 regressed in A",
+  "type": "gbrain-two-week-verdict",
+  "winner": "overlap"
+}
+
+### gold unchanged:
+(empty above means unchanged)

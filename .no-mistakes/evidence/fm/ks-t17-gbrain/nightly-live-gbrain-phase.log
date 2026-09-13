@@ -1,0 +1,87 @@
+### nightly full run, gbrain configured, sync ok
+rc=0
+--- stages.tsv
+config	ok	0	not-configured
+lock	ok	0	acquired
+reconcile-local	ok	0	reconciled
+reconcile	skipped	0	home path
+lint	ok	0	
+rollout	ok	1	
+fold	ok	0	
+views	ok	0	
+archive	not-configured	0	not-configured
+weekly-check	not-configured	0	not-configured
+injected-measures	ok	0	
+drift	ok	0	concurrent=1
+receipt	ok	0	
+checkpoint	ok	4	
+verify	ok	0	equal=yes
+--- gbrain argv
+sync --no-pull
+links replace --source record-footer --manifest /private/tmp/fm-gb-manual.VnJX/night2/home/state/gbrain/staging/footer-edges.json
+export --out /private/tmp/fm-gb-manual.VnJX/night2/home/state/gbrain/staging/export
+--- launchctl argv
+bootout gui/502/com.firstmate.ks-t17-gbrain
+bootstrap gui/502 /tmp/fm-gb-manual.VnJX/night2/fakehome/Library/LaunchAgents/com.firstmate.ks-t17-gbrain.plist
+--- gbrain pages tracked in the Record
+wiki/gbrain/conversations/sessions/s1.md
+wiki/views/gbrain/footer-edges.json
+wiki/views/gbrain/manifest.json
+wiki/views/gbrain/receipt.json
+--- generated receipt
+{
+  "exported": [
+    "conversations/sessions/s1.md"
+  ],
+  "ingested": [],
+  "label": "com.firstmate.ks-t17-gbrain",
+  "now": "2026-09-13T03:00:00Z",
+  "record_commit": "c755c50275ed5f2f0d5463e67543285a0f975569",
+  "type": "gbrain-receipt",
+  "unclassified": []
+}
+
+### nightly full run, gbrain sync fails
+rc=1
+--- stages.tsv
+config	ok	0	not-configured
+lock	ok	0	acquired
+reconcile-local	ok	1	reconciled
+reconcile	skipped	0	home path
+lint	ok	0	
+rollout	ok	0	
+fold	ok	0	
+views	failed	0	maintain-exit-1
+archive	not-configured	0	not-configured
+weekly-check	not-configured	0	not-configured
+injected-measures	ok	0	
+drift	ok	0	expected=2
+receipt	ok	0	
+checkpoint	ok	4	
+verify	ok	0	equal=yes
+--- launchctl argv
+bootout gui/502/com.firstmate.ks-t17-gbrain
+bootstrap gui/502 /tmp/fm-gb-manual.VnJX/night2/fakehome/Library/LaunchAgents/com.firstmate.ks-t17-gbrain.plist
+--- brain restored: previous gone, brain present
+brain
+home
+staging
+
+### nightly --dry-run with configured gbrain
+dry-run	config	would: validate nightly.env
+dry-run	lock	would: acquire nightly lock
+dry-run	reconcile-local	would: fm-record.sh reconcile
+dry-run	reconcile	would: skip home path
+dry-run	lint	would: fm-maintain.py lint
+dry-run	rollout	would: fm-maintain.py rollout advance
+dry-run	fold	would: fm-maintain.py fold
+dry-run	views	would: fm-maintain.py views --apply
+dry-run	archive	would: skip not-configured
+dry-run	weekly-check	would: skip not-configured
+dry-run	injected-measures	would: fm-maintain.py measure --apply
+dry-run	drift	would: git status --porcelain
+dry-run	receipt	would: fm-maintain.py receipt --apply
+dry-run	checkpoint	would: checkpoint and push
+dry-run	verify	would: fm-record.sh verify
+rc=0
+gbrain invoked: no

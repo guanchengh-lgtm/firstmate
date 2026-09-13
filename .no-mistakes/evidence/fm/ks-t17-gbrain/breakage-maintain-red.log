@@ -1,0 +1,13 @@
+FM_TEST_BEGIN 2026-09-13T18:03:01Z tests/fm-gbrain-maintain.test.sh family=unclassified expected_gate_skip=none
+ok - fm-gbrain-maintain: --help names the public commands
+ok - fm-gbrain-maintain: project reads committed blobs only
+ok - fm-gbrain-maintain: reserved names and text files become wrapped markdown
+ok - fm-gbrain-maintain: unsafe inputs and collisions fail closed
+ok - fm-gbrain-maintain: run publishes footer edges and ingests primaries only
+ok - fm-gbrain-maintain: a second invocation against a running run exits 3 and does not stop services
+not ok - restart ok: gbrain-maintain: serve restart failed: missing /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-gbrain-maintain.FrgImN/restart/com.firstmate.ks-t17-gbrain.plist
+run ok pages=1 exported=1 ingested=0: expected exit 0, got 1
+FM_TEST_END 2026-09-13T18:03:09Z tests/fm-gbrain-maintain.test.sh exit=1 duration_ms=7881 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=7944
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=7881 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-gbrain-maintain.test.sh duration_ms=7881
