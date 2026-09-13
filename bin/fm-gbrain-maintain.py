@@ -598,25 +598,15 @@ class HomePaths:
             "GBRAIN_TRANSCRIPT_MANIFEST"
         ) or os.path.join(state, "transcripts.json")
         self.scan_bin = env.get("GBRAIN_SCAN") or ""
-        for label, path in (
+
+    def private_roots(self):
+        return (
             ("GBRAIN_HOME", self.home),
             ("GBRAIN_BRAIN", self.brain),
             ("candidate", self.candidate),
             ("previous", self.previous),
             ("staging", self.staging),
-        ):
-            if os.path.isabs(path) and self._escapes_into_record(path):
-                raise MaintainError("%s points at the Record" % label)
-
-    def _escapes_into_record(self, path):
-        record = os.path.join(self.fm_home, "data")
-        real = os.path.realpath(path)
-        rec = os.path.realpath(record)
-        try:
-            common = os.path.commonpath([real, rec])
-        except ValueError:
-            return False
-        return common == rec
+        )
 
 
 def gbrain_env(paths, extra=None):
@@ -696,19 +686,17 @@ def load_transcript_manifest(path):
     if not path or not os.path.isfile(path):
         return []
     data = json.loads(open(path, encoding="utf-8").read())
-    if isinstance(data, dict):
-        data = data.get("files") or data.get("transcripts") or []
-    if not isinstance(data, list):
-        raise MaintainError("transcript manifest must be a list")
+    if not isinstance(data, dict) or not isinstance(data.get("files"), list):
+        raise MaintainError('transcript manifest must be {"files": [...]}')
     rows = []
-    for item in data:
+    for item in data["files"]:
         if not isinstance(item, dict):
             raise MaintainError("transcript manifest row must be an object")
         rows.append(
             {
                 "path": item.get("path") or "",
                 "format": item.get("format") or "",
-                "source_id": item.get("source_id") or item.get("id") or "",
+                "source_id": item.get("source_id") or "",
                 "role": item.get("role") or "unclassified",
             }
         )
@@ -908,8 +896,9 @@ def cmd_run(args):
     if args.transcript_manifest:
         env["GBRAIN_TRANSCRIPT_MANIFEST"] = args.transcript_manifest
     paths = HomePaths(fm_home, env)
-    if os.path.commonpath([os.path.realpath(paths.brain), record_real]) == record_real:
-        raise MaintainError("brain directory points at the Record")
+    for label, path in paths.private_roots():
+        if os.path.commonpath([os.path.realpath(path), record_real]) == record_real:
+            raise MaintainError("%s points at the Record" % label)
     scan_bin = args.scan_bin or paths.scan_bin
     if not scan_bin:
         default_scan = os.path.join(

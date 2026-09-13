@@ -38,6 +38,9 @@ log=${GBRAIN_ARGV:-}
 if [ -n "$log" ]; then
   printf '%s\n' "$*" >> "$log"
 fi
+if [ -n "${GBRAIN_SLEEP:-}" ] && [ "${1:-}" = sync ]; then
+  sleep "$GBRAIN_SLEEP"
+fi
 if [ "${1:-}" = export ]; then
   out=
   prev=
@@ -261,6 +264,13 @@ assert "w.jsonl" not in log
 assert "links replace" in log
 assert "sync --no-pull" in log
 PY
+  printf '[{"path":"%s","format":"claude-code","source_id":"p1","role":"primary"}]\n' \
+    "$TMP_ROOT/run/trans/p.jsonl" > "$TMP_ROOT/run/trans/bare-list.json"
+  run_m run --fm-home "$home" --record "$rec" --now "$NOW" --skip-serve \
+    --gbrain-bin "$fake" --scan-bin "$scan" \
+    --transcript-manifest "$TMP_ROOT/run/trans/bare-list.json"
+  expect_code 1 "$RC" 'bare-list manifest'
+  assert_contains "$OUT" 'transcript manifest must be' 'manifest shape error'
   first=$(cat "$rec/wiki/gbrain/conversations/sessions/s1.md")
   GBRAIN_ARGV="$TMP_ROOT/run/gbrain.argv2" \
     run_m run --fm-home "$home" --record "$rec" --now "$NOW" --skip-serve \
@@ -273,20 +283,78 @@ PY
 }
 
 test_lock_busy_does_not_stop_services() {
-  local rec home fake scan
+  local rec home fake scan launch first_pid first_rc waited
   rec=$(new_record "$TMP_ROOT/busy/record")
   home="$TMP_ROOT/busy/home"
-  mkdir -p "$home/config" "$home/state/gbrain/maintain.lock" "$home/data"
+  mkdir -p "$home/config" "$home/state" "$home/data"
   fake="$TMP_ROOT/busy/gbrain"
   scan="$TMP_ROOT/busy/scan"
+  launch="$TMP_ROOT/busy/launchctl"
   write_gbrain_stub "$fake"
   write_scan_stub "$scan"
+  write_launchctl_stub "$launch"
+  GBRAIN_SLEEP=4 python3 "$MAINTAIN" run --fm-home "$home" --record "$rec" --now "$NOW" \
+    --skip-serve --gbrain-bin "$fake" --scan-bin "$scan" \
+    > "$TMP_ROOT/busy/first.out" 2>&1 &
+  first_pid=$!
+  waited=0
+  while [ ! -d "$home/state/gbrain/maintain.lock" ] && [ "$waited" -lt 100 ]; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+  [ -d "$home/state/gbrain/maintain.lock" ] || fail 'first run never took the lock'
   LAUNCHCTL_ARGV="$TMP_ROOT/busy/launch.argv" \
     run_m run --fm-home "$home" --record "$rec" --now "$NOW" \
-    --gbrain-bin "$fake" --scan-bin "$scan" --launchctl-bin "$TMP_ROOT/busy/missing-launchctl"
+    --gbrain-bin "$fake" --scan-bin "$scan" --launchctl-bin "$launch"
   expect_code 3 "$RC" 'busy'
   assert_absent "$TMP_ROOT/busy/launch.argv" 'busy run invoked launchctl'
-  pass 'fm-gbrain-maintain: a held lock exits 3 and does not stop services'
+  set +e
+  wait "$first_pid"
+  first_rc=$?
+  set -e
+  expect_code 0 "$first_rc" "first run: $(cat "$TMP_ROOT/busy/first.out")"
+  assert_absent "$home/state/gbrain/maintain.lock" 'first run released the lock'
+  assert_present "$rec/wiki/views/gbrain/receipt.json" 'first run published'
+  pass 'fm-gbrain-maintain: a second invocation against a running run exits 3 and does not stop services'
+}
+
+test_run_restarts_serve_on_success_and_failure() {
+  local rec home fake scan launch plist uid
+  rec=$(new_record "$TMP_ROOT/restart/record")
+  home="$TMP_ROOT/restart/home"
+  mkdir -p "$home/config" "$home/state" "$home/data"
+  fake="$TMP_ROOT/restart/gbrain"
+  scan="$TMP_ROOT/restart/scan"
+  launch="$TMP_ROOT/restart/launchctl"
+  plist="$TMP_ROOT/restart/com.firstmate.ks-t17-gbrain.plist"
+  write_gbrain_stub "$fake"
+  write_scan_stub "$scan"
+  write_launchctl_stub "$launch"
+  printf '<plist/>\n' > "$plist"
+  uid=$(id -u)
+  LAUNCHCTL_ARGV="$TMP_ROOT/restart/ok.argv" \
+    run_m run --fm-home "$home" --record "$rec" --now "$NOW" \
+    --gbrain-bin "$fake" --scan-bin "$scan" --launchctl-bin "$launch" --plist "$plist"
+  expect_code 0 "$RC" "restart ok: $OUT"
+  [ "$(cat "$TMP_ROOT/restart/ok.argv")" = \
+    "bootout gui/$uid/com.firstmate.ks-t17-gbrain"$'\n'"bootstrap gui/$uid $plist" ] \
+    || fail "success path launchctl argv: $(cat "$TMP_ROOT/restart/ok.argv")"
+  GBRAIN_RC=1 LAUNCHCTL_ARGV="$TMP_ROOT/restart/fail.argv" \
+    run_m run --fm-home "$home" --record "$rec" --now "$NOW" \
+    --gbrain-bin "$fake" --scan-bin "$scan" --launchctl-bin "$launch" --plist "$plist"
+  expect_code 1 "$RC" 'failed sync still restarts'
+  [ "$(cat "$TMP_ROOT/restart/fail.argv")" = \
+    "bootout gui/$uid/com.firstmate.ks-t17-gbrain"$'\n'"bootstrap gui/$uid $plist" ] \
+    || fail "failure path launchctl argv: $(cat "$TMP_ROOT/restart/fail.argv")"
+  LAUNCHCTL_ARGV="$TMP_ROOT/restart/missing.argv" \
+    run_m run --fm-home "$home" --record "$rec" --now "$NOW" \
+    --gbrain-bin "$fake" --scan-bin "$scan" --launchctl-bin "$launch" \
+    --plist "$TMP_ROOT/restart/absent.plist"
+  expect_code 1 "$RC" 'missing plist is a failed run'
+  assert_contains "$OUT" 'serve restart failed' 'missing plist reported'
+  [ "$(cat "$TMP_ROOT/restart/missing.argv")" = "bootout gui/$uid/com.firstmate.ks-t17-gbrain" ] \
+    || fail "missing plist launchctl argv: $(cat "$TMP_ROOT/restart/missing.argv")"
+  pass 'fm-gbrain-maintain: bootout is followed by a plist bootstrap on success and on failure'
 }
 
 test_failed_sync_restores_and_leaves_record() {
@@ -325,6 +393,12 @@ PY
     run_m run --fm-home "$home" --record "$rec" --now "$NOW" --skip-serve \
     --gbrain-bin "$fake" --scan-bin "$scan"
   expect_code 1 "$RC" 'scan fail'
+  printf 'GBRAIN_HOME=%s\n' "$rec/home" > "$home/config/gbrain.env"
+  run_m run --fm-home "$home" --record "$rec" --now "$NOW" --skip-serve \
+    --gbrain-bin "$fake" --scan-bin "$scan"
+  expect_code 1 "$RC" 'home under record'
+  assert_contains "$OUT" 'GBRAIN_HOME points at the Record' 'record escape error'
+  assert_absent "$rec/home" 'run created a home inside the Record'
   pass 'fm-gbrain-maintain: sync or scan failure restores the prior generation'
 }
 
@@ -452,6 +526,7 @@ test_project_renders_text_and_reserved_names
 test_project_rejects_unsafe_and_colliding_inputs
 test_run_publishes_edges_and_primary_ingest_only
 test_lock_busy_does_not_stop_services
+test_run_restarts_serve_on_success_and_failure
 test_failed_sync_restores_and_leaves_record
 test_install_archive_verifies_digest_and_refuses_mutation
 test_write_plist_is_loopback_and_secretless

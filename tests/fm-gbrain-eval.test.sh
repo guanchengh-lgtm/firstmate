@@ -68,6 +68,9 @@ write_recall_wrap() {
 if [ -n "\${RECALL_ARGV:-}" ]; then
   printf '%s\\n' "\$*" >> "\$RECALL_ARGV"
 fi
+if [ -n "\${RECALL_SLEEP:-}" ]; then
+  sleep "\$RECALL_SLEEP"
+fi
 exec "$RECALL" "\$@"
 SH
   chmod +x "$dest"
@@ -169,6 +172,8 @@ assert "--as-of" in recall
 assert "--as-of" in hybrid
 assert "--exclude-id" in hybrid
 rows=[json.loads(line) for line in open(sys.argv[4]) if line.strip()]
+assert set(row["retrieval_mode"] for row in rows if row["arm"]=="overlap")=={"overlap"}, "overlap retrieval_mode drifted"
+assert set(row["retrieval_mode"] for row in rows if row["arm"]=="hybrid")=={"hybrid"}, "hybrid retrieval_mode drifted"
 dups=[row for row in rows if row["arm"]=="hybrid" and row["identities"].count("ov-kb-graphify")>1]
 assert not dups, "duplicate chunks were not collapsed"
 timeouts=[row for row in rows if row["status"]=="timeout"]
@@ -220,6 +225,24 @@ assert timeouts, "timeout row missing"
 summary=json.load(open(sys.argv[2]))
 assert summary["winner"]=="overlap"
 assert summary["summary"]["A.hybrid"]["n"]>=1
+PY
+  out3="$TMP_ROOT/deg/out-overlap-timeout"
+  RECALL_SLEEP=2 \
+    run_e run --record "$home/data" --gold "$GOLD" --recall-bin "$wrap" \
+    --hybrid-bin "$hybrid" --out "$out3" --now 2026-09-13 --deadline-ms 400 --format json
+  expect_code 0 "$RC" 'overlap timeout run'
+  python3 - "$out3/rows.jsonl" "$out3/summary.json" <<'PY' || fail "overlap timeouts produced a hybrid win"
+import json,sys
+rows=[json.loads(line) for line in open(sys.argv[1]) if line.strip()]
+overlap=[row for row in rows if row["arm"]=="overlap"]
+assert overlap and all(row["status"]=="timeout" for row in overlap), overlap[:2]
+hybrid=[row for row in rows if row["arm"]=="hybrid"]
+assert all(row["status"]=="ok" for row in hybrid), hybrid[:2]
+summary=json.load(open(sys.argv[2]))
+assert summary["summary"]["A.hybrid"]["hit@5"] > summary["summary"]["A.overlap"]["hit@5"], summary["summary"]
+assert summary["summary"]["A.overlap"]["complete"] is False, summary["summary"]
+assert summary["winner"]=="overlap", summary
+assert "overlap" in summary["reason"] and "incomplete" in summary["reason"], summary
 PY
   pass 'fm-gbrain-eval: keyword and timeout rows keep overlap'
 }

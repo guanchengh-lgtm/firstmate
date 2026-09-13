@@ -24,16 +24,19 @@ Modes:
      before search; expected identities are the prior set.
   C  mode B plus --as-of probe_date on both arms.
 
-Each arm returns canonical identities. Multiple chunks of one identity
+The overlap arm is the shipped recall JSON and its identities are
+hits[].id; its retrieval mode is recorded as "overlap". The hybrid arm
+returns {"status", "mode", "identities"}. Multiple chunks of one identity
 collapse to the first rank. A done-archive path is not rewritten into
 every expected task id here; the recall owner already keeps those
 identities distinct. Timeouts, misses, and degraded rows stay in the
 denominator. A keyword-only hybrid row is not a completed hybrid trial.
 
 Verdict rule:
-  Keep overlap when hybrid is unavailable, degraded, incomplete, tied,
-  or worse on hit@5. Hybrid wins only when hit@5 is preserved in A, B,
-  and C and reciprocal rank or hit@1/@3 improves with no hit@5 loss.
+  Keep overlap when either arm has a timeout, unavailable, or degraded
+  row, or when hybrid is keyword-only, tied, or worse on hit@5. Hybrid
+  wins only when both arms complete every row, hit@5 is preserved in
+  A, B, and C, and reciprocal rank or hit@1/@3 improves.
   This command writes rows and a dated verdict file. It does not switch
   the brief ranker.
 
@@ -141,7 +144,7 @@ def atomic_write(path, data):
     os.replace(tmp, path)
 
 
-def run_json(argv, timeout_sec, env):
+def run_json(argv, timeout_sec, env, arm):
     started = time.monotonic()
     try:
         proc = subprocess.run(
@@ -185,19 +188,16 @@ def run_json(argv, timeout_sec, env):
             "cache": "off",
             "truncated": False,
         }
-    return normalize_payload(payload, elapsed)
+    return normalize_payload(payload, elapsed, arm)
 
 
-def normalize_payload(payload, elapsed):
-    status = payload.get("status") or "ok"
-    identities = payload.get("identities")
-    if identities is None:
-        hits = payload.get("hits") or []
-        identities = []
-        for hit in hits:
-            ident = hit.get("id") or hit.get("identity")
-            if ident:
-                identities.append(ident)
+def normalize_payload(payload, elapsed, arm):
+    if arm == "overlap":
+        identities = [hit["id"] for hit in payload.get("hits") or []]
+        mode = "overlap"
+    else:
+        identities = list(payload.get("identities") or [])
+        mode = payload.get("mode") or "unknown"
     collapsed = []
     seen = set()
     for ident in identities:
@@ -205,16 +205,12 @@ def normalize_payload(payload, elapsed):
             continue
         seen.add(ident)
         collapsed.append(ident)
-    mode = payload.get("mode") or payload.get("ranker") or "unknown"
-    if mode == "term-overlap":
-        mode = "overlap"
-    cache = payload.get("cache") or "off"
     return {
-        "status": status,
+        "status": payload.get("status") or "ok",
         "identities": collapsed,
         "elapsed_ms": payload.get("elapsed_ms", elapsed),
         "mode": mode,
-        "cache": cache,
+        "cache": payload.get("cache") or "off",
         "truncated": bool(payload.get("truncated")),
         "over_fetch": payload.get("over_fetch"),
     }
@@ -282,11 +278,12 @@ def one_probe(row, mode, now, recall_bin, hybrid_bin, record, deadline_ms):
         rec_argv.extend(["--as-of", as_of])
     for ident in exclude:
         rec_argv.extend(["--exclude-id", ident])
-    overlap = run_json(rec_argv, timeout_sec, env)
+    overlap = run_json(rec_argv, timeout_sec, env, "overlap")
     hybrid = run_json(
         hybrid_argv(hybrid_bin, row["query"], as_of, exclude),
         timeout_sec,
         os.environ.copy(),
+        "hybrid",
     )
     rows = []
     for arm, payload in (("overlap", overlap), ("hybrid", hybrid)):
@@ -326,13 +323,10 @@ def summarize(rows):
                 row for row in rows if row["mode"] == mode and row["arm"] == arm
             ]
             count = len(selected) or 1
-            hybrid_complete = True
-            if arm == "hybrid":
-                hybrid_complete = all(
-                    row["available"] == "available"
-                    and row["retrieval_mode"] != "keyword"
-                    for row in selected
-                )
+            complete = all(
+                row["available"] == "available" and row["retrieval_mode"] != "keyword"
+                for row in selected
+            )
             summary["%s.%s" % (mode, arm)] = {
                 "n": len(selected),
                 "hit@1": sum(row["hit@1"] for row in selected) / float(count),
@@ -340,7 +334,7 @@ def summarize(rows):
                 "hit@5": sum(row["hit@5"] for row in selected) / float(count),
                 "reciprocal_rank": sum(row["reciprocal_rank"] for row in selected)
                 / float(count),
-                "complete": hybrid_complete if arm == "hybrid" else True,
+                "complete": complete,
             }
     return summary
 
@@ -352,6 +346,8 @@ def decide(summary):
         overlap = summary["%s.overlap" % mode]
         if not hybrid["complete"]:
             return "overlap", "hybrid %s is incomplete or degraded" % mode
+        if not overlap["complete"]:
+            return "overlap", "overlap %s is incomplete; no hybrid win" % mode
         if hybrid["hit@5"] < overlap["hit@5"]:
             return "overlap", "hybrid hit@5 regressed in %s" % mode
     improved = False
