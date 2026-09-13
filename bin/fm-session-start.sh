@@ -50,7 +50,10 @@
 #                       home, owned by bin/fm-prior-session-fold.sh.
 #   7. fleet digest   - a compact data/backlog.md identity/metadata listing,
 #                       every state/*.meta, a bounded state/*.status tail,
-#                       state/.afk, and a cheap per-task endpoint-liveness read:
+#                       state/.afk, a cheap per-task endpoint-liveness read, and
+#                       the bounded nightly-maintenance digest lines that
+#                       bin/fm-maintain.py digest renders from its last
+#                       published receipt (only in a home that activated it):
 #                       read-only, always runs.
 #   8. network checks - the result of the deferred network stage started back at
 #                       step 1, harvested WITHOUT waiting for it.
@@ -1265,6 +1268,16 @@ if [ -e "$STATE/.afk" ]; then
   printf 'present - away-mode supervision is active; the daemon owns the watcher.\n'
 else
   printf 'absent\n'
+fi
+
+# The nightly maintenance digest is a bounded read of one generated file that
+# bin/fm-maintain.py owns; it runs no git, network, model, or metrics work here.
+# A home that never activated maintenance has neither file and prints nothing.
+if [ -f "$DATA/wiki/views/nightly-digest.json" ] || [ -f "$DATA/wiki/views/maintain-rollout.json" ]; then
+  subsection "Nightly maintenance"
+  python3 -B "$SCRIPT_DIR/fm-maintain.py" digest --record "$DATA" \
+    --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --max-lines 8 --line-chars 200 2>&1 \
+    || printf 'Nightly maintenance: digest reader failed; run bin/fm-nightly.sh status.\n'
 fi
 
 # Public commitments made through the myfirstmate relay. A promise to reply in a

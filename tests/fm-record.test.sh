@@ -72,6 +72,12 @@ test_disabled_home_is_explicit_noop() {
   run_rec "$home" health
   expect_code 0 "$RC" 'disabled health'
   assert_contains "$OUT" 'state=disabled' 'disabled health state'
+  run_rec "$home" reconcile
+  expect_code 0 "$RC" 'disabled reconcile'
+  assert_contains "$OUT" 'state=disabled' 'disabled reconcile state'
+  run_rec "$home" verify
+  expect_code 0 "$RC" 'disabled verify'
+  assert_contains "$OUT" 'state=disabled' 'disabled verify state'
   pass "fm-record: a disabled home is an explicit no-op"
 }
 
@@ -1841,6 +1847,217 @@ test_land_related_refuses_body_byte_rewrite() {
   pass "fm-record: land-related refuses a candidate that rewrites body bytes under a footer"
 }
 
+test_maintain_checkpoint_uses_summary_subject() {
+  local home origin subject
+  IFS=$(printf '\t') read -r home origin < <(new_home maintain)
+  run_rec "$home" checkpoint --reason maintain --summary $'2026-09-07: lint\nfolds'
+  expect_code 2 "$RC" 'maintain summary newline'
+  run_rec "$home" checkpoint --reason stow --summary x
+  expect_code 2 "$RC" 'stow with summary'
+  setup_record "$home" "$origin"
+  printf 'seed\n' > "$home/data/captain.md"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'maintain seed tick'
+  printf 'later\n' > "$home/data/captain.md"
+  run_rec "$home" checkpoint --reason maintain \
+    --summary '2026-09-07: lint, folds, archive, and measures'
+  expect_code 0 "$RC" 'maintain checkpoint'
+  subject=$(git -C "$home/data" log -1 --format=%s)
+  [ "$subject" = 'maintain 2026-09-07: lint, folds, archive, and measures' ] \
+    || fail "maintain subject was $subject"
+  pass "fm-record: maintain checkpoint uses the summary subject"
+}
+
+test_reconcile_names_a_missing_remote_branch() {
+  local home origin
+  IFS=$(printf '\t') read -r home origin < <(new_home remote-branch-missing)
+  run_rec "$home" setup --init --origin "file://$origin" --code-root "$ROOT"
+  expect_code 0 "$RC" 'setup without a first tick'
+  printf 'seed\n' > "$home/data/captain.md"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'local checkpoint before any push'
+  run_rec "$home" reconcile
+  expect_code 0 "$RC" 'reconcile with no remote branch'
+  assert_contains "$OUT" 'state=reconciled' 'a missing remote branch is not remote-unknown'
+  assert_contains "$OUT" 'detail=remote-branch-missing' 'missing remote branch detail'
+  assert_not_contains "$OUT" 'class=offline' 'missing remote branch is not offline'
+  run_rec "$home" verify
+  expect_code 1 "$RC" 'verify with no remote branch'
+  assert_contains "$OUT" 'remote=none' 'verify names the missing remote branch'
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'first tick pushes'
+  run_rec "$home" reconcile
+  expect_code 0 "$RC" 'reconcile after the first push'
+  assert_contains "$OUT" 'detail=equal' 'equal after the first push'
+  pass 'fm-record: an origin without the bound branch is reconciled detail=remote-branch-missing'
+}
+
+test_reconcile_equal_ahead_fast_forward_and_local_changes() {
+  local home origin other before head origin_head
+  IFS=$(printf '\t') read -r home origin < <(new_home reconcile-states)
+  setup_record "$home" "$origin"
+  printf 'base\n' > "$home/data/captain.md"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'reconcile seed tick'
+  run_rec "$home" reconcile
+  expect_code 0 "$RC" 'reconcile equal'
+  assert_contains "$OUT" 'state=reconciled' 'equal state'
+  assert_contains "$OUT" 'detail=equal' 'equal detail'
+  run_rec "$home" verify
+  expect_code 0 "$RC" 'verify equal'
+  assert_contains "$OUT" 'state=verified' 'verify equal state'
+  assert_contains "$OUT" 'equal=yes' 'verify equal yes'
+
+  printf 'ahead\n' > "$home/data/ahead.md"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'ahead checkpoint'
+  run_rec "$home" reconcile
+  expect_code 0 "$RC" 'reconcile ahead'
+  assert_contains "$OUT" 'detail=ahead' 'ahead detail'
+  assert_contains "$OUT" 'ahead=1' 'ahead count'
+  run_rec "$home" verify
+  expect_code 1 "$RC" 'verify ahead'
+  assert_contains "$OUT" 'equal=no' 'verify ahead no'
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'push ahead'
+
+  before=$(git -C "$home/data" rev-parse HEAD)
+  printf 'dirty\n' > "$home/data/dirty.md"
+  run_rec "$home" reconcile
+  expect_code 4 "$RC" 'local-changes'
+  assert_contains "$OUT" 'state=local-changes' 'local-changes state'
+  [ "$(git -C "$home/data" rev-parse HEAD)" = "$before" ] \
+    || fail 'local-changes moved HEAD'
+  [ "$(git --git-dir="$origin" rev-parse main)" = "$before" ] \
+    || fail 'local-changes moved origin'
+  run_rec "$home" verify
+  expect_code 1 "$RC" 'verify dirty'
+  assert_contains "$OUT" 'untracked=1' 'verify untracked'
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'checkpoint dirty'
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'clean after dirty'
+
+  other="$TMP_ROOT/reconcile-states/other"
+  git clone --quiet "file://$origin" "$other"
+  git -C "$other" lfs install --local --force >/dev/null
+  printf 'from-b\n' > "$other/from-b.md"
+  git -C "$other" add from-b.md
+  git -C "$other" commit --quiet -m from-b
+  git -C "$other" push --quiet origin main
+  origin_head=$(git --git-dir="$origin" rev-parse main)
+  run_rec "$home" reconcile
+  expect_code 0 "$RC" 'fast-forward'
+  assert_contains "$OUT" 'detail=fast-forwarded' 'ff detail'
+  head=$(git -C "$home/data" rev-parse HEAD)
+  [ "$head" = "$origin_head" ] || fail 'fast-forward left HEAD behind origin'
+  [ ! -f "$home/data/.git/record-clean-head" ] || fail 'fast-forward kept record-clean-head'
+  pass "fm-record: reconcile reports equal, ahead, local-changes, and fast-forward"
+}
+
+test_verify_never_trusts_a_stale_origin_ref() {
+  local home origin
+  IFS=$(printf '\t') read -r home origin < <(new_home stale-origin-ref)
+  setup_record "$home" "$origin"
+  printf 'base\n' > "$home/data/captain.md"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'stale-ref seed tick'
+  git --git-dir="$origin" update-ref -d refs/heads/main
+  run_rec "$home" verify
+  expect_code 1 "$RC" 'verify after the upstream branch vanished'
+  assert_contains "$OUT" 'equal=no' 'a vanished upstream branch is not equal'
+  assert_contains "$OUT" 'remote=none' 'verify reports no remote tip'
+  run_rec "$home" reconcile
+  expect_code 0 "$RC" 'reconcile after the upstream branch vanished'
+  assert_contains "$OUT" 'detail=remote-branch-missing' 'reconcile names the missing branch'
+  assert_contains "$OUT" "ahead=$(git -C "$home/data" rev-list --count HEAD)" 'reconcile counts every local commit as unpushed'
+  pass "fm-record: verify and reconcile ignore a cached origin ref once the upstream branch is gone"
+}
+
+test_reconcile_remote_unknown_when_origin_is_gone() {
+  local home origin
+  IFS=$(printf '\t') read -r home origin < <(new_home remote-unknown)
+  setup_record "$home" "$origin"
+  printf 'base\n' > "$home/data/captain.md"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'remote-unknown seed'
+  mv "$origin" "$origin.away"
+  run_rec "$home" reconcile
+  expect_code 6 "$RC" 'reconcile remote-unknown'
+  assert_contains "$OUT" 'state=remote-unknown' 'remote-unknown state'
+  run_rec "$home" verify
+  expect_code 6 "$RC" 'verify remote-unknown'
+  assert_contains "$OUT" 'state=remote-unknown' 'verify remote-unknown state'
+  mv "$origin.away" "$origin"
+  run_rec "$home" reconcile
+  expect_code 0 "$RC" 'reconcile after origin restored'
+  assert_contains "$OUT" 'detail=equal' 'restored equal'
+  pass "fm-record: reconcile treats an unreachable origin as remote-unknown"
+}
+
+test_tick_two_clone_race_preserves_local_bytes() {
+  local home origin other b_sha
+  IFS=$(printf '\t') read -r home origin < <(new_home two-clone-race)
+  setup_record "$home" "$origin"
+  printf 'base\n' > "$home/data/captain.md"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'race seed'
+  other="$TMP_ROOT/two-clone-race/other"
+  git clone --quiet "file://$origin" "$other"
+  git -C "$other" lfs install --local --force >/dev/null
+  printf 'from-b\n' > "$other/from-b.md"
+  git -C "$other" add from-b.md
+  git -C "$other" commit --quiet -m from-b
+  git -C "$other" push --quiet origin main
+  b_sha=$(git -C "$other" rev-parse HEAD)
+  printf 'from-a\n' > "$home/data/from-a.md"
+  cp "$home/data/from-a.md" "$home/from-a.before"
+  run_rec "$home" tick
+  expect_code 7 "$RC" 'tick race diverged'
+  assert_contains "$OUT" 'state=diverged' 'tick race state'
+  [ "$(git --git-dir="$origin" rev-parse main)" = "$b_sha" ] \
+    || fail 'tick race moved origin off B'
+  git --git-dir="$home/data/.git" --work-tree="$home/data" cat-file -e HEAD:from-a.md \
+    || fail 'tick race lost A commit'
+  cmp -s "$home/from-a.before" "$home/data/from-a.md" \
+    || fail 'tick race changed A working-tree bytes'
+  pass "fm-record: a two-clone tick race keeps both histories and local bytes"
+}
+
+test_reconcile_diverged_preserves_both_histories() {
+  local home origin other before b_sha
+  IFS=$(printf '\t') read -r home origin < <(new_home reconcile-diverged)
+  setup_record "$home" "$origin"
+  printf 'base\n' > "$home/data/captain.md"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'reconcile diverge seed'
+  printf 'from-a\n' > "$home/data/from-a.md"
+  cp "$home/data/from-a.md" "$home/from-a.before"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'A local commit'
+  before=$(git -C "$home/data" rev-parse HEAD)
+  other="$TMP_ROOT/reconcile-diverged/other"
+  git clone --quiet "file://$origin" "$other"
+  git -C "$other" lfs install --local --force >/dev/null
+  printf 'from-b\n' > "$other/from-b.md"
+  git -C "$other" add from-b.md
+  git -C "$other" commit --quiet -m from-b
+  git -C "$other" push --quiet origin main
+  b_sha=$(git -C "$other" rev-parse HEAD)
+  run_rec "$home" reconcile
+  expect_code 7 "$RC" 'reconcile diverged'
+  assert_contains "$OUT" 'state=diverged' 'reconcile diverged state'
+  [ "$(git --git-dir="$origin" rev-parse main)" = "$b_sha" ] \
+    || fail 'reconcile diverged moved origin'
+  [ "$(git -C "$home/data" rev-parse HEAD)" = "$before" ] \
+    || fail 'reconcile diverged moved A HEAD'
+  git --git-dir="$home/data/.git" --work-tree="$home/data" cat-file -e HEAD:from-a.md \
+    || fail 'reconcile diverged lost A file'
+  cmp -s "$home/from-a.before" "$home/data/from-a.md" \
+    || fail 'reconcile diverged changed A working-tree bytes'
+  pass "fm-record: reconcile diverged keeps both histories and local bytes"
+}
+
 test_outer_repository_stays_clean() {
   local after
   after=$(git -C "$ROOT" status --short --untracked-files=all)
@@ -1898,5 +2115,12 @@ test_land_related_refuses_lock_dirty_and_advanced_head
 test_land_related_scan_git_failure_and_push_pending
 test_land_related_accepts_whitespace_tail_and_non_ascii_path
 test_land_related_refuses_body_byte_rewrite
+test_maintain_checkpoint_uses_summary_subject
+test_reconcile_names_a_missing_remote_branch
+test_verify_never_trusts_a_stale_origin_ref
+test_reconcile_equal_ahead_fast_forward_and_local_changes
+test_reconcile_remote_unknown_when_origin_is_gone
+test_tick_two_clone_race_preserves_local_bytes
+test_reconcile_diverged_preserves_both_histories
 
 test_outer_repository_stays_clean

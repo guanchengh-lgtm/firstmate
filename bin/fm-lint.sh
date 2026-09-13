@@ -30,10 +30,11 @@
 # The default (no explicit-path) path also runs bin/fm-lint-workflows.sh so a
 # malformed GitHub workflow, including a self-broken ci.yml, fails locally
 # before merge instead of only failing to run as CI.
-# The same no-argument path also lints bin/fm-recall.py and
-# bin/fm-record-links.py with python3 syntax compilation and a pinned Ruff
-# check for standard-error and undefined-name rules (E and F, including F821).
-# That Python gate is a development dependency only; the shipped executables
+# The same no-argument path also lints the Python executables listed in
+# PYTHON_LINT_TARGETS (bin/fm-recall.py, bin/fm-record-links.py, and
+# bin/fm-maintain.py) with python3 syntax compilation and a pinned Ruff check
+# for standard-error and undefined-name rules (E and F, including F821). That
+# Python gate is a development dependency only; the shipped Python executables
 # still use the standard library alone. A missing or different Ruff version is
 # a lint failure.
 #
@@ -50,10 +51,10 @@
 #     gate and both companion gates.
 # Explicit paths always bypass this file-set selection and lint exactly the
 # given paths, matching the same config, without either companion gate.
-# The exact relative paths bin/fm-recall.py and bin/fm-record-links.py select
-# the Python gate; every other explicit path goes to ShellCheck. --list-files
-# prints only the selected shell roots, because its consumers treat it as the
-# shell inventory and feed every listed path to a shell parser.
+# An exact relative path from PYTHON_LINT_TARGETS selects the Python gate;
+# every other explicit path goes to ShellCheck. --list-files prints only the
+# selected shell roots, because its consumers treat it as the shell inventory
+# and feed every listed path to a shell parser.
 #
 # Canonical lint defaults to two bounded workers over two stable logical shards.
 # Each shard writes separate diagnostics, and the parent replays those outputs in
@@ -77,7 +78,7 @@ set -u
 
 REQUIRED_SHELLCHECK=0.11.0
 REQUIRED_RUFF=0.16.6
-PYTHON_LINT_TARGETS=(bin/fm-recall.py bin/fm-record-links.py)
+PYTHON_LINT_TARGETS=(bin/fm-recall.py bin/fm-record-links.py bin/fm-maintain.py)
 RUFF_SELECT=E,F
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SELF="$SELF_DIR/fm-lint.sh"
@@ -159,6 +160,14 @@ fm_lint_run_workflows() {
 
 fm_lint_ruff_version() {
   "$1" version | awk '{print $2; exit}'
+}
+
+fm_lint_is_python_target() {
+  local target
+  for target in "${PYTHON_LINT_TARGETS[@]}"; do
+    [ "$1" = "$target" ] && return 0
+  done
+  return 1
 }
 
 fm_lint_run_python() {
@@ -979,14 +988,7 @@ if [ "$#" -gt 0 ]; then
   EXPLICIT_PATHS=1
   ROOTS=()
   for path in "$@"; do
-    python_target=0
-    for target in "${PYTHON_LINT_TARGETS[@]}"; do
-      if [ "$path" = "$target" ]; then
-        python_target=1
-        break
-      fi
-    done
-    if [ "$python_target" -eq 1 ]; then
+    if fm_lint_is_python_target "$path"; then
       PYTHON_ROOTS+=("$path")
     else
       ROOTS+=("$path")

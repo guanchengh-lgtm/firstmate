@@ -376,6 +376,17 @@ Task-scoped notes use `tasks-axi show <id> --full` followed by `tasks-axi update
 The stow pass never writes a skill, but a separately executed, captain-approved migration may move conditional knowledge into a user-owned local skill excluded from the Firstmate clone; changes to Firstmate's tracked skills remain deliberate repository work through the normal PR pipeline.
 Invoked in a primary home, `/stow` then cascades the same sweep to every registered secondmate, enumerated through `bin/fm-stow-cascade.sh`: each home is accounted and curated against its own startup-memory allowance, a live secondmate sweeps its own session, and a slow or unreachable home is reported as an exception rather than blocking the primary.
 
+## Record maintenance has one transaction owner and one compiler per output
+
+[`bin/fm-record.sh`](../bin/fm-record.sh) is the only code that commits, fetches, fast-forwards, pushes, or proves equality for a Record home; its `reconcile`, `checkpoint --reason maintain`, `tick`, and `verify` seams are the whole write surface the night task uses on a home, so no second transaction framework, scheduler, or Git policy exists.
+The one carve-out is the cloud Record-only clone, which has no home, no state mirror, and no scanner hooks: there [`bin/fm-nightly.sh`](../bin/fm-nightly.sh) drives plain `git fetch`, `merge --ff-only`, `commit`, `push`, and a fresh-fetch equality check on `wiki/views/` only, because a home checkpoint from an empty cloud state would erase the Mac's `.record-state` mirror.
+[`bin/fm-nightly.sh`](../bin/fm-nightly.sh) owns ordered execution, the single run lock under the Record's `.git/`, the transcript archive, and the LaunchAgent; [`bin/fm-maintain.py`](../bin/fm-maintain.py) owns every deterministic Record check, the report-then-enforce rollout, the generated views under `data/wiki/views/`, the T2 measures, and the digest reader that session start prints.
+Each check returns `pass`, `finding`, `acknowledged`, or `unknown`; nothing in either executable edits a hand-owned fact, fabricates a report, or resolves an unknown, so a semantic question always reaches a person as a digest line rather than a silent edit.
+Generated views are staged outside the Record and replaced atomically, and every view carries its provenance header so the handwritten-table check can tell a compiler product from a second hand-kept truth.
+The Record lock is never held across a lint, compiler, or archive stage, so the 60-second tick keeps publishing while a slow night stage runs, and the final equality proof is a fresh fetch after the push rather than a claim made by the receipt commit itself.
+The cloud fallback is the same maintenance executable against a plain Record clone with Record scope only; it cannot see this Mac's transcripts, Keychain, or unpushed work, and its receipt is written under its own host key so it never overwrites the Mac's last result.
+[`docs/configuration.md`](configuration.md) owns activation, credential locations, and limits; [`docs/verification/nightly-maintenance.md`](verification/nightly-maintenance.md) owns the evidence.
+
 ## Local clones stay fresh
 
 The locked session-start deferred network stage, PR-based teardown, and merged-PR wake handling refresh remote-backed project clones when the clone is safe to move.

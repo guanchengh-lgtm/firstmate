@@ -267,6 +267,7 @@ Report the outcome in plain captain-facing language with all of these facts:
 - each archived entry's reason, each autonomous offload's live destination and actual relief, and, when a pinned candidate was proposed, the `proposed-offload` section with every candidate's fields;
 - every unresolved exception, including a primary-owned shared-file constraint in a secondmate home, and every concrete captain decision opened for an over-budget result;
 - each open record this pass filed or corrected, and each one it deliberately left alone with the judgment it is waiting on;
+- the maintenance lint mode and its findings from the section below, and, in `enforce` mode, that a nonzero result makes this stow incomplete;
 - whether the session is safe to reset, only when all durable findings are captured, every open record this session held is filed or explicitly left with its reason, and the post-pass result is within budget with no exception or pending budget decision.
 
 State what reset-safe means in the same breath as the claim: nothing this session knew has been lost.
@@ -284,9 +285,21 @@ A receipt that says safe while any `data/decisions/*.md` still marks a pick open
 A pick never written to any decision file cannot be seen.
 The checker does not scrape transcripts; do not invent a second reader.
 
+## Maintenance lint
+
+After this home's own curation and the open lock-file check above, and before the Record checkpoint, run `bin/fm-maintain.py stow-gate --record "$FM_HOME/data" --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)"`.
+Its header owns the rule ids, the report-to-enforce rollout, and the exit codes; this skill owns only when it runs and what its result does to the receipt.
+The command prints the home's maintenance mode first.
+In `not-configured` mode the receipt records that the home has not activated maintenance and nothing else changes.
+In `report` mode the receipt lists every finding and unknown as maintenance work for the nightly task or the captain, and stow can still complete.
+In `enforce` mode a nonzero exit prevents a successful stow receipt: list the findings, report the stow as incomplete, and never rewrite a memory fact or task record to make the check pass.
+When the command exits 2, or prints no `mode=` line at all, treat the result as blocking: report the stow as incomplete with the command's one-line error, because an unreadable rollout record or a lint failure in an activated home is never evidence that the home is clean.
+Whatever the mode, still run the Record checkpoint below so the session's newly captured knowledge is preserved; a lint result never blocks that capture.
+A secondmate runs the same command against its own configured Record after its own curation; the primary never runs it for another home.
+
 ## Record checkpoint
 
-After this home's own curation and the open lock-file check above, run `bin/fm-record.sh checkpoint --reason stow`.
+After this home's own curation, the open lock-file check, and the maintenance lint above, run `bin/fm-record.sh checkpoint --reason stow`.
 That command owns the local snapshot; report its result in this home's receipt.
 Do not put a commit inside `bin/fm-stow-cascade.sh`.
 That enumerator only lists homes and mechanical inputs.

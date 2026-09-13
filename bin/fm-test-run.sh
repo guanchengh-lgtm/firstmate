@@ -1342,6 +1342,15 @@ families_for_changed_path() {
     tests/fixtures/recall/*)
       printf '%s\n' "__script__:fm-recall.test.sh"
       ;;
+    bin/fm-maintain.py)
+      printf '%s\n' "__script__:fm-maintain.test.sh"
+      printf '%s\n' "__script__:fm-nightly.test.sh"
+      printf '%s\n' session-bootstrap
+      ;;
+    bin/fm-nightly.sh|bin/launchd/com.firstmate.nightly.plist.template)
+      printf '%s\n' "__script__:fm-nightly.test.sh"
+      printf '%s\n' "__script__:fm-nightly-archive.test.sh"
+      ;;
     bin/fm-lint.sh|bin/fm-lint-workflows.sh|bin/fm-install-shellcheck.sh|\
     bin/fm-install-actionlint.sh|bin/fm-install-ruff.sh|\
     bin/fm-brief.sh|bin/fm-dod-lib.sh|bin/fm-ensure-agents-md.sh|bin/fm-crew-state.sh|\

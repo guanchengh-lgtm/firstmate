@@ -998,16 +998,13 @@ fm_lock_acquire_wait_bounded() {
     return 0
   fi
   if [ "$rc" -eq 124 ]; then
-    owner_pid=$(cat "$lockdir/pid" 2>/dev/null || true)
-    case "$owner_pid" in
-      ''|*[!0-9]*|0) ;;
-      *)
-        if [ "$owner_pid" -gt 0 ] 2>/dev/null && fm_pid_alive "$owner_pid"; then
-          FM_LOCK_HELD_PID=$owner_pid
-          return 124
-        fi
-        ;;
-    esac
+    # Judge contention by the holder that refusal just observed. Re-reading the
+    # pid file here races with that holder's release: under a churning queue
+    # the lock is often absent for an instant, and an empty re-read would turn
+    # live contention into a false "unsafe" failure.
+    if fm_pid_alive "${FM_LOCK_HELD_PID:-}"; then
+      return 124
+    fi
     # shellcheck disable=SC2034 # Output read by callers after bounded acquisition.
     FM_LOCK_HELD_PID=
     return 1
