@@ -78,7 +78,12 @@
 #   fold|record
 #   views|record               skipped when RECORD_WRITES=0; exit 1 is
 #                              finding changed-input (an input changed
-#                              while the views were built, nothing landed)
+#                              while the views were built, nothing landed).
+#                              After a non-failed views apply, a local home
+#                              whose config/gbrain.env names an executable
+#                              GBRAIN_BIN runs bin/fm-gbrain-maintain.py run.
+#                              --record-only never starts that phase.
+#                              Dry-run stays on this views row.
 #   archive|cloud-ok
 #   weekly-check|cloud-ok      skipped when archive found no sources or
 #                              failed
@@ -138,6 +143,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FM_ROOT="${FM_ROOT_OVERRIDE:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 RECORD_SH="$FM_ROOT/bin/fm-record.sh"
 MAINTAIN_PY="$FM_ROOT/bin/fm-maintain.py"
+GBRAIN_MAINTAIN_PY="$FM_ROOT/bin/fm-gbrain-maintain.py"
 SCAN_SH="$FM_ROOT/bin/fm-record-scan.sh"
 
 STAGES=(
@@ -1083,6 +1089,40 @@ stage_fold() {
     --record "$RECORD" --now "$NOW_ARG"
 }
 
+gbrain_bin_from_env() {
+  local file=$1 line
+  [ -f "$file" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      GBRAIN_BIN=*)
+        printf '%s\n' "${line#GBRAIN_BIN=}"
+        return 0
+        ;;
+    esac
+  done < "$file"
+  return 1
+}
+
+run_gbrain_views_phase() {
+  local env_file bin
+  [ "$RECORD_ONLY" -eq 0 ] || return 0
+  [ "$RECORD_WRITES" -eq 1 ] || return 0
+  [ -n "${FM_HOME:-}" ] || return 0
+  env_file="$FM_HOME/config/gbrain.env"
+  bin=$(gbrain_bin_from_env "$env_file" || true)
+  [ -n "$bin" ] || return 0
+  [ -x "$bin" ] || return 0
+  [ -f "$GBRAIN_MAINTAIN_PY" ] || {
+    stage_rerecord_last views failed 0 maintain-missing
+    return 0
+  }
+  run_external "$NIGHTLY_STAGE_BOUND_SECONDS" python3 "$GBRAIN_MAINTAIN_PY" run \
+    --fm-home "$FM_HOME" --record "$RECORD" --now "$NOW_ARG"
+  if [ "$STAGE_RC" -ne 0 ]; then
+    stage_rerecord_last views failed "$STAGE_ELAPSED" "maintain-exit-$STAGE_RC"
+  fi
+}
+
 stage_views() {
   if [ "$RECORD_WRITES" -eq 0 ]; then
     stage_record views skipped 0 writes-disabled
@@ -1098,6 +1138,10 @@ stage_views() {
     --record "$RECORD" --now "$NOW_ARG" --apply
   STAGE_FINDING_CODES=
   STAGE_FINDING_DETAIL=
+  case "$STAGE_OUTCOME" in
+    failed | timeout | interrupted) return 0 ;;
+  esac
+  run_gbrain_views_phase
 }
 
 stage_archive() {
