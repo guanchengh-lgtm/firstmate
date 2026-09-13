@@ -45,7 +45,8 @@ run
   Acquires one home lock, projects the current Record HEAD, stops only
   the named LaunchAgent unless --skip-serve, replaces the configured
   brain with the candidate, runs pinned gbrain sync --no-pull, ingests
-  only primary transcript paths from the manifest, replaces
+  only primary transcript paths from the manifest, whose only accepted
+  shape is {"files": [{path, format, source_id, role}]}, replaces
   record-footer typed edges, exports generated prefixes, scans the
   staged wiki payload, publishes only those files, and restarts the
   named agent on the cleanup path. A second run against a held lock
@@ -69,7 +70,7 @@ write-plist
 Config, when --fm-home is set and flags are omitted, is KEY=VALUE in
 $FM_HOME/config/gbrain.env:
   GBRAIN_BIN, GBRAIN_HOME, GBRAIN_BRAIN, GBRAIN_LABEL, GBRAIN_PORT,
-  GBRAIN_TRANSCRIPT_MANIFEST, GBRAIN_LAUNCHCTL.
+  GBRAIN_TRANSCRIPT_MANIFEST, GBRAIN_LAUNCHCTL, GBRAIN_SCAN.
 Defaults:
   home state/gbrain/home, brain state/gbrain/brain,
   label com.firstmate.ks-t17-gbrain, port 3131.

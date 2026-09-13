@@ -94,6 +94,8 @@ Cursor, Grok, and Pi adapters are out of scope.
 `fm-gbrain-eval.py run` calls `bin/fm-recall.sh` and a hybrid helper, using [`tests/fixtures/recall/probe-expected.tsv`](../tests/fixtures/recall/probe-expected.tsv) unchanged.
 Modes A, B, and C match the locked probe contract.
 A keyword-only or unavailable hybrid arm is not a completed hybrid trial.
+Hybrid wins only when both arms complete every row.
+A timeout on either arm keeps overlap.
 The brief keeps overlap until I5 reads a two-week verdict.
 
 ## Verification
