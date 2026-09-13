@@ -90,6 +90,15 @@ test_inputs_are_strict_about_now_and_record() {
   expect_code 2 "$RC" 'relative --record'
   run_maint lint --record "$rec/absent" --now "$NOW"
   expect_code 2 "$RC" 'missing Record'
+  mkdir -p "$rec/not-a-record"
+  run_maint lint --record "$rec/not-a-record" --now "$NOW"
+  expect_code 2 "$RC" 'directory without backlog.md'
+  assert_contains "$OUT" 'no backlog.md' 'missing backlog message'
+  chmod 000 "$rec/captain.md"
+  run_maint lint --record "$rec" --now "$NOW"
+  chmod 644 "$rec/captain.md"
+  expect_code 2 "$RC" 'unreadable owner file'
+  assert_contains "$OUT" 'cannot read' 'unreadable owner file message'
   run_maint lint --record "$rec"
   expect_code 2 "$RC" 'missing --now'
   run_maint lint --record "$rec" --now "$NOW"

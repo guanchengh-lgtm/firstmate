@@ -1955,6 +1955,25 @@ test_reconcile_equal_ahead_fast_forward_and_local_changes() {
   pass "fm-record: reconcile reports equal, ahead, local-changes, and fast-forward"
 }
 
+test_verify_never_trusts_a_stale_origin_ref() {
+  local home origin
+  IFS=$(printf '\t') read -r home origin < <(new_home stale-origin-ref)
+  setup_record "$home" "$origin"
+  printf 'base\n' > "$home/data/captain.md"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'stale-ref seed tick'
+  git --git-dir="$origin" update-ref -d refs/heads/main
+  run_rec "$home" verify
+  expect_code 1 "$RC" 'verify after the upstream branch vanished'
+  assert_contains "$OUT" 'equal=no' 'a vanished upstream branch is not equal'
+  assert_contains "$OUT" 'remote=none' 'verify reports no remote tip'
+  run_rec "$home" reconcile
+  expect_code 0 "$RC" 'reconcile after the upstream branch vanished'
+  assert_contains "$OUT" 'detail=remote-branch-missing' 'reconcile names the missing branch'
+  assert_contains "$OUT" "ahead=$(git -C "$home/data" rev-list --count HEAD)" 'reconcile counts every local commit as unpushed'
+  pass "fm-record: verify and reconcile ignore a cached origin ref once the upstream branch is gone"
+}
+
 test_reconcile_remote_unknown_when_origin_is_gone() {
   local home origin
   IFS=$(printf '\t') read -r home origin < <(new_home remote-unknown)
@@ -2098,6 +2117,7 @@ test_land_related_accepts_whitespace_tail_and_non_ascii_path
 test_land_related_refuses_body_byte_rewrite
 test_maintain_checkpoint_uses_summary_subject
 test_reconcile_names_a_missing_remote_branch
+test_verify_never_trusts_a_stale_origin_ref
 test_reconcile_equal_ahead_fast_forward_and_local_changes
 test_reconcile_remote_unknown_when_origin_is_gone
 test_tick_two_clone_race_preserves_local_bytes

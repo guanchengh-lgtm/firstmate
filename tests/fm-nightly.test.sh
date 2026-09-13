@@ -53,6 +53,7 @@ setup_record() {
   mkdir -p "$TMP_ROOT/empty-home"
   run_rec "$home" setup --init --origin "file://$origin" --code-root "$ROOT"
   expect_code 0 "$RC" "setup $home"
+  printf '# backlog\n' > "$home/data/backlog.md"
   # A live Record always has a pushed first commit before any night runs.
   run_rec "$home" tick
   expect_code 0 "$RC" "first tick $home"
@@ -402,8 +403,8 @@ SH
   mkdir -p "$home/data/.git/nightly"
   printf 'date=2026-09-06\n' > "$home/data/.git/nightly/last-complete"
   NIGHTLY_HOME="$trans" PATH="$fakebin:$PATH" \
-    run_nightly archive --fm-home "$home" --now "$NOW"
-  expect_code 1 "$RC" 'bounded archive run'
+    run_nightly run --fm-home "$home" --now "$NOW"
+  expect_code 1 "$RC" 'bounded run'
   assert_grep $'interrupted\tinterrupted\t0\tbound-hit' "$home/data/.git/nightly/stages.tsv" \
     'run bound recorded'
   assert_grep 'result=failed' "$home/data/.git/nightly/last-attempt" 'bounded run is not ok'
@@ -433,6 +434,20 @@ test_restore_refuses_nonempty_and_implicit_latest() {
   expect_code 2 "$RC" 'missing snapshot'
   assert_not_contains "$OUT" 'latest' 'implicit latest was used'
   pass "fm-nightly: restore refuses a non-empty target and implicit latest"
+}
+
+test_archive_subcommand_leaves_the_run_receipt_alone() {
+  local home origin
+  IFS=$(printf '\t') read -r home origin < <(new_home archive-receipt)
+  setup_minimal_record "$home"
+  mkdir -p "$home/data/.git/nightly" "$TMP_ROOT/empty-home"
+  printf 'date=2026-09-06\nresult=failed\n' > "$home/data/.git/nightly/last-attempt"
+  run_nightly archive --fm-home "$home" --now "$NOW"
+  expect_code 0 "$RC" 'archive subcommand'
+  assert_grep $'archive\t' "$home/data/.git/nightly/stages.tsv" 'archive stage row'
+  assert_grep 'result=failed' "$home/data/.git/nightly/last-attempt" 'the failed night receipt survives'
+  assert_absent "$home/data/.git/nightly/last-complete" 'archive alone claimed a complete night'
+  pass "fm-nightly: the archive subcommand never writes last-attempt or last-complete"
 }
 
 test_status_reads_local_files() {
@@ -477,12 +492,15 @@ test_full_run_on_record_home() {
   expect_code 0 "$RC" 'full run'
   assert_present "$home/data/.git/nightly/stages.tsv" 'stages.tsv'
   assert_grep $'config\tok\t' "$home/data/.git/nightly/stages.tsv" 'config ok'
-  if [ -d "$home/data/wiki/views/maintenance" ]; then
-    assert_present "$home/data/wiki/views/maintenance" 'receipt dir'
-  fi
+  assert_grep $'checkpoint\tok\t' "$home/data/.git/nightly/stages.tsv" 'checkpoint ok'
+  assert_grep $'verify\tok\t' "$home/data/.git/nightly/stages.tsv" 'verify ok'
+  assert_grep $'\tequal=yes' "$home/data/.git/nightly/stages.tsv" 'verify equal=yes'
+  assert_present "$home/data/wiki/views/maintenance" 'receipt dir'
   git --git-dir="$origin" log -1 --format=%s | grep -Fq "maintain $DATE" \
-    || git -C "$home/data" log -1 --format=%s | grep -Fq "maintain $DATE" \
-    || fail 'maintain commit subject missing'
+    || fail 'maintain commit missing from origin'
+  assert_grep 'result=ok' "$home/data/.git/nightly/last-attempt" 'last-attempt result ok'
+  assert_grep 'verify=fm-record: state=verified equal=yes' "$home/data/.git/nightly/last-attempt" 'last-attempt verify line'
+  assert_grep "date=$DATE" "$home/data/.git/nightly/last-complete" 'last-complete date'
   pass "fm-nightly: full run on a Record home writes stages, receipt, and a maintain commit"
 }
 
@@ -627,14 +645,11 @@ test_scheduled_date_defaults_to_local_date() {
   IFS=$(printf '\t') read -r home origin < <(new_home local-date)
   setup_minimal_record "$home"
   mkdir -p "$TMP_ROOT/empty-home"
-  TZ=Pacific/Honolulu run_nightly archive --fm-home "$home" --now "$NOW"
-  expect_code 0 "$RC" 'west of UTC run'
+  TZ=Pacific/Honolulu run_nightly run --fm-home "$home" --now "$NOW"
   assert_grep 'date=2026-09-06' "$home/data/.git/nightly/last-attempt" 'west of UTC counts the previous local date'
-  TZ=Asia/Tokyo run_nightly archive --fm-home "$home" --now "$NOW"
-  expect_code 0 "$RC" 'east of UTC run'
-  assert_grep 'date=2026-09-07' "$home/data/.git/nightly/last-attempt" 'east of UTC keeps the UTC date'
-  TZ=Pacific/Honolulu run_nightly archive --fm-home "$home" --now "$NOW" --scheduled-date 2026-09-07
-  expect_code 0 "$RC" 'explicit scheduled date'
+  TZ=Asia/Tokyo run_nightly run --fm-home "$home" --now 2026-09-06T20:00:00Z
+  assert_grep 'date=2026-09-07' "$home/data/.git/nightly/last-attempt" 'east of UTC counts the next local date'
+  TZ=Pacific/Honolulu run_nightly run --fm-home "$home" --now "$NOW" --scheduled-date 2026-09-07
   assert_grep 'date=2026-09-07' "$home/data/.git/nightly/last-attempt" 'an explicit --scheduled-date wins'
   pass "fm-nightly: the default scheduled date is the local calendar date of --now"
 }
@@ -663,7 +678,7 @@ SH
   printf '[fixture]\ntype = local\n' > "$TMP_ROOT/term/rclone.conf"
   printf 'pw\n' > "$TMP_ROOT/term/pw"
   HOME="$trans" FM_ROOT_OVERRIDE="$ROOT" PATH="$fakebin:$PATH" \
-    "$NIGHTLY" archive --fm-home "$home" --now "$NOW" > "$TMP_ROOT/term/out" 2>&1 &
+    "$NIGHTLY" run --fm-home "$home" --now "$NOW" > "$TMP_ROOT/term/out" 2>&1 &
   nightly_pid=$!
   i=0
   while [ "$i" -lt 100 ] && [ ! -f "$pidfile" ]; do
@@ -721,6 +736,7 @@ test_refuse_home_with_record_only
 test_busy_exit_3
 test_run_bound_stops_the_in_flight_stage
 test_restore_refuses_nonempty_and_implicit_latest
+test_archive_subcommand_leaves_the_run_receipt_alone
 test_status_reads_local_files
 test_full_run_on_record_home
 test_lint_finding_does_not_stop_archive

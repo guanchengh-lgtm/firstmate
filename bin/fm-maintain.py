@@ -644,6 +644,8 @@ def read_bytes(path):
 def read_text(path):
     data = read_bytes(path)
     if data is None:
+        if os.path.lexists(path):
+            raise InputError("cannot read %s" % path)
         return ""
     return data.decode("utf-8", errors="replace")
 
@@ -2781,6 +2783,8 @@ def main(argv=None):
             raise InputError("--record must be an absolute path")
         if not os.path.isdir(args.record):
             raise InputError("no Record directory at %s" % args.record)
+        if not os.path.isfile(os.path.join(args.record, "backlog.md")):
+            raise InputError("no backlog.md in Record %s" % args.record)
         now = parse_now(args.now) if args.now else None
         if args.now and now is None:
             raise InputError("--now must be RFC3339 UTC with a Z suffix")

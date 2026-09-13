@@ -93,7 +93,9 @@
 # Record transformation lands on an unreconciled clone; the archive and
 # the local last-attempt receipt still run.
 #
-# archive --fm-home runs only config, lock, archive, and weekly-check.
+# archive --fm-home runs only config, lock, archive, and weekly-check;
+# it writes stages.tsv and archive.json but never last-attempt or
+# last-complete, which belong to the night's run alone.
 # restic backup uses --compression auto --json --host HOST --tag
 # fm-transcripts and never forget, prune, unlock, or rewrite. restic
 # exit 0 with a summary snapshot id records last_complete_snapshot; exit 0
@@ -868,7 +870,7 @@ finalize_run() {
   elif [ "$RUN_STARTED" -eq 1 ] && [ "$RUN_COMPLETED" -eq 0 ]; then
     stage_record aborted failed 0 run-aborted
   fi
-  if [ "$RUN_STARTED" -eq 1 ] && [ "$LOCK_HELD" -eq 1 ]; then
+  if [ "$CMD" = run ] && [ "$RUN_STARTED" -eq 1 ] && [ "$LOCK_HELD" -eq 1 ]; then
     if tsv_has_problem; then
       result=failed
     fi
@@ -1068,7 +1070,7 @@ stage_rollout() {
   if python3 "$MAINTAIN_PY" rollout status --record "$RECORD" --format json > "$ROLLOUT_JSON" 2>/dev/null; then
     :
   else
-    printf '-\n' > "$ROLLOUT_JSON"
+    printf -- '-\n' > "$ROLLOUT_JSON"
   fi
 }
 

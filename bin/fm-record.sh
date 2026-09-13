@@ -1586,11 +1586,14 @@ count_named_paths() {
   printf '%s\n' "$out" | awk 'END { print NR }'
 }
 
-load_record_compare() {
+load_record_compare() { # [fetch-class]
+  local fetch_class=${1:-}
   BOUND_BRANCH=$(sed -n '1p' "$GIT_DIR_ABS/record-branch")
   HEAD_SHA=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD 2>/dev/null || true)
   [ -n "$HEAD_SHA" ] || HEAD_SHA=none
-  if git --git-dir="$GIT_DIR_ABS" rev-parse --verify "origin/$BOUND_BRANCH" >/dev/null 2>&1; then
+  if [ "$fetch_class" = remote-branch-missing ]; then
+    REMOTE_SHA=none
+  elif git --git-dir="$GIT_DIR_ABS" rev-parse --verify "origin/$BOUND_BRANCH" >/dev/null 2>&1; then
     REMOTE_SHA=$(git --git-dir="$GIT_DIR_ABS" rev-parse "origin/$BOUND_BRANCH")
   else
     REMOTE_SHA=none
@@ -1658,7 +1661,7 @@ cmd_reconcile() {
   if [ "$rc" -ne 0 ] && [ "$class" != remote-branch-missing ]; then
     finish 6 remote-unknown "class=${class:-offline}"
   fi
-  load_record_compare || finish 8 configuration-error detail=compare
+  load_record_compare "$class" || finish 8 configuration-error detail=compare
   if [ "$STAGED_COUNT" -ne 0 ] || [ "$UNSTAGED_COUNT" -ne 0 ] || [ "$UNTRACKED_COUNT" -ne 0 ]; then
     finish 4 local-changes
   fi
@@ -1701,7 +1704,7 @@ cmd_verify() {
     emit remote-unknown "class=${class:-offline}"
     exit 6
   fi
-  load_record_compare || die 8 "cannot compare the Record to origin"
+  load_record_compare "$class" || die 8 "cannot compare the Record to origin"
   if [ "$REMOTE_SHA" = none ]; then
     remote=none
   else
