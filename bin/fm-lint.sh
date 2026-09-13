@@ -30,11 +30,12 @@
 # The default (no explicit-path) path also runs bin/fm-lint-workflows.sh so a
 # malformed GitHub workflow, including a self-broken ci.yml, fails locally
 # before merge instead of only failing to run as CI.
-# The same no-argument path also lints bin/fm-recall.py with python3 syntax
-# compilation and a pinned Ruff check for standard-error and undefined-name
-# rules (E and F, including F821). That Python gate is a development
-# dependency only; the shipped recall executable still uses the standard
-# library alone. A missing or different Ruff version is a lint failure.
+# The same no-argument path also lints bin/fm-recall.py and
+# bin/fm-record-links.py with python3 syntax compilation and a pinned Ruff
+# check for standard-error and undefined-name rules (E and F, including F821).
+# That Python gate is a development dependency only; the shipped executables
+# still use the standard library alone. A missing or different Ruff version is
+# a lint failure.
 #
 # With no explicit paths, the shell file set depends on context:
 #   - In CI (GITHUB_ACTIONS=true or CI=true), on the main branch, or when no
@@ -49,10 +50,10 @@
 #     gate and both companion gates.
 # Explicit paths always bypass this file-set selection and lint exactly the
 # given paths, matching the same config, without either companion gate.
-# The exact relative path bin/fm-recall.py selects the Python gate; every
-# other explicit path goes to ShellCheck. --list-files prints only the
-# selected shell roots, because its consumers treat it as the shell inventory
-# and feed every listed path to a shell parser.
+# The exact relative paths bin/fm-recall.py and bin/fm-record-links.py select
+# the Python gate; every other explicit path goes to ShellCheck. --list-files
+# prints only the selected shell roots, because its consumers treat it as the
+# shell inventory and feed every listed path to a shell parser.
 #
 # Canonical lint defaults to two bounded workers over two stable logical shards.
 # Each shard writes separate diagnostics, and the parent replays those outputs in
@@ -76,7 +77,7 @@ set -u
 
 REQUIRED_SHELLCHECK=0.11.0
 REQUIRED_RUFF=0.16.6
-PYTHON_LINT_TARGET=bin/fm-recall.py
+PYTHON_LINT_TARGETS=(bin/fm-recall.py bin/fm-record-links.py)
 RUFF_SELECT=E,F
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SELF="$SELF_DIR/fm-lint.sh"
@@ -164,7 +165,7 @@ fm_lint_run_python() {
   local path ruff_bin resolved compile_out ruff_out rc=0
   [ "${#PYTHON_ROOTS[@]}" -gt 0 ] || return 0
   if ! command -v python3 >/dev/null 2>&1; then
-    printf 'fm-lint.sh: python3 is required to lint %s.\n' "$PYTHON_LINT_TARGET" >&2
+    printf 'fm-lint.sh: python3 is required to lint %s.\n' "${PYTHON_LINT_TARGETS[*]}" >&2
     return 1
   fi
   if ! command -v ruff >/dev/null 2>&1; then
@@ -978,10 +979,18 @@ if [ "$#" -gt 0 ]; then
   EXPLICIT_PATHS=1
   ROOTS=()
   for path in "$@"; do
-    case "$path" in
-      "$PYTHON_LINT_TARGET") PYTHON_ROOTS+=("$path") ;;
-      *) ROOTS+=("$path") ;;
-    esac
+    python_target=0
+    for target in "${PYTHON_LINT_TARGETS[@]}"; do
+      if [ "$path" = "$target" ]; then
+        python_target=1
+        break
+      fi
+    done
+    if [ "$python_target" -eq 1 ]; then
+      PYTHON_ROOTS+=("$path")
+    else
+      ROOTS+=("$path")
+    fi
   done
 else
   full_lint=1
@@ -1006,9 +1015,11 @@ else
       ROOTS+=("$changed_path")
     done < <(git diff --name-only --diff-filter=ACMR -z "$merge_base" -- 2>/dev/null | LC_ALL=C sort -z)
   fi
-  if [ -f "$PYTHON_LINT_TARGET" ]; then
-    PYTHON_ROOTS+=("$PYTHON_LINT_TARGET")
-  fi
+  for target in "${PYTHON_LINT_TARGETS[@]}"; do
+    if [ -f "$target" ]; then
+      PYTHON_ROOTS+=("$target")
+    fi
+  done
 fi
 ROOT_COUNT=${#ROOTS[@]}
 

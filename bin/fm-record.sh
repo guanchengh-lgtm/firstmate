@@ -4,11 +4,13 @@
 # One command prepares the live-state mirror, settles candidate bytes, scans
 # them, commits one Git snapshot at $FM_HOME/data, and (tick only) attempts one
 # bounded push. Session, stow, completion, and teardown call checkpoint.
-# Only tick pushes. The deadman stays a read-only probe.
+# Only tick pushes. land-related lands one reviewed footer-only candidate
+# commit without pushing. The deadman stays a read-only probe.
 #
 # Usage:
 #   fm-record.sh tick
 #   fm-record.sh checkpoint --reason session-start|stow|complete|teardown [--required]
+#   fm-record.sh land-related --candidate <local-copy> --expected-head <sha>
 #   fm-record.sh health
 #   fm-record.sh setup [--init] [--origin URL] [--branch NAME] [--code-root PATH]
 #                    [--write-plist] [--bootstrap]
@@ -49,8 +51,12 @@
 # Indexed payloads, including resolved and verified local LFS objects, pass
 # bin/fm-record-scan.sh chain before a checkpoint commits. Tick also scans
 # every outgoing commit before pushing its pinned HEAD; the scanner header
-# owns detection classes and archive limits. The pre-commit hook scans the
-# complete staged tree, so working-tree edits cannot hide staged credentials.
+# owns detection classes and archive limits. land-related scans the candidate
+# commit tree with that same chain, then fetches and fast-forwards only.
+# It refuses a dirty or advanced live Record, a non-footer-only candidate,
+# or a failed Git operation, and never stashes, resets, discards, forces,
+# or rebases. The pre-commit hook scans the complete staged tree, so
+# working-tree edits cannot hide staged credentials.
 #
 # Exit codes:
 #   0  disabled, unchanged, committed-local, or pushed
@@ -1270,6 +1276,165 @@ cmd_pre_commit() {
   esac
 }
 
+footer_only_candidate() { # <candidate-git-dir> <expected-sha> <candidate-sha>
+  python3 - "$SCRIPT_DIR/fm-record-links.py" "$1" "$2" "$3" <<'PYFOOTER'
+import importlib.util
+import subprocess
+import sys
+
+links_path, git_dir, expected, candidate = sys.argv[1:5]
+spec = importlib.util.spec_from_file_location("fm_record_links", links_path)
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+
+def git(*args):
+    result = subprocess.run(
+        ["git", "--git-dir", git_dir, *args],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise SystemExit(1)
+    return result.stdout
+
+
+def show(commit, path):
+    result = subprocess.run(
+        ["git", "--git-dir", git_dir, "cat-file", "-p", "%s:%s" % (commit, path)],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise SystemExit(1)
+    return result.stdout
+
+
+status = git("diff", "--name-status", "--no-renames", "-z", expected, candidate)
+fields = status.split(b"\0")
+if fields and fields[-1] == b"":
+    fields.pop()
+if not fields or len(fields) % 2:
+    raise SystemExit(1)
+for kind, path in zip(fields[0::2], fields[1::2]):
+    if kind != b"M" or not path.endswith(b".md"):
+        raise SystemExit(1)
+    old = show(expected, path.decode("utf-8", errors="surrogateescape"))
+    new = show(candidate, path.decode("utf-8", errors="surrogateescape"))
+    _lineno, line, footer = mod.terminal_related(
+        new.decode("utf-8", errors="replace")
+    )
+    if footer is None or new != mod.append_footer_bytes(old, line):
+        raise SystemExit(1)
+PYFOOTER
+}
+
+cmd_land_related() {
+  local candidate='' expected='' cand_top cand_git cand_sha parent live rc=0 payloads
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --candidate)
+        candidate=$2
+        shift 2
+        ;;
+      --expected-head)
+        expected=$2
+        shift 2
+        ;;
+      *) die 2 "unknown land-related argument" ;;
+    esac
+  done
+  [ -n "$candidate" ] && [ -n "$expected" ] \
+    || die 2 "land-related requires --candidate and --expected-head"
+  case "$(binding_state)" in
+    absent)
+      emit disabled
+      exit 0
+      ;;
+  esac
+  refuse_git_overrides
+  validate_binding
+  acquire_record_lock wait || rc=$?
+  case "$rc" in
+    0) ;;
+    3) finish 3 busy ;;
+    *) finish 8 configuration-error detail=lock ;;
+  esac
+  recover_index_publication || finish 8 configuration-error detail=index-recovery
+  CAND_WORK="$GIT_DIR_ABS/record-land/work"
+  rm -rf "${CAND_WORK%/*}" || finish 8 configuration-error detail=candidate
+  mkdir -p "$CAND_WORK" || finish 8 configuration-error detail=candidate
+  live=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD) \
+    || finish 8 configuration-error detail=head
+  expected=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify "$expected^{commit}") \
+    || finish 8 configuration-error detail=expected-head
+  [ "$live" = "$expected" ] || finish 8 configuration-error detail=head-moved
+  git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" diff --quiet \
+    || finish 8 configuration-error detail=dirty-worktree
+  git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" diff --cached --quiet \
+    || finish 8 configuration-error detail=dirty-index
+  [ -d "$candidate" ] && [ ! -L "$candidate" ] \
+    || finish 8 configuration-error detail=candidate
+  cand_top=$(git -C "$candidate" rev-parse --show-toplevel) \
+    || finish 8 configuration-error detail=candidate
+  cand_top=$(physical_dir "$cand_top") || finish 8 configuration-error detail=candidate
+  [ "$cand_top" != "$RECORD_WORK" ] \
+    || finish 8 configuration-error detail=candidate-is-live
+  cand_git=$(git -C "$cand_top" rev-parse --path-format=absolute --git-dir) \
+    || finish 8 configuration-error detail=candidate
+  cand_sha=$(git --git-dir="$cand_git" rev-parse --verify HEAD) \
+    || finish 8 configuration-error detail=candidate
+  parent=$(git --git-dir="$cand_git" rev-parse --verify "HEAD^") \
+    || finish 8 configuration-error detail=candidate-parents
+  [ "$parent" = "$expected" ] || finish 8 configuration-error detail=candidate-parent
+  [ "$(git --git-dir="$cand_git" rev-list --count "$expected..$cand_sha")" = 1 ] \
+    || finish 8 configuration-error detail=candidate-history
+  [ "$(git --git-dir="$cand_git" rev-list --parents -n 1 HEAD | awk '{print NF}')" = 2 ] \
+    || finish 8 configuration-error detail=candidate-parents
+  footer_only_candidate "$cand_git" "$expected" "$cand_sha" \
+    || finish 8 configuration-error detail=not-footer-only
+  git --git-dir="$GIT_DIR_ABS" update-ref -d refs/fm-land-related/candidate >/dev/null 2>&1 || true
+  GIT_TERMINAL_PROMPT=0 git --git-dir="$GIT_DIR_ABS" fetch --no-tags -- \
+    "$cand_git" "$cand_sha:refs/fm-land-related/candidate" \
+    || finish 8 configuration-error detail=fetch
+  CAND_INDEX="$CAND_WORK/../land.index"
+  rm -f "$CAND_INDEX"
+  GIT_INDEX_FILE="$CAND_INDEX" git --git-dir="$GIT_DIR_ABS" read-tree "$cand_sha" \
+    || finish 8 configuration-error detail=read-tree
+  payloads="$CAND_WORK/../scan"
+  extract_index_payloads "$CAND_INDEX" "$payloads" || {
+    git --git-dir="$GIT_DIR_ABS" update-ref -d refs/fm-land-related/candidate >/dev/null 2>&1 || true
+    finish 5 scan-blocked
+  }
+  "$SCRIPT_DIR/fm-record-scan.sh" chain --dir "$payloads" || {
+    git --git-dir="$GIT_DIR_ABS" update-ref -d refs/fm-land-related/candidate >/dev/null 2>&1 || true
+    finish 5 scan-blocked
+  }
+  live=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD) \
+    || finish 8 configuration-error detail=head
+  if [ "$live" != "$expected" ]; then
+    git --git-dir="$GIT_DIR_ABS" update-ref -d refs/fm-land-related/candidate >/dev/null 2>&1 || true
+    finish 8 configuration-error detail=head-moved
+  fi
+  GIT_TERMINAL_PROMPT=0 git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" \
+    merge --ff-only --no-edit refs/fm-land-related/candidate \
+    || {
+      git --git-dir="$GIT_DIR_ABS" update-ref -d refs/fm-land-related/candidate >/dev/null 2>&1 || true
+      finish 8 configuration-error detail=fast-forward
+    }
+  git --git-dir="$GIT_DIR_ABS" update-ref -d refs/fm-land-related/candidate >/dev/null 2>&1 || true
+  CAPTURED_HEAD=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD) \
+    || finish 8 configuration-error detail=head
+  [ "$CAPTURED_HEAD" = "$cand_sha" ] || finish 8 configuration-error detail=fast-forward
+  build_metadata "$CAND_WORK/../metadata" \
+    || finish 8 configuration-error detail=metadata
+  save_clean_metadata || finish 8 configuration-error detail=metadata
+  finish 0 committed-local commit="$(git --git-dir="$GIT_DIR_ABS" rev-parse --short HEAD)" \
+    detail=land-related
+}
+
 cmd_tick() {
   case "$(binding_state)" in
     absent)
@@ -1323,6 +1488,10 @@ case "${1:-}" in
   checkpoint)
     shift
     cmd_checkpoint "$@"
+    ;;
+  land-related)
+    shift
+    cmd_land_related "$@"
     ;;
   health)
     shift

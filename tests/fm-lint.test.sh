@@ -532,6 +532,10 @@ test_python_syntax_and_undefined_name_fail_closed() {
   out=$("$lint" bin/fm-recall.py 2>&1) || rc=$?
   [ "$rc" -ne 0 ] || fail "syntax-broken Python was accepted"$'\n'"$out"
   assert_contains "$out" "SyntaxError" "Python syntax defect did not fail through fm-lint.sh"
+  printf 'def (\n' > "$tmp/bin/fm-record-links.py"
+  rc=0
+  out=$("$lint" bin/fm-record-links.py 2>&1) || rc=$?
+  [ "$rc" -ne 0 ] || fail "syntax-broken record-links Python was accepted"$'\n'"$out"
 
   printf 'print(undefined_name_xyz)\n' > "$broken"
   rc=0

@@ -1072,6 +1072,63 @@ test_archive_locator_excludes_only_its_row
 test_session_budget_keeps_allocation_order
 test_probe_corpus_ignores_expectation_changes
 
+test_header_and_footer_preserve_title_rank_and_caps() {
+  local home
+  home="$TMP_ROOT/header-footer-rank"
+  mkdir -p "$home/data/decisions" "$home/data/sources"
+  printf '%s\n' '# Quasar propulsion' 'Thruster notes without extra terms.' \
+    > "$home/data/decisions/quasar-propulsion.md"
+  printf '%s\n' '# Source' 'quasar catalog.' > "$home/data/sources/quasar.md"
+  recall_json "$home" --title quasar --surface pointers > "$home/before.json"
+  python3 - "$home/before.json" <<'PY' || fail "plain quasar decision did not score 4.0"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert p["status"] == "ok", p
+assert len(p["hits"]) == 1, p
+assert p["hits"][0]["title"] == "Quasar propulsion", p
+assert p["hits"][0]["score"] == 4.0, p
+assert p["pointer_count"] == 1, p
+PY
+  python3 - "$home/data/decisions/quasar-propulsion.md" <<'PY'
+from pathlib import Path
+import sys
+path = Path(sys.argv[1])
+body = path.read_text(encoding="utf-8")
+path.write_text(
+    '---\nid: decisions/quasar-propulsion\ndate: "2026-09-07"\ntype: decision\nstatus: open\n---\n'
+    + body,
+    encoding="utf-8",
+)
+PY
+  recall_json "$home" --title quasar --surface pointers > "$home/after-header.json"
+  python3 - "$home/before.json" "$home/after-header.json" <<'PY' || fail "YAML header changed quasar ranking"
+import json, sys
+before, after = [json.load(open(path, encoding="utf-8")) for path in sys.argv[1:]]
+assert after["hits"][0]["title"] == before["hits"][0]["title"], after
+assert after["hits"][0]["score"] == before["hits"][0]["score"] == 4.0, after
+assert after["pointer_count"] == before["pointer_count"], after
+assert after["hits"][0]["date"] == "2026-09-07", after
+PY
+  printf '%s\n' '# General decision' 'Unrelated body about wait policy.' \
+    > "$home/data/decisions/general.md"
+  recall_json "$home" --title quasar --surface pointers > "$home/general-before.json"
+  python3 - "$home/general-before.json" <<'PY' || fail "general decision already matched quasar"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert {h["id"] for h in p["hits"]} == {"quasar-propulsion"}, p
+PY
+  printf '%s\n' '' 'Related: supersedes: none; cites: [[sources/quasar.md]]; relates: none' \
+    >> "$home/data/decisions/general.md"
+  recall_json "$home" --title quasar --surface pointers > "$home/general-after.json"
+  python3 - "$home/general-before.json" "$home/general-after.json" <<'PY' || fail "Related footer created a quasar hit"
+import json, sys
+before, after = [json.load(open(path, encoding="utf-8")) for path in sys.argv[1:]]
+assert after["hits"] == before["hits"], (before, after)
+assert all(h["id"] != "general" for h in after["hits"]), after
+PY
+  pass "fm-recall: YAML headers and Related footers preserve title, score, and caps"
+}
+
 test_valid_input_returns_bounded_pointers
 test_empty_query_is_explicit_empty
 test_missing_corpus_is_unavailable
@@ -1099,5 +1156,6 @@ test_alias_identity_exclusion_resolves_canonical
 test_parent_directory_swap_never_leaves_the_record
 test_symlinked_report_is_skipped_without_traceback root
 test_corrupted_expectation_exits_nonzero
+test_header_and_footer_preserve_title_rank_and_caps
 
 echo "# all fm-recall tests passed"

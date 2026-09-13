@@ -580,8 +580,12 @@ STUB
       || fail "$mode: ordinary ship brief generation should succeed"
     brief_dod="$TMP_ROOT/promote-dod/brief-dod-$id"
     delivered_dod="$TMP_ROOT/promote-dod/delivered-dod-$id"
-    awk '/^# Definition of done$/ { emit=1 } emit' "$home/data/$id/brief.md" > "$brief_dod"
-    awk '/^# Definition of done$/ { emit=1 } emit' "$payload" > "$delivered_dod"
+    # The brief is a Record, so its terminal Related footer sits after the
+    # Definition of done; the delivered message is not a Record and has none.
+    awk '/^Related: / { exit } /^# Definition of done$/ { emit=1 } emit' "$home/data/$id/brief.md" \
+      | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > "$brief_dod"
+    awk '/^# Definition of done$/ { emit=1 } emit' "$payload" \
+      | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > "$delivered_dod"
     cmp -s "$brief_dod" "$delivered_dod" \
       || fail "$mode: promotion and ordinary brief generation delivered different Definitions of done"
   done
