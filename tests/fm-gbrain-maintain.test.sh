@@ -116,6 +116,7 @@ test_project_renders_text_and_reserved_names() {
   rec=$(new_record "$TMP_ROOT/render/record")
   printf 'a,b\n1,2\n' > "$rec/table.csv"
   printf '{"k":1}\n' > "$rec/meta.json"
+  printf '# meta\n' > "$rec/meta.md"
   printf 'plain\n' > "$rec/plain.txt"
   printf '# index\n' > "$rec/index.md"
   git -C "$rec" add -A
@@ -128,13 +129,14 @@ test_project_renders_text_and_reserved_names() {
 from pathlib import Path
 import sys
 root = Path(sys.argv[1])
-csv = (root / "data/table.md").read_text()
+csv = (root / "data/table.csv.md").read_text()
 assert "record_path: table.csv" in csv
 assert "a,b" in csv
-txt = (root / "data/plain.md").read_text()
+txt = (root / "data/plain.txt.md").read_text()
 assert "record_path: plain.txt" in txt
-js = (root / "data/meta.md").read_text()
+js = (root / "data/meta.json.md").read_text()
 assert "record_path: meta.json" in js
+assert (root / "data/meta.md").read_text() == "# meta\n"
 idx = (root / "data/index.record.md").read_text()
 assert "record_path: index.md" in idx
 assert not (root / "data/index.md").exists()
@@ -185,7 +187,9 @@ assert "eval-output" in reasons
 ' || fail "unsafe inputs were admitted: $OUT"
   rec2=$(new_record "$TMP_ROOT/collide/record")
   printf '# md\n' > "$rec2/foo.md"
-  printf 'txt\n' > "$rec2/foo.txt"
+  printf '{}\n' > "$rec2/foo.json"
+  printf '# index\n' > "$rec2/index.md"
+  printf '# record\n' > "$rec2/index.record.md"
   git -C "$rec2" add -A
   git -C "$rec2" commit -qm collide
   mkdir -p "$TMP_ROOT/collide/brain"

@@ -33,7 +33,7 @@ project
   hidden paths, raw binaries, raw transcripts, credentials, wiki/gbrain
   source-route copies, and wiki/views/gbrain evaluation output are
   excluded. Reserved Markdown basenames become <name>.record.md.
-  Non-Markdown text becomes <name>.md with a metadata wrapper.
+  Non-Markdown text becomes <name>.<ext>.md with a metadata wrapper.
   Ordinary Markdown is stored at data/<Record-relative path>.
   Published generated pages map back to conversations/sessions, knowledge,
   and entities. Unknown wiki/gbrain prefixes fail the run.
@@ -336,7 +336,7 @@ def projected_source_path(relpath):
     if base in RESERVED_BASENAMES:
         name = "%s.record.md" % os.path.splitext(base)[0]
     elif ext in TEXT_EXT:
-        name = "%s.md" % os.path.splitext(base)[0]
+        name = "%s.md" % base
     else:
         name = base
     rel = "/".join(p for p in (parent, name) if p)
