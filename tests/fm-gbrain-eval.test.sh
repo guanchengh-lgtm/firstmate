@@ -174,6 +174,14 @@ assert not dups, "duplicate chunks were not collapsed"
 timeouts=[row for row in rows if row["status"]=="timeout"]
 # no timeout in this run
 assert summary["winner"] in ("overlap","hybrid")
+# Gold lists decision priors as decisions/<slug>.md; recall returns the bare slug.
+# Probes 8 and 11 must score their decision prior as a hit on the overlap arm.
+decision_rows=[row for row in rows if row["arm"]=="overlap" and row["mode"] in ("B","C") and str(row["n"]) in ("8","11")]
+assert len(decision_rows)==4, decision_rows
+for row in decision_rows:
+    assert row["status"]=="ok", row
+    assert not any(e.startswith("decisions/") or e.endswith(".md") for e in row["expected"]), row
+    assert row["hit@5"]==1, "decision prior not scored as a hit: %r" % row
 PY
   GOLD_AFTER=$(python3 -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$GOLD")
   [ "$GOLD_AFTER" = "$GOLD_BEFORE" ] || fail 'gold file changed'
