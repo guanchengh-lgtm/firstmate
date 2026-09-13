@@ -415,8 +415,8 @@ A cloud run never advances that streak.
 The historical brief-only directories acknowledged by the T11 cleanup carry a `status` sidecar bound to the brief's content hash; a changed brief or a sidecar without that binding is reported again.
 
 The cloud fallback is one bot routine with Record scope only.
-It runs `fm-nightly.sh run --record-only --record <cloud Record clone>` from the reviewed code revision after the local run's bound, and it does no duplicate work when the fetched Record already carries that date's local receipt.
-Its skipped stages are explicit in its receipt: local reconcile, transcript archive, and injected-size measures.
+It runs `fm-nightly.sh run --record-only --record <cloud Record clone>` from the reviewed code revision after the local run's bound, and its receipt lands under its own host key beside the Mac's receipt for the same date.
+Its skipped stages are explicit in its receipt: local reconcile, transcript archive, weekly archive check, and injected-size measures.
 A rejected push preserves its local commit and reports the conflict; it never force-pushes.
 The routine's Git credential and its actual schedule binding are proven at activation; connector access alone is not evidence.
 
