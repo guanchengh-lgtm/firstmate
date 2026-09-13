@@ -292,14 +292,14 @@ test_dry_run_lists_every_stage() {
   run_nightly run --fm-home "$home" --dry-run --now "$NOW"
   expect_code 0 "$RC" 'dry-run'
   for name in config lock reconcile-local reconcile lint rollout fold views \
-    archive weekly-check injected-measures drift receipt \
+    graphify archive weekly-check injected-measures drift receipt \
     checkpoint verify; do
     assert_contains "$OUT" "dry-run	$name	" "dry-run lists $name"
   done
   assert_contains "$OUT" $'dry-run\treconcile\twould: skip home path' 'home path skip'
   assert_contains "$OUT" $'dry-run\tarchive\twould: skip not-configured' 'archive not-configured'
+  assert_contains "$OUT" $'dry-run\tgraphify\twould: skip not-configured' 'graphify not-configured'
   assert_not_contains "$OUT" 'gbrain' 'no gbrain stage'
-  assert_not_contains "$OUT" 'graphify' 'no graphify stage'
   assert_contains "$OUT" $'dry-run\tweekly-check\twould: skip not-configured' 'weekly-check not-configured'
   assert_absent "$home/data/.git/nightly/stages.tsv" 'dry-run wrote stages.tsv'
   pass "fm-nightly: dry-run lists every stage and writes nothing"
@@ -315,7 +315,7 @@ test_dry_run_record_only_skips_cloud() {
   git -C "$clone" commit --quiet -m init
   run_nightly run --record-only --record "$clone" --dry-run --now "$NOW"
   expect_code 0 "$RC" 'record-only dry-run'
-  for name in reconcile-local archive injected-measures weekly-check; do
+  for name in reconcile-local graphify archive injected-measures weekly-check; do
     assert_contains "$OUT" "dry-run	$name	would: skip cloud scope" "cloud skip $name"
   done
   pass "fm-nightly: record-only dry-run skips cloud-ok stages from the table"
