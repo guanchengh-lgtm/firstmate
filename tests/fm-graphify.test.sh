@@ -42,6 +42,7 @@ write_registry() {
 - fm-vault [local-only] - retired
 - extra-app [no-mistakes] - other
 - ghost [no-mistakes] - missing
+- stray [no-mistakes] - directory without a clone
 EOF
 }
 
@@ -88,7 +89,8 @@ test_inventory_dedupes_and_marks_absent() {
   registry="$world/projects.md"
   home="$world/home-clone"
   extra="$world/agent-skills"
-  mkdir -p "$projects" "$record" "$world/empty-bin"
+  mkdir -p "$projects/stray" "$record" "$world/empty-bin"
+  git init --quiet -b main "$world"
   write_registry "$registry"
   init_repo "$projects/firstmate" "https://github.com/guanchengh-lgtm/firstmate.git" 'firstmate'
   init_repo "$home" "https://github.com/guanchengh-lgtm/firstmate.git" 'home copy'
@@ -100,9 +102,12 @@ test_inventory_dedupes_and_marks_absent() {
   init_repo "$world/no-origin" "https://example.invalid/unused.git" 'primary'
   git -C "$world/no-origin" remote remove origin
   git -C "$world/no-origin" worktree add --quiet "$world/no-origin-wt" -b wt
+  init_repo "$world/a:b/colon-origin" "https://example.invalid/colon.git" 'colon'
+  init_repo "$world/colon-clone" "$world/a:b/colon-origin" 'colon clone'
   run_g inventory --projects-root "$projects" --record "$record" --registry "$registry" \
     --home "$home" --extra "$extra" --extra "$world/fixture-origin" \
-    --extra "$world/ssh-clone" --extra "$world/no-origin-wt" --extra "$world/no-origin"
+    --extra "$world/ssh-clone" --extra "$world/no-origin-wt" --extra "$world/no-origin" \
+    --extra "$world/a:b/colon-origin" --extra "$world/colon-clone"
   expect_code 0 "$RC" 'inventory'
   assert_contains "$OUT" $'record\trecord\tincomplete\tlocal-only' 'record without git is incomplete'
   assert_contains "$OUT" $'firstmate\tcode\tselected\tno-mistakes' 'firstmate is selected'
@@ -118,6 +123,8 @@ test_inventory_dedupes_and_marks_absent() {
   assert_contains "$OUT" $'no-origin-wt\tcode\tunregistered' 'remote-less worktree is unregistered'
   assert_contains "$OUT" $'no-origin\tcode\tduplicate' 'primary checkout dedupes against its worktree by common dir'
   assert_not_contains "$OUT" '/no-origin-wt	graphify-out' 'worktree path is not an identity'
+  assert_contains "$OUT" $'stray\tcode\tincomplete\tno-mistakes\t\t\t' 'directory inside the home checkout is not-git, not the parent repo'
+  assert_contains "$OUT" $'colon-clone\tcode\tduplicate' 'local origin path with a colon dedupes as a path'
   pass "fm-graphify: inventory dedupes clones and keeps absent vault explicit"
 }
 
@@ -349,18 +356,30 @@ test_nightly_unknown_built_at_updates() {
   commit=$(git -C "$repo" rev-parse HEAD)
   write_graph "$repo/graphify-out/graph.json" "0000000000000000000000000000000000000000"
   write_graph "$record/graphify-out/graph.json" "$(init_record "$record")"
+  write_graph "$record/graphify-out/merged-graph.json" "$commit"
   write_ledger "$record/knowledge-system-wayfinder/research/T10-graphify/inputs.tsv" \
 "record	record	selected	local-only	$commit	record	graphify-out/graph.json	record		ready	
 firstmate	code	selected	no-mistakes	$commit	firstmate	graphify-out/graph.json	firstmate		ready	"
   cat > "$fakebin/graphify" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$(dirname "$0")/log"
+if [ "$1" = update ]; then
+  python3 - "$(git rev-parse HEAD)" <<'PY'
+import json, sys
+json.dump({"built_at_commit": sys.argv[1], "nodes": [], "links": []}, open("graphify-out/graph.json", "w", encoding="utf-8"))
+PY
+fi
 exit 0
 SH
   chmod +x "$fakebin/graphify"
   FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
   expect_code 1 "$RC" 'unknown built_at nightly'
   assert_grep 'update .' "$fakebin/log" 'unknown built_at forces a code update'
+  rm -f "$fakebin/log"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
+  expect_code 1 "$RC" 'unknown baseline second night'
+  assert_contains "$OUT" $'status=finding\tdetail=docs-stale' 'unknown document baseline stays docs-stale after the code rebuild'
+  [ ! -f "$fakebin/log" ] || fail 'second night after unknown baseline invoked graphify again'
   pass "fm-graphify: a graph stamped with an unknown commit is rebuilt, not reported unchanged"
 }
 

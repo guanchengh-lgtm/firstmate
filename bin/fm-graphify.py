@@ -111,7 +111,7 @@ def normalize_identity(raw: str) -> str:
     if value.startswith("ssh://"):
         host_path = value[6:].split("@", 1)[-1]
         value = "https://" + host_path
-    elif "://" not in value and ":" in value:
+    elif "://" not in value and ":" in value and not value.startswith("/"):
         host, _, path = value.partition(":")
         value = "https://%s/%s" % (host.split("@", 1)[-1], path.lstrip("/"))
     if value.startswith("/"):
@@ -144,10 +144,9 @@ def parse_registry(path: Path) -> list[tuple[str, str]]:
 
 
 def repo_facts(root: Path) -> dict[str, str]:
-    inside = git(root, "rev-parse", "--is-inside-work-tree")
-    if not (root / ".git").exists() and inside.returncode != 0:
-        return {}
     top = git_ok(root, "rev-parse", "--show-toplevel")
+    if not top or Path(top).resolve() != root.resolve():
+        return {}
     common = git_ok(root, "rev-parse", "--git-common-dir")
     head = git_ok(root, "rev-parse", "HEAD")
     origin = git_ok(root, "remote", "get-url", "origin")
@@ -407,7 +406,7 @@ def docs_built_at(root: Path, graph: Path, built_at: str) -> str:
     marker = root / CODE_ONLY_MARKER
     if not marker.is_file():
         return built_at
-    cells = marker.read_text(encoding="utf-8").strip().split("\t")
+    cells = marker.read_text(encoding="utf-8").rstrip("\n").split("\t")
     if len(cells) != 2 or cells[0] != graph_hash(graph):
         return built_at
     return cells[1]
