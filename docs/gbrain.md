@@ -54,6 +54,7 @@ Program arguments are the versioned binary plus `serve --http --bind 127.0.0.1 -
 Working directory is the disposable brain.
 `GBRAIN_HOME` is the parent of `.gbrain`.
 `fm-gbrain-maintain.py write-plist` renders that plist with no secrets.
+Install it at `~/Library/LaunchAgents/com.firstmate.ks-t17-gbrain.plist`, because the maintenance restart bootstraps that path and reports a missing plist as a failed run.
 Ollama listens on `127.0.0.1:11434`.
 A port conflict is a reported configuration choice, never a reason to kill another process.
 

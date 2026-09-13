@@ -1104,7 +1104,7 @@ gbrain_bin_from_env() {
 }
 
 run_gbrain_views_phase() {
-  local env_file bin
+  local env_file bin deadline
   [ "$RECORD_ONLY" -eq 0 ] || return 0
   [ "$RECORD_WRITES" -eq 1 ] || return 0
   [ -n "${FM_HOME:-}" ] || return 0
@@ -1116,8 +1116,11 @@ run_gbrain_views_phase() {
     stage_rerecord_last views failed 0 maintain-missing
     return 0
   }
+  deadline=$((NIGHTLY_STAGE_BOUND_SECONDS - 60))
+  [ "$deadline" -ge 1 ] || deadline=1
   run_external "$NIGHTLY_STAGE_BOUND_SECONDS" python3 "$GBRAIN_MAINTAIN_PY" run \
-    --fm-home "$FM_HOME" --record "$RECORD" --now "$NOW_ARG"
+    --fm-home "$FM_HOME" --record "$RECORD" --now "$NOW_ARG" \
+    --deadline-seconds "$deadline"
   if [ "$STAGE_RC" -ne 0 ]; then
     stage_rerecord_last views failed "$STAGE_ELAPSED" "maintain-exit-$STAGE_RC"
   fi

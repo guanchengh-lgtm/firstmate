@@ -98,14 +98,26 @@ def parse_gold(path):
                 {
                     "n": number,
                     "probe_date": probe_date,
-                    "dispatched_ids": [item for item in dispatched.split(",") if item],
-                    "prior_ids": [item for item in prior.split(",") if item],
+                    "dispatched_ids": gold_identities(dispatched),
+                    "prior_ids": gold_identities(prior),
                     "query": query,
                 }
             )
     if len(rows) != OFFICIAL_PROBE_COUNT:
         raise UsageError("gold must contain exactly %d probes" % OFFICIAL_PROBE_COUNT)
     return rows
+
+
+def gold_identities(field):
+    identities = []
+    for item in field.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        if item.startswith("decisions/") and item.endswith(".md"):
+            item = item[len("decisions/") : -len(".md")]
+        identities.append(item)
+    return identities
 
 
 def identities_of(row, mode):

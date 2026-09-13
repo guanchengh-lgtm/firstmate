@@ -14,7 +14,7 @@ Usage:
   fm-gbrain-maintain.py run --fm-home H --record R --now T
     [--gbrain-bin PATH] [--launchctl-bin PATH] [--scan-bin PATH]
     [--transcript-manifest FILE] [--skip-serve] [--deadline-seconds N]
-    [--format text|json]
+    [--plist FILE] [--format text|json]
   fm-gbrain-maintain.py install-archive --archive FILE --sha256 HEX
     --dest DIR [--format text|json]
   fm-gbrain-maintain.py write-plist --gbrain-bin PATH --gbrain-home DIR
@@ -52,6 +52,9 @@ run
   exits 3 and does not stop services. Any subprocess or scan failure
   restores the previous accepted generation, keeps the Record wiki
   unchanged, and still restarts the agent when this run stopped it.
+  The restart bootstraps --plist, which defaults to
+  ~/Library/LaunchAgents/<label>.plist; a missing plist or a failed
+  bootstrap is a reported failure.
   GBRAIN_ALLOW_MASS_RECONCILE is never set. Maintenance commands set
   GBRAIN_SKIP_STARTUP_HOOKS=1.
 
@@ -634,7 +637,7 @@ def wait_pglite_idle(paths, deadline):
         time.sleep(0.05)
 
 
-def stop_serve(paths, launchctl_bin, skip, deadline):
+def stop_serve(paths, launchctl_bin, skip):
     if skip:
         return False
     uid = os.getuid()
@@ -644,20 +647,32 @@ def stop_serve(paths, launchctl_bin, skip, deadline):
         stderr=subprocess.PIPE,
         check=False,
     )
-    wait_pglite_idle(paths, deadline)
     return True
 
 
 def start_serve(paths, launchctl_bin, skip, plist_path):
     if skip:
-        return
+        return True
+    plist = plist_path or os.path.expanduser(
+        "~/Library/LaunchAgents/%s.plist" % paths.label
+    )
+    if not os.path.isfile(plist):
+        sys.stderr.write("gbrain-maintain: serve restart failed: missing %s\n" % plist)
+        return False
     uid = os.getuid()
-    argv = [launchctl_bin, "bootstrap", "gui/%s" % uid]
-    if plist_path:
-        argv.append(plist_path)
-    else:
-        argv.append(paths.label)
-    subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+    proc = subprocess.run(
+        [launchctl_bin, "bootstrap", "gui/%s" % uid, plist],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if proc.returncode != 0:
+        sys.stderr.write(
+            "gbrain-maintain: serve restart failed: launchctl exit %d\n"
+            % proc.returncode
+        )
+        return False
+    return True
 
 
 def rotate_trees(current, previous, candidate):
@@ -778,11 +793,10 @@ def stage_wiki_payload(export_dir, exported, edges, manifest, receipt, stage_dir
 def scan_stage(scan_bin, stage_dir, timeout):
     if not scan_bin:
         raise MaintainError("scan executable is required before publication")
-    argv = scan_bin if isinstance(scan_bin, list) else [scan_bin]
-    if len(argv) == 1 and argv[0].endswith("fm-record-scan.sh"):
-        argv = [argv[0], "chain", "--dir", stage_dir]
+    if scan_bin.endswith("fm-record-scan.sh"):
+        argv = [scan_bin, "chain", "--dir", stage_dir]
     else:
-        argv = argv + [stage_dir]
+        argv = [scan_bin, stage_dir]
     run_cmd(argv, os.environ.copy(), timeout)
 
 
@@ -923,8 +937,10 @@ def cmd_run(args):
         manifest = build_projection(record, commit, paths.candidate)
         init_projection_git(paths.candidate, commit)
         remaining = max(1, int(deadline - time.time()))
-        stopped = stop_serve(paths, paths.launchctl_bin, args.skip_serve, deadline)
+        stopped = stop_serve(paths, paths.launchctl_bin, args.skip_serve)
         RUN.stopped = stopped
+        if stopped:
+            wait_pglite_idle(paths, deadline)
         rotate_trees(paths.brain, paths.previous, paths.candidate)
         replaced = True
         RUN.replaced = True
@@ -992,18 +1008,21 @@ def cmd_run(args):
                 "run ok pages=%d exported=%d ingested=%d\n"
                 % (len(manifest["pages"]), len(exported), len(ingested))
             )
-        return 0
     except Exception:
         if replaced and not RUN.published:
             restore_previous(paths.brain, paths.previous)
             RUN.replaced = False
         raise
     finally:
+        restarted = True
         if stopped:
-            start_serve(paths, paths.launchctl_bin, args.skip_serve, args.plist)
+            restarted = start_serve(
+                paths, paths.launchctl_bin, args.skip_serve, args.plist
+            )
             RUN.stopped = False
         lock.release()
         RUN.lock = None
+    return 0 if restarted else FAIL_EXIT
 
 
 def cmd_install_archive(args):
