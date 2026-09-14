@@ -420,8 +420,9 @@ Its skipped stages are explicit in its receipt: local reconcile, transcript arch
 A rejected push preserves its local commit and reports the conflict; it never force-pushes.
 The routine's Git credential and its actual schedule binding are proven at activation; connector access alone is not evidence.
 
-Compiler ownership is one sentence: graphify compiles code structure per repository into `graphify-out/`; gbrain compiles Record knowledge pages, entities, and timeline into `data/wiki/` except `data/wiki/views/`; the nightly task owns `data/wiki/views/`; `playbook/`, `captain.md`, `learnings.md`, and the map remain hand-owned; generic Record ingestion reads only `.md`, `.txt`, `.csv`, and `.json`.
-The nightly runner has no graphify or gbrain stage and no config key for either; T10 and T17 add their own integration when they land.
+Compiler ownership is one sentence: graphify compiles code structure per repository into `graphify-out/`; gbrain output is published only under the generated trees named in [`docs/gbrain.md`](gbrain.md); the nightly task owns `data/wiki/views/`; `playbook/`, `captain.md`, `learnings.md`, and the map remain hand-owned; generic Record ingestion reads only `.md`, `.txt`, `.csv`, and `.json`.
+The nightly runner has no graphify stage and no config key for it; T10 adds its own integration when it lands.
+The gbrain phase inside the nightly views stage and its `config/gbrain.env` keys are owned by [`docs/gbrain.md`](gbrain.md).
 The five transcript families are fixed in the runner header; no config key adds, removes, or relocates one.
 
 ## Secondmate routes (data/secondmates.md)
