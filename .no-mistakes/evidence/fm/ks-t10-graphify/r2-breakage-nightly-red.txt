@@ -1,0 +1,18 @@
+not ok - cloud skip graphify (missing: 'dry-run	graphify	would: skip cloud scope')
+--- output ---
+dry-run	config	would: validate nightly.env
+dry-run	lock	would: acquire nightly lock
+dry-run	reconcile-local	would: skip cloud scope
+dry-run	reconcile	would: git fetch and merge --ff-only
+dry-run	lint	would: fm-maintain.py lint
+dry-run	rollout	would: fm-maintain.py rollout advance
+dry-run	fold	would: fm-maintain.py fold
+dry-run	views	would: fm-maintain.py views --apply
+dry-run	graphify	would: skip not-configured
+dry-run	archive	would: skip cloud scope
+dry-run	weekly-check	would: skip cloud scope
+dry-run	injected-measures	would: skip cloud scope
+dry-run	drift	would: git status --porcelain
+dry-run	receipt	would: fm-maintain.py receipt --apply
+dry-run	checkpoint	would: checkpoint and push
+dry-run	verify	would: fm-record.sh verify

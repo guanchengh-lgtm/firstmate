@@ -1,0 +1,37 @@
+== N7 (redo): origin vanished -> reconcile-local remote-unknown, RECORD_WRITES=0, graphify skipped writes-disabled ==
+nightly exit=1
+3:     3	reconcile-local	failed	1	remote-unknown
+9:     9	graphify	skipped	0	writes-disabled
+15:    15	checkpoint	skipped	0	writes-disabled
+== S7 (redo): pending selected row on a clean world -> pending-inputs exit 0, no merge ==
+status=ok	detail=pending-inputs
+exit=0
+merged exists: no
+== I1: inventory: dedupe home clone, absent vault, missing clone, unregistered extra, no worktree path as identity, stdout only ==
+repo	kind	state	delivery	identity	publication	notes
+agent-skills	code	unregistered	no-mistakes	https://github.com/guanchengh-lgtm/agent-skills	none	captain-owned-unregistered
+extra-app	code	selected	no-mistakes	https://github.com/guanchengh-lgtm/extra-app	ready	
+extra-wt	code	duplicate	no-mistakes	https://github.com/guanchengh-lgtm/extra-app	none	same-git-common:extra-app
+firstmate	code	selected	no-mistakes	https://github.com/guanchengh-lgtm/firstmate	ready	
+fm-vault	code	absent	local-only		none	retired-absent
+ghost	code	absent	no-mistakes		none	clone-absent
+home-clone	code	duplicate	no-mistakes	https://github.com/guanchengh-lgtm/firstmate	none	same-identity:firstmate
+ssh-clone	code	duplicate	no-mistakes	https://github.com/guanchengh-lgtm/firstmate	none	same-identity:firstmate
+record	record	incomplete	local-only		pending	record-git-absent
+files written by inventory: 0
+== E1: eval: duplicate nodes collapse, top-ranked bare archive is a miss and consumes rank, unscoped README ambiguous ==
+probe	system	first_expected	hit@1	hit@3	hit@5	mrr	citations
+2	graphify	2	-	Y	Y	0.5000	miss:archive-without-block:done-archive.md,ov-kb-graphify,miss:ambiguous:README.md
+2	t2	1	Y	Y	Y	1.0000	ov-kb-graphify,other-doc
+1	graphify	-	-	-	-	-	miss:archive-without-block:done-archive.md,ov-kb-graphify,miss:ambiguous:README.md
+1	t2	-	-	-	-	-	ov-kb-graphify,other-doc
+exit=0
+== C1: cover with a REAL Graphify 0.9.53 graph: .pine and .csv unsupported, no coverage claimed ==
+[graphify watch] Rebuilt: 2 nodes, 0 edges, 2 communities
+real graph source files: ['README.md', 'app.py']
+repo	source_revision	extension	inventory_files	detected_files	extraction_attempted_files	represented_source_files	zero_node_files	unsupported_files	policy_skipped_files	error_files	source_bytes	graph_nodes	graph_edges	graph_bytes	wiki_pages	measured_at
+cov	b12e910f39a53238cee5296115194121125a9ed7	.csv	1	0	0	0	0	1	0	0	8	2	0	734	0	unknown
+cov	b12e910f39a53238cee5296115194121125a9ed7	.md	1	0	0	1	0	0	0	0	2	2	0	734	0	unknown
+cov	b12e910f39a53238cee5296115194121125a9ed7	.pine	1	0	0	0	0	1	0	0	28	2	0	734	0	unknown
+cov	b12e910f39a53238cee5296115194121125a9ed7	.py	1	0	0	1	0	0	0	0	4	2	0	734	0	unknown
+exit=0

@@ -1,0 +1,1 @@
+not ok - single ready graph nightly: expected exit 0, got 11

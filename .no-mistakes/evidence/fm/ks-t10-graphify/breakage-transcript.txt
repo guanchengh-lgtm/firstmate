@@ -1,0 +1,26 @@
+porcelain before: []
+subject bin/fm-graphify.sh:175
+ bin/fm-graphify.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+== RED run: tests/fm-graphify.test.sh ==
+not ok - missing ready graph: expected exit 10, got 0
+rc=0
+porcelain after restore: []
+== GREEN run ==
+16
+subject bin/fm-nightly.sh:163
+ bin/fm-nightly.sh | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+== RED run: tests/fm-nightly.test.sh ==
+not ok - cloud skip graphify (missing: 'dry-run	graphify	would: skip cloud scope')
+--- output ---
+dry-run	config	would: validate nightly.env
+dry-run	lock	would: acquire nightly lock
+dry-run	reconcile-local	would: skip cloud scope
+dry-run	reconcile	would: git fetch and merge --ff-only
+dry-run	lint	would: fm-maintain.py lint
+dry-run	rollout	would: fm-maintain.py rollout advance
+porcelain after restore: []
+== GREEN run ==
+25
+final porcelain: []

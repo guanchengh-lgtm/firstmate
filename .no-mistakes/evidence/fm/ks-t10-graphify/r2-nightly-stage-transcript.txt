@@ -1,0 +1,37 @@
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+setup rc=0
+tick rc=0
+== N1: dry-run without ledger: graphify listed after views as not-configured ==
+8:dry-run	views	would: fm-maintain.py views --apply
+9:dry-run	graphify	would: skip not-configured
+10:dry-run	archive	would: skip not-configured
+== N2: nightly.env key cannot enable/disable the stage (GRAPHIFY=0 ignored, still not-configured) ==
+1:dry-run	config	would: validate nightly.env
+9:dry-run	graphify	would: skip not-configured
+10:dry-run	archive	would: skip not-configured
+11:dry-run	weekly-check	would: skip not-configured
+== N3: dry-run with ledger: graphify would run ==
+9:dry-run	graphify	would: fm-graphify.sh nightly
+== N4: record-only dry-run: graphify skipped as cloud scope ==
+dry-run	graphify	would: skip cloud scope
+== N5: real run, single ready graph (realistic first-night ledger): stage ok merge-single, run result ok ==
+nightly exit=0
+8:     8	views	ok	0	
+9:     9	graphify	ok	0	
+10:    10	archive	not-configured	0	not-configured
+15:    15	checkpoint	ok	1	
+16:    16	verify	ok	1	equal=yes
+result=ok
+merged graph exists: no
+graphify pages under data/wiki: 1
+== N6: real run, doc edit in the clone -> stage finding docs-stale, later stages still run ==
+nightly exit=0
+9:     9	graphify	finding	0	docs-stale
+10:    10	archive	not-configured	0	not-configured
+15:    15	checkpoint	ok	2	
+16:    16	verify	ok	0	equal=yes
+result=ok
+== N7: RECORD_WRITES=0 (reconcile-local fails on missing record helper) -> graphify skipped writes-disabled ==
+nightly exit=0
+3:     3	reconcile-local	ok	0	reconciled
+9:     9	graphify	finding	0	docs-stale

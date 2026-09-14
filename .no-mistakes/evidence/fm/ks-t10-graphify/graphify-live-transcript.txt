@@ -1,0 +1,87 @@
+== baseline real graphify update in clone (0.9.53) ==
+[graphify watch] graph.json, graph.html and GRAPH_REPORT.md updated in graphify-out
+Code graph updated. For doc/paper/image changes run /graphify --update in your AI assistant.
+Tip: set GEMINI_API_KEY or GOOGLE_API_KEY to use Gemini for semantic extraction.
+built_at_commit 294f85d0925f379ec06f2a63432257aaa5da2614 nodes 4
+HEAD 294f85d0925f379ec06f2a63432257aaa5da2614
+?? graphify-out/
+HEAD after code edit f90ef2bc7db99e4e4e0f8f516e24e946f48165e9
+== night 1: code edit, real update + wiki + merge ==
+Re-extracting code files in . (no LLM needed)...
+[graphify] backed up curated graph (4 files) -> 2026-09-15/
+[graphify watch] Rebuilt: 6 nodes, 3 edges, 3 communities
+[graphify watch] graph.json, graph.html and GRAPH_REPORT.md updated in graphify-out
+Code graph updated. For doc/paper/image changes run /graphify --update in your AI assistant.
+Tip: set GEMINI_API_KEY or GOOGLE_API_KEY to use Gemini for semantic extraction.
+Wiki: 4 articles written to graphify-out/wiki/
+  graphify-out/wiki/index.md  ->  agent entry point
+Usage: graphify merge-graphs <graph1.json> <graph2.json> [...] [--out merged.json]
+exit=11
+built_at_commit f90ef2bc7db99e4e4e0f8f516e24e946f48165e9 nodes 6
+README.md.md
+calc.py.md
+fixture.md
+index.md
+more.py.md
+ls: /tmp/fmg-live.9FKS/state/graphify/merged-graph.json: No such file or directory
+merged:  bytes
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import json;g=json.load(open('/tmp/fmg-live.9FKS/state/graphify/merged-graph.json'));print('merged nodes', len(g['nodes']))
+                            ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/tmp/fmg-live.9FKS/state/graphify/merged-graph.json'
+0000000    d   1   b   a   b   f   4   f   6   3   0   b   0   7   b   9
+0000020    7   4   3   6   6   2   6   e   9   5   2   9   7   5   a   e
+0000040    b   a   c   c   5   7   a   d  \t   2   9   4   f   8   5   d
+== night 2: unchanged, graphify must not run ==
+Usage: graphify merge-graphs <graph1.json> <graph2.json> [...] [--out merged.json]
+exit=11
+graph.json mtime unchanged: yes
+== night 3: doc edit -> docs-stale exit 1, no update ==
+Usage: graphify merge-graphs <graph1.json> <graph2.json> [...] [--out merged.json]
+exit=11
+graph.json mtime unchanged: yes
+== adversarial: ready graph removed -> missing-input exit 10, prior merged graph kept ==
+cp: /tmp/fmg-live.9FKS/state/graphify/merged-graph.json: No such file or directory
+status=failed	detail=missing-input
+exit=10
+cmp: /tmp/fmg-live.9FKS/state/graphify/merged-graph.json: No such file or directory
+== adversarial: graphify binary absent when a step needs it -> exit 12 ==
+graphify: graphify binary missing
+exit=12
+== adversarial: pending row skips merge, no partial union ==
+Re-extracting code files in . (no LLM needed)...
+[graphify] backed up curated graph (4 files) -> 2026-09-15/
+[graphify watch] Rebuilt: 8 nodes, 3 edges, 5 communities
+[graphify watch] graph.json, graph.html and GRAPH_REPORT.md updated in graphify-out
+Code graph updated. For doc/paper/image changes run /graphify --update in your AI assistant.
+Tip: set GEMINI_API_KEY or GOOGLE_API_KEY to use Gemini for semantic extraction.
+Wiki: 7 articles written to graphify-out/wiki/
+  graphify-out/wiki/index.md  ->  agent entry point
+status=ok	detail=pending-inputs
+exit=0
+no merged graph written (good)
+== inventory: real worktree as extra, identity is origin URL not worktree path ==
+repo	kind	state	delivery	source_revision	identity	graph_relpath	merge_tag	graph_hash	publication	notes
+01M2GGHM2AG4FT618WECKVEWV6	code	unregistered	no-mistakes	99d75b3abd594600b07ab3e63529102d4736ec27	https://github.com/guanchengh-lgtm/firstmate	graphify-out/graph.json	01M2GGHM2AG4FT618WECKVEWV6		none	captain-owned-unregistered
+firstmate	code	selected	no-mistakes	3390522f78cde408caedd9fcc9e449a3ba576cc0	https://github.com/guanchengh-lgtm/fixture	graphify-out/graph.json	firstmate	ef864cd417302f3948998247e059b68280884fa6	ready	
+fm-vault	code	absent	local-only			graphify-out/graph.json	fm-vault		none	retired-absent
+ghost	code	absent	no-mistakes			graphify-out/graph.json	ghost		none	clone-absent
+record	record	incomplete	local-only			graphify-out/graph.json	record		pending	record-git-absent
+== cover on the real firstmate checkout with the committed graph ==
+repo	source_revision	extension	inventory_files	detected_files	extraction_attempted_files	represented_source_files	zero_node_files	unsupported_files	policy_skipped_files	error_files	source_bytes	graph_nodes	graph_edges	graph_bytes	wiki_pages	measured_at
+01M2GGHM2AG4FT618WECKVEWV6	99d75b3abd594600b07ab3e63529102d4736ec27	(none)	4	0	0	0	0	0	0	0	2737	10154	29844	16302320	435	unknown
+01M2GGHM2AG4FT618WECKVEWV6	99d75b3abd594600b07ab3e63529102d4736ec27	.fixture	7	0	0	0	7	0	0	0	5972	10154	29844	16302320	435	unknown
+01M2GGHM2AG4FT618WECKVEWV6	99d75b3abd594600b07ab3e63529102d4736ec27	.html	1	0	0	1	0	0	0	0	36615	10154	29844	16302320	435	unknown
+01M2GGHM2AG4FT618WECKVEWV6	99d75b3abd594600b07ab3e63529102d4736ec27	.js	10	0	0	10	0	0	0	0	34543	10154	29844	16302320	435	unknown
+01M2GGHM2AG4FT618WECKVEWV6	99d75b3abd594600b07ab3e63529102d4736ec27	.json	25	0	0	1	24	0	0	0	16462466	10154	29844	16302320	435	unknown
+01M2GGHM2AG4FT618WECKVEWV6	99d75b3abd594600b07ab3e63529102d4736ec27	.jsonl	1	0	0	0	1	0	0	0	430	10154	29844	16302320	435	unknown
+01M2GGHM2AG4FT618WECKVEWV6	99d75b3abd594600b07ab3e63529102d4736ec27	.md	538	0	0	101	437	0	0	0	2320519	10154	29844	16302320	435	unknown
+01M2GGHM2AG4FT618WECKVEWV6	99d75b3abd594600b07ab3e63529102d4736ec27	.mjs	7	0	0	7	0	0	0	0	193126	10154	29844	16302320	435	unknown
+01M2GGHM2AG4FT618WECKVEWV6	99d75b3abd594600b07ab3e63529102d4736ec27	.pl	1	0	0	0	1	0	0	0	12360	10154	29844	16302320	435	unknown
+01M2GGHM2AG4FT618WECKVEWV6	99d75b3abd594600b07ab3e63529102d4736ec27	.png	1	0	0	1	0	0	0	0	3011594	10154	29844	16302320	435	unknown
+01M2GGHM2AG4FT618WECKVEWV6	99d75b3abd594600b07ab3e63529102d4736ec27	.py	13	0	0	11	2	0	0	0	476672	10154	29844	16302320	435	unknown
+== gitignore allowlist through git itself ==
+.gitignore:15:/graphify-out/*	graphify-out/cache.json
+.gitignore:20:/graphify-out/wiki/*	graphify-out/wiki/x.html
+(only cache.json and wiki/x.html listed => ignored; the four artifacts are tracked)

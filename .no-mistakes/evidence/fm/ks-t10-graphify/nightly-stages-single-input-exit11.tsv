@@ -1,0 +1,16 @@
+config	ok	0	not-configured
+lock	ok	0	acquired
+reconcile-local	ok	1	reconciled
+reconcile	skipped	0	home path
+lint	ok	0	
+rollout	ok	0	
+fold	ok	0	
+views	ok	0	
+graphify	failed	0	exit-11
+archive	not-configured	0	not-configured
+weekly-check	not-configured	0	not-configured
+injected-measures	ok	0	
+drift	ok	0	concurrent=1
+receipt	ok	0	
+checkpoint	ok	4	
+verify	ok	1	equal=yes

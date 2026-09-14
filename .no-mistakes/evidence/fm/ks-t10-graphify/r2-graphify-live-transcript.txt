@@ -1,0 +1,64 @@
+world=/tmp/fmg-r2.zoBg  graphify=graphify 0.9.53
+firstmate real graph nodes: 3 built_at=d665d767eb11ccce280861d31045554300a50e52
+extra-app real graph nodes: 3 built_at=d665d767eb11ccce280861d31045554300a50e52
+== S1: single ready graph (firstmate only) -> merge-single, graphify not invoked, no merged file ==
+status=ok	detail=merge-single
+exit=0
+graph.json mtime unchanged: yes
+merged exists: no
+== S2: two ready graphs -> real merge-graphs writes merged file ==
+Merged 2 graphs -> 6 nodes, 2 edges
+Written to: /tmp/fmg-r2.zoBg/state/graphify/merged-graph.json
+status=ok	detail=merge-ready
+exit=0
+merged nodes 6
+== S3: unchanged ready set -> no graphify invocation ==
+status=ok	detail=unchanged
+exit=0
+merged mtime unchanged: yes
+== S4: code edit in extra-app -> update + wiki + merge (real binary) ==
+status=finding	detail=docs-stale
+(eval):28: PIPESTATUS[0]: parameter not set
+(S4 note: previous S4 accidentally tracked graphify-out; untracked again) tracked graph files now: 0
+== S4 (redo): code edit in extra-app, untracked graph -> update + wiki + merge with real binary ==
+Re-extracting code files in . (no LLM needed)...
+[graphify] backed up curated graph (4 files) -> 2026-09-15/
+[graphify watch] Rebuilt: 5 nodes, 2 edges, 3 communities
+[graphify watch] graph.json, graph.html and GRAPH_REPORT.md updated in graphify-out
+Code graph updated. For doc/paper/image changes run /graphify --update in your AI assistant.
+Wiki: 4 articles written to graphify-out/wiki/
+  graphify-out/wiki/index.md  ->  agent entry point
+Merged 2 graphs -> 8 nodes, 3 edges
+Written to: /tmp/fmg-r2.zoBg/state/graphify/merged-graph.json
+status=ok	detail=code-updated
+exit=0
+wiki pages: Doc.md Doc_2.md calc.py.md index.md more.py.md 
+built_at now cd9dbf8614f9a67e3c12c9bdb6ff25cc1c05bcec HEAD cd9dbf8614f9a67e3c12c9bdb6ff25cc1c05bcec
+merged nodes 8
+clone status (must be clean apart from ignored/untracked graphify-out):
+?? graphify-out/
+== S5: doc edit in extra-app -> docs-stale exit 1, no shell update ==
+status=finding	detail=docs-stale
+exit=1
+graph.json mtime unchanged: yes
+== S5b: code+doc edit same window -> shell code update runs, docs-stale stays durable next night ==
+status=finding	detail=docs-stale
+exit=1
+marker: aa33d1f0bd96c38a2a834608f825d8c619cf9282,d665d767eb11ccce280861d31045554300a50e52
+status=finding	detail=docs-stale
+next night exit=1
+== S6: missing selected ready graph -> exit 10 missing-input, prior merged kept ==
+status=failed	detail=missing-input
+exit=10
+merged kept: yes
+== S7: pending selected row -> skip merge, exit 0 pending-inputs, no merged file ==
+status=finding	detail=docs-stale
+exit=1
+merged exists: no
+== S8: ledger absent -> helper reports not-configured ==
+graphify: ledger is not a file: /tmp/fmg-r2.zoBg/record/knowledge-system-wayfinder/research/T10-graphify/inputs.tsv
+exit=2
+== S9: adversarial: single ready graph on a night with a code change (update runs, merge withheld, no exit 11) ==
+status=ok	detail=code-updated
+exit=0
+merged exists: no; built_at e5bde9dff08167bc3f13915f047af71d14db4f47 HEAD e5bde9dff08167bc3f13915f047af71d14db4f47

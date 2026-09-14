@@ -1,0 +1,13 @@
+== real run with two ready inputs: doc edit in firstmate -> finding docs-stale ==
+nightly exit=0
+9:graphify	finding	0	docs-stale
+10:archive	not-configured	0	not-configured
+15:checkpoint	ok	4	
+16:verify	ok	0	equal=yes
+result=ok
+merged-graph.json
+no graphify pages under data/wiki: 0
+== RECORD_WRITES=0 (record helper missing) -> graphify skipped writes-disabled ==
+nightly exit=1
+3:reconcile-local	failed	0	record-missing
+9:graphify	skipped	0	writes-disabled

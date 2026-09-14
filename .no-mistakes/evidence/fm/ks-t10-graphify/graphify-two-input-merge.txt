@@ -1,0 +1,11 @@
+== two ready inputs: record graph built by real graphify, then nightly merge ==
+/tmp/fmg-live.9FKS/record/graphify-out/graph.json
+Merged 2 graphs -> 10 nodes, 4 edges
+Written to: /tmp/fmg-live.9FKS/state/graphify/merged-graph.json
+status=ok	detail=merge-ready
+exit=0
+merged nodes 10
+== second night on the same two-input ready set: unchanged, no graphify call ==
+status=ok	detail=unchanged
+exit=0
+merged mtime unchanged: yes

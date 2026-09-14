@@ -1,0 +1,10 @@
+== .gitignore allowlist via git check-ignore (real consumer) ==
+graphify-out/graph.json -> tracked-allowed
+graphify-out/GRAPH_REPORT.md -> tracked-allowed
+graphify-out/manifest.json -> tracked-allowed
+graphify-out/wiki/index.md -> tracked-allowed
+graphify-out/graph.html -> IGNORED
+graphify-out/code-only-build.tsv -> IGNORED
+graphify-out/2026-09-15/x.json -> IGNORED
+tracked artifact count: 438
+data/wiki graphify pages in repo: 0
