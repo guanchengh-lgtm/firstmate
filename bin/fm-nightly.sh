@@ -1176,7 +1176,8 @@ stage_graphify() {
   STAGE_FINDING_CODES="1"
   STAGE_FINDING_DETAIL=docs-stale
   stage_run graphify "$NIGHTLY_STAGE_BOUND_SECONDS" \
-    "$GRAPHIFY_SH" nightly --record "$RECORD" --projects-root "$FM_HOME_ARG/projects"
+    "$GRAPHIFY_SH" nightly --record "$RECORD" --projects-root "$FM_HOME_ARG/projects" \
+    --state "${FM_STATE_OVERRIDE:-$FM_HOME/state}"
   STAGE_FINDING_CODES=
   STAGE_FINDING_DETAIL=
 }

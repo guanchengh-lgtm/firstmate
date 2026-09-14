@@ -425,6 +425,8 @@ The nightly runner walks a `graphify` stage after views when the Record holds `k
 [`bin/fm-graphify.sh`](../bin/fm-graphify.sh) owns that invocation.
 Shell `graphify update` refreshes code only; a document-source change is a docs-stale finding until the host assistant `--update --wiki` workflow runs.
 The shell records that code-only rebuild in the ignored `graphify-out/code-only-build.tsv` so the finding stays reported across nights, and any rebuild that replaces the graph file retires the record.
+The shell never rewrites a graph that its clone tracks in git, so a code change in such a clone is the same docs-stale finding until that repository's own delivery ships the rebuild; the clone under `projects/` stays clean for fleet sync.
+The merged graph lands at `state/graphify/merged-graph.json`, never under the Record, because the Record checkpoint commits every file below its root.
 The gbrain phase inside the nightly views stage and its `config/gbrain.env` keys are owned by [`docs/gbrain.md`](gbrain.md).
 The five transcript families are fixed in the runner header; no config key adds, removes, or relocates one.
 

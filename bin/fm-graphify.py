@@ -4,7 +4,7 @@
 # Usage:
 #   fm-graphify.py inventory --projects-root DIR --record DIR --registry FILE
 #                            [--home DIR] [--extra DIR]...
-#   fm-graphify.py plan --record DIR --projects-root DIR
+#   fm-graphify.py plan --record DIR --projects-root DIR --state DIR
 #   fm-graphify.py stamp --root DIR --docs-built-at COMMIT
 #   fm-graphify.py eval --probes FILE --mode replay --graphify-raw FILE
 #                       --t2-raw FILE [--graph FILE]
@@ -34,6 +34,11 @@
 # a host --update --wiki rebuild clears it without knowing it exists.
 # A graph whose built_at_commit is empty or unknown to the clone is stale and
 # gets a code rebuild.
+# A graph that its clone tracks in git is never rewritten by the shell: a code
+# change there is docs-stale until the host workflow ships the rebuild through
+# that repository's own delivery.
+# The merged graph lands under the state directory, never under the Record,
+# because the Record checkpoint commits every file below its root.
 #
 # Exit codes:
 #   0  success, including an empty inventory or an unchanged plan
@@ -392,6 +397,11 @@ def changed_paths(root: Path, baseline: str) -> list[str] | None:
     return unique
 
 
+def graph_is_tracked(root: Path, relpath: str) -> bool:
+    proc = git(root, "ls-files", "--error-unmatch", "--", relpath)
+    return proc.returncode == 0
+
+
 def read_built_at(graph: Path) -> str:
     if not graph.is_file():
         return ""
@@ -448,12 +458,17 @@ def cmd_plan(args: argparse.Namespace) -> int:
             else:
                 pending.append(row["repo"])
             continue
+        if row["publication"] != "ready":
+            pending.append(row["repo"])
         built_at = read_built_at(graph)
         doc_baseline = docs_built_at(root, graph, built_at)
         changed = changed_paths(root, built_at)
         doc_changed = changed_paths(root, doc_baseline)
         code = changed is None or any(not is_doc_path(p) for p in changed)
         docs = doc_changed is None or any(is_doc_path(p) for p in doc_changed)
+        if code and graph_is_tracked(root, row["graph_relpath"]):
+            docs = True
+            code = False
         if code:
             code_changed.append(row["repo"])
             steps.append("step=update\t%s" % root)
@@ -484,7 +499,7 @@ def cmd_plan(args: argparse.Namespace) -> int:
     elif code_changed:
         detail = "code-updated"
 
-    merged = record / "graphify-out/merged-graph.json"
+    merged = Path(args.state) / "graphify/merged-graph.json"
     if selected and len(ready_selected) == len(selected) and (
         code_changed or not merged.is_file()
     ):
@@ -761,6 +776,7 @@ def build_parser() -> argparse.ArgumentParser:
     plan = sub.add_parser("plan")
     plan.add_argument("--record", required=True)
     plan.add_argument("--projects-root", required=True)
+    plan.add_argument("--state", required=True)
 
     stamp = sub.add_parser("stamp")
     stamp.add_argument("--root", required=True)

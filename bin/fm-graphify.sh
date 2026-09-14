@@ -4,7 +4,7 @@
 # Usage:
 #   fm-graphify.sh inventory --projects-root DIR --record DIR --registry FILE
 #                            [--home DIR] [--extra DIR]...
-#   fm-graphify.sh nightly --record DIR --projects-root DIR
+#   fm-graphify.sh nightly --record DIR --projects-root DIR --state DIR
 #   fm-graphify.sh eval --probes FILE --graphify-raw FILE --t2-raw FILE
 #                       [--graph FILE]
 #   fm-graphify.sh cover --root DIR [--graph FILE] [--detect FILE]
@@ -20,6 +20,10 @@
 # host assistant `--update --wiki` workflow. After a code rebuild the owner
 # stamps graphify-out/code-only-build.tsv so docs-stale stays reported until
 # that host workflow rebuilds the graph.
+# A graph that its clone tracks in git is never rewritten here; a code change
+# there is docs-stale until that repository's own delivery ships the rebuild.
+# The merged graph lands at <state>/graphify/merged-graph.json, never under the
+# Record, because the Record checkpoint commits every file below its root.
 # A missing selected ready graph refuses merge and leaves any prior merged
 # graph in place. Pending selected rows skip merge instead of publishing a
 # partial union.
@@ -100,7 +104,7 @@ run_merge() {
 }
 
 cmd_nightly() {
-  local record="" projects_root=""
+  local record="" projects_root="" state=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --record)
@@ -111,6 +115,10 @@ cmd_nightly() {
         projects_root=$(abs_dir projects-root "${2:-}") || return 2
         shift 2
         ;;
+      --state)
+        state=${2:-}
+        shift 2
+        ;;
       *)
         echo "graphify: unknown nightly flag: $1" >&2
         return 2
@@ -119,9 +127,12 @@ cmd_nightly() {
   done
   [ -n "$record" ] || { echo "graphify: nightly requires --record" >&2; return 2; }
   [ -n "$projects_root" ] || { echo "graphify: nightly requires --projects-root" >&2; return 2; }
+  [ -n "$state" ] || { echo "graphify: nightly requires --state" >&2; return 2; }
+  mkdir -p -- "$state" || return 11
+  state=$(abs_dir state "$state") || return 2
 
   local plan status detail line rc out
-  plan=$(run_python plan --record "$record" --projects-root "$projects_root") || {
+  plan=$(run_python plan --record "$record" --projects-root "$projects_root" --state "$state") || {
     rc=$?
     [ "$rc" -eq 2 ] && return 2
     return 11
@@ -148,6 +159,7 @@ cmd_nightly() {
         IFS=$'\t' read -ra parts <<<"${line#step=merge	}"
         out=${parts[${#parts[@]}-1]}
         unset 'parts[${#parts[@]}-1]'
+        mkdir -p -- "$(dirname "$out")" || return 11
         run_merge "$out" "${parts[@]}" || return $?
         ;;
     esac

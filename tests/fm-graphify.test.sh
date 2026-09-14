@@ -212,7 +212,7 @@ test_nightly_unchanged_skips_graphify() {
   commit=$(git -C "$repo" rev-parse HEAD)
   write_graph "$repo/graphify-out/graph.json" "$commit"
   write_graph "$record/graphify-out/graph.json" "$(init_record "$record")"
-  write_graph "$record/graphify-out/merged-graph.json" "$commit"
+  write_graph "$world/state/graphify/merged-graph.json" "$commit"
   write_ledger "$record/knowledge-system-wayfinder/research/T10-graphify/inputs.tsv" \
 "record	record	selected	local-only	$commit	record	graphify-out/graph.json	record		ready	
 firstmate	code	selected	no-mistakes	$commit	firstmate	graphify-out/graph.json	firstmate		ready	"
@@ -222,7 +222,7 @@ echo invoked >> "$(dirname "$0")/log"
 exit 0
 SH
   chmod +x "$fakebin/graphify"
-  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects" --state "$world/state"
   expect_code 0 "$RC" 'unchanged nightly'
   assert_contains "$OUT" $'status=ok\tdetail=unchanged' 'unchanged ready set stays unchanged'
   [ ! -f "$fakebin/log" ] || fail 'unchanged nightly invoked graphify'
@@ -253,7 +253,7 @@ printf '%s\n' "$*" >> "$(dirname "$0")/log"
 exit 0
 SH
   chmod +x "$fakebin/graphify"
-  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects" --state "$world/state"
   expect_code 0 "$RC" 'code nightly'
   assert_contains "$OUT" $'status=ok\tdetail=code-updated' 'code edit is code-updated'
   assert_grep 'update .' "$fakebin/log" 'code edit ran graphify update'
@@ -285,7 +285,7 @@ printf '%s\n' "$*" >> "$(dirname "$0")/log"
 exit 0
 SH
   chmod +x "$fakebin/graphify"
-  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects" --state "$world/state"
   expect_code 1 "$RC" 'doc nightly'
   assert_contains "$OUT" $'status=finding\tdetail=docs-stale' 'doc edit is docs-stale'
   [ ! -f "$fakebin/log" ] || assert_not_contains "$(cat "$fakebin/log")" 'update' \
@@ -305,7 +305,7 @@ test_nightly_docs_stale_survives_code_update() {
   commit=$(git -C "$repo" rev-parse HEAD)
   write_graph "$repo/graphify-out/graph.json" "$commit"
   write_graph "$record/graphify-out/graph.json" "$(init_record "$record")"
-  write_graph "$record/graphify-out/merged-graph.json" "$commit"
+  write_graph "$world/state/graphify/merged-graph.json" "$commit"
   printf '# doc\n' > "$repo/NOTE.md"
   printf 'def x():\n    return 1\n' > "$repo/app.py"
   git -C "$repo" add NOTE.md app.py
@@ -325,12 +325,12 @@ fi
 exit 0
 SH
   chmod +x "$fakebin/graphify"
-  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects" --state "$world/state"
   expect_code 1 "$RC" 'first night'
   assert_contains "$OUT" $'status=finding\tdetail=docs-stale' 'mixed edit is docs-stale'
   assert_grep 'update .' "$fakebin/log" 'mixed edit still ran the code update'
   rm -f "$fakebin/log"
-  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects" --state "$world/state"
   expect_code 1 "$RC" 'second night'
   assert_contains "$OUT" $'status=finding\tdetail=docs-stale' 'docs-stale survives the code update'
   [ ! -f "$fakebin/log" ] || fail 'second night invoked graphify again'
@@ -338,7 +338,7 @@ SH
 import json, sys
 json.dump({"built_at_commit": sys.argv[2], "nodes": [{"id": "doc"}], "links": []}, open(sys.argv[1], "w", encoding="utf-8"))
 PY
-  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects" --state "$world/state"
   expect_code 0 "$RC" 'third night'
   assert_contains "$OUT" $'status=ok\tdetail=unchanged' 'host wiki rebuild clears docs-stale'
   pass "fm-graphify: docs-stale stays until the host wiki rebuild replaces the graph"
@@ -356,7 +356,7 @@ test_nightly_unknown_built_at_updates() {
   commit=$(git -C "$repo" rev-parse HEAD)
   write_graph "$repo/graphify-out/graph.json" "0000000000000000000000000000000000000000"
   write_graph "$record/graphify-out/graph.json" "$(init_record "$record")"
-  write_graph "$record/graphify-out/merged-graph.json" "$commit"
+  write_graph "$world/state/graphify/merged-graph.json" "$commit"
   write_ledger "$record/knowledge-system-wayfinder/research/T10-graphify/inputs.tsv" \
 "record	record	selected	local-only	$commit	record	graphify-out/graph.json	record		ready	
 firstmate	code	selected	no-mistakes	$commit	firstmate	graphify-out/graph.json	firstmate		ready	"
@@ -372,11 +372,11 @@ fi
 exit 0
 SH
   chmod +x "$fakebin/graphify"
-  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects" --state "$world/state"
   expect_code 1 "$RC" 'unknown built_at nightly'
   assert_grep 'update .' "$fakebin/log" 'unknown built_at forces a code update'
   rm -f "$fakebin/log"
-  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects" --state "$world/state"
   expect_code 1 "$RC" 'unknown baseline second night'
   assert_contains "$OUT" $'status=finding\tdetail=docs-stale' 'unknown document baseline stays docs-stale after the code rebuild'
   [ ! -f "$fakebin/log" ] || fail 'second night after unknown baseline invoked graphify again'
@@ -400,7 +400,7 @@ printf '%s\n' "$#" "$@" > "$(dirname "$0")/log"
 exit 0
 SH
   chmod +x "$fakebin/graphify"
-  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects" --state "$world/state"
   expect_code 0 "$RC" 'space merge nightly'
   assert_contains "$OUT" $'status=ok\tdetail=merge-ready' 'ready set merges'
   assert_contains "$(cat "$fakebin/log")" "$record/graphify-out/graph.json" 'graph path with a space is one argument'
@@ -434,24 +434,30 @@ printf '%s\n' "$*" >> "$(dirname "$0")/log"
 exit 0
 SH
   chmod +x "$fakebin/graphify"
-  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects" --state "$world/state"
   expect_code 0 "$RC" 'rename nightly'
   assert_contains "$OUT" $'status=ok\tdetail=code-updated' 'rename is a code update'
   pass "fm-graphify: rename runs the code update path"
 }
 
-test_nightly_missing_ready_graph_refuses_merge() {
+test_nightly_tracked_graph_is_not_rewritten() {
   local world record projects fakebin repo commit
-  world="$TMP_ROOT/night-missing"
+  world="$TMP_ROOT/night-tracked"
   record="$world/record"
   projects="$world/projects"
   fakebin="$world/fakebin"
   repo="$projects/firstmate"
-  mkdir -p "$fakebin" "$record/graphify-out" "$repo"
+  mkdir -p "$fakebin" "$record" "$repo"
   init_repo "$repo" "https://github.com/guanchengh-lgtm/firstmate.git" 'code'
   commit=$(git -C "$repo" rev-parse HEAD)
+  write_graph "$repo/graphify-out/graph.json" "$commit"
+  git -C "$repo" add graphify-out/graph.json
+  git -C "$repo" commit --quiet -m graph
   write_graph "$record/graphify-out/graph.json" "$(init_record "$record")"
-  printf '%s\n' '{"ok":true}' > "$record/graphify-out/merged-graph.json"
+  write_graph "$world/state/graphify/merged-graph.json" "$commit"
+  printf 'def x():\n    return 1\n' > "$repo/app.py"
+  git -C "$repo" add app.py
+  git -C "$repo" commit --quiet -m code
   write_ledger "$record/knowledge-system-wayfinder/research/T10-graphify/inputs.tsv" \
 "record	record	selected	local-only	$commit	record	graphify-out/graph.json	record		ready	
 firstmate	code	selected	no-mistakes	$commit	firstmate	graphify-out/graph.json	firstmate		ready	"
@@ -461,10 +467,40 @@ printf '%s\n' "$*" >> "$(dirname "$0")/log"
 exit 0
 SH
   chmod +x "$fakebin/graphify"
-  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects" --state "$world/state"
+  expect_code 1 "$RC" 'tracked nightly'
+  assert_contains "$OUT" $'status=finding\tdetail=docs-stale' 'tracked graph code edit is docs-stale'
+  [ ! -f "$fakebin/log" ] || fail 'tracked graph nightly invoked graphify'
+  [ -z "$(git -C "$repo" status --porcelain)" ] || fail 'tracked graph nightly dirtied the clone'
+  [ ! -f "$repo/graphify-out/code-only-build.tsv" ] || fail 'tracked graph nightly stamped a code-only build'
+  pass "fm-graphify: tracked graph is not rewritten by the shell"
+}
+
+test_nightly_missing_ready_graph_refuses_merge() {
+  local world record projects fakebin repo commit
+  world="$TMP_ROOT/night-missing"
+  record="$world/record"
+  projects="$world/projects"
+  fakebin="$world/fakebin"
+  repo="$projects/firstmate"
+  mkdir -p "$fakebin" "$record/graphify-out" "$repo" "$world/state/graphify"
+  init_repo "$repo" "https://github.com/guanchengh-lgtm/firstmate.git" 'code'
+  commit=$(git -C "$repo" rev-parse HEAD)
+  write_graph "$record/graphify-out/graph.json" "$(init_record "$record")"
+  printf '%s\n' '{"ok":true}' > "$world/state/graphify/merged-graph.json"
+  write_ledger "$record/knowledge-system-wayfinder/research/T10-graphify/inputs.tsv" \
+"record	record	selected	local-only	$commit	record	graphify-out/graph.json	record		ready	
+firstmate	code	selected	no-mistakes	$commit	firstmate	graphify-out/graph.json	firstmate		ready	"
+  cat > "$fakebin/graphify" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$(dirname "$0")/log"
+exit 0
+SH
+  chmod +x "$fakebin/graphify"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects" --state "$world/state"
   expect_code 10 "$RC" 'missing ready graph'
   assert_contains "$OUT" $'status=failed\tdetail=missing-input' 'missing ready graph fails closed'
-  assert_contains "$(cat "$record/graphify-out/merged-graph.json")" '{"ok":true}' \
+  assert_contains "$(cat "$world/state/graphify/merged-graph.json")" '{"ok":true}' \
     'prior merged graph stays in place'
   [ ! -f "$fakebin/log" ] || fail 'missing-input invoked graphify merge'
   pass "fm-graphify: missing ready graph refuses merge and keeps the prior file"
@@ -487,11 +523,40 @@ echo invoked >> "$(dirname "$0")/log"
 exit 0
 SH
   chmod +x "$fakebin/graphify"
-  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects" --state "$world/state"
   expect_code 0 "$RC" 'pending nightly'
   assert_contains "$OUT" $'status=ok\tdetail=pending-inputs' 'pending selected rows skip merge'
   [ ! -f "$fakebin/log" ] || fail 'pending nightly invoked graphify'
   pass "fm-graphify: pending selected rows skip merge"
+}
+
+test_nightly_pending_row_with_graph_reports_pending() {
+  local world record projects fakebin repo commit
+  world="$TMP_ROOT/night-pending-graph"
+  record="$world/record"
+  projects="$world/projects"
+  fakebin="$world/fakebin"
+  repo="$projects/firstmate"
+  mkdir -p "$fakebin" "$record" "$repo"
+  init_repo "$repo" "https://github.com/guanchengh-lgtm/firstmate.git" 'code'
+  commit=$(git -C "$repo" rev-parse HEAD)
+  write_graph "$repo/graphify-out/graph.json" "$commit"
+  write_graph "$record/graphify-out/graph.json" "$(init_record "$record")"
+  write_ledger "$record/knowledge-system-wayfinder/research/T10-graphify/inputs.tsv" \
+"record	record	selected	local-only	$commit	record	graphify-out/graph.json	record		ready	
+firstmate	code	selected	no-mistakes	$commit	firstmate	graphify-out/graph.json	firstmate		pending	"
+  cat > "$fakebin/graphify" <<'SH'
+#!/usr/bin/env bash
+echo invoked >> "$(dirname "$0")/log"
+exit 0
+SH
+  chmod +x "$fakebin/graphify"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects" --state "$world/state"
+  expect_code 0 "$RC" 'pending graph nightly'
+  assert_contains "$OUT" $'status=ok\tdetail=pending-inputs' 'pending row with a graph reports pending-inputs'
+  [ ! -f "$fakebin/log" ] || fail 'pending graph nightly invoked graphify'
+  [ ! -f "$world/state/graphify/merged-graph.json" ] || fail 'pending graph nightly merged'
+  pass "fm-graphify: pending row with a built graph still reports pending-inputs"
 }
 
 test_help_names_contract
@@ -506,5 +571,7 @@ test_nightly_docs_stale_survives_code_update
 test_nightly_unknown_built_at_updates
 test_nightly_merge_keeps_paths_with_spaces
 test_nightly_rename_updates
+test_nightly_tracked_graph_is_not_rewritten
 test_nightly_missing_ready_graph_refuses_merge
 test_nightly_pending_skips_merge
+test_nightly_pending_row_with_graph_reports_pending
