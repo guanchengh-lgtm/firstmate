@@ -384,11 +384,12 @@ SH
 }
 
 test_nightly_merge_keeps_paths_with_spaces() {
-  local world record projects fakebin commit
+  local world record projects fakebin repo commit
   world="$TMP_ROOT/night space"
   record="$world/record"
   projects="$world/projects"
   fakebin="$world/fakebin"
+  repo="$projects/firstmate"
   mkdir -p "$fakebin" "$projects"
   commit=$(init_record "$record")
   write_graph "$record/graphify-out/graph.json" "$commit"
@@ -397,15 +398,30 @@ test_nightly_merge_keeps_paths_with_spaces() {
   cat > "$fakebin/graphify" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$#" "$@" > "$(dirname "$0")/log"
+# Installed Graphify 0.9.53 needs at least two graphs for merge-graphs.
+if [ "$1" = merge-graphs ] && [ "$#" -lt 5 ]; then
+  echo 'Usage: graphify merge-graphs <graph1.json> <graph2.json> [...] [--out merged.json]' >&2
+  exit 1
+fi
 exit 0
 SH
   chmod +x "$fakebin/graphify"
   FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects" --state "$world/state"
+  expect_code 0 "$RC" 'single ready graph nightly'
+  assert_contains "$OUT" $'status=ok\tdetail=merge-single' 'one ready graph waits for a second input'
+  [ ! -f "$fakebin/log" ] || fail 'single ready graph invoked graphify merge-graphs'
+  [ ! -f "$world/state/graphify/merged-graph.json" ] || fail 'single ready graph wrote a merged graph'
+  init_repo "$repo" "https://github.com/guanchengh-lgtm/firstmate.git" 'code'
+  write_graph "$repo/graphify-out/graph.json" "$(git -C "$repo" rev-parse HEAD)"
+  write_ledger "$record/knowledge-system-wayfinder/research/T10-graphify/inputs.tsv" \
+"record	record	selected	local-only	$commit	record	graphify-out/graph.json	record		ready	
+firstmate	code	selected	no-mistakes	$commit	firstmate	graphify-out/graph.json	firstmate		ready	"
+  FAKEBIN=$fakebin run_g nightly --record "$record" --projects-root "$projects" --state "$world/state"
   expect_code 0 "$RC" 'space merge nightly'
   assert_contains "$OUT" $'status=ok\tdetail=merge-ready' 'ready set merges'
   assert_contains "$(cat "$fakebin/log")" "$record/graphify-out/graph.json" 'graph path with a space is one argument'
-  [ "$(head -n 1 "$fakebin/log")" = 4 ] || fail 'merge-graphs receives exactly four arguments'
-  pass "fm-graphify: merge passes a graph path with a space as one argument"
+  [ "$(head -n 1 "$fakebin/log")" = 5 ] || fail 'merge-graphs receives exactly five arguments'
+  pass "fm-graphify: merge needs two ready graphs and passes a path with a space as one argument"
 }
 
 test_nightly_rename_updates() {

@@ -503,9 +503,14 @@ def cmd_plan(args: argparse.Namespace) -> int:
     if selected and len(ready_selected) == len(selected) and (
         code_changed or not merged.is_file()
     ):
-        steps.append("step=merge\t%s\t%s" % ("\t".join(ready_selected), merged))
-        if detail == "unchanged":
-            detail = "merge-ready"
+        # Installed Graphify 0.9.53 merge-graphs needs at least two inputs.
+        if len(ready_selected) < 2:
+            if detail == "unchanged":
+                detail = "merge-single"
+        else:
+            steps.append("step=merge\t%s\t%s" % ("\t".join(ready_selected), merged))
+            if detail == "unchanged":
+                detail = "merge-ready"
 
     sys.stdout.write("status=%s\n" % status)
     sys.stdout.write("detail=%s\n" % detail)
