@@ -364,7 +364,7 @@ The next tick retries one bounded push even when the working tree is clean.
 `reconcile` fetches origin, fast-forwards only a clean behind-only Record, reports ahead-only history for the next tick, and reports a two-sided divergence without merging, rebasing, resetting, or stashing; `verify` proves working tree, index, `HEAD`, and the freshly fetched origin are equal.
 A reported divergence still needs a person to choose the reconciliation; neither command ever forces one.
 
-After a crash between commit and index publication, the next checkpoint or tick reconciles an index that still matches the parent tree when `index.lock` is absent.
+After a crash between commit and index publication, the next checkpoint or tick reconciles an index that still matches the parent tree (the empty tree for a root commit) when `index.lock` is absent; `reconcile` and `verify` never touch the index.
 Conflicting HEAD or staged content causes an `index-recovery` refusal and leaves that staging in place.
 Commits the owner creates or scans are recorded in `.git/record-attested` and are skipped on later outgoing scans.
 The recovery cases in [`tests/fm-record.test.sh`](../tests/fm-record.test.sh) cover the crash window, competing staging, and attestation.

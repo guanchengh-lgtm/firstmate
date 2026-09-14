@@ -479,11 +479,11 @@ test_chain_clean_tree() {
 }
 
 test_misnamed_archives_are_scanned() {
-  local dir secret
-  dir="$TMP_ROOT/misnamed-archives"
-  mkdir -p "$dir"
+  local root secret fixture
+  root="$TMP_ROOT/misnamed-archives"
+  mkdir -p "$root/bin" "$root/tgz"
   secret=$(secret_fixture stripe-test)
-  python3 - "$dir" "$secret" <<'PY'
+  python3 - "$root" "$secret" <<'PY'
 import gzip
 import io
 import sys
@@ -495,19 +495,22 @@ payload = ("token " + sys.argv[2] + "\n").encode()
 buf = io.BytesIO()
 with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:
     archive.writestr("hidden.txt", payload)
-(root / "renamed.bin").write_bytes(buf.getvalue())
+(root / "bin" / "renamed.bin").write_bytes(buf.getvalue())
 tar_buf = io.BytesIO()
 with tarfile.open(fileobj=tar_buf, mode="w") as archive:
     info = tarfile.TarInfo("hidden.txt")
     info.size = len(payload)
     archive.addfile(info, io.BytesIO(payload))
-with gzip.open(root / "bundle.tgz", "wb") as output:
+with gzip.open(root / "tgz" / "bundle.tgz", "wb") as output:
     output.write(tar_buf.getvalue())
 PY
-  run_scan chain --dir "$dir"
-  expect_code 2 "$RC" 'misnamed zip and tgz'
-  assert_not_contains "$OUT" "$secret" 'misnamed archive exposed the token'
-  pass "fm-record-scan: misnamed zip and tgz archives are scanned"
+  for fixture in bin/renamed.bin tgz/bundle.tgz; do
+    run_scan chain --dir "$root/${fixture%/*}"
+    expect_code 2 "$RC" "misnamed archive $fixture"
+    assert_not_contains "$OUT" "$secret" 'misnamed archive exposed the token'
+    assert_contains "$OUT" "$root/$fixture" 'misnamed archive hit did not name the payload path'
+  done
+  pass "fm-record-scan: a misnamed zip and a tgz each block alone"
 }
 
 test_help_names_owner_and_codes

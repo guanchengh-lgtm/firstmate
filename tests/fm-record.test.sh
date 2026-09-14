@@ -526,6 +526,23 @@ test_lfs_text_threshold_and_no_oscillation() {
   pass "fm-record: LFS attributes are literal and survive shrink and repeated setup"
 }
 
+assert_health_keys() { # <output> <label>
+  python3 - "$1" <<'PYTEST' || fail "$2"
+import sys
+keys = [line.split("=", 1)[0] for line in sys.argv[1].splitlines()
+        if "=" in line and not line.startswith("fm-record:")]
+assert keys == [
+    "state",
+    "updated_at",
+    "last_push_at",
+    "pending",
+    "failure_class",
+    "pending_since",
+    "pending_age_seconds",
+], keys
+PYTEST
+}
+
 test_push_failure_keeps_local_commit() {
   local home origin first
   IFS=$(printf '\t') read -r home origin < <(new_home offline)
@@ -548,6 +565,7 @@ test_push_failure_keeps_local_commit() {
   run_rec "$home" health
   expect_code 0 "$RC" 'pending health'
   assert_contains "$OUT" 'state=push-pending' 'health lost pending delivery'
+  assert_health_keys "$OUT" 'push-pending health emitted extra or missing keys'
   mv "$origin.away" "$origin"
   run_rec "$home" tick
   expect_code 0 "$RC" 'retry push'
@@ -583,6 +601,7 @@ test_divergence_does_not_force() {
   run_rec "$home" health
   expect_code 0 "$RC" 'divergence health'
   assert_contains "$OUT" 'state=diverged' 'health lost divergence'
+  assert_health_keys "$OUT" 'diverged health emitted extra or missing keys'
   git --git-dir="$home/data/.git" --work-tree="$home/data" cat-file -e HEAD:local.md \
     || fail 'local commit was lost on diverge'
   printf 'later local edit\n' > "$home/data/local.md"
@@ -666,6 +685,20 @@ PYTEST
     FM_TEST_LAUNCHCTL_LOG="$home/launchctl.log" PATH="/nonexistent-record-path:$fakebin:$PATH" \
     run_rec "$home" setup --bootstrap --code-root "$code_root"
   expect_code 0 "$RC" 'bootstrap with a different PATH'
+  fakebin="$home/prereq-only"
+  mkdir -p "$fakebin"
+  for tool in bash git gitleaks git-lfs python3 shasum awk basename cat chmod cmp comm cp cut date diff \
+    dirname env find grep head id ln ls mkdir mktemp mv readlink rm rmdir sed sleep sort stat tail touch tr uname wc; do
+    printf '#!/bin/sh\nexec %s "$@"\n' "$(command -v "$tool")" > "$fakebin/$tool"
+    chmod +x "$fakebin/$tool"
+  done
+  cp "$home/fakebin/launchctl" "$fakebin/launchctl"
+  rm -f "$plist"
+  FM_RECORD_PLIST="$plist" FM_RECORD_LOG_DIR="$TMP_ROOT/job/logs" \
+    FM_TEST_LAUNCHCTL_LOG="$home/launchctl.log" PATH="$fakebin" \
+    run_rec "$home" setup --write-plist --bootstrap --code-root "$code_root"
+  expect_code 0 "$RC" 'setup with gitleaks and git-lfs only on PATH'
+  [ -f "$plist" ] || fail 'setup with only the Record prerequisites did not write the job'
   pass "fm-record: the LaunchAgent plist is a validated 60-second sibling job"
 }
 
@@ -837,7 +870,7 @@ SH
 }
 
 test_index_lock_protects_commit_and_publication() {
-  local home origin before fakebin
+  local home origin before
   IFS=$(printf '\t') read -r home origin < <(new_home index-lock)
   setup_record "$home" "$origin"
   printf 'before\n' > "$home/data/captain.md"
@@ -853,31 +886,12 @@ test_index_lock_protects_commit_and_publication() {
   cmp -s "$home/index.before" "$home/data/.git/index" || fail 'locked index changed'
   [ "$(cat "$home/data/.git/index.lock")" = 'foreign lock' ] || fail 'foreign index lock changed'
   rm "$home/data/.git/index.lock"
-  fakebin=$(fm_fakebin "$home")
-  cat > "$fakebin/git" <<'SH'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  if [ "$arg" = commit ]; then
-    printf 'later edit\n' > "$FM_HOME/data/later.md"
-    env -u GIT_INDEX_FILE "$FM_TEST_REAL_GIT" -C "$FM_HOME/data" add later.md >/dev/null 2>&1
-    printf '%s\n' "$?" > "$FM_HOME/competing-add.status"
-  fi
-done
-exec "$FM_TEST_REAL_GIT" "$@"
-SH
-  chmod +x "$fakebin/git"
-  FM_TEST_REAL_GIT=$(command -v git) PATH="$fakebin:$PATH" \
-    run_rec "$home" checkpoint --reason teardown --required
+  run_rec "$home" checkpoint --reason teardown --required
   expect_code 0 "$RC" 'checkpoint after foreign lock release'
-  [ "$(cat "$home/competing-add.status")" != 0 ] || fail 'manual staging raced the commit'
   [ ! -e "$home/data/.git/index.lock" ] || fail 'checkpoint retained its index lock'
   git -C "$home/data" diff --cached --quiet || fail 'published index differs from HEAD'
   [ "$(git -C "$home/data" show HEAD:captain.md)" = after ] || fail 'checkpoint lost the snapshot'
-  [ "$(cat "$home/data/later.md")" = 'later edit' ] || fail 'checkpoint lost later work'
-  if git -C "$home/data" cat-file -e HEAD:later.md 2>/dev/null; then
-    fail 'checkpoint included work created after scanning'
-  fi
-  pass 'fm-record: the Git index lock protects the commit and index publication'
+  pass "fm-record: Git's own index lock excludes the checkpoint until it is released"
 }
 
 test_inventory_failures_refuse_partial_snapshots() {
@@ -1390,26 +1404,7 @@ test_health_reads_current_pending_commits_and_age() {
   expect_code 0 "$RC" 'health after manual commit'
   assert_contains "$OUT" 'state=committed-local' 'health claimed the manual commit was pushed'
   assert_contains "$OUT" 'pending=1' 'health missed the outgoing manual commit'
-  python3 - "$OUT" <<'PYTEST' || fail 'health emitted extra keys'
-import sys
-text = sys.argv[1]
-keys = []
-for line in text.splitlines():
-    if line.startswith("fm-record:"):
-        continue
-    if "=" not in line:
-        continue
-    keys.append(line.split("=", 1)[0])
-assert keys == [
-    "state",
-    "updated_at",
-    "last_push_at",
-    "pending",
-    "failure_class",
-    "pending_since",
-    "pending_age_seconds",
-], keys
-PYTEST
+  assert_health_keys "$OUT" 'health emitted extra keys'
   assert_contains "$OUT" "last_push_at=$(sed -n 's/^last_push_at=//p' "$home/pushed-health")" 'health lost the last push receipt'
   first_age=$(printf '%s\n' "$OUT" | sed -n 's/^pending_age_seconds=//p')
   [ "$first_age" -ge 120 ] || fail 'health omitted elapsed age after the manual commit'
@@ -1449,7 +1444,7 @@ test_attested_outgoing_commits_are_not_rescanned() {
 #!/usr/bin/env bash
 for arg in "$@"; do
   case "$arg" in
-    */outgoing|*/outgoing/*)
+    */outgoing.scan.*)
       printf '%s\n' "$*" >> "$FM_HOME/outgoing-scans.log"
       ;;
   esac

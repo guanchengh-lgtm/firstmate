@@ -23,11 +23,15 @@
 # --ignore-gitleaks-allow, and --max-archive-depth 2. Working-tree allowlists,
 # baselines, and GITLEAKS_CONFIG are not inherited. Archive inspection and
 # each gitleaks pass use FM_RECORD_SCAN_TIMEOUT_SECONDS (default 60).
-# Archive inspection accepts ZIP, TAR, and gzip. A misnamed archive is
-# hard-linked into a scratch directory under a canonical extension so
-# gitleaks will open it. Nested archive members refuse. Encrypted, corrupt,
-# or unsupported formats refuse. Gitleaks scans the directory and any
-# scratch links; it does not receive an expanded payload stream.
+# Archive inspection accepts ZIP, TAR, and gzip. Nested archive members
+# refuse. Encrypted, corrupt, or unsupported formats refuse. Every payload
+# file is hard-linked (copied across devices) into a <dir>.scan.* scratch
+# directory next to the payload directory as <sha256>.<canonical-ext>: archives keep the
+# extension gitleaks opens (.tgz becomes .tar.gz) and every other file
+# becomes .txt, so the gitleaks extension allowlist that skips .bin, .pdf,
+# .tgz and similar names cannot hide content. Gitleaks scans that scratch
+# only, and a hit is mapped back to the payload path before it is reported;
+# it never receives an expanded payload stream.
 set -u
 
 export LC_ALL=C
@@ -235,9 +239,11 @@ def place_link(path, ext):
         os.link(path, dest)
     except OSError:
         shutil.copy2(path, dest)
+    links.append(os.path.basename(dest) + "\t" + os.path.relpath(path, root))
 
 try:
     names = []
+    links = []
     walk = os.walk(root, followlinks=False, onerror=lambda e: fail("cannot enumerate scan directory"))
     for dirpath, dirnames, filenames in walk:
         if ".git" in dirnames:
@@ -274,14 +280,11 @@ try:
             else:
                 with open(path, "rb") as source:
                     ext = ".tar.gz" if tarfile.is_tarfile(source) else ".gz"
-            lower = relative.lower()
-            misnamed = lower.endswith(".tgz") or not lower.endswith(ext)
-            if ext == ".tar.gz" and lower.endswith(".tar.gz"):
-                misnamed = False
-            if misnamed:
-                place_link(path, ext)
+            place_link(path, ext)
     with open(os.path.join(scratch, "names.txt"), "w", encoding="utf-8", errors="surrogateescape") as output:
         output.write("".join(n + "\n" + re.sub(r"[/.!]", "\n", n) + "\n" for n in names))
+    with open(os.path.join(scratch, "paths.tsv"), "w", encoding="utf-8", errors="surrogateescape") as output:
+        output.write("".join(line + "\n" for line in links))
 except (OSError, EOFError, ValueError, RuntimeError, NotImplementedError, zipfile.BadZipFile, tarfile.TarError, gzip.BadGzipFile):
     fail("archive or scan source is corrupt, unreadable, or unsupported")
 PY
@@ -289,6 +292,23 @@ PY
 
 fm_record_scan_gitleaks_cleanup() {
   rm -rf "$cfg" "$report" "${report}.err" "$scratch" "$ignore_dir"
+}
+
+fm_record_scan_scratch_dir() { # <payload-dir> <suffix>
+  local parent
+  parent=$(cd "$(dirname "${1%/}")" && pwd) || return 1
+  mktemp -d "$parent/$(basename "${1%/}").$2.XXXXXX"
+}
+
+fm_record_scan_payload_path() { # <dir> <scratch> <reported-file>
+  local dir=$1 scratch=$2 file=$3 member='' link rel
+  case "$file" in "$scratch"/*) file=${file#"$scratch"/} ;; esac
+  case "$file" in *!*) member=${file#*!}; file=${file%%!*} ;; esac
+  link=$file
+  rel=$(awk -F'\t' -v k="$link" '$1 == k { print substr($0, length(k) + 2); exit }' "$scratch/paths.tsv" 2>/dev/null)
+  [ -n "$rel" ] && file="$dir/$rel"
+  [ -z "$member" ] || file="$file!$member"
+  printf '%s\n' "$file"
 }
 
 fm_record_scan_gitleaks_dir() { # <dir>
@@ -300,7 +320,7 @@ fm_record_scan_gitleaks_dir() { # <dir>
   cfg=$(mktemp "${TMPDIR:-/tmp}/fm-record-gitleaks.XXXXXX") || die 1 "cannot create the explicit gitleaks config"
   report=$(mktemp "${TMPDIR:-/tmp}/fm-record-gitleaks-report.XXXXXX") \
     || { rm -f "$cfg"; die 1 "cannot create the gitleaks report file"; }
-  scratch=$(mktemp -d "${TMPDIR:-/tmp}/fm-record-gitleaks-scratch.XXXXXX") \
+  scratch=$(fm_record_scan_scratch_dir "$dir" scan) \
     || { rm -f "$cfg" "$report"; die 1 "cannot create the archive scratch dir"; }
   ignore_dir=$(mktemp -d "${TMPDIR:-/tmp}/fm-record-gitleaks-ignore.XXXXXX") \
     || { rm -rf "$cfg" "$report" "$scratch"; die 1 "cannot create the empty gitleaks ignore dir"; }
@@ -312,31 +332,29 @@ fm_record_scan_gitleaks_dir() { # <dir>
   scan_args=(dir --no-banner --no-color --log-level warn --redact=100
     --ignore-gitleaks-allow --gitleaks-ignore-path "$ignore_dir" --config "$cfg"
     --max-archive-depth 2 --report-format json --report-path "$report")
-  for source in "$dir" "$scratch"; do
-    if [ "$source" = "$scratch" ] && [ -z "$(find "$scratch" -type f -print -quit 2>/dev/null)" ]; then
-      continue
-    fi
-    rc=0
-    fm_run_timed "${FM_RECORD_SCAN_TIMEOUT_SECONDS:-60}" \
-      env -u GITLEAKS_CONFIG -u GITLEAKS_CONFIG_TOML gitleaks "${scan_args[@]}" -- "$source" \
-      >/dev/null 2>"${report}.err" || rc=$?
-    [ "$rc" -eq 0 ] && [ ! -s "${report}.err" ] && continue
-    if [ "$rc" -eq 1 ]; then
-      file_path=unknown
-      rule=gitleaks
-      if [ -s "$report" ]; then
-        file_path=$(jq -r 'if type=="array" and length>0 then (.[0].File // .[0].Path // "unknown") else "unknown" end' "$report" 2>/dev/null) || file_path=unknown
-        rule=$(jq -r 'if type=="array" and length>0 then (.[0].RuleID // .[0].Rule // "gitleaks") else "gitleaks" end' "$report" 2>/dev/null) || rule=gitleaks
-      fi
-      printf 'fm-record-scan: refusing to publish: %s matches the %s credential pattern\n' \
-        "$(fm_record_scan_redact_locator "$file_path")" "$rule" >&2
-      fm_record_scan_gitleaks_cleanup
-      return 2
-    fi
+  rc=0
+  fm_run_timed "${FM_RECORD_SCAN_TIMEOUT_SECONDS:-60}" \
+    env -u GITLEAKS_CONFIG -u GITLEAKS_CONFIG_TOML gitleaks "${scan_args[@]}" -- "$scratch" \
+    >/dev/null 2>"${report}.err" || rc=$?
+  if [ "$rc" -eq 0 ] && [ ! -s "${report}.err" ]; then
     fm_record_scan_gitleaks_cleanup
-    die 1 "gitleaks scan failed or was incomplete; refusing to publish"
-  done
+    return 0
+  fi
+  if [ "$rc" -eq 1 ]; then
+    file_path=unknown
+    rule=gitleaks
+    if [ -s "$report" ]; then
+      file_path=$(jq -r 'if type=="array" and length>0 then (.[0].File // .[0].Path // "unknown") else "unknown" end' "$report" 2>/dev/null) || file_path=unknown
+      rule=$(jq -r 'if type=="array" and length>0 then (.[0].RuleID // .[0].Rule // "gitleaks") else "gitleaks" end' "$report" 2>/dev/null) || rule=gitleaks
+      file_path=$(fm_record_scan_payload_path "$dir" "$scratch" "$file_path")
+    fi
+    printf 'fm-record-scan: refusing to publish: %s matches the %s credential pattern\n' \
+      "$(fm_record_scan_redact_locator "$file_path")" "$rule" >&2
+    fm_record_scan_gitleaks_cleanup
+    return 2
+  fi
   fm_record_scan_gitleaks_cleanup
+  die 1 "gitleaks scan failed or was incomplete; refusing to publish"
 }
 
 fm_record_scan_chain() { # <dir>
@@ -411,7 +429,7 @@ fm_record_scan_cli() {
       ;;
     archive-preflight)
       fm_record_scan_require_dir "$cmd" "$@"
-      scratch=$(mktemp -d "${TMPDIR:-/tmp}/fm-record-archive-preflight.XXXXXX") \
+      scratch=$(fm_record_scan_scratch_dir "$dir" preflight) \
         || die 1 "cannot create archive scratch directory"
       # Expand now: EXIT must not read an unbound local under set -u.
       # shellcheck disable=SC2064

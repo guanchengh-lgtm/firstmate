@@ -98,9 +98,10 @@
 # FM_RECORD_PUSH_TIMEOUT (default 15) and GIT_TERMINAL_PROMPT=0.
 # Health lives under .git/record-health and is not tracked.
 # docs/configuration.md owns the health fields.
+# The commit and the index publication rely on Git's own index.lock only.
 # After a crash between commit and index publication, the next transaction
-# reconciles an index that still matches the parent tree when index.lock is
-# absent. Commits the owner creates or scans are attested in
+# reconciles an index that still matches the parent tree (the empty tree for
+# a root commit) when index.lock is absent; reconcile and verify never do. Commits the owner creates or scans are attested in
 # .git/record-attested and skipped on later outgoing scans.
 set -eu
 export LC_ALL=C
@@ -133,7 +134,6 @@ require_lock_libs() {
 
 LOCK_PATH=
 LOCK_HELD=0
-INDEX_LOCK_HELD=0
 HASH_TOOL=
 GIT_DIR_ABS=
 RECORD_WORK=
@@ -234,9 +234,6 @@ on_exit() {
   if [ -n "$HEALTH_TMP" ]; then
     rm -f "$HEALTH_TMP"
   fi
-  if [ "$INDEX_LOCK_HELD" -eq 1 ]; then
-    rm -f "$GIT_DIR_ABS/index.lock"
-  fi
   if [ -n "${CAND_WORK:-}" ] && [ -d "${CAND_WORK%/*}" ]; then
     rm -rf "${CAND_WORK%/*}"
   fi
@@ -291,9 +288,11 @@ write_health() { # <state> [k=v...]
     last_push_at=$updated
     failure_class=none
     pending_since=0
-  elif [ "$state" = push-pending ] || [ "$state" = diverged ]; then
+  elif [ "$state" = diverged ]; then
+    failure_class=diverged
+  elif [ "$state" = push-pending ]; then
     if [ -z "$failure_class" ] || [ "$failure_class" = none ]; then
-      [ "$state" = diverged ] && failure_class=diverged || failure_class=offline
+      failure_class=offline
     fi
   fi
   if [ "${pending:-0}" -gt 0 ]; then
@@ -765,7 +764,9 @@ reconcile_crash_window() {
     return 0
   fi
   [ ! -e "$GIT_DIR_ABS/index.lock" ] || return 8
-  parent=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify 'HEAD~1^{tree}' 2>/dev/null) || return 8
+  git --git-dir="$GIT_DIR_ABS" rev-parse --verify 'HEAD^{commit}' >/dev/null 2>&1 || return 8
+  parent=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify 'HEAD~1^{tree}' 2>/dev/null) \
+    || parent=$(git --git-dir="$GIT_DIR_ABS" hash-object -t tree /dev/null) || return 8
   current=$(git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" write-tree) || return 8
   [ "$current" = "$parent" ] || return 8
   git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" read-tree HEAD || return 8
@@ -792,12 +793,9 @@ is_attested() {
 commit_candidate() { # <reason>
   local reason=$1 message
   assert_head_unchanged "$START_HEAD"
-  (set -C; : > "$GIT_DIR_ABS/index.lock") 2>/dev/null || return 8
-  INDEX_LOCK_HELD=1
+  [ ! -e "$GIT_DIR_ABS/index.lock" ] || return 8
   real_index_is_clean || die 8 "unexpected user staging is present; refusing to overwrite the index"
   if trees_equal; then
-    rm -f "$GIT_DIR_ABS/index.lock" || return 8
-    INDEX_LOCK_HELD=0
     publish_owned_live_files || return 8
     return 1
   fi
@@ -805,8 +803,6 @@ commit_candidate() { # <reason>
   GIT_INDEX_FILE="$CAND_INDEX" git --git-dir="$GIT_DIR_ABS" --work-tree="$CAND_WORK" \
     commit --quiet --no-verify -m "$message" || return 8
   CAPTURED_HEAD=$(git --git-dir="$GIT_DIR_ABS" rev-parse HEAD) || return 8
-  rm -f "$GIT_DIR_ABS/index.lock" || return 8
-  INDEX_LOCK_HELD=0
   git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" read-tree HEAD || return 8
   publish_owned_live_files || return 8
   attest_shas "$CAPTURED_HEAD" || return 8
@@ -902,7 +898,7 @@ scan_outgoing_commits() {
 
 run_transaction() { # tick|checkpoint <reason> try|wait|required
   local mode=$1 reason=$2 lock_mode=$3 inv rc=0 sha pending class health_state
-  begin_record_command health "$lock_mode"
+  begin_record_command health "$lock_mode" reconcile
   START_HEAD=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD 2>/dev/null || true)
   CAPTURED_HEAD=$START_HEAD
   CAND_WORK="$GIT_DIR_ABS/record-candidate/work"
@@ -1295,7 +1291,7 @@ cmd_land_related() {
   done
   [ -n "$candidate" ] && [ -n "$expected" ] \
     || die 2 "land-related requires --candidate and --expected-head"
-  begin_record_command health wait
+  begin_record_command health wait reconcile
   CAND_WORK="$GIT_DIR_ABS/record-land/work"
   rm -rf "${CAND_WORK%/*}" || finish 8 configuration-error detail=candidate
   mkdir -p "$CAND_WORK" || finish 8 configuration-error detail=candidate
@@ -1487,9 +1483,9 @@ load_record_compare() { # [fetch-class]
   fi
 }
 
-begin_record_command() { # health|emit [try|wait|required]
-  local health_mode=$1 lock_mode=${2:-wait} rc=0
-  [ "$#" -ge 1 ] && [ "$#" -le 2 ] || die 2 "internal begin_record_command usage"
+begin_record_command() { # health|emit [try|wait|required] [reconcile]
+  local health_mode=$1 lock_mode=${2:-wait} reconcile=${3:-} rc=0
+  [ "$#" -ge 1 ] && [ "$#" -le 3 ] || die 2 "internal begin_record_command usage"
   case "$(binding_state)" in
     absent) emit disabled; exit 0 ;;
   esac
@@ -1512,6 +1508,7 @@ begin_record_command() { # health|emit [try|wait|required]
       die 8 "cannot lock the Record"
       ;;
   esac
+  [ "$reconcile" = reconcile ] || return 0
   reconcile_crash_window || {
     [ "$health_mode" = health ] && finish 8 configuration-error detail=index-recovery
     die 8 "unexpected user staging is present; refusing to overwrite the index"
@@ -1555,8 +1552,6 @@ cmd_reconcile() {
       finish 8 configuration-error detail=fast-forward
     fi
     rm -f "$GIT_DIR_ABS/record-clean-head"
-    attest_shas "$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD)" \
-      || finish 8 configuration-error detail=attest
     finish 0 reconciled detail=fast-forwarded "behind=$BEHIND_COUNT"
   fi
   finish 8 configuration-error detail=reconcile
