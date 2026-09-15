@@ -26,7 +26,8 @@
 # Archive inspection accepts ZIP, TAR, and gzip. Nested archive members
 # refuse. Encrypted, corrupt, or unsupported formats refuse. Every payload
 # file is hard-linked (copied across devices) into a <dir>.scan.* scratch
-# directory next to the payload directory as <sha256>.<canonical-ext>: archives keep the
+# directory under the payload's own Git directory, or next to the payload
+# directory when it is not in a repository, as <sha256>.<canonical-ext>: archives keep the
 # extension gitleaks opens (.tgz becomes .tar.gz) and every other file
 # becomes .txt, so the gitleaks extension allowlist that skips .bin, .pdf,
 # .tgz and similar names cannot hide content. Gitleaks scans that scratch
@@ -296,7 +297,8 @@ fm_record_scan_gitleaks_cleanup() {
 
 fm_record_scan_scratch_dir() { # <payload-dir> <suffix>
   local parent
-  parent=$(cd "$(dirname "${1%/}")" && pwd) || return 1
+  parent=$(git -C "$1" rev-parse --absolute-git-dir 2>/dev/null) \
+    || parent=$(cd "$(dirname "${1%/}")" && pwd) || return 1
   mktemp -d "$parent/$(basename "${1%/}").$2.XXXXXX"
 }
 

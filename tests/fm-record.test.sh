@@ -869,6 +869,35 @@ SH
   pass "fm-record: required checkpoints refuse commit and publication failures"
 }
 
+test_first_checkpoint_crash_window_reconciles() {
+  local home origin fakebin after
+  IFS=$(printf '\t') read -r home origin < <(new_home first-crash)
+  setup_record "$home" "$origin"
+  printf 'first\n' > "$home/data/captain.md"
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/git" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [ "$arg" = read-tree ] && [ -z "${GIT_INDEX_FILE:-}" ]; then
+    exit 1
+  fi
+done
+exec "$FM_TEST_REAL_GIT" "$@"
+SH
+  chmod +x "$fakebin/git"
+  FM_TEST_REAL_GIT=$(command -v git) PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason teardown --required
+  expect_code 9 "$RC" 'required first publication failure'
+  after=$(git -C "$home/data" rev-parse HEAD)
+  git -C "$home/data" rev-parse --verify -q 'HEAD~1' >/dev/null && fail 'first checkpoint was not a root commit'
+  rm "$fakebin/git"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'root-commit crash-window reconcile'
+  assert_contains "$OUT" 'state=unchanged' 'root-commit reconcile created another commit'
+  [ "$(git -C "$home/data" rev-parse HEAD)" = "$after" ] || fail 'root-commit reconcile changed HEAD'
+  git -C "$home/data" diff --cached --quiet || fail 'root-commit reconcile left the index dirty'
+  pass "fm-record: a crash after the first checkpoint reconciles against the empty tree"
+}
+
 test_index_lock_protects_commit_and_publication() {
   local home origin before
   IFS=$(printf '\t') read -r home origin < <(new_home index-lock)
@@ -2006,6 +2035,7 @@ test_old_data_prefix_history_stays_an_ancestor
 test_pre_commit_hook_blocks_manual_commit
 test_required_checkpoint_times_out_when_lock_is_live
 test_commit_and_publication_failures_refuse
+test_first_checkpoint_crash_window_reconciles
 test_index_lock_protects_commit_and_publication
 test_inventory_failures_refuse_partial_snapshots
 test_frozen_bytes_must_match_the_settled_inventory
