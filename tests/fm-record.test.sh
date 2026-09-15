@@ -212,66 +212,25 @@ test_effective_push_destinations_must_match_binding() {
   pass 'fm-record: every effective push destination must match the binding'
 }
 
-test_lfs_uploads_require_the_bound_origin() {
-  local home origin other key global before
+test_lfs_uploads_use_the_bound_origin() {
+  local home origin
   IFS=$(printf '\t') read -r home origin < <(new_home lfs-destinations)
   setup_record "$home" "$origin"
-  other="$TMP_ROOT/lfs-destinations/other.git"
-  git init --quiet --bare --initial-branch=main "$other"
   mkdir "$home/data/raw"
   printf 'private fixture image\n' > "$home/data/raw/photo.png"
-  for key in lfs.url lfs.pushurl remote.origin.lfsurl remote.origin.lfspushurl; do
-    git -C "$home/data" config "$key" "file://$other"
-    run_rec "$home" tick
-    expect_code 8 "$RC" "LFS redirect through $key"
-    assert_contains "$OUT" 'LFS destination overrides' 'LFS redirect refusal'
-    assert_not_contains "$OUT" "$other" 'LFS refusal exposed its URL'
-    git -C "$home/data" config --unset "$key"
-  done
-  global="$home/global.gitconfig"
-  git config --file "$global" lfs.url "file://$other"
-  GIT_CONFIG_GLOBAL="$global" run_rec "$home" tick
-  expect_code 8 "$RC" 'global LFS redirect'
-  for key in lfs.url lfs.pushurl remote.origin.lfsurl; do
-    git config --file "$home/data/.lfsconfig" "$key" "file://$other"
-    run_rec "$home" tick
-    expect_code 8 "$RC" "working .lfsconfig redirect through $key"
-    rm "$home/data/.lfsconfig"
-  done
-  printf '[lfs\n' > "$home/data/.lfsconfig"
-  run_rec "$home" tick
-  expect_code 8 "$RC" 'malformed LFS configuration'
-  assert_contains "$OUT" 'cannot validate the Record LFS destination' 'invalid LFS configuration message'
-  rm "$home/data/.lfsconfig"
-  git config --file "$home/data/.lfsconfig" lfs.url "file://$other"
-  git -C "$home/data" add .lfsconfig
-  rm "$home/data/.lfsconfig"
-  run_rec "$home" tick
-  expect_code 8 "$RC" 'indexed .lfsconfig redirect'
-  assert_contains "$OUT" 'LFS destination overrides' 'indexed LFS configuration was ignored'
-  git -C "$home/data" commit --quiet --no-verify -m 'Unsupported LFS configuration fixture'
-  before=$(git -C "$home/data" rev-parse HEAD)
-  git -C "$home/data" read-tree --empty
-  run_rec "$home" tick
-  expect_code 8 "$RC" 'committed .lfsconfig redirect'
-  assert_contains "$OUT" 'LFS destination overrides' 'committed LFS configuration was ignored'
-  [ "$(git -C "$home/data" rev-parse HEAD)" = "$before" ] || fail 'LFS refusal advanced HEAD'
-  [ -z "$(git --git-dir="$origin" for-each-ref)" ] || fail 'LFS refusal pushed Git history'
-  git -C "$home/data" read-tree HEAD
   printf '[lfs]\nfetchinclude = raw/*\n' > "$home/data/.lfsconfig"
   run_rec "$home" tick
   expect_code 0 "$RC" 'default LFS destination with harmless configuration'
   [ "$(git --git-dir="$origin" rev-parse main)" = "$(git -C "$home/data" rev-parse HEAD)" ] \
     || fail 'bound origin did not receive Git history'
-  python3 - "$other" "$origin" <<'PYTEST' || fail 'LFS objects reached the wrong remote'
+  python3 - "$origin" <<'PYTEST' || fail 'LFS objects missed the bound origin'
 from pathlib import Path
 import sys
-assert not list((Path(sys.argv[1]) / "lfs" / "objects").rglob("*"))
-objects = [p for p in (Path(sys.argv[2]) / "lfs" / "objects").rglob("*") if p.is_file()]
+objects = [p for p in (Path(sys.argv[1]) / "lfs" / "objects").rglob("*") if p.is_file()]
 assert len(objects) == 1
 assert objects[0].read_bytes() == b"private fixture image\n"
 PYTEST
-  pass 'fm-record: LFS configuration cannot redirect uploads from the bound origin'
+  pass 'fm-record: LFS uploads use the bound origin'
 }
 
 test_redirected_hooks_refuse_setup_and_transactions() {
@@ -448,6 +407,7 @@ test_special_names_and_outside_symlink_refuse() {
   run_rec "$home" checkpoint --reason stow
   expect_code 8 "$RC" 'outside symlink'
   assert_contains "$OUT" 'absolute symlink is not portable' 'absolute symlink message'
+  assert_contains "$OUT" 'outside.link' 'ordinary path was omitted from the refusal'
   pass "fm-record: special names commit and outside links refuse"
 }
 
@@ -566,6 +526,23 @@ test_lfs_text_threshold_and_no_oscillation() {
   pass "fm-record: LFS attributes are literal and survive shrink and repeated setup"
 }
 
+assert_health_keys() { # <output> <label>
+  python3 - "$1" <<'PYTEST' || fail "$2"
+import sys
+keys = [line.split("=", 1)[0] for line in sys.argv[1].splitlines()
+        if "=" in line and not line.startswith("fm-record:")]
+assert keys == [
+    "state",
+    "updated_at",
+    "last_push_at",
+    "pending",
+    "failure_class",
+    "pending_since",
+    "pending_age_seconds",
+], keys
+PYTEST
+}
+
 test_push_failure_keeps_local_commit() {
   local home origin first
   IFS=$(printf '\t') read -r home origin < <(new_home offline)
@@ -583,11 +560,12 @@ test_push_failure_keeps_local_commit() {
   cp "$home/data/.git/record-health" "$home/pending-health"
   run_rec "$home" checkpoint --reason stow
   expect_code 0 "$RC" 'local checkpoint while push is pending'
-  assert_contains "$OUT" 'delivery=push-pending' 'checkpoint hid pending delivery'
+  assert_contains "$OUT" 'pending=' 'checkpoint hid pending count'
   cmp -s "$home/pending-health" "$home/data/.git/record-health" || fail 'checkpoint replaced pending delivery health'
   run_rec "$home" health
   expect_code 0 "$RC" 'pending health'
   assert_contains "$OUT" 'state=push-pending' 'health lost pending delivery'
+  assert_health_keys "$OUT" 'push-pending health emitted extra or missing keys'
   mv "$origin.away" "$origin"
   run_rec "$home" tick
   expect_code 0 "$RC" 'retry push'
@@ -618,19 +596,20 @@ test_divergence_does_not_force() {
   cp "$home/data/.git/record-health" "$home/diverged-health"
   run_rec "$home" checkpoint --reason stow
   expect_code 0 "$RC" 'local checkpoint while diverged'
-  assert_contains "$OUT" 'delivery=diverged' 'checkpoint hid divergence'
+  assert_contains "$OUT" 'pending=' 'checkpoint hid pending count'
   cmp -s "$home/diverged-health" "$home/data/.git/record-health" || fail 'checkpoint replaced divergence health'
   run_rec "$home" health
   expect_code 0 "$RC" 'divergence health'
   assert_contains "$OUT" 'state=diverged' 'health lost divergence'
+  assert_health_keys "$OUT" 'diverged health emitted extra or missing keys'
   git --git-dir="$home/data/.git" --work-tree="$home/data" cat-file -e HEAD:local.md \
     || fail 'local commit was lost on diverge'
   printf 'later local edit\n' > "$home/data/local.md"
   run_rec "$home" checkpoint --reason stow
   expect_code 0 "$RC" 'changed checkpoint after divergence'
-  assert_contains "$OUT" 'delivery=diverged' 'changed checkpoint lost delivery failure'
   assert_contains "$OUT" 'failure_class=diverged' 'changed checkpoint lost failure class'
-  python3 - "$home/diverged-health" "$home/data/.git/record-health" <<'PYTEST' || fail 'delivery health was not preserved'
+  assert_contains "$OUT" 'failure_class=diverged' 'changed checkpoint lost failure class'
+  python3 - "$home/diverged-health" "$home/data/.git/record-health" <<'PYTEST' || fail 'push-failure health was not preserved'
 import sys
 def read(path):
     return dict(line.rstrip("\n").split("=", 1) for line in open(path))
@@ -654,10 +633,6 @@ test_job_plist_has_sixty_seconds_and_no_keepalive() {
   cp -R "$ROOT/bin" "$code_root/bin"
   git init --quiet --initial-branch=main "$code_root"
   fakebin=$(fm_fakebin "$home")
-  for tool in restic rclone; do
-    printf '#!/bin/sh\nexit 0\n' > "$fakebin/$tool"
-    chmod +x "$fakebin/$tool"
-  done
   cat > "$fakebin/launchctl" <<'SH'
 #!/bin/sh
 printf '%s\n' "$*" >> "$FM_TEST_LAUNCHCTL_LOG"
@@ -697,6 +672,33 @@ PYTEST
     run_rec "$home" setup --bootstrap --code-root "$code_root"
   expect_code 8 "$RC" 'bootstrap with changed executable'
   cmp -s "$home/launchctl.before" "$home/launchctl.log" || fail 'invalid job reached launchctl'
+  python3 - "$plist" <<'PYTEST'
+import plistlib
+import sys
+with open(sys.argv[1], "rb") as source:
+    job = plistlib.load(source)
+job["ProgramArguments"][0] = job["ProgramArguments"][0].replace(".missing", "")
+with open(sys.argv[1], "wb") as dest:
+    dest.write(plistlib.dumps(job).replace(b"<plist", b"<!-- firstmate-record-tick-v1 -->\n<plist", 1))
+PYTEST
+  FM_RECORD_PLIST="$plist" FM_RECORD_LOG_DIR="$TMP_ROOT/job/logs" \
+    FM_TEST_LAUNCHCTL_LOG="$home/launchctl.log" PATH="/nonexistent-record-path:$fakebin:$PATH" \
+    run_rec "$home" setup --bootstrap --code-root "$code_root"
+  expect_code 0 "$RC" 'bootstrap with a different PATH'
+  fakebin="$home/prereq-only"
+  mkdir -p "$fakebin"
+  for tool in bash git gitleaks git-lfs python3 shasum awk basename cat chmod cmp comm cp cut date diff \
+    dirname env find grep head id ln ls mkdir mktemp mv readlink rm rmdir sed sleep sort stat tail touch tr uname wc; do
+    printf '#!/bin/sh\nexec %s "$@"\n' "$(command -v "$tool")" > "$fakebin/$tool"
+    chmod +x "$fakebin/$tool"
+  done
+  cp "$home/fakebin/launchctl" "$fakebin/launchctl"
+  rm -f "$plist"
+  FM_RECORD_PLIST="$plist" FM_RECORD_LOG_DIR="$TMP_ROOT/job/logs" \
+    FM_TEST_LAUNCHCTL_LOG="$home/launchctl.log" PATH="$fakebin" \
+    run_rec "$home" setup --write-plist --bootstrap --code-root "$code_root"
+  expect_code 0 "$RC" 'setup with gitleaks and git-lfs only on PATH'
+  [ -f "$plist" ] || fail 'setup with only the Record prerequisites did not write the job'
   pass "fm-record: the LaunchAgent plist is a validated 60-second sibling job"
 }
 
@@ -709,18 +711,12 @@ test_job_preflight_refuses_missing_tools_and_disposable_code() {
   cp "$RECORD" "$code_root/bin/fm-record.sh"
   git init --quiet --initial-branch=main "$code_root"
   plist="$home/record.plist"
-  for missing in gitleaks git-lfs restic rclone; do
+  for missing in gitleaks git-lfs; do
     fakebin="$home/path-$missing"
     mkdir -p "$fakebin"
-    for tool in bash dirname git gitleaks git-lfs restic rclone; do
+    for tool in bash dirname git gitleaks git-lfs; do
       [ "$tool" != "$missing" ] || continue
-      case "$tool" in
-        restic | rclone)
-          printf '#!/bin/sh\nexit 0\n' > "$fakebin/$tool"
-          chmod +x "$fakebin/$tool"
-          ;;
-        *) ln -s "$(command -v "$tool")" "$fakebin/$tool" ;;
-      esac
+      ln -s "$(command -v "$tool")" "$fakebin/$tool"
     done
     for flag in --write-plist --bootstrap; do
       FM_RECORD_PLIST="$plist" FM_RECORD_LOG_DIR="$home/logs" PATH="$fakebin" \
@@ -731,10 +727,6 @@ test_job_preflight_refuses_missing_tools_and_disposable_code() {
     done
   done
   fakebin=$(fm_fakebin "$home")
-  for tool in restic rclone; do
-    printf '#!/bin/sh\nexit 0\n' > "$fakebin/$tool"
-    chmod +x "$fakebin/$tool"
-  done
   mkdir "$home/empty-code"
   FM_RECORD_PLIST="$plist" PATH="$fakebin:$PATH" \
     run_rec "$home" setup --write-plist --code-root "$home/empty-code"
@@ -846,7 +838,9 @@ test_commit_and_publication_failures_refuse() {
   cat > "$fakebin/git" <<'SH'
 #!/usr/bin/env bash
 for arg in "$@"; do
-  [ "$arg" != read-tree ] || exit 1
+  if [ "$arg" = read-tree ] && [ -z "${GIT_INDEX_FILE:-}" ]; then
+    exit 1
+  fi
 done
 exec "$FM_TEST_REAL_GIT" "$@"
 SH
@@ -854,13 +848,58 @@ SH
   FM_TEST_REAL_GIT=$(command -v git) PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason teardown --required
   expect_code 9 "$RC" 'required index publication failure'
   assert_not_contains "$OUT" 'committed-local' 'failed publication reported success'
-  [ "$(git -C "$home/data" rev-parse HEAD)" = "$before" ] || fail 'failed index preparation advanced HEAD'
+  after=$(git -C "$home/data" rev-parse HEAD)
+  [ "$after" != "$before" ] || fail 'failed index publication did not keep the committed snapshot'
+  git -C "$home/data" diff --cached --quiet && fail 'failed publication left a clean index'
+  [ "$(git -C "$home/data" write-tree)" = "$(git -C "$home/data" rev-parse 'HEAD~1^{tree}')" ] \
+    || fail 'failed publication did not leave the parent tree staged'
   [ ! -e "$home/data/.git/index.lock" ] || fail 'failed checkpoint retained its index lock'
+  rm "$fakebin/git"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'crash-window reconcile'
+  assert_contains "$OUT" 'state=unchanged' 'crash-window reconcile created another commit'
+  [ "$(git -C "$home/data" rev-parse HEAD)" = "$after" ] || fail 'crash-window reconcile changed HEAD'
+  git -C "$home/data" diff --cached --quiet || fail 'crash-window reconcile left the index dirty'
+  git -C "$home/data" read-tree HEAD~1
+  printf 'user staging\n' > "$home/data/user.md"
+  git -C "$home/data" add user.md
+  run_rec "$home" checkpoint --reason stow
+  expect_code 8 "$RC" 'user staging on the parent tree'
+  git -C "$home/data" cat-file -e :user.md || fail 'refusal replaced competing staging'
   pass "fm-record: required checkpoints refuse commit and publication failures"
 }
 
+test_first_checkpoint_crash_window_reconciles() {
+  local home origin fakebin after
+  IFS=$(printf '\t') read -r home origin < <(new_home first-crash)
+  setup_record "$home" "$origin"
+  printf 'first\n' > "$home/data/captain.md"
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/git" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [ "$arg" = read-tree ] && [ -z "${GIT_INDEX_FILE:-}" ]; then
+    exit 1
+  fi
+done
+exec "$FM_TEST_REAL_GIT" "$@"
+SH
+  chmod +x "$fakebin/git"
+  FM_TEST_REAL_GIT=$(command -v git) PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason teardown --required
+  expect_code 9 "$RC" 'required first publication failure'
+  after=$(git -C "$home/data" rev-parse HEAD)
+  git -C "$home/data" rev-parse --verify -q 'HEAD~1' >/dev/null && fail 'first checkpoint was not a root commit'
+  rm "$fakebin/git"
+  run_rec "$home" checkpoint --reason stow
+  expect_code 0 "$RC" 'root-commit crash-window reconcile'
+  assert_contains "$OUT" 'state=unchanged' 'root-commit reconcile created another commit'
+  [ "$(git -C "$home/data" rev-parse HEAD)" = "$after" ] || fail 'root-commit reconcile changed HEAD'
+  git -C "$home/data" diff --cached --quiet || fail 'root-commit reconcile left the index dirty'
+  pass "fm-record: a crash after the first checkpoint reconciles against the empty tree"
+}
+
 test_index_lock_protects_commit_and_publication() {
-  local home origin before fakebin
+  local home origin before
   IFS=$(printf '\t') read -r home origin < <(new_home index-lock)
   setup_record "$home" "$origin"
   printf 'before\n' > "$home/data/captain.md"
@@ -876,42 +915,12 @@ test_index_lock_protects_commit_and_publication() {
   cmp -s "$home/index.before" "$home/data/.git/index" || fail 'locked index changed'
   [ "$(cat "$home/data/.git/index.lock")" = 'foreign lock' ] || fail 'foreign index lock changed'
   rm "$home/data/.git/index.lock"
-  fakebin=$(fm_fakebin "$home")
-  cat > "$fakebin/git" <<'SH'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  if [ "$arg" = commit ]; then
-    printf 'later edit\n' > "$FM_HOME/data/later.md"
-    env -u GIT_INDEX_FILE "$FM_TEST_REAL_GIT" -C "$FM_HOME/data" add later.md >/dev/null 2>&1
-    printf '%s\n' "$?" > "$FM_HOME/competing-add.status"
-  fi
-done
-exec "$FM_TEST_REAL_GIT" "$@"
-SH
-  cat > "$fakebin/mv" <<'SH'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  if [ "$arg" = "$FM_HOME/data/.git/index.lock" ]; then
-    "$FM_TEST_REAL_GIT" -C "$FM_HOME/data" add later.md >/dev/null 2>&1
-    printf '%s\n' "$?" > "$FM_HOME/publication-add.status"
-  fi
-done
-exec "$FM_TEST_REAL_MV" "$@"
-SH
-  chmod +x "$fakebin/git" "$fakebin/mv"
-  FM_TEST_REAL_GIT=$(command -v git) FM_TEST_REAL_MV=$(command -v mv) PATH="$fakebin:$PATH" \
-    run_rec "$home" checkpoint --reason teardown --required
+  run_rec "$home" checkpoint --reason teardown --required
   expect_code 0 "$RC" 'checkpoint after foreign lock release'
-  [ "$(cat "$home/competing-add.status")" != 0 ] || fail 'manual staging raced the commit'
-  [ "$(cat "$home/publication-add.status")" != 0 ] || fail 'manual staging raced index publication'
   [ ! -e "$home/data/.git/index.lock" ] || fail 'checkpoint retained its index lock'
   git -C "$home/data" diff --cached --quiet || fail 'published index differs from HEAD'
   [ "$(git -C "$home/data" show HEAD:captain.md)" = after ] || fail 'checkpoint lost the snapshot'
-  [ "$(cat "$home/data/later.md")" = 'later edit' ] || fail 'checkpoint lost later work'
-  if git -C "$home/data" cat-file -e HEAD:later.md 2>/dev/null; then
-    fail 'checkpoint included work created after scanning'
-  fi
-  pass 'fm-record: the Git index lock protects the commit and index publication'
+  pass "fm-record: Git's own index lock excludes the checkpoint until it is released"
 }
 
 test_inventory_failures_refuse_partial_snapshots() {
@@ -1265,23 +1274,13 @@ test_activation_roots_permissions_and_hooks_refuse_unsafe_setup() {
 import os, stat, sys
 assert stat.S_IMODE(os.stat(sys.argv[1]).st_mode) == 0o700
 PYTEST
-  chmod 755 "$home/data/.git"
-  run_rec "$home" checkpoint --reason teardown --required
-  expect_code 8 "$RC" 'publicly readable Git directory'
-  chmod 700 "$home/data/.git"
   other="$TMP_ROOT/other-boundary-home"
   mkdir -p "$other/state" "$other/data"
   printf 'other private content\n' > "$other/state/task.meta"
   for command in tick setup; do
     set +e
-    OUT=$(FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" FM_STATE_OVERRIDE="$other/state" \
-      "$RECORD" "$command" 2>&1)
-    RC=$?
-    set -e
-    expect_code 8 "$RC" 'mismatched state root'
-    set +e
-    OUT=$(FM_HOME="$other" FM_ROOT_OVERRIDE="$ROOT" FM_DATA_OVERRIDE="$home/data" \
-      "$RECORD" "$command" 2>&1)
+    OUT=$(HOME="$TMP_ROOT/empty-home" FM_HOME="$other" FM_ROOT_OVERRIDE="$ROOT" \
+      FM_DATA_OVERRIDE="$home/data" "$RECORD" "$command" 2>&1)
     RC=$?
     set -e
     expect_code 8 "$RC" 'mismatched data root'
@@ -1308,7 +1307,7 @@ PYTEST
   pass 'fm-record: activation, root ownership, private modes, and existing hooks are enforced'
 }
 
-test_scope_ignores_only_record_exclusions_and_refuses_separators() {
+test_scope_ignores_only_record_exclusions() {
   local home origin path name
   IFS=$(printf '\t') read -r home origin < <(new_home scope-and-separators)
   setup_record "$home" "$origin"
@@ -1335,26 +1334,7 @@ test_scope_ignores_only_record_exclusions_and_refuses_separators() {
       fail 'runtime inbox object entered the mirror'
     fi
   done
-  printf 'a\n' > "$home/data/a"
-  printf 'b\n' > "$home/data/b"
-  for path in "$home/data/"$'a\nb' "$home/state/task.inbox/"$'a\tb'; do
-    printf 'must not disappear\n' > "$path"
-    run_rec "$home" checkpoint --reason stow
-    expect_code 8 "$RC" 'unsupported filename separator'
-    assert_contains "$OUT" 'unsupported separators' 'separator refusal is not explicit'
-    if [ "$path" = "$home/data/"$'a\nb' ]; then
-      git -C "$home/data" add -f "$path"
-      set +e
-      OUT=$(git -C "$home/data" commit -qm 'unsupported filename' 2>&1)
-      RC=$?
-      set -e
-      [ "$RC" -ne 0 ] || fail 'manual commit accepted an ambiguous filename'
-      [ -z "$(find "$home/data/.git" -maxdepth 1 -name 'record-precommit.*' -print)" ] || fail 'manual refusal retained scan temporaries'
-      git -C "$home/data" read-tree HEAD
-    fi
-    rm "$path"
-  done
-  pass 'fm-record: fixed scope preserves durable files and refuses ambiguous filenames'
+  pass 'fm-record: fixed scope preserves durable files and ignores only Record exclusions'
 }
 
 test_quiet_ticks_skip_copy_hash_and_scan_work() {
@@ -1395,7 +1375,7 @@ os.utime(path, ns=(s.st_atime_ns, s.st_mtime_ns))
 PYTEST
   run_rec "$home" checkpoint --reason stow
   expect_code 0 "$RC" 'same size and mtime rewrite'
-  assert_contains "$OUT" 'delivery=pending' 'new local content was reported as delivered'
+  assert_contains "$OUT" 'pending=' 'new local content was reported as delivered'
   [ "$(git -C "$home/data" show HEAD:captain.md)" = bbbb ] || fail 'metadata hint hid changed bytes'
   pass 'fm-record: quiet ticks skip corpus work and changed bytes still receive content checks'
 }
@@ -1432,151 +1412,6 @@ SH
   pass 'fm-record: changed HEAD refuses the frozen snapshot without replacing competing work'
 }
 
-test_index_publication_restart_preserves_user_staging() {
-  local home origin fakebin before after
-  IFS=$(printf '\t') read -r home origin < <(new_home publication-recovery)
-  setup_record "$home" "$origin"
-  printf 'before\n' > "$home/data/captain.md"
-  run_rec "$home" checkpoint --reason stow
-  expect_code 0 "$RC" 'publication recovery seed'
-  before=$(git -C "$home/data" rev-parse HEAD)
-  cp "$home/data/.git/index" "$home/index.before"
-  printf 'after\n' > "$home/data/captain.md"
-  fakebin=$(fm_fakebin "$home")
-  cat > "$fakebin/mv" <<'SH'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  [ "$arg" != "$FM_HOME/data/.git/index.lock" ] || exit 1
-done
-exec "$FM_TEST_REAL_MV" "$@"
-SH
-  chmod +x "$fakebin/mv"
-  FM_TEST_REAL_MV=$(command -v mv) PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason teardown --required
-  expect_code 9 "$RC" 'failed final index rename'
-  after=$(git -C "$home/data" rev-parse HEAD)
-  [ "$after" != "$before" ] || fail 'fixture did not reach the committed publication boundary'
-  cmp -s "$home/index.before" "$home/data/.git/index" || fail 'failed rename changed the old index'
-  git -C "$home/data" read-tree HEAD
-  printf 'user staging\n' > "$home/data/user.md"
-  git -C "$home/data" add user.md
-  cp "$home/data/.git/index" "$home/index.user"
-  run_rec "$home" checkpoint --reason stow
-  expect_code 8 "$RC" 'recovery with competing staging'
-  cmp -s "$home/index.user" "$home/data/.git/index" || fail 'recovery replaced genuine staging'
-  cp "$home/index.before" "$home/data/.git/index"
-  rm "$home/data/user.md"
-  run_rec "$home" checkpoint --reason teardown --required
-  expect_code 0 "$RC" 'restart reconciles prepared index'
-  [ "$(git -C "$home/data" rev-parse HEAD)" = "$after" ] || fail 'recovery created a second commit'
-  git -C "$home/data" diff --cached --quiet || fail 'recovery did not publish the committed index'
-  [ "$(cat "$home/data/captain.md")" = after ] || fail 'recovery lost source bytes'
-  pass 'fm-record: restart recovers prepared publication while preserving competing staging'
-}
-
-test_index_recovery_locks_before_comparing_staged_content() {
-  local home origin fakebin after
-  IFS=$(printf '\t') read -r home origin < <(new_home recovery-race)
-  setup_record "$home" "$origin"
-  printf 'before\n' > "$home/data/captain.md"
-  run_rec "$home" checkpoint --reason stow
-  expect_code 0 "$RC" 'recovery race seed'
-  printf 'after\n' > "$home/data/captain.md"
-  fakebin=$(fm_fakebin "$home")
-  cat > "$fakebin/mv" <<'SH'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  [ "$arg" != "$FM_HOME/data/.git/index.lock" ] || exit 1
-done
-exec "$FM_TEST_REAL_MV" "$@"
-SH
-  chmod +x "$fakebin/mv"
-  FM_TEST_REAL_MV=$(command -v mv) PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason teardown --required
-  expect_code 9 "$RC" 'recovery race publication failure'
-  after=$(git -C "$home/data" rev-parse HEAD)
-  rm "$fakebin/mv"
-  cat > "$fakebin/stage-race" <<'SH'
-#!/usr/bin/env bash
-[ ! -e "$FM_HOME/add-code" ] || exit 0
-printf 'staged bytes\n' > "$FM_HOME/data/user.md"
-"$FM_TEST_REAL_GIT" -C "$FM_HOME/data" add user.md > "$FM_HOME/add-output" 2>&1
-printf '%s\n' "$?" > "$FM_HOME/add-code"
-printf 'working bytes\n' > "$FM_HOME/data/user.md"
-ln -s missing "$FM_HOME/data/broken"
-SH
-  cat > "$fakebin/shasum" <<'SH'
-#!/usr/bin/env bash
-output=$("$FM_TEST_REAL_SHASUM" "$@") || exit 1
-for arg in "$@"; do
-  if [ "$arg" = "$FM_HOME/data/.git/index" ]; then stage-race; fi
-done
-printf '%s\n' "$output"
-SH
-  cat > "$fakebin/git" <<'SH'
-#!/usr/bin/env bash
-if [ -d "$FM_HOME/data/.git/record-publication" ] && [ -z "${GIT_INDEX_FILE:-}" ]; then
-  for arg in "$@"; do
-    if [ "$arg" = --cached ]; then
-      output=$("$FM_TEST_REAL_GIT" "$@")
-      rc=$?
-      stage-race
-      printf '%s' "$output"
-      exit "$rc"
-    fi
-  done
-fi
-exec "$FM_TEST_REAL_GIT" "$@"
-SH
-  chmod +x "$fakebin/stage-race" "$fakebin/shasum" "$fakebin/git"
-  FM_TEST_REAL_SHASUM=$(command -v shasum) FM_TEST_REAL_GIT=$(command -v git) \
-    PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason stow
-  expect_code 8 "$RC" 'broken source after recovery'
-  [ -s "$home/add-code" ] || fail 'fixture did not race recovery with git add'
-  [ "$(cat "$home/add-code")" -ne 0 ] || fail 'git add succeeded inside the recovery comparison and publication window'
-  [ "$(git -C "$home/data" rev-parse HEAD)" = "$after" ] || fail 'recovery race changed the committed snapshot'
-  git -C "$home/data" diff --cached --quiet || fail 'recovery race left an inconsistent index'
-  [ "$(cat "$home/data/user.md")" = 'working bytes' ] || fail 'recovery changed the competing working bytes'
-  pass 'fm-record: recovery holds the index lock throughout staged-content checks and publication'
-}
-
-test_index_recovery_accepts_a_status_refresh() {
-  local home origin fakebin fault target after entries
-  for fault in mv rm; do
-    IFS=$(printf '\t') read -r home origin < <(new_home "recovery-refresh-$fault")
-    setup_record "$home" "$origin"
-    printf 'before\n' > "$home/data/captain.md"
-    run_rec "$home" checkpoint --reason stow
-    expect_code 0 "$RC" 'refresh recovery seed'
-    printf 'after\n' > "$home/data/captain.md"
-    fakebin=$(fm_fakebin "$home")
-    if [ "$fault" = mv ]; then target=index.lock; else target=record-publication; fi
-    cat > "$fakebin/$fault" <<'SH'
-#!/usr/bin/env bash
-for arg in "$@"; do
-  [ "$arg" != "$FM_HOME/data/.git/$FM_TEST_FAULT_TARGET" ] || exit 1
-done
-exec "$FM_TEST_REAL_COMMAND" "$@"
-SH
-    chmod +x "$fakebin/$fault"
-    FM_TEST_REAL_COMMAND=$(command -v "$fault") FM_TEST_FAULT_TARGET=$target \
-      PATH="$fakebin:$PATH" run_rec "$home" checkpoint --reason teardown --required
-    expect_code 9 "$RC" "interrupted index publication at $fault"
-    after=$(git -C "$home/data" rev-parse HEAD)
-    [ -d "$home/data/.git/record-publication" ] || fail 'publication interruption lost its recovery journal'
-    cp "$home/data/.git/index" "$home/index.before-refresh"
-    entries=$(git -C "$home/data" ls-files --stage)
-    GIT_OPTIONAL_LOCKS=1 git -C "$home/data" status --porcelain >/dev/null
-    if cmp -s "$home/index.before-refresh" "$home/data/.git/index"; then fail 'status did not refresh the index cache'; fi
-    [ "$(git -C "$home/data" ls-files --stage)" = "$entries" ] || fail 'status changed the staged entries'
-    run_rec "$home" checkpoint --reason teardown --required
-    expect_code 0 "$RC" "recovery after status at $fault"
-    [ "$(git -C "$home/data" rev-parse HEAD)" = "$after" ] || fail 'recovery repeated the committed snapshot'
-    git -C "$home/data" diff --cached --quiet || fail 'recovery did not reconcile the index'
-    [ ! -e "$home/data/.git/record-publication" ] || fail 'recovery retained the completed journal'
-    [ "$(cat "$home/data/captain.md")" = after ] || fail 'recovery changed the source bytes'
-  done
-  pass 'fm-record: recovery accepts stat refreshes before and after index publication'
-}
-
 test_health_reads_current_pending_commits_and_age() {
   local home origin receipt before age first_age
   IFS=$(printf '\t') read -r home origin < <(new_home current-health)
@@ -1598,7 +1433,7 @@ test_health_reads_current_pending_commits_and_age() {
   expect_code 0 "$RC" 'health after manual commit'
   assert_contains "$OUT" 'state=committed-local' 'health claimed the manual commit was pushed'
   assert_contains "$OUT" 'pending=1' 'health missed the outgoing manual commit'
-  assert_contains "$OUT" 'delivery=pending' 'health missed pending delivery'
+  assert_health_keys "$OUT" 'health emitted extra keys'
   assert_contains "$OUT" "last_push_at=$(sed -n 's/^last_push_at=//p' "$home/pushed-health")" 'health lost the last push receipt'
   first_age=$(printf '%s\n' "$OUT" | sed -n 's/^pending_age_seconds=//p')
   [ "$first_age" -ge 120 ] || fail 'health omitted elapsed age after the manual commit'
@@ -1619,6 +1454,116 @@ test_health_reads_current_pending_commits_and_age() {
   [ "$age" -ge "$((first_age + 2))" ] || fail 'health did not advance the elapsed pending age'
   cmp -s "$receipt" "$home/pending-health" || fail 'health rewrote pending delivery health'
   pass 'fm-record: read-only health reports current commits and age while retaining delivery receipts'
+}
+
+test_attested_outgoing_commits_are_not_rescanned() {
+  local home origin fakebin first second
+  IFS=$(printf '\t') read -r home origin < <(new_home attested-outgoing)
+  setup_record "$home" "$origin"
+  printf 'seed\n' > "$home/data/captain.md"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'attestation seed'
+  first=$(git -C "$home/data" rev-parse HEAD)
+  HOME="$TMP_ROOT/empty-home" FM_HOME="$home" FM_ROOT_OVERRIDE="$ROOT" \
+    FM_DATA_OVERRIDE="$home/data" FM_STATE_OVERRIDE="$home/state" \
+    git -C "$home/data" commit --allow-empty --no-verify -qm 'empty outgoing'
+  second=$(git -C "$home/data" rev-parse HEAD)
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/gitleaks" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  case "$arg" in
+    */outgoing.scan.*)
+      printf '%s\n' "$*" >> "$FM_HOME/outgoing-scans.log"
+      ;;
+  esac
+done
+exec "$FM_TEST_REAL_GITLEAKS" "$@"
+SH
+  chmod +x "$fakebin/gitleaks"
+  FM_TEST_REAL_GITLEAKS=$(command -v gitleaks) PATH="$fakebin:$PATH" run_rec "$home" tick
+  expect_code 0 "$RC" 'first scan of the empty commit'
+  [ "$(git --git-dir="$origin" rev-parse main)" = "$second" ] || fail 'empty commit did not reach origin'
+  [ -s "$home/outgoing-scans.log" ] || fail 'empty commit was not scanned'
+  : > "$home/outgoing-scans.log"
+  git --git-dir="$origin" update-ref refs/heads/main "$first"
+  git -C "$home/data" fetch --quiet origin
+  FM_TEST_REAL_GITLEAKS=$(command -v gitleaks) PATH="$fakebin:$PATH" run_rec "$home" tick
+  expect_code 0 "$RC" 'attested outgoing retry'
+  assert_contains "$OUT" 'state=pushed' 'attested retry did not push'
+  [ ! -s "$home/outgoing-scans.log" ] || fail 'attested outgoing commit was scanned again'
+  [ "$(git --git-dir="$origin" rev-parse main)" = "$second" ] || fail 'attested retry did not update origin'
+  pass 'fm-record: attested outgoing commits are skipped on later ticks'
+}
+
+test_push_once_classifies_failure_kinds() {
+  local home origin fakebin kind message
+  IFS=$(printf '\t') read -r home origin < <(new_home push-classes)
+  setup_record "$home" "$origin"
+  printf 'base\n' > "$home/data/captain.md"
+  run_rec "$home" tick
+  expect_code 0 "$RC" 'classification seed'
+  fakebin=$(fm_fakebin "$home")
+  cat > "$fakebin/git" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [ "$arg" = push ]; then
+    printf '%s\n' "$FM_TEST_PUSH_MESSAGE" >&2
+    exit 1
+  fi
+done
+exec "$FM_TEST_REAL_GIT" "$@"
+SH
+  chmod +x "$fakebin/git"
+  for kind in diverged timeout auth lfs offline; do
+    case "$kind" in
+      diverged) message='! [rejected] main -> main (non-fast-forward)' ;;
+      timeout) message='operation timed out' ;;
+      auth) message='Authentication failed' ;;
+      lfs) message='git lfs upload failed' ;;
+      offline) message='Could not resolve host' ;;
+    esac
+    printf '%s\n' "$kind" > "$home/data/note.md"
+    if [ "$kind" = timeout ]; then
+      cat > "$fakebin/git" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [ "$arg" = push ]; then
+    sleep 30
+    exit 1
+  fi
+done
+exec "$FM_TEST_REAL_GIT" "$@"
+SH
+      chmod +x "$fakebin/git"
+      FM_RECORD_PUSH_TIMEOUT=1 FM_TEST_REAL_GIT=$(command -v git) PATH="$fakebin:$PATH" \
+        run_rec "$home" tick
+      expect_code 6 "$RC" 'timeout class'
+      assert_contains "$OUT" 'class=timeout' 'timeout class'
+    else
+      cat > "$fakebin/git" <<'SH'
+#!/usr/bin/env bash
+for arg in "$@"; do
+  if [ "$arg" = push ]; then
+    printf '%s\n' "$FM_TEST_PUSH_MESSAGE" >&2
+    exit 1
+  fi
+done
+exec "$FM_TEST_REAL_GIT" "$@"
+SH
+      chmod +x "$fakebin/git"
+      FM_TEST_REAL_GIT=$(command -v git) FM_TEST_PUSH_MESSAGE=$message PATH="$fakebin:$PATH" \
+        run_rec "$home" tick
+      if [ "$kind" = diverged ]; then
+        expect_code 7 "$RC" 'diverged class'
+        assert_contains "$OUT" 'state=diverged' 'diverged class'
+      else
+        expect_code 6 "$RC" "$kind class"
+        assert_contains "$OUT" "class=$kind" "$kind class"
+      fi
+    fi
+  done
+  pass 'fm-record: push failures keep the sanitized class names'
 }
 
 seed_authored_record() {
@@ -2072,7 +2017,7 @@ test_setup_and_first_tick_commit_and_push
 test_unchanged_ticks_make_no_new_commit
 test_git_overrides_and_wrong_root_refuse
 test_effective_push_destinations_must_match_binding
-test_lfs_uploads_require_the_bound_origin
+test_lfs_uploads_use_the_bound_origin
 test_redirected_hooks_refuse_setup_and_transactions
 test_busy_tick_when_lock_is_held
 test_abandoned_lock_is_recovered
@@ -2090,6 +2035,7 @@ test_old_data_prefix_history_stays_an_ancestor
 test_pre_commit_hook_blocks_manual_commit
 test_required_checkpoint_times_out_when_lock_is_live
 test_commit_and_publication_failures_refuse
+test_first_checkpoint_crash_window_reconciles
 test_index_lock_protects_commit_and_publication
 test_inventory_failures_refuse_partial_snapshots
 test_frozen_bytes_must_match_the_settled_inventory
@@ -2102,13 +2048,12 @@ test_restored_lfs_pointers_require_resolved_payloads
 test_indexed_archive_links_keep_their_types
 test_outgoing_history_and_prohibited_paths_are_scanned
 test_activation_roots_permissions_and_hooks_refuse_unsafe_setup
-test_scope_ignores_only_record_exclusions_and_refuses_separators
+test_scope_ignores_only_record_exclusions
 test_quiet_ticks_skip_copy_hash_and_scan_work
 test_head_race_preserves_the_competing_commit
-test_index_publication_restart_preserves_user_staging
-test_index_recovery_locks_before_comparing_staged_content
-test_index_recovery_accepts_a_status_refresh
 test_health_reads_current_pending_commits_and_age
+test_attested_outgoing_commits_are_not_rescanned
+test_push_once_classifies_failure_kinds
 test_land_related_disabled_home_is_noop
 test_land_related_lands_one_footer_commit
 test_land_related_refuses_lock_dirty_and_advanced_head

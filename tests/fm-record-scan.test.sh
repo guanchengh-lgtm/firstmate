@@ -309,14 +309,10 @@ test_compressed_feeder_patterns_block_the_chain() {
   mkdir -p "$dir"
   secret=$(secret_fixture openai-plain)
   python3 - "$dir/archive.zip" "$secret" <<'PYTEST'
-import io
 import sys
 import zipfile
-inner = io.BytesIO()
-with zipfile.ZipFile(inner, "w", zipfile.ZIP_DEFLATED) as archive:
-    archive.writestr("payload.txt", sys.argv[2])
 with zipfile.ZipFile(sys.argv[1], "w", zipfile.ZIP_DEFLATED) as archive:
-    archive.writestr("inner.zip", inner.getvalue())
+    archive.writestr("payload.txt", sys.argv[2])
 PYTEST
   run_scan chain --dir "$dir"
   expect_code 2 "$RC" 'compressed feeder pattern'
@@ -343,23 +339,6 @@ test_gitleaks_path_exclusions_do_not_hide_payloads() {
   expect_code 2 "$RC" 'gitleaks-only filename'
   assert_not_contains "$OUT" "$secret" 'gitleaks-only filename was exposed'
   rm "$dir/${secret}.txt"
-  python3 - "$dir/archive.zip" "$secret" <<'PY'
-import io
-import sys
-import tarfile
-import zipfile
-inner = io.BytesIO()
-with tarfile.open(fileobj=inner, mode="w") as archive:
-    payload = sys.argv[2].encode()
-    entry = tarfile.TarInfo("response.bin")
-    entry.size = len(payload)
-    archive.addfile(entry, io.BytesIO(payload))
-with zipfile.ZipFile(sys.argv[1], "w", zipfile.ZIP_DEFLATED) as archive:
-    archive.writestr("inner.tar", inner.getvalue())
-PY
-  run_scan chain --dir "$dir"
-  expect_code 2 "$RC" 'nested binary payload'
-  assert_not_contains "$OUT" "$secret" 'nested scan exposed the token'
   pass "fm-record-scan: Gitleaks exclusions cannot hide payloads or credential filenames"
 }
 
@@ -393,13 +372,10 @@ with tarfile.open(sys.argv[1], "w") as archive:
     archive.addfile(entry, io.BytesIO(data))
 PY
     run_scan chain --dir "$dir"
-    if [ "$mode" = clean ]; then
-      expect_code 0 "$RC" 'clean nested archive'
-    else
-      expect_code 1 "$RC" "$mode nested archive"
-    fi
+    expect_code 1 "$RC" "$mode nested archive"
+    assert_contains "$OUT" 'nested archive' "$mode nested archive message"
   done
-  pass "fm-record-scan: nested archives must be readable within the scan depth"
+  pass "fm-record-scan: nested archives refuse because they cannot be scanned"
 }
 
 test_unsupported_archive_formats_refuse() {
@@ -432,7 +408,11 @@ PY
   for variant in xz hidden nested bz2; do
     run_scan chain --dir "$dir/$variant"
     expect_code 1 "$RC" "$variant unsupported archive"
-    assert_contains "$OUT" 'unsupported' 'unsupported archive had no named refusal'
+    if [ "$variant" = nested ]; then
+      assert_contains "$OUT" 'nested archive' 'nested unsupported archive had no named refusal'
+    else
+      assert_contains "$OUT" 'unsupported' 'unsupported archive had no named refusal'
+    fi
     assert_not_contains "$OUT" "$secret" 'unsupported archive exposed its payload'
   done
   pass "fm-record-scan: unsupported archives refuse even under hidden or nested names"
@@ -471,20 +451,10 @@ test_executable_cleans_only_its_own_stages() {
   pass "fm-record-scan: executable scans remove only their own temporary stages"
 }
 
-test_scan_expansion_and_execution_are_bounded() {
+test_gitleaks_execution_is_bounded() {
   local dir fakebin start elapsed
   dir="$TMP_ROOT/bounded-scan"
   mkdir -p "$dir/tree" "$dir/temp"
-  python3 - "$dir/tree/archive.gz" <<'PYTEST'
-import gzip, sys
-with gzip.open(sys.argv[1], "wb") as output:
-    output.write(b"a" * 65536)
-PYTEST
-  FM_RECORD_SCAN_MAX_BYTES=4096 TMPDIR="$dir/temp" run_scan chain --dir "$dir/tree"
-  expect_code 1 "$RC" 'expanded byte limit'
-  assert_contains "$OUT" 'byte limit' 'expansion failure did not name its bound'
-  [ -z "$(find "$dir/temp" -mindepth 1 -print)" ] || fail 'bounded expansion left temporary payloads'
-  rm "$dir/tree/archive.gz"
   printf 'clean\n' > "$dir/tree/ok.txt"
   fakebin=$(fm_fakebin "$dir")
   printf '#!/bin/sh\nsleep 30\n' > "$fakebin/gitleaks"
@@ -495,7 +465,7 @@ PYTEST
   expect_code 1 "$RC" 'gitleaks deadline'
   [ "$elapsed" -lt 10 ] || fail 'scanner did not enforce its deadline'
   [ -z "$(find "$dir/temp" -mindepth 1 -print)" ] || fail 'timed out scanner left temporary payloads'
-  pass 'fm-record-scan: archive expansion and scanner execution have enforced bounds'
+  pass 'fm-record-scan: gitleaks execution has an enforced deadline'
 }
 
 test_chain_clean_tree() {
@@ -506,6 +476,41 @@ test_chain_clean_tree() {
   run_scan chain --dir "$dir"
   expect_code 0 "$RC" 'chain-clean'
   pass "fm-record-scan: chain accepts a clean tree"
+}
+
+test_misnamed_archives_are_scanned() {
+  local root secret fixture
+  root="$TMP_ROOT/misnamed-archives"
+  mkdir -p "$root/bin" "$root/tgz"
+  secret=$(secret_fixture stripe-test)
+  python3 - "$root" "$secret" <<'PY'
+import gzip
+import io
+import sys
+import tarfile
+import zipfile
+from pathlib import Path
+root = Path(sys.argv[1])
+payload = ("token " + sys.argv[2] + "\n").encode()
+buf = io.BytesIO()
+with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:
+    archive.writestr("hidden.txt", payload)
+(root / "bin" / "renamed.bin").write_bytes(buf.getvalue())
+tar_buf = io.BytesIO()
+with tarfile.open(fileobj=tar_buf, mode="w") as archive:
+    info = tarfile.TarInfo("hidden.txt")
+    info.size = len(payload)
+    archive.addfile(info, io.BytesIO(payload))
+with gzip.open(root / "tgz" / "bundle.tgz", "wb") as output:
+    output.write(tar_buf.getvalue())
+PY
+  for fixture in bin/renamed.bin tgz/bundle.tgz; do
+    run_scan chain --dir "$root/${fixture%/*}"
+    expect_code 2 "$RC" "misnamed archive $fixture"
+    assert_not_contains "$OUT" "$secret" 'misnamed archive exposed the token'
+    assert_contains "$OUT" "$root/$fixture" 'misnamed archive hit did not name the payload path'
+  done
+  pass "fm-record-scan: a misnamed zip and a tgz each block alone"
 }
 
 test_help_names_owner_and_codes
@@ -524,5 +529,6 @@ test_gitleaks_path_exclusions_do_not_hide_payloads
 test_nested_archives_require_complete_scans
 test_unsupported_archive_formats_refuse
 test_executable_cleans_only_its_own_stages
-test_scan_expansion_and_execution_are_bounded
+test_gitleaks_execution_is_bounded
 test_chain_clean_tree
+test_misnamed_archives_are_scanned

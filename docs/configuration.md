@@ -345,11 +345,11 @@ Setup leaves unknown or changed existing hooks untouched and refuses; resolve th
 The job uses `StartInterval=60` and `RunAtLoad`, and it does not use `KeepAlive`.
 Sixty seconds is the attempt cadence while the user is logged in, not a hard off-device recovery bound through logout, sleep, scan refusal, or network loss.
 
-Read the latest transaction `state` together with `delivery` when inspecting health or a session digest:
+Read the latest transaction `state` together with `pending` when inspecting health or a session digest:
 
 - `state=committed-local` reports a local commit, while `state=unchanged` reports no new commit; neither alone proves delivery.
-- `delivery=pushed` records a successful push to origin, while `delivery=pending` reports local commits awaiting delivery.
-- `delivery=push-pending` or `delivery=diverged` retains the failed delivery result even after a later local checkpoint.
+- `state=pushed` records a successful push to origin, while `pending` reports how many local commits still await delivery.
+- `state=push-pending` or `state=diverged` retains the failed delivery result even after a later local checkpoint.
 
 `last_push_at` retains the last successful push time, and `failure_class` retains the latest sanitized push failure category until a successful push clears it.
 `pending` and `pending_age_seconds` are computed when health is read, using the local origin tracking ref without a network check.
@@ -364,10 +364,10 @@ The next tick retries one bounded push even when the working tree is clean.
 `reconcile` fetches origin, fast-forwards only a clean behind-only Record, reports ahead-only history for the next tick, and reports a two-sided divergence without merging, rebasing, resetting, or stashing; `verify` proves working tree, index, `HEAD`, and the freshly fetched origin are equal.
 A reported divergence still needs a person to choose the reconciliation; neither command ever forces one.
 
-After interrupted index publication, the next checkpoint or tick retries the saved journal under the Git index lock.
-A Git status refresh alone does not prevent recovery, but conflicting HEAD or staged content causes an `index-recovery` refusal.
-Preserve `data/.git/record-publication` and user staging while resolving that conflict; deleting the journal or resetting the index can lose recoverable work.
-The recovery cases in [`tests/fm-record.test.sh`](../tests/fm-record.test.sh) cover interrupted publication, concurrent staging, and status refreshes.
+After a crash between commit and index publication, the next checkpoint or tick reconciles an index that still matches the parent tree (the empty tree for a root commit) when `index.lock` is absent; `reconcile` and `verify` never touch the index.
+Conflicting HEAD or staged content causes an `index-recovery` refusal and leaves that staging in place.
+Commits the owner creates or scans are recorded in `.git/record-attested` and are skipped on later outgoing scans.
+The recovery cases in [`tests/fm-record.test.sh`](../tests/fm-record.test.sh) cover the crash window, competing staging, and attestation.
 
 Recovery on this machine is `git` plus `git lfs` inside `data/`.
 To restore onto another machine, clone the private Record remote into the new home's `data/`, then run `setup` without `--init` to recreate local hooks and LFS filters.

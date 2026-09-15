@@ -6,10 +6,10 @@
 # bounded push. Session, stow, completion, teardown, and maintain call
 # checkpoint. --summary is required for maintain and refused otherwise.
 # A maintain commit subject is `maintain <summary>`. Only tick pushes.
-# land-related lands one reviewed footer-only candidate commit without
-# pushing. Reconcile fetches the bound origin branch and classifies the
-# Record against that fresh tip. Verify repeats the fetch and prints one
-# proof line without writing health. The deadman stays a read-only probe.
+# land-related lands one reviewed footer-only candidate commit without pushing.
+# Reconcile fetches the bound origin branch and classifies the Record against
+# that fresh tip. Verify repeats the fetch and prints one proof line without
+# writing health. The deadman stays a read-only probe.
 #
 # Usage:
 #   fm-record.sh tick
@@ -23,12 +23,11 @@
 #                    [--write-plist] [--bootstrap]
 #   fm-record.sh pre-commit
 #
-# Setup records activation in $FM_HOME/.record-enabled. A home with neither
-# this marker nor data/.git is an explicit disabled no-op. After activation,
-# missing Git metadata, a missing scanner, wrong root, extra remote, detached
-# HEAD, merge state, missing hook, or missing local LFS setup is a
-# configuration-error refusal, not a disabled success.
-#
+# Setup records activation in $FM_HOME/.record-enabled. A home with neither this
+# marker nor data/.git is an explicit disabled no-op. After activation, missing
+# Git metadata, a missing scanner, wrong root, extra remote, detached HEAD,
+# merge state, missing hook, or missing local LFS setup is a configuration-error
+# refusal, not a disabled success.
 # FM_HOME selects the home; changing the working directory does not select it.
 # Its data/ and state/ roots must be canonical, home-local directories.
 # Setup without --init binds an existing repository without replacing history.
@@ -40,16 +39,14 @@
 # and hooks. Git LFS owns its four hooks, so hooks it installed during a clone
 # are accepted and upgraded; any other unknown or changed existing hook refuses
 # setup without replacement.
-#
 # --write-plist renders the tracked launchd template to FM_RECORD_PLIST
 # (default $HOME/Library/LaunchAgents/com.firstmate.record-tick.plist).
 # Logs use FM_RECORD_LOG_DIR (default $HOME/Library/Logs).
 # --bootstrap loads an existing matching plist; combine it with --write-plist
 # to render and load. Both flags require a primary code checkout with a .git
-# directory and gitleaks, git-lfs, restic, and rclone on PATH.
+# directory and gitleaks and git-lfs on PATH.
 # Rendering captures the current PATH and FM_HOME for the job.
 # Operator activation and recovery are owned by docs/configuration.md.
-#
 # is_ignored and is_prohibited below own candidate exclusions and forbidden
 # indexed paths. list_state_sources owns the exact mirror subset.
 # The transaction regenerates .gitattributes from binary_attr_lines plus
@@ -64,20 +61,18 @@
 # or a failed Git operation, and never stashes, resets, discards, forces,
 # or rebases. The pre-commit hook scans the complete staged tree, so
 # working-tree edits cannot hide staged credentials.
-#
 # Reconcile takes the Record lock in wait mode. A failed fetch is
 # remote-unknown; an origin that has no bound branch yet is reconciled
 # detail=remote-branch-missing and leaves the first push to tick.
-# Uncommitted staged, unstaged, or untracked files
-# (including .record-state/) are local-changes and move no refs.
-# HEAD equal to origin/<branch> is reconciled detail=equal. Ahead-only
-# is reconciled detail=ahead. Behind-only fast-forwards with
-# merge --ff-only on the Record work tree under the push timeout with
-# terminal prompts disabled and is reconciled detail=fast-forwarded; a
-# failed or timed-out fast-forward is configuration-error
-# detail=fast-forward. Ahead and behind together is diverged and
-# moves nothing. A fast-forward removes .git/record-clean-head so the
-# next transaction re-inventories. Verify prints one
+# Uncommitted staged, unstaged, or untracked files (including .record-state/)
+# are local-changes and move no refs. HEAD equal to origin/<branch> is
+# reconciled detail=equal. Ahead-only is reconciled detail=ahead. Behind-only
+# fast-forwards with merge --ff-only on the Record work tree under the push
+# timeout with terminal prompts disabled and is reconciled
+# detail=fast-forwarded; a failed or timed-out fast-forward is
+# configuration-error detail=fast-forward. Ahead and behind together is
+# diverged and moves nothing. A fast-forward removes .git/record-clean-head so
+# the next transaction re-inventories. Verify prints one
 # state=verified equal=yes|no line and exits 0 only when equal.
 #
 # Exit codes:
@@ -95,7 +90,6 @@
 # unresolved indexed payload. --required does not remap every refusal to 9.
 # Reconcile writes health. Verify emits only. A failed fetch is class
 # timeout, auth, or offline and never trusts a cached origin tip.
-#
 # The local lock is $FM_HOME/data/.git/firstmate-record.lock and uses the
 # shared process-owned lock owner. Tick is non-blocking. Checkpoint,
 # reconcile, and verify wait FM_RECORD_LOCK_WAIT_SECONDS (default 10).
@@ -103,7 +97,13 @@
 # and reconcile/verify fetch use the shared timeout owner with
 # FM_RECORD_PUSH_TIMEOUT (default 15) and GIT_TERMINAL_PROMPT=0.
 # Health lives under .git/record-health and is not tracked.
-# docs/configuration.md owns the health fields and delivery interpretation.
+# docs/configuration.md owns the health fields.
+# The commit and the index publication rely on Git's own index.lock only.
+# After a crash between commit and index publication, the next transaction
+# reconciles an index that still matches the parent tree (the empty tree for
+# a root commit) when index.lock is absent; reconcile and verify never do.
+# Commits the owner creates or scans are attested in .git/record-attested
+# and skipped on later outgoing scans.
 set -eu
 export LC_ALL=C
 
@@ -135,7 +135,6 @@ require_lock_libs() {
 
 LOCK_PATH=
 LOCK_HELD=0
-INDEX_LOCK_HELD=0
 HASH_TOOL=
 GIT_DIR_ABS=
 RECORD_WORK=
@@ -163,6 +162,14 @@ usage() {
   ' "$0" >&2
 }
 
+redact_locator() { # <text>
+  if ! declare -F fm_record_scan_redact_locator >/dev/null 2>&1; then
+    # shellcheck source=bin/fm-record-scan.sh
+    . "$SCRIPT_DIR/fm-record-scan.sh"
+  fi
+  fm_record_scan_redact_locator "$1"
+}
+
 die() { # <code> <message>
   local code=$1
   shift
@@ -186,7 +193,7 @@ finish() { # <code> <state> [k=v...]
   write_health "$state" "$@"
   emit "$state" "$@"
   if [ -f "$GIT_DIR_ABS/record-health" ]; then
-    sed -n '/^delivery=/p; /^last_push_at=/p; /^pending=/p; /^failure_class=/p; /^pending_since=/p; /^pending_age_seconds=/p' "$GIT_DIR_ABS/record-health"
+    cat "$GIT_DIR_ABS/record-health"
   fi
   exit "$code"
 }
@@ -225,15 +232,8 @@ release_lock() {
 
 # shellcheck disable=SC2329 # Invoked from trap EXIT.
 on_exit() {
-  if [ "$INDEX_LOCK_HELD" -eq 1 ] && [ -d "$GIT_DIR_ABS/record-publication" ] &&
-    { [ ! -f "$GIT_DIR_ABS/record-publication/before" ] || [ ! -f "$GIT_DIR_ABS/record-publication/lock-id" ]; }; then
-    rm -rf "$GIT_DIR_ABS/record-publication"
-  fi
   if [ -n "$HEALTH_TMP" ]; then
     rm -f "$HEALTH_TMP"
-  fi
-  if [ "$INDEX_LOCK_HELD" -eq 1 ]; then
-    rm -f "$GIT_DIR_ABS/index.lock"
   fi
   if [ -n "${CAND_WORK:-}" ] && [ -d "${CAND_WORK%/*}" ]; then
     rm -rf "${CAND_WORK%/*}"
@@ -256,71 +256,97 @@ refuse_git_overrides() {
   done
 }
 
+health_field() { # <file> <key>
+  [ -f "$1" ] || return 0
+  sed -n "s/^$2=//p" "$1" | head -1
+}
+
+health_emit() { # <state> <updated> <last_push> <pending> <class> <since> <age>
+  printf 'state=%s\nupdated_at=%s\nlast_push_at=%s\npending=%s\nfailure_class=%s\npending_since=%s\npending_age_seconds=%s\n' \
+    "$1" "$2" "$3" "$4" "$5" "$6" "$7"
+}
+
 write_health() { # <state> [k=v...]
-  local state=$1 dest tmp
+  local state=$1 dest tmp now updated pending last_push_at failure_class pending_since pending_age arg
   shift
   [ -n "$GIT_DIR_ABS" ] && [ -d "$GIT_DIR_ABS" ] || return 0
   dest="$GIT_DIR_ABS/record-health"
   tmp="$dest.tmp.$$"
   HEALTH_TMP=$tmp
-  python3 - "$dest" "$state" "$(pending_commits --count)" "$@" > "$tmp" <<'PYHEALTH' || return 1
-import datetime, pathlib, sys, time
-path, state, pending = sys.argv[1:4]
-old = {}
-if pathlib.Path(path).is_file():
-    old = dict(line.split("=", 1) for line in pathlib.Path(path).read_text().splitlines() if "=" in line)
-now = int(time.time())
-values = dict(arg.split("=", 1) for arg in sys.argv[4:])
-values.update(state=state, updated_at=datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), pending=pending)
-for key in ("last_push_at", "delivery", "failure_class", "pending_since"):
-    if key in old:
-        values[key] = old[key]
-if state == "pushed":
-    values.update(last_push_at=values["updated_at"], delivery="pushed", failure_class="none", pending_since="0")
-elif state in ("push-pending", "diverged"):
-    values.update(delivery=state, failure_class=values.get("class", "diverged" if state == "diverged" else "offline"))
-if int(pending) > 0:
-    if values.get("pending_since", "0") == "0":
-        values["pending_since"] = str(now)
-    if values.get("delivery") not in ("push-pending", "diverged"):
-        values["delivery"] = "pending"
-else:
-    values["pending_since"] = "0"
-values["pending_age_seconds"] = str(max(0, now - int(values["pending_since"]))) if values["pending_since"] != "0" else "0"
-for key, value in values.items():
-    print(key + "=" + value)
-PYHEALTH
+  now=$(date -u +%s)
+  updated=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  pending=$(pending_commits --count)
+  last_push_at=$(health_field "$dest" last_push_at)
+  failure_class=$(health_field "$dest" failure_class)
+  pending_since=$(health_field "$dest" pending_since)
+  [ -n "$pending_since" ] || pending_since=0
+  for arg in "$@"; do
+    case "$arg" in
+      class=*) failure_class=${arg#class=} ;;
+    esac
+  done
+  if [ "$state" = pushed ]; then
+    last_push_at=$updated
+    failure_class=none
+    pending_since=0
+  elif [ "$state" = diverged ]; then
+    failure_class=diverged
+  elif [ "$state" = push-pending ]; then
+    if [ -z "$failure_class" ] || [ "$failure_class" = none ]; then
+      failure_class=offline
+    fi
+  fi
+  if [ "${pending:-0}" -gt 0 ]; then
+    [ "$pending_since" != 0 ] || pending_since=$now
+  else
+    pending_since=0
+  fi
+  pending_age=0
+  [ "$pending_since" = 0 ] || pending_age=$((now - pending_since))
+  [ "$pending_age" -ge 0 ] || pending_age=0
+  health_emit "$state" "$updated" "$last_push_at" "$pending" "$failure_class" "$pending_since" "$pending_age" \
+    > "$tmp" || return 1
   mv -f "$tmp" "$dest" || return 1
   HEALTH_TMP=
 }
 
-read_health_file() (
-  set -o pipefail
-  pending_commits --timestamp | python3 -c '
-import pathlib, sys, time
-path = pathlib.Path(sys.argv[1])
-values = dict(line.split("=", 1) for line in path.read_text().splitlines() if "=" in line) if path.is_file() else {"state": "unchanged"}
-now = int(time.time())
-pending, oldest = 0, now
-for line in sys.stdin:
-    pending += 1
-    oldest = min(oldest, int(line.split()[0]))
-values["pending"] = str(pending)
-since = int(values.get("pending_since", "0"))
-if pending:
-    since = since or oldest
-    if values.get("delivery") not in ("push-pending", "diverged"):
-        values["delivery"] = "pending"
-    if values.get("state") == "pushed":
-        values["state"] = "committed-local"
-else:
-    since = 0
-values["pending_since"] = str(since)
-values["pending_age_seconds"] = str(max(0, now - since) if since else 0)
-for key, value in values.items():
-    print(key + "=" + value)
-' "$GIT_DIR_ABS/record-health"
-)
+read_health_file() {
+  local dest now pending oldest since state last_push_at failure_class updated_at age line ts
+  dest="$GIT_DIR_ABS/record-health"
+  now=$(date -u +%s)
+  state=unchanged
+  last_push_at=
+  failure_class=
+  updated_at=
+  since=0
+  if [ -f "$dest" ]; then
+    state=$(health_field "$dest" state)
+    [ -n "$state" ] || state=unchanged
+    last_push_at=$(health_field "$dest" last_push_at)
+    failure_class=$(health_field "$dest" failure_class)
+    updated_at=$(health_field "$dest" updated_at)
+    since=$(health_field "$dest" pending_since)
+    [ -n "$since" ] || since=0
+  fi
+  pending=0
+  oldest=$now
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    pending=$((pending + 1))
+    ts=${line%% *}
+    [ "$ts" -lt "$oldest" ] && oldest=$ts
+  done < <(pending_commits --timestamp)
+  if [ "$pending" -gt 0 ]; then
+    [ "$since" != 0 ] || since=$oldest
+    [ "$state" != pushed ] || state="committed-local"
+  else
+    since=0
+  fi
+  age=0
+  [ "$since" = 0 ] || age=$((now - since))
+  [ "$age" -ge 0 ] || age=0
+  health_emit "$state" "$updated_at" "$last_push_at" "$pending" "$failure_class" "$since" "$age"
+}
 
 binding_state() {
   if [ ! -e "$DATA/.git" ] && [ ! -L "$DATA/.git" ] &&
@@ -331,32 +357,7 @@ binding_state() {
   printf 'present\n'
 }
 
-validate_lfs_destinations() {
-  local source rc routing_keys config_args=(--includes)
-  routing_keys='^(lfs\.(url|pushurl|gitprotocol|remote\.(autodetect|searchall)|standalonetransferagent|customtransfer\..*|transfer\.enablehrefrewrite)|remote\.(lfsdefault|lfspushdefault|.*\.(lfsurl|lfspushurl)))$'
-  for source in git lfsconfig; do
-    if [ "$source" = lfsconfig ]; then
-      if [ -e "$RECORD_WORK/.lfsconfig" ] || [ -L "$RECORD_WORK/.lfsconfig" ]; then
-        config_args=(--file "$RECORD_WORK/.lfsconfig")
-      elif git --git-dir="$GIT_DIR_ABS" cat-file -e :.lfsconfig 2>/dev/null; then
-        config_args=(--blob :.lfsconfig)
-      elif git --git-dir="$GIT_DIR_ABS" cat-file -e HEAD:.lfsconfig 2>/dev/null; then
-        config_args=(--blob HEAD:.lfsconfig)
-      else
-        continue
-      fi
-    fi
-    rc=0
-    git --git-dir="$GIT_DIR_ABS" config "${config_args[@]}" --name-only --get-regexp "$routing_keys" \
-      >/dev/null 2>&1 || rc=$?
-    case "$rc" in
-      1) ;;
-      0) die 8 "LFS destination overrides are unsupported; use the bound origin" ;;
-      *) die 8 "cannot validate the Record LFS destination" ;;
-    esac
-  done
-}
-
+# T1:205, T1:153
 validate_push_destinations() {
   local origin_url push_urls url
   origin_url=$(sed -n '1p' "$GIT_DIR_ABS/record-origin")
@@ -366,9 +367,9 @@ validate_push_destinations() {
   while IFS= read -r url; do
     [ "$url" = "$origin_url" ] || die 8 "push URL does not match the Record binding"
   done <<< "$push_urls"
-  validate_lfs_destinations
 }
 
+# T1:307
 validate_hook_path() {
   local hook_dir
   hook_dir=$(git -C "$RECORD_WORK" --git-dir="$GIT_DIR_ABS" rev-parse --path-format=absolute --git-path hooks) \
@@ -377,36 +378,15 @@ validate_hook_path() {
     || die 8 "Record hooks must use the repository's .git/hooks directory"
 }
 
-validate_home_roots() {
-  python3 - "$FM_HOME" "$DATA" "$STATE" <<'PYROOT' || die 8 "Record data and state roots must be exactly this home's directories"
-import os, sys
-home, data, state = map(os.path.realpath, sys.argv[1:])
-if data != os.path.join(home, "data") or state != os.path.join(home, "state"):
-    sys.exit(1)
-if os.path.islink(sys.argv[2]) or os.path.islink(sys.argv[3]):
-    sys.exit(1)
-PYROOT
-}
-
-validate_private_git_dir() {
-  python3 - "$GIT_DIR_ABS" <<'PYMODE' || die 8 "Record Git directory must allow access only to its owner"
-import os, stat, sys
-info = os.stat(sys.argv[1])
-if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) & 0o077:
-    sys.exit(1)
-PYMODE
-}
-
+# T1:303-304
 validate_binding() {
   local toplevel physical_data physical_home physical_top origin_url remotes branch
-  validate_home_roots
   require_hash_tool
   [ ! -L "$DATA" ] || die 8 "Record root must not be a symlink"
   [ -d "$DATA" ] || die 8 "Record root is not a directory"
   [ ! -L "$DATA/.git" ] || die 8 "Record Git directory must not be a symlink"
   [ -d "$DATA/.git" ] || die 8 "Record Git metadata must be a directory"
   GIT_DIR_ABS=$(physical_dir "$DATA/.git") || die 8 "cannot resolve the Record Git directory"
-  validate_private_git_dir
   physical_data=$(physical_dir "$DATA") || die 8 "cannot resolve Record root"
   physical_home=$(physical_dir "$FM_HOME") || die 8 "cannot resolve FM_HOME"
   [ "$physical_data" = "$physical_home/data" ] \
@@ -451,33 +431,22 @@ acquire_record_lock() { # try|wait|required
   local mode=$1 rc=0
   require_lock_libs
   LOCK_PATH="$GIT_DIR_ABS/firstmate-record.lock"
+  if fm_lock_try_acquire "$LOCK_PATH"; then
+    LOCK_HELD=1
+    return 0
+  fi
+  [ "$mode" != try ] || return 3
   case "$mode" in
-    try)
-      if fm_lock_try_acquire "$LOCK_PATH"; then
-        LOCK_HELD=1
-        return 0
-      fi
-      return 3
-      ;;
-    wait | required)
-      if fm_lock_try_acquire "$LOCK_PATH"; then
-        LOCK_HELD=1
-        return 0
-      fi
-      fm_lock_acquire_wait_bounded "$LOCK_PATH" "$LOCK_WAIT_SECONDS" || rc=$?
-      if [ "$rc" -eq 0 ]; then
-        LOCK_HELD=1
-        return 0
-      fi
-      if [ "$mode" = required ]; then
-        return 9
-      fi
-      return 3
-      ;;
-    *)
-      die 2 "unknown lock mode $mode"
-      ;;
+    wait | required) ;;
+    *) die 2 "unknown lock mode $mode" ;;
   esac
+  fm_lock_acquire_wait_bounded "$LOCK_PATH" "$LOCK_WAIT_SECONDS" || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    LOCK_HELD=1
+    return 0
+  fi
+  [ "$mode" = required ] && return 9
+  return 3
 }
 
 is_prohibited() {
@@ -493,17 +462,12 @@ is_ignored() {
   is_prohibited "$1"
 }
 
-validate_path_separators() {
-  case "$1" in *$'\n'* | *$'\t'* | *$'\r'*) die 8 "Record path contains unsupported separators" ;; esac
-}
-
 list_data_relpaths() {
   local out=$1 path rel rc
   find "$RECORD_WORK" \( -name .git -type d -prune \) -o \( -print0 \) > "$out.raw" 2>/dev/null || return 1
   while IFS= read -r -d '' path; do
     rel=${path#"$RECORD_WORK"/}
     [ "$rel" != "$path" ] || continue
-    validate_path_separators "$rel"
     rc=0
     is_ignored "$rel" || rc=$?
     case "$rc" in
@@ -522,7 +486,6 @@ list_state_sources() {
   find "$STATE" -mindepth 1 -maxdepth 1 \( -name '*.status' -o -name '*.meta' -o -name '*.inbox' \) \
     -print0 > "$out.raw" 2>/dev/null || return 1
   while IFS= read -r -d '' path; do
-    validate_path_separators "$path"
     case "$path" in
       *.inbox)
         [ -d "$path" ] && [ ! -L "$path" ] || return 1
@@ -530,7 +493,6 @@ list_state_sources() {
           -o -name '.staging.*' -o -name '.dedup.*' -o -name '.lock-probe.*' \) -prune -o \
           \( -type f -o -type l \) -print0 > "$out.inbox" 2>/dev/null || return 1
         while IFS= read -r -d '' entry; do
-          validate_path_separators "$entry"
           printf '%s\n' "$entry" || return 1
         done < "$out.inbox"
         ;;
@@ -554,13 +516,12 @@ inventory_line() { # <kind> <abs> <rel>
   local kind=$1 abs=$2 rel=$3 mode digest target
   if [ -L "$abs" ]; then
     target=$(readlink "$abs" 2>/dev/null) || return 1
-    validate_path_separators "$target"
     mode=$(path_mode "$abs") || return 1
     printf 'l\t%s\t-\t%s\t%s\n' "$mode" "$target" "$rel"
     return 0
   fi
   if [ -f "$abs" ]; then
-    [ ! -p "$abs" ] || die 8 "special file is not a Record candidate"
+    [ ! -p "$abs" ] || die 8 "special file is not a Record candidate: $(redact_locator "$abs")"
     mode=$(path_mode "$abs") || return 1
     digest=$(sha256_file "$abs") || return 1
     printf 'f\t%s\t%s\t-\t%s\n' "$mode" "$digest" "$rel"
@@ -569,7 +530,7 @@ inventory_line() { # <kind> <abs> <rel>
   if [ -d "$abs" ]; then
     return 0
   fi
-  die 8 "unsupported Record file type"
+  die 8 "unsupported Record file type: $(redact_locator "$abs")"
 }
 
 build_inventory() { # <outfile>
@@ -594,27 +555,27 @@ build_inventory() { # <outfile>
   done < "$out.state"
 }
 
+# T1:166
 validate_symlink() { # <abs>
   local abs=$1 target resolved
-  target=$(readlink "$abs" 2>/dev/null) || die 8 "cannot read Record symlink"
+  target=$(readlink "$abs" 2>/dev/null) || die 8 "cannot read Record symlink: $(redact_locator "$abs")"
   case "$target" in
-    /*) die 8 "absolute symlink is not portable" ;;
+    /*) die 8 "absolute symlink is not portable: $(redact_locator "$abs")" ;;
   esac
-  [ -e "$abs" ] || die 8 "broken Record symlink"
+  [ -e "$abs" ] || die 8 "broken Record symlink: $(redact_locator "$abs")"
   resolved=$(cd "$(dirname "$abs")" && cd -P -- "$(dirname "$target")" && pwd -P) 2>/dev/null \
-    || die 8 "symlink resolves outside the Record"
+    || die 8 "symlink resolves outside the Record: $(redact_locator "$abs")"
   case "$resolved" in
     "$RECORD_WORK" | "$RECORD_WORK"/*) ;;
-    *) die 8 "symlink resolves outside the Record" ;;
+    *) die 8 "symlink resolves outside the Record: $(redact_locator "$abs")" ;;
   esac
 }
 
-build_metadata() {
-  local out=$1
-  list_data_relpaths "$out.data" && list_state_sources "$out.state" || return 4
-  python3 - "$RECORD_WORK" "$STATE" "$out" 2>/dev/null <<'PYMETA' || return 4
+write_metadata() { # <outfile> [gitattributes]
+  python3 - "$RECORD_WORK" "$STATE" "$1" "${2:-}" 2>/dev/null <<'PYMETA' || return 1
 import json, os, sys
-root, state, out = sys.argv[1:]
+root, state, out = sys.argv[1:4]
+attr = sys.argv[4] if len(sys.argv) > 4 else ""
 result = {}
 for scope, base in (("data", root), ("state", state)):
     with open(out + "." + scope) as paths:
@@ -623,40 +584,33 @@ for scope, base in (("data", root), ("state", state)):
             path = os.path.join(base, name)
             info = os.lstat(path)
             result[scope + ":" + os.path.relpath(path, base)] = [info.st_mode, info.st_size, info.st_mtime_ns, info.st_ctime_ns, info.st_ino, os.readlink(path) if os.path.islink(path) else None]
+if attr:
+    info = os.lstat(attr)
+    result["data:.gitattributes"] = [info.st_mode, info.st_size, info.st_mtime_ns, info.st_ctime_ns, info.st_ino, None]
 with open(out, "w") as output:
     json.dump(result, output, sort_keys=True)
 PYMETA
 }
 
+build_metadata() {
+  local out=$1
+  list_data_relpaths "$out.data" && list_state_sources "$out.state" || return 4
+  write_metadata "$out" || return 4
+}
+
 save_clean_metadata() {
-  python3 - "$CAND_WORK/../metadata" "$RECORD_WORK/.gitattributes" <<'PYMETA' || return 1
-import json, os, sys
-path, attr = sys.argv[1:]
-with open(path) as source:
-    values = json.load(source)
-info = os.lstat(attr)
-values["data:.gitattributes"] = [info.st_mode, info.st_size, info.st_mtime_ns, info.st_ctime_ns, info.st_ino, None]
-with open(path, "w") as output:
-    json.dump(values, output, sort_keys=True)
-PYMETA
+  write_metadata "$CAND_WORK/../metadata" "$RECORD_WORK/.gitattributes" || return 1
   mv -f "$CAND_WORK/../metadata" "$GIT_DIR_ABS/record-clean-metadata" || return 1
   printf '%s\n' "$CAPTURED_HEAD" > "$GIT_DIR_ABS/record-clean-head"
 }
 
 settle_inventory() {
-  local first second
-  first="$CAND_WORK/../inventory.first"
-  second="$CAND_WORK/../inventory.second"
+  local first="$CAND_WORK/../inventory.first" second="$CAND_WORK/../inventory.second"
   build_inventory "$first" || return 4
-  if [ "$SETTLE_SECONDS" -gt 0 ]; then
-    sleep "$SETTLE_SECONDS"
-  fi
+  if [ "$SETTLE_SECONDS" -gt 0 ]; then sleep "$SETTLE_SECONDS"; fi
   build_inventory "$second" || return 4
-  if ! cmp -s "$first" "$second"; then
-    return 4
-  fi
+  cmp -s "$first" "$second" || return 4
   mv -f "$second" "$1"
-  return 0
 }
 
 copy_file_atomic() { # <src> <dest>
@@ -703,12 +657,19 @@ freeze_candidate() { # <inventory>
 }
 
 attr_escape() {
-  python3 -c 'import json, sys
-p = sys.argv[1]
-p = "".join("\\" + ch if ch in "\\[]*?" else ch for ch in p)
-if p.startswith("!"):
-    p = "\\" + p
-print(json.dumps(p, ensure_ascii=False))' "$1"
+  local p=$1 out='' i=0 ch
+  while [ "$i" -lt "${#p}" ]; do
+    ch=${p:i:1}
+    case "$ch" in
+      \\ | \[ | \] | \* | \?) out=$out\\$ch ;;
+      *) out=$out$ch ;;
+    esac
+    i=$((i + 1))
+  done
+  case "$out" in
+    !*) out=\\$out ;;
+  esac
+  jq -n --arg p "$out" '$p'
 }
 
 binary_attr_lines() {
@@ -788,95 +749,65 @@ real_index_is_clean() {
   git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" diff --cached --quiet
 }
 
-commit_candidate() { # <reason>
-  local reason=$1 branch expected message tree journal
+assert_head_unchanged() { # <expected-sha>
+  local branch expected
   expected=$(sed -n '1p' "$GIT_DIR_ABS/record-branch")
   branch=$(git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" symbolic-ref -q --short HEAD) \
     || die 8 "Record HEAD changed during the transaction"
   [ "$branch" = "$expected" ] || die 8 "Record branch changed during the transaction"
-  (set -C; : > "$GIT_DIR_ABS/index.lock") 2>/dev/null || return 8
-  INDEX_LOCK_HELD=1
-  [ "$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD 2>/dev/null || true)" = "$START_HEAD" ] \
+  [ "$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD 2>/dev/null || true)" = "$1" ] \
     || die 8 "Record HEAD changed during the transaction"
+}
+
+reconcile_crash_window() {
+  local current parent
+  if real_index_is_clean; then
+    return 0
+  fi
+  [ ! -e "$GIT_DIR_ABS/index.lock" ] || return 8
+  git --git-dir="$GIT_DIR_ABS" rev-parse --verify 'HEAD^{commit}' >/dev/null 2>&1 || return 8
+  parent=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify 'HEAD~1^{tree}' 2>/dev/null) \
+    || parent=$(git --git-dir="$GIT_DIR_ABS" hash-object -t tree /dev/null) || return 8
+  current=$(git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" write-tree) || return 8
+  [ "$current" = "$parent" ] || return 8
+  git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" read-tree HEAD || return 8
+}
+
+attest_shas() {
+  local dest=$GIT_DIR_ABS/record-attested tmp=$GIT_DIR_ABS/record-attested.tmp.$$
+  { [ -f "$dest" ] && cat "$dest"; printf '%s\n' "$@"; } > "$tmp"
+  if git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD >/dev/null 2>&1; then
+    git --git-dir="$GIT_DIR_ABS" rev-list HEAD > "$tmp.reach" || return 1
+    awk 'NR==FNR { r[$1]=1; next } $0 != "" && r[$0] && !seen[$0]++' "$tmp.reach" "$tmp" > "$tmp.keep" \
+      || return 1
+    mv -f "$tmp.keep" "$dest"
+    rm -f "$tmp" "$tmp.reach"
+  else
+    mv -f "$tmp" "$dest"
+  fi
+}
+
+is_attested() {
+  [ -f "$GIT_DIR_ABS/record-attested" ] && grep -Fxq "$1" "$GIT_DIR_ABS/record-attested"
+}
+
+commit_candidate() { # <reason>
+  local reason=$1 message
+  assert_head_unchanged "$START_HEAD"
+  [ ! -e "$GIT_DIR_ABS/index.lock" ] || return 8
   real_index_is_clean || die 8 "unexpected user staging is present; refusing to overwrite the index"
   if trees_equal; then
-    rm -f "$GIT_DIR_ABS/index.lock" || return 8
-    INDEX_LOCK_HELD=0
     publish_owned_live_files || return 8
     return 1
   fi
-  tree=$(GIT_INDEX_FILE="$CAND_INDEX" git --git-dir="$GIT_DIR_ABS" write-tree) || return 8
-  GIT_INDEX_FILE="$CAND_WORK/../publish.index" git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" \
-    read-tree --index-output="$GIT_DIR_ABS/index.lock" "$tree" || return 8
-  journal="$GIT_DIR_ABS/record-publication"
-  mkdir "$journal" || return 8
-  if ! cp "$GIT_DIR_ABS/index.lock" "$journal/index"; then
-    rm -rf "$journal"
-    return 8
-  fi
-  printf '%s\n' "$START_HEAD" "$tree" > "$journal/before" || return 8
-  python3 - "$GIT_DIR_ABS/index.lock" > "$journal/lock-id" <<'PYLOCK' || return 8
-import os, sys
-info = os.stat(sys.argv[1])
-print(info.st_dev, info.st_ino)
-PYLOCK
   message=$(checkpoint_commit_subject "$reason")
   GIT_INDEX_FILE="$CAND_INDEX" git --git-dir="$GIT_DIR_ABS" --work-tree="$CAND_WORK" \
     commit --quiet --no-verify -m "$message" || return 8
   CAPTURED_HEAD=$(git --git-dir="$GIT_DIR_ABS" rev-parse HEAD) || return 8
-  mv -f "$GIT_DIR_ABS/index.lock" "$GIT_DIR_ABS/index" || return 8
-  INDEX_LOCK_HELD=0
-  rm -rf "$journal" || return 8
+  git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" read-tree HEAD || return 8
   publish_owned_live_files || return 8
+  attest_shas "$CAPTURED_HEAD" || return 8
   return 0
-}
-
-recover_index_publication() {
-  local journal="$GIT_DIR_ABS/record-publication" head before tree current parent lock_id publish=0
-  [ -d "$journal" ] || return 0
-  if [ ! -f "$journal/before" ] || [ ! -f "$journal/lock-id" ]; then
-    [ ! -e "$GIT_DIR_ABS/index.lock" ] || return 8
-    rm -rf "$journal"
-    return 0
-  fi
-  before=$(sed -n '1p' "$journal/before")
-  tree=$(sed -n '2p' "$journal/before")
-  if [ -e "$GIT_DIR_ABS/index.lock" ]; then
-    lock_id=$(python3 - "$GIT_DIR_ABS/index.lock" <<'PYLOCK'
-import os, sys
-info = os.stat(sys.argv[1])
-print(info.st_dev, info.st_ino)
-PYLOCK
-    ) || return 8
-    [ "$lock_id" = "$(cat "$journal/lock-id")" ] && cmp -s "$journal/index" "$GIT_DIR_ABS/index.lock" || return 8
-  else
-    (set -C; : > "$GIT_DIR_ABS/index.lock") 2>/dev/null || return 8
-  fi
-  INDEX_LOCK_HELD=1
-  head=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD 2>/dev/null || true)
-  if [ "$head" != "$before" ]; then
-    [ "$(git --git-dir="$GIT_DIR_ABS" rev-parse 'HEAD^{tree}')" = "$tree" ] || return 8
-    parent=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD^ 2>/dev/null || true)
-    [ "$parent" = "$before" ] || return 8
-    [ "$(GIT_INDEX_FILE="$journal/index" git --git-dir="$GIT_DIR_ABS" write-tree)" = "$tree" ] || return 8
-    if ! git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" diff --cached --quiet --ita-visible-in-index "$tree" --; then
-      if [ -n "$before" ]; then
-        git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" diff --cached --quiet --ita-visible-in-index "$before" -- || return 8
-      else
-        current=$(git --git-dir="$GIT_DIR_ABS" ls-files --stage) || return 8
-        [ -z "$current" ] || return 8
-      fi
-      publish=1
-    fi
-  fi
-  if [ "$publish" -eq 1 ]; then
-    cp "$journal/index" "$GIT_DIR_ABS/index.lock" || return 8
-    mv -f "$GIT_DIR_ABS/index.lock" "$GIT_DIR_ABS/index" || return 8
-  else
-    rm -f "$GIT_DIR_ABS/index.lock" || return 8
-  fi
-  INDEX_LOCK_HELD=0
-  rm -rf "$journal"
 }
 
 publish_owned_live_files() {
@@ -955,31 +886,20 @@ scan_outgoing_commits() {
   fi
   git --git-dir="$GIT_DIR_ABS" rev-list --reverse "$range" > "$CAND_WORK/../outgoing.commits" || return 5
   while IFS= read -r commit; do
+    if is_attested "$commit"; then
+      continue
+    fi
     GIT_INDEX_FILE="$index" git --git-dir="$GIT_DIR_ABS" read-tree "$commit" || return 5
     rm -rf "$payloads" || return 5
     extract_index_payloads "$index" "$payloads" || return 5
     "$SCRIPT_DIR/fm-record-scan.sh" chain --dir "$payloads" || return 5
+    attest_shas "$commit" || return 5
   done < "$CAND_WORK/../outgoing.commits"
 }
 
 run_transaction() { # tick|checkpoint <reason> try|wait|required
-  local mode=$1 reason=$2 lock_mode=$3 inv rc=0 sha pending class delivery
-  case "$(binding_state)" in
-    absent)
-      emit disabled
-      exit 0
-      ;;
-  esac
-  require_hash_tool
-  validate_binding
-  acquire_record_lock "$lock_mode" || rc=$?
-  case "$rc" in
-    0) ;;
-    3) finish 3 busy ;;
-    9) finish 9 configuration-error detail=required-lock-timeout ;;
-    *) finish 8 configuration-error detail=lock ;;
-  esac
-  recover_index_publication || finish 8 configuration-error detail=index-recovery
+  local mode=$1 reason=$2 lock_mode=$3 inv rc=0 sha pending class health_state
+  begin_record_command health "$lock_mode" reconcile
   START_HEAD=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD 2>/dev/null || true)
   CAPTURED_HEAD=$START_HEAD
   CAND_WORK="$GIT_DIR_ABS/record-candidate/work"
@@ -1023,10 +943,12 @@ run_transaction() { # tick|checkpoint <reason> try|wait|required
   sha=$(git --git-dir="$GIT_DIR_ABS" rev-parse --short HEAD)
   if [ "$mode" != tick ]; then
     if [ "$rc" -eq 1 ]; then
-      delivery=$(read_health_file | sed -n 's/^delivery=//p')
-      case "$delivery" in
+      health_state=$(read_health_file)
+      pending=$(printf '%s\n' "$health_state" | sed -n 's/^pending=//p' | head -1)
+      health_state=$(printf '%s\n' "$health_state" | sed -n 's/^state=//p' | head -1)
+      case "$health_state" in
         push-pending | diverged)
-          emit unchanged commit="$sha" delivery="$delivery"
+          emit unchanged commit="$sha" pending="${pending:-0}"
           exit 0
           ;;
       esac
@@ -1057,12 +979,6 @@ run_transaction() { # tick|checkpoint <reason> try|wait|required
 
 cmd_health() {
   local health state
-  case "$(binding_state)" in
-    absent)
-      emit disabled
-      exit 0
-      ;;
-  esac
   validate_binding
   health=$(read_health_file) || die 8 "cannot read Record health"
   state=$(printf '%s\n' "$health" | sed -n 's/^state=//p' | head -1)
@@ -1092,6 +1008,7 @@ EOF
   chmod 755 "$hook_dir/pre-commit"
 }
 
+# T1:307
 validate_setup_hooks() {
   local hook=pre-commit digest
   if [ -e "$GIT_DIR_ABS/hooks/$hook" ] || [ -L "$GIT_DIR_ABS/hooks/$hook" ]; then
@@ -1105,9 +1022,10 @@ validate_setup_hooks() {
     || die 8 "existing hook is not a Git LFS hook; leaving it untouched"
 }
 
+# T1:90-91
 validate_job_prerequisites() {
   local code_root=$1 tool toplevel
-  for tool in gitleaks git-lfs restic rclone; do
+  for tool in gitleaks git-lfs; do
     command -v "$tool" >/dev/null 2>&1 || die 8 "Record job requires $tool on PATH"
   done
   [ -x "$code_root/bin/fm-record.sh" ] || die 8 "Record code root must contain executable bin/fm-record.sh"
@@ -1137,7 +1055,6 @@ cmd_setup() {
     code_root=$(physical_dir "$code_root") || die 8 "cannot resolve the Record code root"
     validate_job_prerequisites "$code_root"
   fi
-  validate_home_roots
   require_hash_tool
   [ ! -L "$DATA/.git" ] || die 8 "Record Git directory must not be a symlink"
   [ -d "$DATA" ] || mkdir -p "$DATA"
@@ -1168,10 +1085,8 @@ cmd_setup() {
   install_hooks "$GIT_DIR_ABS/hooks" "$(physical_dir "$code_root")"
   sha256_file "$GIT_DIR_ABS/hooks/pre-commit" > "$GIT_DIR_ABS/record-hook-pre-commit"
   [ ! -L "$FM_HOME/.record-enabled" ] || die 8 "Record activation marker must not be a symlink"
+  validate_binding
   printf 'enabled\n' > "$FM_HOME/.record-enabled"
-  if [ "$write_plist" -eq 1 ] || [ "$bootstrap" -eq 1 ]; then
-    validate_binding
-  fi
   if [ "$write_plist" -eq 1 ]; then
     write_record_plist "$(physical_dir "$code_root")"
   fi
@@ -1227,8 +1142,7 @@ try:
     with open(sys.argv[1], "rb") as source:
         job = plistlib.load(source)
     if (job["ProgramArguments"] != [sys.argv[2] + "/bin/fm-record.sh", "tick"]
-            or job["EnvironmentVariables"]["FM_HOME"] != sys.argv[3]
-            or job["EnvironmentVariables"]["PATH"] != os.environ["PATH"]):
+            or job["EnvironmentVariables"]["FM_HOME"] != sys.argv[3]):
         sys.exit(1)
 except Exception:
     sys.exit(1)
@@ -1247,7 +1161,6 @@ extract_index_payloads() { # <index> <dest-dir>
       printf 'fm-record: prohibited path in indexed content\n' >&2
       return 1
     fi
-    validate_path_separators "$path"
     sha=$(printf '%s\n' "$meta" | awk '{print $2}')
     [ -n "$sha" ] || return 1
     payload="$dest/$path"
@@ -1255,19 +1168,12 @@ extract_index_payloads() { # <index> <dest-dir>
     GIT_INDEX_FILE="$index" git --git-dir="$GIT_DIR_ABS" cat-file -p "$sha" > "$payload" || return 1
     case "${meta%% *}" in
       120000)
-        python3 - "$payload" <<'PY' || return 1
-import os
-import sys
-path = os.fsencode(sys.argv[1])
-try:
-    with open(path, "rb") as source:
-        target = source.read()
-    os.unlink(path)
-    os.symlink(target, path)
-except (OSError, ValueError):
-    print("fm-record: cannot materialize indexed symlink", file=sys.stderr)
-    sys.exit(1)
-PY
+        target=$(cat "$payload") || return 1
+        rm -f "$payload" || return 1
+        ln -s -- "$target" "$payload" || {
+          printf 'fm-record: cannot materialize indexed symlink\n' >&2
+          return 1
+        }
         continue
         ;;
       100644 | 100755) ;;
@@ -1292,7 +1198,6 @@ cmd_pre_commit() {
   [ "$#" -eq 0 ] || die 2 "pre-commit does not accept arguments"
   require_hash_tool
   GIT_DIR_ABS=$(git rev-parse --absolute-git-dir) || die 8 "pre-commit has no git dir"
-  validate_private_git_dir
   dest=$(mktemp -d "$GIT_DIR_ABS/record-precommit.XXXXXX")
   CAND_WORK="$dest/work"
   if extract_index_payloads "${GIT_INDEX_FILE:-$GIT_DIR_ABS/index}" "$dest/work"; then
@@ -1366,6 +1271,10 @@ for kind, path in zip(fields[0::2], fields[1::2]):
 PYFOOTER
 }
 
+clear_land_ref() {
+  git --git-dir="$GIT_DIR_ABS" update-ref -d refs/fm-land-related/candidate >/dev/null 2>&1 || true
+}
+
 cmd_land_related() {
   local candidate='' expected='' cand_top cand_git cand_sha parent live rc=0 payloads
   while [ "$#" -gt 0 ]; do
@@ -1383,21 +1292,7 @@ cmd_land_related() {
   done
   [ -n "$candidate" ] && [ -n "$expected" ] \
     || die 2 "land-related requires --candidate and --expected-head"
-  case "$(binding_state)" in
-    absent)
-      emit disabled
-      exit 0
-      ;;
-  esac
-  refuse_git_overrides
-  validate_binding
-  acquire_record_lock wait || rc=$?
-  case "$rc" in
-    0) ;;
-    3) finish 3 busy ;;
-    *) finish 8 configuration-error detail=lock ;;
-  esac
-  recover_index_publication || finish 8 configuration-error detail=index-recovery
+  begin_record_command health wait reconcile
   CAND_WORK="$GIT_DIR_ABS/record-land/work"
   rm -rf "${CAND_WORK%/*}" || finish 8 configuration-error detail=candidate
   mkdir -p "$CAND_WORK" || finish 8 configuration-error detail=candidate
@@ -1430,7 +1325,7 @@ cmd_land_related() {
     || finish 8 configuration-error detail=candidate-parents
   footer_only_candidate "$cand_git" "$expected" "$cand_sha" \
     || finish 8 configuration-error detail=not-footer-only
-  git --git-dir="$GIT_DIR_ABS" update-ref -d refs/fm-land-related/candidate >/dev/null 2>&1 || true
+  clear_land_ref
   GIT_TERMINAL_PROMPT=0 git --git-dir="$GIT_DIR_ABS" fetch --no-tags -- \
     "$cand_git" "$cand_sha:refs/fm-land-related/candidate" \
     || finish 8 configuration-error detail=fetch
@@ -1439,30 +1334,19 @@ cmd_land_related() {
   GIT_INDEX_FILE="$CAND_INDEX" git --git-dir="$GIT_DIR_ABS" read-tree "$cand_sha" \
     || finish 8 configuration-error detail=read-tree
   payloads="$CAND_WORK/../scan"
-  extract_index_payloads "$CAND_INDEX" "$payloads" || {
-    git --git-dir="$GIT_DIR_ABS" update-ref -d refs/fm-land-related/candidate >/dev/null 2>&1 || true
-    finish 5 scan-blocked
-  }
-  "$SCRIPT_DIR/fm-record-scan.sh" chain --dir "$payloads" || {
-    git --git-dir="$GIT_DIR_ABS" update-ref -d refs/fm-land-related/candidate >/dev/null 2>&1 || true
-    finish 5 scan-blocked
-  }
+  extract_index_payloads "$CAND_INDEX" "$payloads" || { clear_land_ref; finish 5 scan-blocked; }
+  "$SCRIPT_DIR/fm-record-scan.sh" chain --dir "$payloads" || { clear_land_ref; finish 5 scan-blocked; }
   live=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD) \
     || finish 8 configuration-error detail=head
-  if [ "$live" != "$expected" ]; then
-    git --git-dir="$GIT_DIR_ABS" update-ref -d refs/fm-land-related/candidate >/dev/null 2>&1 || true
-    finish 8 configuration-error detail=head-moved
-  fi
+  [ "$live" = "$expected" ] || { clear_land_ref; finish 8 configuration-error detail=head-moved; }
   GIT_TERMINAL_PROMPT=0 git --git-dir="$GIT_DIR_ABS" --work-tree="$RECORD_WORK" \
     merge --ff-only --no-edit refs/fm-land-related/candidate \
-    || {
-      git --git-dir="$GIT_DIR_ABS" update-ref -d refs/fm-land-related/candidate >/dev/null 2>&1 || true
-      finish 8 configuration-error detail=fast-forward
-    }
-  git --git-dir="$GIT_DIR_ABS" update-ref -d refs/fm-land-related/candidate >/dev/null 2>&1 || true
+    || { clear_land_ref; finish 8 configuration-error detail=fast-forward; }
+  clear_land_ref
   CAPTURED_HEAD=$(git --git-dir="$GIT_DIR_ABS" rev-parse --verify HEAD) \
     || finish 8 configuration-error detail=head
   [ "$CAPTURED_HEAD" = "$cand_sha" ] || finish 8 configuration-error detail=fast-forward
+  attest_shas "$CAPTURED_HEAD" || finish 8 configuration-error detail=attest
   build_metadata "$CAND_WORK/../metadata" \
     || finish 8 configuration-error detail=metadata
   save_clean_metadata || finish 8 configuration-error detail=metadata
@@ -1471,27 +1355,18 @@ cmd_land_related() {
 }
 
 cmd_tick() {
-  case "$(binding_state)" in
-    absent)
-      emit disabled
-      exit 0
-      ;;
-  esac
-  refuse_git_overrides
   run_transaction tick tick try
 }
 
 checkpoint_commit_subject() { # <reason>
-  case "$1" in
-    maintain)
-      printf 'maintain %s\n' "$CHECKPOINT_SUMMARY"
-      ;;
-    *)
-      printf 'record: %s\n' "$1"
-      ;;
-  esac
+  if [ "$1" = maintain ]; then
+    printf 'maintain %s\n' "$CHECKPOINT_SUMMARY"
+  else
+    printf 'record: %s\n' "$1"
+  fi
 }
 
+# T12
 validate_maintain_summary() { # <summary>
   local summary=$1 bytes
   [ -n "$summary" ] || die 2 "checkpoint --reason maintain requires --summary"
@@ -1535,13 +1410,6 @@ cmd_checkpoint() {
       ;;
     *) die 2 "checkpoint --reason must be session-start, stow, complete, teardown, or maintain" ;;
   esac
-  case "$(binding_state)" in
-    absent)
-      emit disabled
-      exit 0
-      ;;
-  esac
-  refuse_git_overrides
   [ "$required" -eq 0 ] || lock_mode=required
   run_transaction checkpoint "$reason" "$lock_mode"
 }
@@ -1616,39 +1484,35 @@ load_record_compare() { # [fetch-class]
   fi
 }
 
-begin_record_command() { # health|emit
-  local health_mode=$1 rc=0
-  [ "$#" -eq 1 ] || die 2 "internal begin_record_command usage"
+begin_record_command() { # health|emit [try|wait|required] [reconcile]
+  local health_mode=$1 lock_mode=${2:-wait} reconcile=${3:-} rc=0
+  [ "$#" -ge 1 ] && [ "$#" -le 3 ] || die 2 "internal begin_record_command usage"
   case "$(binding_state)" in
-    absent)
-      emit disabled
-      exit 0
-      ;;
+    absent) emit disabled; exit 0 ;;
   esac
   refuse_git_overrides
   validate_binding
-  acquire_record_lock wait || rc=$?
+  acquire_record_lock "$lock_mode" || rc=$?
   case "$rc" in
     0) ;;
     3)
-      if [ "$health_mode" = health ]; then
-        finish 3 busy
-      fi
+      [ "$health_mode" = health ] && finish 3 busy
       emit busy
       exit 3
       ;;
+    9)
+      [ "$health_mode" = health ] && finish 9 configuration-error detail=required-lock-timeout
+      die 9 "cannot lock the Record"
+      ;;
     *)
-      if [ "$health_mode" = health ]; then
-        finish 8 configuration-error detail=lock
-      fi
+      [ "$health_mode" = health ] && finish 8 configuration-error detail=lock
       die 8 "cannot lock the Record"
       ;;
   esac
-  recover_index_publication || {
-    if [ "$health_mode" = health ]; then
-      finish 8 configuration-error detail=index-recovery
-    fi
-    die 8 "cannot recover Record index publication"
+  [ "$reconcile" = reconcile ] || return 0
+  reconcile_crash_window || {
+    [ "$health_mode" = health ] && finish 8 configuration-error detail=index-recovery
+    die 8 "unexpected user staging is present; refusing to overwrite the index"
   }
 }
 
