@@ -101,8 +101,9 @@
 # The commit and the index publication rely on Git's own index.lock only.
 # After a crash between commit and index publication, the next transaction
 # reconciles an index that still matches the parent tree (the empty tree for
-# a root commit) when index.lock is absent; reconcile and verify never do. Commits the owner creates or scans are attested in
-# .git/record-attested and skipped on later outgoing scans.
+# a root commit) when index.lock is absent; reconcile and verify never do.
+# Commits the owner creates or scans are attested in .git/record-attested
+# and skipped on later outgoing scans.
 set -eu
 export LC_ALL=C
 
