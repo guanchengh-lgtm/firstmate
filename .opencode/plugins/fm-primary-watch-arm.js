@@ -20,6 +20,8 @@ let retryTimer = null;
 let retryFailures = 0;
 let launchInFlight = null;
 let restorationInFlight = null;
+let delivering = false;
+let pendingDeliveryReason = null;
 let armClose = new WeakMap();
 let armReadiness = new WeakMap();
 let armRecovery = new WeakMap();
@@ -402,19 +404,34 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
     const predecessor = String(armChild.pid ?? "");
     if (classification.kind === "actionable") {
       if (restorationInFlight) return;
+      if (delivering) {
+        pendingDeliveryReason = classification.message;
+        if (!child && !retryTimer) {
+          void ensureArm(paths, sessionID, client, predecessor);
+        }
+        return;
+      }
       retryFailures = 0;
       setArmStatus("wake");
       const restoration = restoreAfterActionableClose(paths, sessionID, client, predecessor);
       restorationInFlight = restoration;
       void restoration.then(async (result) => {
+        if (restorationInFlight === restoration) restorationInFlight = null;
+        delivering = true;
         try {
           const message = result.failure ? `${classification.message}\n\n${result.failure}` : classification.message;
           await deliverActionableWake(paths, client, sessionID, message, result.recovery);
+          while (pendingDeliveryReason) {
+            const queued = pendingDeliveryReason;
+            pendingDeliveryReason = null;
+            await deliverActionableWake(paths, client, sessionID, queued, armRecovery.get(child));
+          }
         } finally {
-          if (restorationInFlight === restoration) restorationInFlight = null;
+          delivering = false;
         }
       }).catch((error) => {
         if (restorationInFlight === restoration) restorationInFlight = null;
+        delivering = false;
         surfaceFailure(
           paths,
           client,

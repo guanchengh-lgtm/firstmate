@@ -423,6 +423,123 @@ EOF
   pass "Pi actionable close starts one successor before wake delivery settles"
 }
 
+test_pi_successor_close_during_blocked_delivery_starts_next_cycle() {
+  local repo home plugin log stop die1 die2 out status
+  repo="$TMP_ROOT/pi-mid-delivery-close-root"
+  home="$TMP_ROOT/pi-mid-delivery-close-home"
+  log="$TMP_ROOT/pi-mid-delivery-close.log"
+  stop="$TMP_ROOT/pi-mid-delivery-close.stop"
+  die1="$TMP_ROOT/pi-mid-delivery-close.die1"
+  die2="$TMP_ROOT/pi-mid-delivery-close.die2"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  install_pi_watch_extension_fixture "$repo"
+  plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --handling-delivered ]; then
+  printf 'confirmed generation=%s watcher=%s\n' "$2" "$4" >> "${FM_ARM_LOG:?}"
+  exit 0
+fi
+printf 'arm=%s predecessor=%s\n' "$$" "${FM_WATCH_PREDECESSOR_ARM_PID:-none}" >> "${FM_ARM_LOG:?}"
+count=$(grep -c '^arm=' "$FM_ARM_LOG")
+if [ "$count" -eq 1 ]; then
+  printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+  printf 'signal: synthetic actionable close\n'
+  exit 0
+fi
+printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
+if [ "$count" -eq 2 ]; then
+  trap 'exit 0' TERM INT
+  while [ ! -e "$FM_DIE_FILE_1" ]; do sleep 0.02; done
+  printf 'signal: mid-delivery successor close\n'
+  exit 0
+fi
+if [ "$count" -eq 3 ]; then
+  trap 'exit 0' TERM INT
+  while [ ! -e "$FM_DIE_FILE_2" ]; do sleep 0.02; done
+  printf 'signal: mid-delivery successor close\n'
+  exit 0
+fi
+trap 'exit 0' TERM INT
+while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_DIE_FILE_1="$die1" FM_DIE_FILE_2="$die2" node --input-type=module 2>&1 <<'EOF'
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+let tool = null;
+let deliveryStarted = false;
+let sends = 0;
+let firstPrompt = "";
+let releaseDelivery = () => {};
+const deliveryBlocked = new Promise((resolve) => {
+  releaseDelivery = resolve;
+});
+const handlers = new Map();
+const pi = {
+  on(event, handler) {
+    handlers.set(event, handler);
+  },
+  registerCommand() {},
+  registerTool(candidate) {
+    if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+  },
+  sendUserMessage: async (message) => {
+    sends += 1;
+    if (sends === 1) firstPrompt = message;
+    deliveryStarted = true;
+    if (sends === 1) await deliveryBlocked;
+  },
+};
+const armRows = () => existsSync(process.env.FM_ARM_LOG)
+  ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").filter((row) => row.startsWith("arm="))
+  : [];
+const parseArm = (row) => {
+  const match = /^arm=([0-9]+) predecessor=(.+)$/.exec(row);
+  if (!match) throw new Error(`unreadable arm row: ${row}`);
+  return { pid: match[1], predecessor: match[2] };
+};
+async function waitFor(predicate, message) {
+  for (let i = 0; i < 500; i += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(message);
+}
+
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+mod.default(pi);
+await tool.execute("tool-call-mid-delivery", {}, undefined, undefined, {});
+await waitFor(() => armRows().length >= 2 && deliveryStarted, "successor delivery did not begin");
+writeFileSync(process.env.FM_DIE_FILE_1, "die\n");
+await waitFor(() => armRows().length >= 3, `third arm did not start while delivery blocked: ${armRows().join(" | ")}`);
+const afterFirstClose = armRows();
+const second = parseArm(afterFirstClose[1]);
+const third = parseArm(afterFirstClose[2]);
+if (third.predecessor !== second.pid) {
+  throw new Error(`third arm predecessor=${third.predecessor} wanted ${second.pid}`);
+}
+if (sends !== 1) throw new Error(`mid-delivery close delivered extra follow-up too soon: sends=${sends}`);
+writeFileSync(process.env.FM_DIE_FILE_2, "die\n");
+await waitFor(() => armRows().length >= 4, `fourth arm did not start while delivery blocked: ${armRows().join(" | ")}`);
+if (sends !== 1) throw new Error(`second mid-delivery close delivered extra follow-up too soon: sends=${sends}`);
+releaseDelivery();
+handlers.get("before_agent_start")?.({ prompt: firstPrompt }, {});
+await waitFor(() => sends === 2, `coalesced follow-up was not delivered: sends=${sends}`);
+await new Promise((resolve) => setTimeout(resolve, 80));
+if (sends !== 2) throw new Error(`expected exactly two follow-ups, got ${sends}`);
+writeFileSync(process.env.FM_STOP_FILE, "stop\n");
+process.exit(0);
+EOF
+  )
+  status=$?
+  [ "$status" -eq 0 ] || fail "Pi successor close during blocked delivery must start the next cycle and coalesce follow-ups: $out"
+  [ -z "$out" ] || fail "Pi mid-delivery successor close test printed output: $out"
+  pass "Pi successor close during blocked delivery starts next cycle and coalesces follow-ups"
+}
+
 test_pi_branch_offer_owns_actionable_wake() {
   local repo home plugin log stop out status
   repo="$TMP_ROOT/pi-branch-offer-root"
@@ -2770,6 +2887,116 @@ EOF
   pass "OpenCode watcher plugin starts one successor before wake prompt delivery settles"
 }
 
+test_opencode_successor_close_during_blocked_delivery_starts_next_cycle() {
+  local plugin repo home log stop die1 die2 out status
+  plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
+  repo="$TMP_ROOT/opencode-mid-delivery-close-root"
+  home="$TMP_ROOT/opencode-mid-delivery-close-home"
+  log="$TMP_ROOT/opencode-mid-delivery-close.log"
+  stop="$TMP_ROOT/opencode-mid-delivery-close.stop"
+  die1="$TMP_ROOT/opencode-mid-delivery-close.die1"
+  die2="$TMP_ROOT/opencode-mid-delivery-close.die2"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  git init -q "$repo"
+  : > "$repo/AGENTS.md"
+  : > "$home/state/task.meta"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = --handling-delivered ]; then
+  printf 'confirmed generation=%s watcher=%s\n' "$2" "$4" >> "${FM_ARM_LOG:?}"
+  exit 0
+fi
+printf 'arm=%s predecessor=%s\n' "$$" "${FM_WATCH_PREDECESSOR_ARM_PID:-none}" >> "${FM_ARM_LOG:?}"
+count=$(grep -c '^arm=' "$FM_ARM_LOG")
+if [ "$count" -eq 1 ]; then
+  printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+  printf 'signal: synthetic wake\n'
+  exit 0
+fi
+printf 'watcher: started pid=%s (beacon fresh) recovery-generation=fixture-generation\n' "$$"
+if [ "$count" -eq 2 ]; then
+  trap 'exit 0' TERM INT
+  while [ ! -e "$FM_DIE_FILE_1" ]; do sleep 0.02; done
+  printf 'signal: mid-delivery successor close\n'
+  exit 0
+fi
+if [ "$count" -eq 3 ]; then
+  trap 'exit 0' TERM INT
+  while [ ! -e "$FM_DIE_FILE_2" ]; do sleep 0.02; done
+  printf 'signal: mid-delivery successor close\n'
+  exit 0
+fi
+trap 'exit 0' TERM INT
+while [ ! -e "$FM_STOP_FILE" ]; do sleep 0.02; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" WORKTREE="$repo" FM_HOME="$home" FM_ARM_LOG="$log" FM_STOP_FILE="$stop" FM_DIE_FILE_1="$die1" FM_DIE_FILE_2="$die2" node 2>&1 <<'EOF'
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+const mod = await import(pathToFileURL(process.env.PLUGIN).href);
+let prompts = 0;
+let releasePrompt = () => {};
+const promptBlocked = new Promise((resolve) => {
+  releasePrompt = resolve;
+});
+const client = {
+  session: {
+    promptAsync: async () => {
+      prompts += 1;
+      if (prompts === 1) await promptBlocked;
+    },
+  },
+};
+const armRows = () => existsSync(process.env.FM_ARM_LOG)
+  ? readFileSync(process.env.FM_ARM_LOG, "utf8").trim().split("\n").filter((row) => row.startsWith("arm="))
+  : [];
+const parseArm = (row) => {
+  const match = /^arm=([0-9]+) predecessor=(.+)$/.exec(row);
+  if (!match) throw new Error(`unreadable arm row: ${row}`);
+  return { pid: match[1], predecessor: match[2] };
+};
+async function waitFor(predicate, message) {
+  for (let i = 0; i < 500; i += 1) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(message);
+}
+
+const hooks = await mod.FmPrimaryWatchArm({
+  client,
+  directory: process.env.WORKTREE,
+  worktree: process.env.WORKTREE,
+});
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+await hooks.event({ event: { type: "session.idle", properties: { sessionID: "session-test" } } });
+await waitFor(() => armRows().length >= 2 && prompts >= 1, "successor prompt delivery did not begin");
+writeFileSync(process.env.FM_DIE_FILE_1, "die\n");
+await waitFor(() => armRows().length >= 3, `third arm did not start while prompt blocked: ${armRows().join(" | ")}`);
+const afterFirstClose = armRows();
+const second = parseArm(afterFirstClose[1]);
+const third = parseArm(afterFirstClose[2]);
+if (third.predecessor !== second.pid) {
+  throw new Error(`third arm predecessor=${third.predecessor} wanted ${second.pid}`);
+}
+if (prompts !== 1) throw new Error(`mid-delivery close delivered extra prompt too soon: prompts=${prompts}`);
+writeFileSync(process.env.FM_DIE_FILE_2, "die\n");
+await waitFor(() => armRows().length >= 4, `fourth arm did not start while prompt blocked: ${armRows().join(" | ")}`);
+if (prompts !== 1) throw new Error(`second mid-delivery close delivered extra prompt too soon: prompts=${prompts}`);
+releasePrompt();
+await waitFor(() => prompts === 2, `coalesced prompt was not delivered: prompts=${prompts}`);
+await new Promise((resolve) => setTimeout(resolve, 80));
+if (prompts !== 2) throw new Error(`expected exactly two prompts, got ${prompts}`);
+writeFileSync(process.env.FM_STOP_FILE, "stop\n");
+EOF
+  )
+  status=$?
+  [ "$status" -eq 0 ] || fail "OpenCode successor close during blocked delivery must start the next cycle and coalesce prompts: $out"
+  [ -z "$out" ] || fail "OpenCode mid-delivery successor close test printed output: $out"
+  pass "OpenCode successor close during blocked delivery starts next cycle and coalesces prompts"
+}
+
 test_opencode_pre_ready_actionable_close_preserves_its_successor() {
   local plugin repo home log release retired stop out status
   plugin="$ROOT/.opencode/plugins/fm-primary-watch-arm.js"
@@ -3452,6 +3679,7 @@ test_pi_tool_returns_agent_tool_result
 test_pi_redundant_tool_call_is_owned_noop
 test_pi_scheduled_retry_call_is_owned_noop
 test_pi_actionable_close_starts_single_successor_before_delivery
+test_pi_successor_close_during_blocked_delivery_starts_next_cycle
 test_pi_branch_offer_owns_actionable_wake
 test_pi_branch_offer_flags_heartbeat
 test_pi_heartbeat_is_not_ridden_into_main_by_a_co_present_check
@@ -3480,6 +3708,7 @@ test_opencode_primary_watch_plugin_sources_effective_config
 test_opencode_primary_watch_plugin_requires_session_lock
 test_opencode_watch_arm_coordinator_respects_primary_scope
 test_opencode_primary_watch_plugin_rearms_after_wake
+test_opencode_successor_close_during_blocked_delivery_starts_next_cycle
 test_opencode_pre_ready_actionable_close_preserves_its_successor
 test_opencode_hung_successor_falls_back_to_typed_wake
 test_opencode_unretired_successor_falls_back_without_retry
