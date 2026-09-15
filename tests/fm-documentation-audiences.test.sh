@@ -124,15 +124,17 @@ test_local_links_and_no_keyword_heuristic() {
 Observed version 1.2.3 on branch `fm/example`.
 MD
   write_fixture_inventory "$repo"
-  git -C "$repo" add README.md docs
+  mkdir -p "$repo/graphify-out/wiki"
+  printf '%s\n' '# Generated page' '[Missing](../../docs/missing.md)' > "$repo/graphify-out/wiki/page.md"
+  git -C "$repo" add README.md docs graphify-out
   "$CHECK" --root "$repo" >/dev/null \
-    || fail "structural checker rejected legitimate maintainer evidence prose"
+    || fail "structural checker rejected legitimate maintainer evidence prose or generated graphify output"
 
   printf '%s\n' '[Setup](docs/setup.md) [Policy](docs/policy.md) [Broken](docs/missing.bin)' \
     > "$repo/README.md"
   git -C "$repo" add README.md
   run_expect_failure "unresolved local link" "$CHECK" --root "$repo"
-  pass "local links resolve while dates, versions, commands, and incident prose remain semantically reviewed"
+  pass "local links resolve, generated graphify pages stay out of scope, and incident prose remains semantically reviewed"
 }
 
 test_repository_inventory_passes
