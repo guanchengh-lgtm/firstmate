@@ -432,6 +432,7 @@ function spawnArm(paths, sessionID, client, predecessorArmPid = "") {
       }).catch((error) => {
         if (restorationInFlight === restoration) restorationInFlight = null;
         delivering = false;
+        pendingDeliveryReason = null;
         surfaceFailure(
           paths,
           client,
