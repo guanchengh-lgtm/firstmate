@@ -1,0 +1,8 @@
+not ok - Pi successor close during blocked delivery must start the next cycle and coalesce follow-ups: file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M2J411B3HDC622SQJW44FRZY/tests/[eval1]:66
+if (sends !== 2) throw new Error(`expected exactly two follow-ups, got ${sends}`);
+                       ^
+
+Error: expected exactly two follow-ups, got 3
+    at file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M2J411B3HDC622SQJW44FRZY/tests/[eval1]:66:24
+
+Node.js v24.18.0

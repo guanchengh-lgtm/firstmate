@@ -1,0 +1,9 @@
+### breakage 2 again with 4000ms settle window instead of 80ms
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+== test_pi_successor_close_during_blocked_delivery_starts_next_cycle
+ok - Pi successor close during blocked delivery starts next cycle and coalesces follow-ups
+porcelain clean? yes
+### restored, 4000ms window, expect green
+== test_pi_successor_close_during_blocked_delivery_starts_next_cycle
+ok - Pi successor close during blocked delivery starts next cycle and coalesces follow-ups
+porcelain clean? yes

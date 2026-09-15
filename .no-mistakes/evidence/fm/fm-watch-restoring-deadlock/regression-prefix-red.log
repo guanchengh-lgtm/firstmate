@@ -1,0 +1,23 @@
+sources at base commit a04ce233 (pre-fix), new tests:
+== test_pi_successor_close_during_blocked_delivery_starts_next_cycle
+not ok - Pi successor close during blocked delivery must start the next cycle and coalesce follow-ups: file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M2J411B3HDC622SQJW44FRZY/[eval1]:41
+  throw new Error(message);
+        ^
+
+Error: third arm did not start while delivery blocked: arm=35824 predecessor=none | arm=35853 predecessor=35824
+    at waitFor (file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M2J411B3HDC622SQJW44FRZY/[eval1]:41:9)
+    at async file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M2J411B3HDC622SQJW44FRZY/[eval1]:50:1
+
+Node.js v24.18.0
+exit=1
+== test_opencode_successor_close_during_blocked_delivery_starts_next_cycle
+not ok - OpenCode successor close during blocked delivery must start the next cycle and coalesce prompts: file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M2J411B3HDC622SQJW44FRZY/[eval1]:31
+  throw new Error(message);
+        ^
+
+Error: third arm did not start while prompt blocked: arm=36026 predecessor=none | arm=36052 predecessor=36026
+    at waitFor (file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M2J411B3HDC622SQJW44FRZY/[eval1]:31:9)
+    at async file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M2J411B3HDC622SQJW44FRZY/[eval1]:43:1
+
+Node.js v24.18.0
+exit=1

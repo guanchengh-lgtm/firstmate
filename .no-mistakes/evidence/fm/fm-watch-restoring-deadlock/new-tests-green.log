@@ -1,0 +1,9 @@
+== test_pi_successor_close_during_blocked_delivery_starts_next_cycle
+ok - Pi successor close during blocked delivery starts next cycle and coalesces follow-ups
+== test_opencode_successor_close_during_blocked_delivery_starts_next_cycle
+ok - OpenCode successor close during blocked delivery starts next cycle and coalesces prompts
+== test_pi_actionable_close_starts_single_successor_before_delivery
+ok - Pi actionable close starts one successor before wake delivery settles
+== test_opencode_primary_watch_plugin_rearms_after_wake
+ok - OpenCode watcher plugin starts one successor before wake prompt delivery settles
+exit=0

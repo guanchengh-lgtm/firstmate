@@ -1,0 +1,5 @@
+=== porcelain ===
+ M tests/fm-pi-watch-extension.test.sh
+=== RESTORED (expect green) ===
+ok - Pi successor close during blocked delivery starts next cycle and coalesces follow-ups
+exit=0

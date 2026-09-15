@@ -1,0 +1,39 @@
+### breakage 1: Pi fm-primary-pi-watch.ts:949 flip 'delivering' -> 'restoring' (close during delivery starts no successor)
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+== test_pi_successor_close_during_blocked_delivery_starts_next_cycle
+not ok - Pi successor close during blocked delivery must start the next cycle and coalesce follow-ups: file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M2J411B3HDC622SQJW44FRZY/[eval1]:41
+  throw new Error(message);
+        ^
+Error: third arm did not start while delivery blocked: arm=36486 predecessor=none | arm=36503 predecessor=36486
+exit=
+porcelain: clean
+### restore green
+== test_pi_successor_close_during_blocked_delivery_starts_next_cycle
+ok - Pi successor close during blocked delivery starts next cycle and coalesces follow-ups
+exit=
+porcelain: clean
+### breakage 2: Pi fm-primary-pi-watch.ts:610 flip '!== "idle"' -> '=== "idle"' (coalesce disabled)
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+== test_pi_successor_close_during_blocked_delivery_starts_next_cycle
+ok - Pi successor close during blocked delivery starts next cycle and coalesces follow-ups
+exit=
+porcelain: clean
+### restore green
+== test_pi_successor_close_during_blocked_delivery_starts_next_cycle
+ok - Pi successor close during blocked delivery starts next cycle and coalesces follow-ups
+exit=
+porcelain: clean
+### breakage 3: OpenCode fm-primary-watch-arm.js:409 flip '!child' -> 'child' (no successor during delivery)
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+== test_opencode_successor_close_during_blocked_delivery_starts_next_cycle
+not ok - OpenCode successor close during blocked delivery must start the next cycle and coalesce prompts: file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M2J411B3HDC622SQJW44FRZY/[eval1]:31
+  throw new Error(message);
+        ^
+Error: third arm did not start while prompt blocked: arm=37112 predecessor=none | arm=37137 predecessor=37112
+exit=
+porcelain: clean
+### restore green
+== test_opencode_successor_close_during_blocked_delivery_starts_next_cycle
+ok - OpenCode successor close during blocked delivery starts next cycle and coalesces prompts
+exit=
+porcelain: clean

@@ -1,0 +1,8 @@
+step1 arms=3 prompts=1 (delivery blocked, one close queued)
+step2 after rejected delivery: prompts=2
+step3 after later close: arms=4 prompts=3
+prompt[0]: {"path":{"id":"session-test"},"body":{"parts":[{"type":"text","text":"⁣FIRSTMATE_OP: v1 watcher: WATCHER FIRED - drain queued wakes with bin/fm-wake-drain.sh and handle the reported wake. Watcher continuity is plugin-owned.  signal: original wake"}]}}
+prompt[1]: {"path":{"id":"session-test"},"body":{"parts":[{"type":"text","text":"⁣FIRSTMATE_OP: v1 watcher: WATCHER FIRED - drain queued wakes with bin/fm-wake-drain.sh and handle the reported wake. Watcher continuity is plugin-owned.  watcher: FAILED - OpenCode could not deliver an actionable wake syntheti
+prompt[2]: {"path":{"id":"session-test"},"body":{"parts":[{"type":"text","text":"⁣FIRSTMATE_OP: v1 watcher: WATCHER FIRED - drain queued wakes with bin/fm-wake-drain.sh and handle the reported wake. Watcher continuity is plugin-owned.  signal: later close"}]}}
+stale-reason prompts=0 later-close prompts=1 total=3
+RESULT: PASS - stale slot did not replay into the later cycle

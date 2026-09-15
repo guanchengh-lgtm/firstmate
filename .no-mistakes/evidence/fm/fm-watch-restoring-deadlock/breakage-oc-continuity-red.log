@@ -1,0 +1,9 @@
+not ok - OpenCode successor close during blocked delivery must start the next cycle and coalesce prompts: file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M2J411B3HDC622SQJW44FRZY/tests/[eval1]:31
+  throw new Error(message);
+        ^
+
+Error: third arm did not start while prompt blocked: arm=61270 predecessor=none | arm=61318 predecessor=61270
+    at waitFor (file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M2J411B3HDC622SQJW44FRZY/tests/[eval1]:31:9)
+    at async file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M2J411B3HDC622SQJW44FRZY/tests/[eval1]:43:1
+
+Node.js v24.18.0

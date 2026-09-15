@@ -1,0 +1,40 @@
+### with test fix applied: both new tests green
+== test_pi_successor_close_during_blocked_delivery_starts_next_cycle
+ok - Pi successor close during blocked delivery starts next cycle and coalesces follow-ups
+== test_opencode_successor_close_during_blocked_delivery_starts_next_cycle
+ok - OpenCode successor close during blocked delivery starts next cycle and coalesces prompts
+porcelain: only the intended test fix ( M tests/fm-pi-watch-extension.test.sh)
+### breakage 2 (retry with fixed test): Pi fm-primary-pi-watch.ts:610 flip '!== "idle"' -> '=== "idle"' (coalesce disabled)
+== test_pi_successor_close_during_blocked_delivery_starts_next_cycle
+not ok - Pi successor close during blocked delivery must start the next cycle and coalesce follow-ups: file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M2J411B3HDC622SQJW44FRZY/[eval1]:66
+if (sends !== 2) throw new Error(`expected exactly two follow-ups, got ${sends}`);
+                       ^
+Error: expected exactly two follow-ups, got 3
+porcelain: only the intended test fix ( M tests/fm-pi-watch-extension.test.sh)
+### restore green
+== test_pi_successor_close_during_blocked_delivery_starts_next_cycle
+ok - Pi successor close during blocked delivery starts next cycle and coalesces follow-ups
+porcelain: only the intended test fix ( M tests/fm-pi-watch-extension.test.sh)
+### breakage 4: OpenCode fm-primary-watch-arm.js:420 delete 'delivering = true;' (coalesce/single-flight disabled)
+ 1 file changed, 1 deletion(-)
+== test_opencode_successor_close_during_blocked_delivery_starts_next_cycle
+not ok - OpenCode successor close during blocked delivery must start the next cycle and coalesce prompts: file:///Users/AI/.no-mistakes/worktrees/edb446952c22/01M2J411B3HDC622SQJW44FRZY/[eval1]:53
+if (prompts !== 1) throw new Error(`second mid-delivery close delivered extra prompt too soon: prompts=${prompts}`);
+                         ^
+Error: second mid-delivery close delivered extra prompt too soon: prompts=2
+porcelain: only the intended test fix ( M tests/fm-pi-watch-extension.test.sh)
+### restore green
+== test_opencode_successor_close_during_blocked_delivery_starts_next_cycle
+ok - OpenCode successor close during blocked delivery starts next cycle and coalesces prompts
+porcelain: only the intended test fix ( M tests/fm-pi-watch-extension.test.sh)
+### breakage 5: OpenCode fm-primary-watch-arm.js:435 delete 'pendingDeliveryReason = null;' in catch (review fix reverted), stale-slot scenario
+ 1 file changed, 1 deletion(-)
+prompts=4 STALE replays=1 LATER deliveries=1 surfaced failures=1
+RESULT: FAIL - stale mid-delivery reason replayed or delivery miscount
+exit=1
+porcelain: only the intended test fix ( M tests/fm-pi-watch-extension.test.sh)
+### restore, expect PASS
+prompts=3 STALE replays=0 LATER deliveries=1 surfaced failures=1
+RESULT: PASS - stale slot cleared on delivery error, no replay
+exit=0
+porcelain: only the intended test fix ( M tests/fm-pi-watch-extension.test.sh)
