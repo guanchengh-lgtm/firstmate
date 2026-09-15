@@ -42,12 +42,15 @@ type CloseClassification = {
   message: string;
 };
 
+type WatchPhase = "idle" | "restoring" | "delivering";
+
 type PendingActionableClose = {
   version: 1;
   token: string;
   message: string;
   predecessorArmPid: string;
   delivered?: true;
+  inFlight?: true;
 };
 
 type ReplacementActionableHandoff = {
@@ -74,7 +77,7 @@ type SessionGeneration = {
   retryTimer: ReturnType<typeof setTimeout> | null;
   cleanupTimer: ReturnType<typeof setTimeout> | null;
   retryFailures: number;
-  restoring: boolean;
+  phase: WatchPhase;
   seq: number;
   pendingActionables: PendingActionableClose[];
   cleanupFailure: string;
@@ -231,6 +234,17 @@ function createPendingActionable(message: string, predecessorArmPid: string): Pe
   };
 }
 
+function persistablePending(pending: PendingActionableClose): PendingActionableClose {
+  const persistable: PendingActionableClose = {
+    version: 1,
+    token: pending.token,
+    message: pending.message,
+    predecessorArmPid: pending.predecessorArmPid,
+  };
+  if (pending.delivered) persistable.delivered = true;
+  return persistable;
+}
+
 function validatePendingActionable(value: unknown): PendingActionableClose {
   if (
     typeof value !== "object" || value === null ||
@@ -242,11 +256,13 @@ function validatePendingActionable(value: unknown): PendingActionableClose {
     typeof (value as { predecessorArmPid?: unknown }).predecessorArmPid !== "string" ||
     !/^[0-9]*$/.test((value as { predecessorArmPid: string }).predecessorArmPid) ||
     ((value as { delivered?: unknown }).delivered !== undefined &&
-      (value as { delivered?: unknown }).delivered !== true)
+      (value as { delivered?: unknown }).delivered !== true) ||
+    ((value as { inFlight?: unknown }).inFlight !== undefined &&
+      (value as { inFlight?: unknown }).inFlight !== true)
   ) {
     throw new Error(`invalid Pi replacement actionable handoff at ${actionableHandoff}`);
   }
-  return value as PendingActionableClose;
+  return persistablePending(value as PendingActionableClose);
 }
 
 function validateReplacementHandoff(value: unknown): PendingActionableClose[] {
@@ -269,7 +285,7 @@ function writeReplacementHandoff(pending: PendingActionableClose[]): void {
   replacementHandoff = [...pending];
   mkdirSync(handoffDir, { recursive: true });
   const temporary = `${actionableHandoff}.tmp-${process.pid}-${++nextHandoffId}`;
-  const handoff: ReplacementActionableHandoff = { version: 2, pending };
+  const handoff: ReplacementActionableHandoff = { version: 2, pending: pending.map(persistablePending) };
   try {
     writeFileSync(temporary, `${JSON.stringify(handoff)}\n`, { mode: 0o600 });
     renameSync(temporary, actionableHandoff);
@@ -369,7 +385,7 @@ function createGeneration(): SessionGeneration {
     retryTimer: null,
     cleanupTimer: null,
     retryFailures: 0,
-    restoring: false,
+    phase: "idle",
     seq: 0,
     pendingActionables: [],
     cleanupFailure: "",
@@ -590,6 +606,13 @@ export default function (pi: ExtensionAPI) {
     pending: PendingActionableClose,
   ): void {
     if (owner.pendingActionables.some((item) => item.token === pending.token)) return;
+    if (
+      generationIsLive(owner) &&
+      owner.phase !== "idle" &&
+      owner.pendingActionables.some((item) => !item.delivered && !item.inFlight)
+    ) {
+      return;
+    }
     owner.pendingActionables.push(pending);
     if (owner.stopping && owner.replacement) {
       let replacementPending = pending;
@@ -638,8 +661,8 @@ export default function (pi: ExtensionAPI) {
   }
 
   async function processPendingActionables(owner: SessionGeneration): Promise<void> {
-    if (!generationIsLive(owner) || owner.restoring || owner.pendingActionables.length === 0) return;
-    owner.restoring = true;
+    if (!generationIsLive(owner) || owner.phase !== "idle" || owner.pendingActionables.length === 0) return;
+    owner.phase = "delivering";
     const attemptedCleanup = new Set<string>();
     try {
       while (generationIsLive(owner) && owner.pendingActionables.length > 0) {
@@ -677,14 +700,26 @@ export default function (pi: ExtensionAPI) {
           }
         };
         try {
-          const restoration = await restoreAfterActionableClose(owner, pending.predecessorArmPid);
+          owner.phase = "restoring";
+          let restoration: { failure: string; recovery?: { generation: string; watcherPid: string } };
+          try {
+            restoration = await restoreAfterActionableClose(owner, pending.predecessorArmPid);
+          } finally {
+            if (generationIsLive(owner)) owner.phase = "delivering";
+          }
           if (!generationIsLive(owner)) {
             settleClaim("failed");
             releaseClaim();
             return;
           }
           const message = restoration.failure ? `${pending.message}\n\n${restoration.failure}` : pending.message;
-          const delivered = await deliverActionableWake(owner, message, Boolean(restoration.failure), pending.token, restoration.recovery);
+          pending.inFlight = true;
+          let delivered = false;
+          try {
+            delivered = await deliverActionableWake(owner, message, Boolean(restoration.failure), pending.token, restoration.recovery);
+          } finally {
+            delete pending.inFlight;
+          }
           if (!delivered) {
             settleClaim("failed");
             releaseClaim();
@@ -709,7 +744,7 @@ export default function (pi: ExtensionAPI) {
       surfaceFailure(owner, `watcher: FAILED - Pi extension could not deliver an actionable wake\n${detail}`);
     } finally {
       if (generationIsLive(owner)) {
-        owner.restoring = false;
+        owner.phase = "idle";
         if (owner.pendingActionables.some((pending) => pending.delivered)) schedulePendingCleanup(owner);
         if (!owner.child && !owner.retryTimer) startArm(owner);
       }
@@ -912,9 +947,12 @@ export default function (pi: ExtensionAPI) {
         if (!generationIsLive(owner)) return;
         owner.retryFailures = 0;
         void processPendingActionables(owner);
+        if (owner.phase === "delivering" && !owner.child && !owner.retryTimer) {
+          startArm(owner, predecessor);
+        }
         return;
       }
-      if (!generationIsLive(owner) || owner.restoring) return;
+      if (!generationIsLive(owner) || owner.phase === "restoring") return;
       scheduleRetry(owner, classification.message, predecessor);
     });
     armChild.on("error", (error: Error) => {
@@ -924,7 +962,7 @@ export default function (pi: ExtensionAPI) {
       settleReadiness(false);
       releaseChild();
       if (!generationIsLive(owner)) return;
-      if (owner.restoring) return;
+      if (owner.phase === "restoring") return;
       scheduleRetry(owner, `watcher: FAILED - Pi extension arm child ${id} failed: ${error.message}`, String(armChild.pid ?? ""));
     });
     return {
