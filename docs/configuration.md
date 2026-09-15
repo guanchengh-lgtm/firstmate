@@ -416,12 +416,18 @@ The historical brief-only directories acknowledged by the T11 cleanup carry a `s
 
 The cloud fallback is one bot routine with Record scope only.
 It runs `fm-nightly.sh run --record-only --record <cloud Record clone>` from the reviewed code revision after the local run's bound, and its receipt lands under its own host key beside the Mac's receipt for the same date.
-Its skipped stages are explicit in its receipt: local reconcile, transcript archive, weekly archive check, and injected-size measures.
+Its skipped stages are explicit in its receipt: local reconcile, graphify, transcript archive, weekly archive check, and injected-size measures.
 A rejected push preserves its local commit and reports the conflict; it never force-pushes.
 The routine's Git credential and its actual schedule binding are proven at activation; connector access alone is not evidence.
 
 Compiler ownership is one sentence: graphify compiles code structure per repository into `graphify-out/`; gbrain output is published only under the generated trees named in [`docs/gbrain.md`](gbrain.md); the nightly task owns `data/wiki/views/`; `playbook/`, `captain.md`, `learnings.md`, and the map remain hand-owned; generic Record ingestion reads only `.md`, `.txt`, `.csv`, and `.json`.
-The nightly runner has no graphify stage and no config key for it; T10 adds its own integration when it lands.
+The nightly runner walks a `graphify` stage after views when the Record holds `knowledge-system-wayfinder/research/T10-graphify/inputs.tsv`; the stage is cloud-ok and not-configured without that ledger, and no nightly.env key enables it.
+[`bin/fm-graphify.sh`](../bin/fm-graphify.sh) owns that invocation.
+Shell `graphify update` refreshes code only; a document-source change is a docs-stale finding until the host assistant `--update --wiki` workflow runs.
+The shell records that code-only rebuild in the ignored `graphify-out/code-only-build.tsv` so the finding stays reported across nights, and any rebuild that replaces the graph file retires the record.
+The shell never rewrites a graph that its clone tracks in git, so a code change in such a clone is the same docs-stale finding until that repository's own delivery ships the rebuild; the clone under `projects/` stays clean for fleet sync.
+The merged graph lands at `state/graphify/merged-graph.json`, never under the Record, because the Record checkpoint commits every file below its root.
+Installed Graphify 0.9.53 needs at least two graphs for `merge-graphs`, so a ready set of one graph reports detail `merge-single` and waits for a second ready input.
 The gbrain phase inside the nightly views stage and its `config/gbrain.env` keys are owned by [`docs/gbrain.md`](gbrain.md).
 The five transcript families are fixed in the runner header; no config key adds, removes, or relocates one.
 

@@ -27,6 +27,9 @@ from urllib.parse import unquote, urlsplit
 MARKDOWN_LINK_RE = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
 HTML_LINK_RE = re.compile(r"\b(?:href|src)=[\"']([^\"']+)[\"']", re.IGNORECASE)
 REQUIRED_TRACKED_PATTERNS = ["*.md", "*.mdx", "*.rst", "*.txt", "docs/examples/*"]
+# Generated compiler output is tracked prose but not maintained prose: it is
+# rebuilt by a tool, so it has no audience owner in the inventory.
+GENERATED_EXCLUDES = [":(exclude)graphify-out/"]
 
 
 class CheckError(Exception):
@@ -39,7 +42,7 @@ def fail(message: str) -> None:
 
 def git_tracked(root: Path, patterns: list[str]) -> list[str]:
     proc = subprocess.run(
-        ["git", "-C", str(root), "ls-files", "-z", "--", *patterns],
+        ["git", "-C", str(root), "ls-files", "-z", "--", *patterns, *GENERATED_EXCLUDES],
         check=False,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

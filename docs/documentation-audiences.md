@@ -3,6 +3,7 @@
 [`documentation-audiences.json`](documentation-audiences.json) is the machine-consumed classification owner for every maintained prose surface.
 `bin/fm-doc-audience-check.sh` validates exact inventory coverage, README setup routing, required owner pointers, and local link targets.
 Audience metadata is centralized there rather than copied into front matter on every page.
+Generated pages under `graphify-out/` are compiler output, not maintained prose, so the check leaves them outside the inventory scope.
 
 The audience classes have one placement purpose each:
 
