@@ -1,0 +1,22 @@
+ok - fm-record-scan: --help names the scan contract
+ok - fm-record-scan: every feeder class refuses without echoing the value
+ok - fm-record-scan: lookalikes stay clean
+ok - fm-record-scan: credential-shaped path labels are redacted
+ok - fm-record-scan: binary hits and scanner errors fail closed
+ok - fm-record-scan: missing, failing, and incomplete gitleaks scans fail closed
+ok - fm-record-scan: gitleaks-only and feeder-only hits each block independently
+ok - fm-record-scan: gitleaks:allow comments do not exempt a hit
+ok - fm-record-scan: corrupt and encrypted archives refuse
+ok - fm-record-scan: LFS pointer text is not enough; payload bytes are scanned
+ok - fm-record-scan: private key headers refuse in indented and serialized text
+ok - fm-record-scan: compressed feeder patterns block the archive-aware chain
+ok - fm-record-scan: Gitleaks exclusions cannot hide payloads or credential filenames
+ok - fm-record-scan: nested archives refuse because they cannot be scanned
+ok - fm-record-scan: unsupported archives refuse even under hidden or nested names
+ok - fm-record-scan: executable scans remove only their own temporary stages
+ok - fm-record-scan: gitleaks execution has an enforced deadline
+ok - fm-record-scan: chain accepts a clean tree
+not ok - misnamed archive hit did not name the payload path (missing: '/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-record-scan.0o9wNF/misnamed-archives/bin/renamed.bin')
+--- output ---
+fm-record-scan: refusing to publish: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-record-scan.0o9wNF/misnamed-archives/bin.scan.1s08B5/693bbfb1c2744d7d5f1c8403849876fb152325b6a25f0cd033b6e708d1286913.zip!hidden.txt matches the stripe-access-token credential pattern
+exit=1

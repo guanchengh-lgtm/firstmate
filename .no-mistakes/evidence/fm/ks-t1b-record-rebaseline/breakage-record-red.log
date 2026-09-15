@@ -1,0 +1,25 @@
+ok - fm-record: a disabled home is an explicit no-op
+ok - fm-record: a disabled home does not require hash tools
+ok - fm-record: the first tick commits and pushes a clean Record
+ok - fm-record: unchanged ticks do not create commits
+ok - fm-record: inherited Git overrides and a wrong root refuse
+ok - fm-record: every effective push destination must match the binding
+ok - fm-record: LFS uploads use the bound origin
+ok - fm-record: setup and transactions refuse redirected hook directories
+ok - fm-record: a live lock owner makes tick busy
+ok - fm-record: an abandoned lock is recovered
+ok - fm-record: an unstable settle window does not commit
+ok - fm-record: the scan chain blocks the commit without echoing secrets
+ok - fm-record: the state mirror updates and keeps history
+ok - fm-record: special names commit and outside links refuse
+ok - fm-record: validation omits untrusted paths and cleans transaction files on every exit
+ok - fm-record: LFS attributes are literal and survive shrink and repeated setup
+ok - fm-record: push failure keeps local commits and the next tick retries
+ok - fm-record: a non-fast-forward push reports diverged and keeps both histories
+ok - fm-record: the LaunchAgent plist is a validated 60-second sibling job
+ok - fm-record: job preflight requires tools, stable code, and a valid binding
+ok - fm-record: the new root commit keeps the old data/ tip as an ancestor
+ok - fm-record: the installed pre-commit hook blocks a direct git commit
+ok - fm-record: a required checkpoint refuses when the lock stays live
+not ok - crash-window reconcile: expected exit 0, got 8
+exit=1

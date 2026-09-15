@@ -1,0 +1,251 @@
+
+### S1 setup --init, then tick commits and pushes
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+[exit=0]
+fm-record: state=pushed commit=79a31b7
+state=pushed
+updated_at=2026-09-15T06:12:36Z
+last_push_at=2026-09-15T06:12:36Z
+pending=0
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+[exit=0]
+
+### S1b unchanged tick emits commit + pending
+fm-record: state=unchanged commit=79a31b7
+state=unchanged
+updated_at=2026-09-15T06:12:37Z
+last_push_at=2026-09-15T06:12:36Z
+pending=0
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+[exit=0]
+
+### S1c health has exactly seven keys after pushed
+fm-record: state=unchanged
+state=unchanged
+updated_at=2026-09-15T06:12:37Z
+last_push_at=2026-09-15T06:12:36Z
+pending=0
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+[exit=0]
+--- raw health file:
+state=unchanged
+updated_at=2026-09-15T06:12:37Z
+last_push_at=2026-09-15T06:12:36Z
+pending=0
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+
+### S2 crash window: fault-inject read-tree on second checkpoint, next checkpoint reconciles
+fm-record: state=configuration-error detail=commit-publication
+state=configuration-error
+updated_at=2026-09-15T06:12:38Z
+last_push_at=2026-09-15T06:12:36Z
+pending=1
+failure_class=none
+pending_since=1789452758
+pending_age_seconds=0
+[exit=8]
+--- after crash: HEAD=7477ce9 diff --cached count=1
+
+### S2b next checkpoint (no new bytes) reconciles: HEAD unchanged, unchanged state
+fm-record: state=unchanged commit=7477ce9
+state=unchanged
+updated_at=2026-09-15T06:12:39Z
+last_push_at=2026-09-15T06:12:36Z
+pending=1
+failure_class=none
+pending_since=1789452758
+pending_age_seconds=1
+[exit=0]
+--- HEAD unchanged: yes; diff --cached count=0
+
+### S3 adversarial: real user staging (not parent tree) refuses exit 8 index-recovery
+fm-record: state=configuration-error detail=index-recovery
+state=configuration-error
+updated_at=2026-09-15T06:12:40Z
+last_push_at=2026-09-15T06:12:36Z
+pending=1
+failure_class=none
+pending_since=1789452758
+pending_age_seconds=2
+[exit=8]
+
+### S3b gate-2: reconcile with staged content reports local-changes exit 4, not index-recovery
+fm-record: state=local-changes
+state=local-changes
+updated_at=2026-09-15T06:12:40Z
+last_push_at=2026-09-15T06:12:36Z
+pending=1
+failure_class=none
+pending_since=1789452758
+pending_age_seconds=2
+[exit=4]
+
+### S3c verify stays read-only with staged content
+fm-record: state=verified equal=no head=7477ce969d8791a3d5675a1de9c311551c4b5ab2 remote=79a31b71a050ad50296b15ada1ab6e49c679a6d9 staged=1 unstaged=0 untracked=0 ahead=1 behind=0 branch=main
+[exit=1]
+--- still staged: staged.md
+
+### S4 root-commit crash window: first checkpoint crashes between commit and read-tree
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+[exit=0]
+fm-record: state=configuration-error detail=commit-publication
+state=configuration-error
+updated_at=2026-09-15T06:12:43Z
+last_push_at=
+pending=1
+failure_class=
+pending_since=1789452763
+pending_age_seconds=0
+[exit=8]
+--- root HEAD parents: 1 commit(s); diff --cached count=3
+
+### S4b next checkpoint reconciles the root crash
+fm-record: state=unchanged commit=83cec32
+state=unchanged
+updated_at=2026-09-15T06:12:44Z
+last_push_at=
+pending=1
+failure_class=
+pending_since=1789452763
+pending_age_seconds=1
+[exit=0]
+--- commits=1 cached=0
+
+### S5 E-attest: manual --no-verify clean commit is the only SHA scanned on next tick
+--- ledger contains manual sha before tick: 0
+fm-record: state=pushed commit=3e31d03
+state=pushed
+updated_at=2026-09-15T06:12:45Z
+last_push_at=2026-09-15T06:12:45Z
+pending=0
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+[exit=0]
+--- scan calls:
+--- manual sha 3e31d03e596daf30de875c2712145d2de374b85d
+--- ledger contains manual sha after tick: 1
+fm-record: state=pushed commit=4fade9b
+state=pushed
+updated_at=2026-09-15T06:12:46Z
+last_push_at=2026-09-15T06:12:46Z
+pending=0
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+[exit=0]
+--- scan calls on next tick (owner commit never rescanned as outgoing):
+
+### S6 E-attest adversarial: secret in manual --no-verify commit is caught by real scan on tick
+fm-record-scan: refusing to publish: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-record-live.F2MoWF/a/home/data/.git/record-candidate/work/../scan/leak.md matches the github-classic-token credential pattern
+fm-record: state=scan-blocked
+state=scan-blocked
+updated_at=2026-09-15T06:12:47Z
+last_push_at=2026-09-15T06:12:46Z
+pending=1
+failure_class=none
+pending_since=1789452767
+pending_age_seconds=0
+[exit=5]
+
+### S7 push-pending then diverged health keys and failure_class
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+[exit=0]
+fm-record: state=push-pending commit=83ffb53 class=offline pending=1
+state=push-pending
+updated_at=2026-09-15T06:12:50Z
+last_push_at=2026-09-15T06:12:49Z
+pending=1
+failure_class=offline
+pending_since=1789452770
+pending_age_seconds=0
+[exit=6]
+fm-record: state=push-pending
+state=push-pending
+updated_at=2026-09-15T06:12:50Z
+last_push_at=2026-09-15T06:12:49Z
+pending=1
+failure_class=offline
+pending_since=1789452770
+pending_age_seconds=0
+[exit=0]
+--- keys: state updated_at last_push_at pending failure_class pending_since pending_age_seconds 
+pending_age_seconds=3
+fm-record: state=diverged commit=83ffb53
+state=diverged
+updated_at=2026-09-15T06:12:53Z
+last_push_at=2026-09-15T06:12:49Z
+pending=1
+failure_class=diverged
+pending_since=1789452770
+pending_age_seconds=3
+[exit=7]
+--- health file after diverged (was offline first):
+state=diverged
+updated_at=2026-09-15T06:12:53Z
+last_push_at=2026-09-15T06:12:49Z
+pending=1
+failure_class=diverged
+pending_since=1789452770
+pending_age_seconds=3
+
+### S8 E-misnamed: zip renamed .bin and a .tgz each block alone through real gitleaks
+--- renamed.bin:
+fm-record-scan: refusing to publish: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-record-live.F2MoWF/mis1/renamed.bin matches the github-classic-token credential pattern
+[exit=2]
+--- bundle.tgz:
+[exit=0]
+
+### S8b scratch hit locator: token in notes.pdf names payload path, not sha
+fm-record-scan: refusing to publish: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-record-live.F2MoWF/mis3/sub/notes.pdf matches the github-classic-token credential pattern
+[exit=2]
+
+### S8c scratch location: inside the payload's git dir when payload is a repo, sibling otherwise; nothing left behind
+[exit=0]
+--- leftovers in repo4 work tree: 0  ; in .git: 0
+--- leftovers beside mis1: 0
+
+### S9 E-nested: zip in zip refuses with nested message
+fm-record-scan: nested archive cannot be scanned
+[exit=1]
+
+### S10 E-locator: ordinary bad path named; credential-shaped path redacted
+fm-record-scan: gitleaks directory is missing: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-record-live.F2MoWF/does-not-exist
+[exit=1]
+fm-record-scan: refusing to publish: [credential-shaped source path redacted] matches the credential filename pattern
+[exit=2]
+
+### S11 E-prereq: setup with gitleaks and git-lfs only on PATH succeeds; restic absent
+fm-record: no sha256 tool; install shasum or sha256sum
+[exit=8]
+--- restic on PATH: none
+
+### S12 index.lock: foreign index.lock excludes the checkpoint
+fm-record: state=configuration-error detail=commit-publication
+state=configuration-error
+updated_at=2026-09-15T06:12:55Z
+last_push_at=2026-09-15T06:12:46Z
+pending=0
+failure_class=none
+pending_since=0
+pending_age_seconds=0
+[exit=8]
+
+### S13 line counts
+    1643 /Users/AI/.no-mistakes/worktrees/edb446952c22/01M2GGJW1PRQ312EEFZD7YMWCX/bin/fm-record.sh
+     450 /Users/AI/.no-mistakes/worktrees/edb446952c22/01M2GGJW1PRQ312EEFZD7YMWCX/bin/fm-record-scan.sh
+    2093 total
+python3 invocations in fm-record.sh: 3; in scan: 1
+restic/rclone in record scripts+tests: /Users/AI/.no-mistakes/worktrees/edb446952c22/01M2GGJW1PRQ312EEFZD7YMWCX/bin/fm-record.sh:0 /Users/AI/.no-mistakes/worktrees/edb446952c22/01M2GGJW1PRQ312EEFZD7YMWCX/bin/fm-record-scan.sh:0 /Users/AI/.no-mistakes/worktrees/edb446952c22/01M2GGJW1PRQ312EEFZD7YMWCX/tests/fm-record.test.sh:0 /Users/AI/.no-mistakes/worktrees/edb446952c22/01M2GGJW1PRQ312EEFZD7YMWCX/tests/fm-record-scan.test.sh:0 
+record-publication refs: 

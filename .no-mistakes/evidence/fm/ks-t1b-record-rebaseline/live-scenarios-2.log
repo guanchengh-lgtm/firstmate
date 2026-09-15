@@ -1,0 +1,30 @@
+
+### S5 E-attest (fake gitleaks wrapper logs outgoing scans)
+fm-record: state=pushed commit=6366530
+--- manual sha in ledger before tick: 0
+fm-record: state=pushed commit=fc6121a
+--- outgoing scans during tick (manual commit only): 1
+outgoing-scan: <data>/.git/outgoing.scan.YxRDmF
+--- manual sha in ledger after tick: 1
+fm-record: state=pushed commit=7bcfee9
+--- outgoing scans on the following tick (owner commit never rescanned): 0
+--- ledger lines vs commits reachable from HEAD: 3 / 3
+
+### S11 E-prereq: setup succeeds with gitleaks and git-lfs only (plus base utils), restic absent
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+fm-record: state=unchanged detail=setup
+[exit=0]
+--- restic: absent; rclone: absent; gitleaks: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-record-live2.MAKhiC/fakebin/gitleaks
+
+### S12 foreign index.lock excludes a --required checkpoint with exit 9; HEAD unchanged
+fm-record: state=configuration-error detail=commit-publication
+--- HEAD unchanged: yes; lock content: foreign lock
+fm-record: state=committed-local commit=a03ade4
+
+### S14 E-classify: push_once classes from a fake git on PATH
+nff -> fm-record: state=diverged commit=44512d9
+fetchfirst -> fm-record: state=diverged commit=9a7d6a0
+auth -> fm-record: state=push-pending commit=f0a4013 class=auth pending=4
+lfs -> fm-record: state=push-pending commit=eaf60e4 class=lfs pending=5
+other -> fm-record: state=push-pending commit=5c0f7dc class=offline pending=6
+hang -> fm-record: state=push-pending commit=8ba4a35 class=timeout pending=7
