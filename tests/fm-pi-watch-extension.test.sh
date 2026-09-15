@@ -490,6 +490,7 @@ const pi = {
     if (sends === 1) firstPrompt = message;
     deliveryStarted = true;
     if (sends === 1) await deliveryBlocked;
+    else setTimeout(() => handlers.get("before_agent_start")?.({ prompt: message }, {}), 0);
   },
 };
 const armRows = () => existsSync(process.env.FM_ARM_LOG)
