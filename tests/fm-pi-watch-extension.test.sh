@@ -2346,6 +2346,105 @@ EOF
   pass "Pi replacement handoff tokens stay unique across fresh modules"
 }
 
+test_pi_stopped_delivering_generation_hands_off_late_close() {
+  local repo home plugin count out status
+  repo="$TMP_ROOT/pi-stopped-delivering-handoff-root"
+  home="$TMP_ROOT/pi-stopped-delivering-handoff-home"
+  count="$TMP_ROOT/pi-stopped-delivering-handoff.count"
+  mkdir -p "$repo/bin" "$home/state" "$home/config"
+  install_pi_watch_extension_fixture "$repo"
+  plugin="$repo/.pi/extensions/fm-primary-pi-watch.ts"
+  cat > "$repo/bin/fm-watch-arm.sh" <<'SH'
+#!/usr/bin/env bash
+count=0
+[ ! -f "$FM_ARM_COUNT" ] || count=$(cat "$FM_ARM_COUNT")
+count=$((count + 1))
+printf '%s\n' "$count" > "$FM_ARM_COUNT"
+late_close() {
+  sleep 0.08
+  printf 'signal: module-%s late actionable outcome\n' "$count"
+  exit 0
+}
+trap late_close TERM INT
+printf 'watcher: started pid=%s\n' "$$"
+while :; do sleep 0.02; done
+SH
+  chmod +x "$repo/bin/fm-watch-arm.sh"
+  out=$(PLUGIN="$plugin" FM_HOME="$home" FM_ROOT_OVERRIDE="$repo" FM_ARM_COUNT="$count" FM_WATCH_ARM_RETIRE_TIMEOUT_MS=10 node --input-type=module 2>&1 <<'EOF'
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { pathToFileURL } from "node:url";
+
+function makePi() {
+  const handlers = new Map();
+  let tool = null;
+  const prompts = [];
+  const pi = {
+    on(event, handler) {
+      handlers.set(event, handler);
+    },
+    registerCommand() {},
+    registerTool(candidate) {
+      if (candidate.name === "fm_watch_arm_pi") tool = candidate;
+    },
+    sendUserMessage: async (message) => {
+      prompts.push(message);
+    },
+    events: { on() {}, emit() {} },
+  };
+  return { pi, handlers, prompts, getTool: () => tool };
+}
+
+async function waitFor(pred, label) {
+  for (let i = 0; i < 500; i += 1) {
+    if (pred()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`timeout waiting for ${label}`);
+}
+
+writeFileSync(`${process.env.FM_HOME}/state/.lock`, `${process.pid}\n`);
+const armCount = () => (existsSync(process.env.FM_ARM_COUNT) ? Number(readFileSync(process.env.FM_ARM_COUNT, "utf8").trim()) : 0);
+const firstMod = await import(`${pathToFileURL(process.env.PLUGIN).href}?stopped-delivering=1`);
+const first = makePi();
+firstMod.default(first.pi);
+const firstArmed = await first.getTool().execute("arm-1", {}, undefined, undefined, {});
+if (!firstArmed.details?.ok) throw new Error(`first arm failed: ${JSON.stringify(firstArmed.details)}`);
+await waitFor(() => armCount() >= 1, "first arm");
+await first.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "new" }, {});
+
+const secondMod = await import(`${pathToFileURL(process.env.PLUGIN).href}?stopped-delivering=2`);
+const second = makePi();
+secondMod.default(second.pi);
+const secondArmed = await second.getTool().execute("arm-2", {}, undefined, undefined, {});
+if (!secondArmed.details?.ok) throw new Error(`second arm failed: ${JSON.stringify(secondArmed.details)}`);
+await waitFor(() => armCount() >= 2, "second arm");
+await waitFor(
+  () => second.prompts.some((message) => message.includes("signal: module-1 late actionable outcome")),
+  "first late close delivered into the live second module",
+);
+await second.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "new" }, {});
+
+const handoffPath = `${process.env.FM_HOME}/state/extensions/pi-primary-watch/session-replacement-actionable.json`;
+const handoffMessages = () => {
+  if (!existsSync(handoffPath)) return [];
+  return JSON.parse(readFileSync(handoffPath, "utf8")).pending.map((item) => item.message);
+};
+await waitFor(
+  () => handoffMessages().some((message) => message.includes("signal: module-2 late actionable outcome")),
+  "second module late close handed off after shutdown mid-delivery",
+);
+if (!handoffMessages().some((message) => message.includes("signal: module-1 late actionable outcome"))) {
+  throw new Error(`undelivered first outcome was dropped from the handoff: ${JSON.stringify(handoffMessages())}`);
+}
+process.exit(0);
+EOF
+)
+  status=$?
+  expect_code 0 "$status" "Pi stopped mid-delivery generation must hand off its own late actionable close"
+  [ -z "$out" ] || fail "Pi stopped mid-delivery handoff test printed output: $out"
+  pass "Pi generation stopped mid-delivery hands off its late actionable close"
+}
+
 test_pi_replacement_persistence_failure_stops_arm_child() {
   local repo home plugin count marker out status
   repo="$TMP_ROOT/pi-replacement-persistence-failure-root"
@@ -3700,6 +3799,7 @@ test_pi_session_replacement_carries_inflight_actionable_close
 test_pi_streaming_followup_is_replayed_after_replacement
 test_pi_late_retiring_actionable_reaches_replacement
 test_pi_replacement_tokens_are_process_unique
+test_pi_stopped_delivering_generation_hands_off_late_close
 test_pi_replacement_persistence_failure_stops_arm_child
 test_pi_process_exit_cleanup_listener_lifecycle
 test_pi_process_exit_cleanup_stops_arm_child

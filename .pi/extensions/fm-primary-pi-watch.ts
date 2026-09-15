@@ -607,6 +607,7 @@ export default function (pi: ExtensionAPI) {
   ): void {
     if (owner.pendingActionables.some((item) => item.token === pending.token)) return;
     if (
+      generationIsLive(owner) &&
       owner.phase !== "idle" &&
       owner.pendingActionables.some((item) => !item.delivered && !item.inFlight)
     ) {
