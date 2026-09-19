@@ -1,0 +1,13 @@
+FM_TEST_BEGIN 2026-09-19T17:49:36Z tests/fm-gbrain-eval.test.sh family=unclassified expected_gate_skip=none
+ok - fm-gbrain-eval: help works and gold must be the 13-probe table
+ok - fm-gbrain-eval: official lanes call shipped recall and collapse chunks
+ok - fm-gbrain-eval: keyword and timeout rows keep overlap
+ok - fm-gbrain-eval: hit@5 regression and I5 note keep overlap
+Traceback (most recent call last):
+  File "<stdin>", line 5, in <module>
+AssertionError: [{'arm': 'hybrid', 'available': 'available', 'cache': 'off', 'elapsed_ms': 87, 'expected': ['ov-kb-feeder'], 'first_expected_rank': 2, 'hit@1': 0, 'hit@3': 1, 'hit@5': 1, 'identities': ['ov-kb-graphify', 'ov-kb-feeder', 'kb-feeder-vault-ship', 'ov-merge-slices', 'ov-s3-pointer'], 'mode': 'A', 'n': '1', 'over_fetch': 25, 'query': 'feeder export plan engineering review', 'reciprocal_rank': 0.5, 'retrieval_mode': 'keyword', 'status': 'ok', 'truncated': False}, {'arm': 'hybrid', 'available': 'available', 'cache': 'off', 'elapsed_ms': 87, 'expected': ['ov-kb-graphify'], 'first_expected_rank': 1, 'hit@1': 1, 'hit@3': 1, 'hit@5': 1, 'identities': ['ov-kb-graphify', 'kb-graphify-tv', 'fm-refuse-hooks-audit', 'knowledge-stack-scout'], 'mode': 'A', 'n': '2', 'over_fetch': 25, 'query': 'graphify project install hook-free shape', 'reciprocal_rank': 1.0, 'retrieval_mode': 'keyword', 'status': 'ok', 'truncated': False}]
+not ok - keyword hybrid did not degrade
+FM_TEST_END 2026-09-19T17:50:11Z tests/fm-gbrain-eval.test.sh exit=1 duration_ms=35337 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=1 skipped_gate=0 duration_ms=35397
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=35337 failed=1
+FM_TEST_SLOWEST rank=1 script=tests/fm-gbrain-eval.test.sh duration_ms=35337

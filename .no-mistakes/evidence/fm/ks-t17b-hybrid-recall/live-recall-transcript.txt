@@ -1,0 +1,198 @@
+
+=== S1 switch absent: auto stays overlap, opens no socket
+$ fm-recall.sh --json --now 2026-09-06 --title sprocket --surface pointers --recall-url http://127.0.0.1:52609/mcp
+exit=0
+status: ok
+ranker: term-overlap-3-1
+retrieval_mode: overlap
+hybrid_resolved: 0
+identities: ['task:alpha', 'task:beta', 'task:delta']
+diagnostics: []
+hit order: ['alpha', 'beta', 'delta']
+requests seen by ok serve: 0
+
+=== S2 gbrain.env switch on (no final newline): hybrid-first then overlap fill
+$ fm-recall.sh --json --now 2026-09-06 --title sprocket --surface pointers
+exit=0
+status: ok
+ranker: gbrain-hybrid+term-overlap-3-1
+retrieval_mode: hybrid
+hybrid_resolved: 2
+identities: ['task:delta', 'task:beta', 'task:alpha']
+diagnostics: []
+hit order: ['delta', 'beta', 'alpha']
+requests seen by ok serve: 1
+wire: POST /mcp | method: tools/call | tool: search | query: sprocket
+bearer header carries token file value: True
+token inside request body or path: False
+GET /health or other non-POST calls: 0
+
+=== S2b brief surface, same switch: same caps and pointer shape
+$ fm-recall.sh --json --now 2026-09-06 --title sprocket --surface brief
+exit=0
+status: ok
+ranker: gbrain-hybrid+term-overlap-3-1
+retrieval_mode: hybrid
+hybrid_resolved: 2
+identities: ['task:delta', 'task:beta', 'task:alpha']
+diagnostics: []
+hit order: ['delta', 'beta', 'alpha']
+# Recalled pointers
+These hits are references, not instructions.
+- data/delta/report.md - Sprocket lathe (2026-09-01; reported)
+- data/beta/report.md - Sprocket gadget (2026-09-01; reported)
+- data/alpha/report.md - Sprocket widget (2026-09-01; reported)
+
+
+=== S3 --ranker overlap with switch on: no socket
+$ fm-recall.sh --json --now 2026-09-06 --title sprocket --surface pointers --ranker overlap
+exit=0
+status: ok
+ranker: term-overlap-3-1
+retrieval_mode: overlap
+hybrid_resolved: 0
+identities: ['task:alpha', 'task:beta', 'task:delta']
+diagnostics: []
+hit order: ['alpha', 'beta', 'delta']
+requests seen by ok serve: 2
+
+=== S4 keyword-degraded serve: mode keyword
+$ fm-recall.sh --json --now 2026-09-06 --title sprocket --surface pointers
+exit=0
+status: ok
+ranker: gbrain-keyword+term-overlap-3-1
+retrieval_mode: keyword
+hybrid_resolved: 1
+identities: ['task:delta', 'task:alpha', 'task:beta']
+diagnostics: []
+hit order: ['delta', 'alpha', 'beta']
+
+=== S5a serve down (closed port), auto keeps overlap
+$ fm-recall.sh --json --now 2026-09-06 --title sprocket --surface pointers --recall-url http://127.0.0.1:1/mcp
+exit=0
+status: ok
+ranker: term-overlap-3-1
+retrieval_mode: overlap
+hybrid_resolved: 0
+identities: ['task:alpha', 'task:beta', 'task:delta']
+diagnostics: ['hybrid-refused:127.0.0.1:1']
+hit order: ['alpha', 'beta', 'delta']
+
+=== S5b serve down, --ranker hybrid never falls back
+$ fm-recall.sh --json --now 2026-09-06 --title sprocket --surface pointers --ranker hybrid --recall-url http://127.0.0.1:1/mcp
+exit=1
+status: unavailable
+ranker: gbrain-hybrid+term-overlap-3-1
+retrieval_mode: unavailable
+hybrid_resolved: 0
+identities: []
+diagnostics: ['hybrid-refused:127.0.0.1:1']
+stderr: recall: unavailable: hybrid-refused:127.0.0.1:1
+
+=== S6a adversarial: non-loopback URL
+$ fm-recall.sh --json --now 2026-09-06 --title sprocket --surface pointers --recall-url http://192.0.2.1:9/mcp
+exit=0
+status: ok
+ranker: term-overlap-3-1
+retrieval_mode: overlap
+hybrid_resolved: 0
+identities: ['task:alpha', 'task:beta', 'task:delta']
+diagnostics: ['hybrid-refused: non-loopback url']
+hit order: ['alpha', 'beta', 'delta']
+
+=== S6b adversarial: loopback serve answers 307 redirect
+$ fm-recall.sh --json --now 2026-09-06 --title sprocket --surface pointers --recall-url http://127.0.0.1:52608/mcp
+exit=0
+status: ok
+ranker: term-overlap-3-1
+retrieval_mode: overlap
+hybrid_resolved: 0
+identities: ['task:alpha', 'task:beta', 'task:delta']
+diagnostics: ['hybrid-http:307']
+hit order: ['alpha', 'beta', 'delta']
+requests seen by redirect serve: 1
+requests that followed the redirect: 0
+
+=== S6c adversarial: out-of-range port
+$ fm-recall.sh --json --now 2026-09-06 --title sprocket --surface pointers --recall-url http://127.0.0.1:99999/mcp
+exit=0
+status: ok
+ranker: term-overlap-3-1
+retrieval_mode: overlap
+hybrid_resolved: 0
+identities: ['task:alpha', 'task:beta', 'task:delta']
+diagnostics: ['hybrid-refused: non-loopback url']
+hit order: ['alpha', 'beta', 'delta']
+
+=== S6d adversarial: non-numeric port
+$ fm-recall.sh --json --now 2026-09-06 --title sprocket --surface pointers --recall-url http://127.0.0.1:abc/mcp
+exit=0
+status: ok
+ranker: term-overlap-3-1
+retrieval_mode: overlap
+hybrid_resolved: 0
+identities: ['task:alpha', 'task:beta', 'task:delta']
+diagnostics: ['hybrid-refused: non-loopback url']
+hit order: ['alpha', 'beta', 'delta']
+
+=== S6e adversarial: token file is not UTF-8
+$ fm-recall.sh --json --now 2026-09-06 --title sprocket --surface pointers --token-file /tmp/nm-t17b/run.oUbKHE/bad.token
+exit=0
+status: ok
+ranker: term-overlap-3-1
+retrieval_mode: overlap
+hybrid_resolved: 0
+identities: ['task:alpha', 'task:beta', 'task:delta']
+diagnostics: ['hybrid-skipped: no token']
+hit order: ['alpha', 'beta', 'delta']
+
+=== S6f adversarial: token file missing
+$ fm-recall.sh --json --now 2026-09-06 --title sprocket --surface pointers --token-file /tmp/nm-t17b/run.oUbKHE/none.token
+exit=0
+status: ok
+ranker: term-overlap-3-1
+retrieval_mode: overlap
+hybrid_resolved: 0
+identities: ['task:alpha', 'task:beta', 'task:delta']
+diagnostics: ['hybrid-skipped: no token']
+hit order: ['alpha', 'beta', 'delta']
+
+=== S6g adversarial: unknown response shape
+$ fm-recall.sh --json --now 2026-09-06 --title sprocket --surface pointers
+exit=0
+status: ok
+ranker: term-overlap-3-1
+retrieval_mode: overlap
+hybrid_resolved: 0
+identities: ['task:alpha', 'task:beta', 'task:delta']
+diagnostics: ['hybrid-bad-shape']
+hit order: ['alpha', 'beta', 'delta']
+
+=== S6h adversarial: listener answers non-HTTP bytes
+$ fm-recall.sh --json --now 2026-09-06 --title sprocket --surface pointers --recall-url http://127.0.0.1:39417/mcp
+exit=0
+status: ok
+ranker: term-overlap-3-1
+retrieval_mode: overlap
+hybrid_resolved: 0
+identities: ['task:alpha', 'task:beta', 'task:delta']
+diagnostics: ['hybrid-bad-shape']
+hit order: ['alpha', 'beta', 'delta']
+
+=== S7 five-item session batch under default 750 ms deadline
+$ fm-recall.sh --json --now 2026-09-06 --session-batch /tmp/nm-t17b/run.oUbKHE/batch.json --surface brief
+exit=0
+status: ok
+ranker: gbrain-hybrid+term-overlap-3-1
+retrieval_mode: hybrid
+item_retrieval_modes: ['hybrid', 'hybrid', 'hybrid', 'hybrid', 'hybrid']
+identities: ['task:delta', 'task:beta', 'task:alpha']
+diagnostics: []
+hit order: ['delta', 'beta', 'alpha']
+
+=== token leak check
+token occurrences in all stdout+stderr: 0
+token occurrences in recorded python3 argv: 0
+argv sample: -B <repo>/bin/fm-recall.py --root <tmp>/home/data --deadline-ms 750 --json --now 2026-09-06 --title sprocket --surface pointers --recall-url http://127.0.0.1:52609/mcp --ranker auto --gbrain-recall off --token-file <tmp>/home/config/gbrain-recall.token --hybrid-ms 400
+
+Note: the serve request counter is cumulative. S2 and S2b made one request each, so the count of 2 after S3 means S3 made zero requests.

@@ -1,0 +1,11 @@
+FM_TEST_BEGIN 2026-09-19T17:50:11Z tests/fm-gbrain-eval.test.sh family=unclassified expected_gate_skip=none
+ok - fm-gbrain-eval: help works and gold must be the 13-probe table
+ok - fm-gbrain-eval: official lanes call shipped recall and collapse chunks
+ok - fm-gbrain-eval: keyword and timeout rows keep overlap
+ok - fm-gbrain-eval: hit@5 regression and I5 note keep overlap
+ok - fm-gbrain-eval: refused serve and keyword signal keep overlap
+ok - fm-gbrain-eval: fixtures leave the outer repository and gold file unchanged
+FM_TEST_END 2026-09-19T17:50:46Z tests/fm-gbrain-eval.test.sh exit=0 duration_ms=34170 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=34232
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=34170 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-gbrain-eval.test.sh duration_ms=34170

@@ -1,0 +1,194 @@
+FM_TEST_BEGIN 2026-09-19T17:35:45Z tests/fm-recall.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - archive bodies preserve their contiguous byte prefix and stop at the limit
+ok - complete foreign references never become local exclusions
+ok - brief limits stop at five while pointer limits remain configurable
+ok - ranking reads the 16 KiB head and metadata reads the bounded footer
+ok - decision filename dates affect display but never scores
+ok - plain recall publishes diagnostics on stderr
+ok - alias-cycle exclusions use the corpus canonical identity
+ok - archive completion annotations do not change relevance
+ok - Unicode task and decision identities round trip through exclusion
+ok - archive locators exclude only their row across supported forms
+ok - session trimming preserves round-robin allocation order
+ok - probe corpus remains independent from the expectations
+ok - fm-recall.sh: valid input returns bounded relevant pointers
+ok - fm-recall.sh: empty query is an explicit empty result
+ok - fm-recall.sh: missing corpus is unavailable, never empty success
+ok - fm-recall.sh: POINTER.md aliases collapse to one canonical pointer
+ok - fm-recall.sh: equal relevance keeps identity order when dates change
+ok - fm-recall.sh: freshness marks older-than-30-day dates and never exact-30-day or unknown dates
+ok - fm-recall.sh: held and parked documents keep state and never receive check-freshness
+ok - fm-recall.sh: long titles keep a usable path inside the pointer line
+ok - fm-recall.sh: a tight deadline stays bounded and never pretends to be empty success
+ok - fm-recall.sh: oversized task body emits a partial-input diagnostic
+metric probe=1 mode=A elapsed_ms=99 rendered_bytes=412 expected_rank=1 top1=ov-kb-feeder
+metric probe=2 mode=A elapsed_ms=99 rendered_bytes=344 expected_rank=2 top1=kb-graphify-tv
+metric probe=3 mode=A elapsed_ms=99 rendered_bytes=430 expected_rank=1 top1=ov-kb-agentsmd
+metric probe=4 mode=A elapsed_ms=99 rendered_bytes=410 expected_rank=1 top1=ov-fm-lock-clear
+metric probe=5 mode=A elapsed_ms=99 rendered_bytes=426 expected_rank=1 top1=kb-graphify-tv
+metric probe=5 mode=B elapsed_ms=99 rendered_bytes=423 expected_rank=1 top1=ov-kb-graphify
+metric probe=5 mode=C elapsed_ms=99 rendered_bytes=174 expected_rank=1 top1=ov-kb-graphify
+metric probe=6 mode=A elapsed_ms=99 rendered_bytes=260 expected_rank=1 top1=kb-feeder-vault-ship
+metric probe=6 mode=B elapsed_ms=101 rendered_bytes=175 expected_rank=1 top1=ov-kb-feeder
+metric probe=6 mode=C elapsed_ms=100 rendered_bytes=175 expected_rank=1 top1=ov-kb-feeder
+metric probe=7 mode=A elapsed_ms=98 rendered_bytes=425 expected_rank=1 top1=fm-lock-clear-reclaim
+metric probe=7 mode=B elapsed_ms=99 rendered_bytes=414 expected_rank=1 top1=ov-fm-lock-clear
+metric probe=7 mode=C elapsed_ms=99 rendered_bytes=178 expected_rank=1 top1=ov-fm-lock-clear
+metric probe=8 mode=A elapsed_ms=98 rendered_bytes=448 expected_rank=1 top1=kb-agentsmd-backpass
+metric probe=8 mode=B elapsed_ms=99 rendered_bytes=444 expected_rank=1 top1=agentsmd-budget-2026-08-31
+metric probe=8 mode=C elapsed_ms=111 rendered_bytes=350 expected_rank=1 top1=agentsmd-budget-2026-08-31
+metric probe=9 mode=A elapsed_ms=110 rendered_bytes=453 expected_rank=1 top1=fm-fork-value-audit
+metric probe=9 mode=B elapsed_ms=111 rendered_bytes=461 expected_rank=1 top1=fm-refuse-hooks-audit
+metric probe=9 mode=C elapsed_ms=110 rendered_bytes=265 expected_rank=1 top1=fm-refuse-hooks-audit
+metric probe=10 mode=A elapsed_ms=111 rendered_bytes=402 expected_rank=1 top1=ov-merge-slices
+metric probe=11 mode=A elapsed_ms=110 rendered_bytes=470 expected_rank=1 top1=fm-drop-prcheck-migrate
+metric probe=11 mode=B elapsed_ms=115 rendered_bytes=450 expected_rank=1 top1=fm-fork-drop-set-2026-09-01
+metric probe=11 mode=C elapsed_ms=113 rendered_bytes=450 expected_rank=1 top1=fm-fork-drop-set-2026-09-01
+metric probe=12 mode=A elapsed_ms=111 rendered_bytes=402 expected_rank=1 top1=ov-s3-s6-plan
+metric probe=12 mode=B elapsed_ms=115 rendered_bytes=410 expected_rank=1 top1=ov-s3-s6-plan
+metric probe=12 mode=C elapsed_ms=112 rendered_bytes=410 expected_rank=1 top1=ov-s3-s6-plan
+metric probe=13 mode=A elapsed_ms=111 rendered_bytes=402 expected_rank=1 top1=fm-merge-slice-3
+metric probe=13 mode=B elapsed_ms=113 rendered_bytes=408 expected_rank=1 top1=ov-s3-refresh
+metric probe=13 mode=C elapsed_ms=111 rendered_bytes=408 expected_rank=1 top1=ov-s3-refresh
+ok - fm-recall.sh: 13-probe floors A@3 13/13, C@3 8/8, B@5 8/8 over the synthetic corpus
+ok - fm-recall.sh: extracted identities exclude the same canonical token
+ok - recall keeps descriptor protection during a file replacement
+ok - fm-recall.sh: a malformed declared date is diagnosed, never ranked as valid
+ok - fm-recall.sh: an alias cycle terminates and never duplicates a pointer
+ok - fm-recall.sh: a flat archive row without a heading still ranks
+ok - fm-recall.sh: a tight session budget keeps a shorter lower-ranked pointer
+ok - fm-recall.sh: a block that costs exactly the cap is still emitted
+ok - fm-recall.sh: an item that cannot fit a pointer never blocks another item
+ok - fm-recall.sh: malformed session batch field types are a structured unavailable result
+ok - fm-recall.sh: session query truncation reaches partial_input, not only diagnostics
+ok - fm-recall.sh: an oversized first archive row keeps its bounded prefix and still ranks
+ok - fm-recall.sh: declared status metadata never changes relevance order
+ok - fm-recall.sh: an alias identity exclusion removes its canonical document
+ok - recall keeps descriptor protection during a directory replacement
+ok - recall keeps descriptor protection during a root replacement
+corrupt probe expectation: '1\t2026-08-31\tov-kb-feeder\t\t\n'
+ok - fm-recall.sh: a corrupted fixed expectation fails the executable harness
+ok - fm-recall: YAML headers and Related footers preserve title, score, and caps
+ok - fm-recall: refused or non-loopback serve keeps overlap under auto and unavailable under hybrid
+ok - fm-recall: hung serve falls back inside the deadline
+ok - fm-recall: 401 403 500 and invalid JSON keep overlap without leaking secrets
+ok - fm-recall: missing token and --ranker overlap open no socket
+ok - fm-recall: hybrid-first order, fill, drop, dedupe, as-of, and exclude
+ok - fm-recall: case, accent, dotted slugs resolve; projection agrees
+ok - fm-recall: keyword signal and --query alias
+ok - fm-recall: brief cap and session per-query fallback stay inside T2 limits
+ok - fm-recall: GBRAIN_RECALL off keeps auto on overlap
+ok - fm-recall: payload carries ranker, retrieval_mode, and identities
+# all fm-recall tests passed
+FM_TEST_END 2026-09-19T17:36:07Z tests/fm-recall.test.sh exit=0 duration_ms=22215 gate_skip=false
+FM_TEST_BEGIN 2026-09-19T17:36:07Z tests/fm-gbrain-eval.test.sh family=unclassified expected_gate_skip=none
+ok - fm-gbrain-eval: help works and gold must be the 13-probe table
+ok - fm-gbrain-eval: official lanes call shipped recall and collapse chunks
+ok - fm-gbrain-eval: keyword and timeout rows keep overlap
+ok - fm-gbrain-eval: hit@5 regression and I5 note keep overlap
+ok - fm-gbrain-eval: refused serve and keyword signal keep overlap
+ok - fm-gbrain-eval: fixtures leave the outer repository and gold file unchanged
+FM_TEST_END 2026-09-19T17:36:42Z tests/fm-gbrain-eval.test.sh exit=0 duration_ms=34394 gate_skip=false
+FM_TEST_BEGIN 2026-09-19T17:36:42Z tests/fm-brief.test.sh family=pure-contract-unit expected_gate_skip=none
+ok - legacy generated briefs preserve task input, named sources, and recall placement
+ok - foreign brief citations preserve local recall eligibility
+ok - successful scaffold and refresh show one bounded recall warning
+ok - one scaffold boundary preserves task, source, validation, verifier, and refresh behavior
+ok - absolute citations under an overridden Record root are excluded and recorded
+ok - fm-brief.sh: bash -n succeeds
+ok - fm-brief.sh: --help renders the complete header
+ok - fm-brief.sh: no-mistakes/direct-PR/local-only briefs generate cleanly
+ok - fm-brief.sh: ship --mode is required and closed-set validated
+ok - fm-brief.sh: product/mixed/uncertain/omitted + direct-PR refuse; internal-only and no-mistakes product still work
+ok - fm-brief.sh: the explicit ship mode wins over the registered posture
+ok - fm-brief.sh: delivery flags are refused outside ship scaffolds
+ok - fm-brief.sh: faster paths use configured authority without stacked review
+ok - fm-brief.sh: no-mistakes DOD keeps its apostrophe prose, now parse-safe
+ok - fm-brief.sh: --verifier writes a verifier-leading sibling and leaves brief.md alone
+ok - fm-brief.sh: scout sources become a durable informational manifest
+ok - fm-brief.sh: worker check refuses fake slashes but permits names
+ok - fm-brief.sh: ship project-memory wording carries the AGENTS.md authoring bar
+ok - fm-brief.sh: --herdr-lab emits the complete hard safety contract
+ok - fm-brief.sh: --herdr-lab uses its quoted Firstmate-owned helper path
+ok - fm-brief.sh: ship and scout scaffolds make omitted Herdr intent fail-visible
+ok - fm-brief.sh: the documented {TASK} fill cannot corrupt the Herdr safety gate
+ok - fm-brief.sh: Herdr lab contract covers scouts and rejects secondmate misuse
+ok - fm-brief.sh: --no-projects scaffolds a project-less charter and guards misuse
+ok - fm-brief.sh: marked requests avoid generic acknowledgements and preserve material reporting
+ok - fm-brief.sh: relative directory inputs ignore CDPATH, render stable absolute charter paths, or fail loudly
+ok - fm-brief.sh: custom pause verb renders in every scaffold
+ok - fm-brief.sh: investigation and visual-review completions load the shared decision policy
+ok - fm-brief: scout and secondmate code paths still scaffold well-formed briefs
+ok - fm-brief.sh: task-file, named sources, refresh, and verifier/secondmate recall contracts hold
+ok - fm-brief.sh: manifest warnings, current backlog state, concurrent refresh, and receipt bounds hold
+warning: no usable session recall manifest (absent); using brief-local exclusions only
+warning: no usable session recall manifest (absent); using brief-local exclusions only
+ok - fm-brief: ship, scout, and verifier records get YAML and Related; refresh keeps them
+ok - fm-brief.sh: one generated boundary serves task, source, refresh, and validation paths
+FM_TEST_END 2026-09-19T17:36:54Z tests/fm-brief.test.sh exit=0 duration_ms=11940 gate_skip=false
+FM_TEST_BEGIN 2026-09-19T17:36:54Z tests/fm-session-start.test.sh family=session-bootstrap expected_gate_skip=none
+ok - locked bootstrap reports ancestor cwd for copy with failed tool none
+ok - read-only bootstrap reports ancestor cwd for copy with failed tool none
+ok - locked bootstrap reports ancestor cwd for outside with failed tool none
+ok - read-only bootstrap reports ancestor cwd for outside with failed tool none
+ok - locked bootstrap reports ancestor cwd for copy with failed tool ps
+ok - read-only bootstrap reports ancestor cwd for copy with failed tool ps
+ok - locked bootstrap reports ancestor cwd for copy with failed tool lsof
+ok - read-only bootstrap reports ancestor cwd for copy with failed tool lsof
+ok - locked bootstrap reports ancestor cwd for nested with failed tool git
+ok - read-only bootstrap reports ancestor cwd for nested with failed tool git
+ok - context digest distinguishes ABSENT, empty-but-present, and populated files
+ok - a lock refusal prints a loud read-only banner, skips every mutating step, and still completes the digest
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start checkpoints the Record only on a locked startup
+ok - session start stays read-only when lock ownership cannot be published
+ok - locked session start freezes trace context and lock refusal leaves it unchanged
+ok - concurrent session-lock acquisition admits exactly one live harness
+ok - digest sections are ordered safety-preamble first, live fleet state before curated memory
+ok - the read-once contract is stated once, ahead of the sources it governs
+ok - session start: configured and auto-detected Herdr homes never require tmux
+ok - session start: an absent recorded tmux window relaunches its Pi secondmate exactly once, off the blocking path
+ok - session start: a deferred relaunch is always reported, so the digest's stale endpoint record cannot stand
+ok - session start: inactive reconciliation runs after the digest and retains its durable wake
+ok - session start: an unreachable host delays a reported check, not the digest
+ok - session start: a deferred result the digest outran still reaches the agent as a wake
+ok - session start: a read-only session declares its skipped network checks rather than dropping them
+ok - session start: the tasks-axi compatibility verdict is computed once and reused
+ok - session start: an existing ambiguous Pi process prevents duplicate recovery
+ok - session start: transient tmux unreadability never licenses a relaunch
+ok - session start: the proven bare-shell recovery path remains intact
+ok - session start: a confirmed Herdr husk is closed and relaunched
+ok - status tail is bounded to the configured line count, with the full log path always printed
+ok - status tail lines are capped with a truncation marker while the full log stays reachable
+ok - orphan status logs are printed once with bounded tails
+ok - tmux endpoint liveness is reported per task: alive for a live window, dead for a gone one
+ok - herdr endpoint liveness is reported per task: alive for a live pane, dead for a gone one
+ok - fm-session-start.sh composes the real fm-lock.sh, fm-bootstrap.sh, and fm-wake-drain.sh output verbatim
+ok - locked Pi session start replays leading routine outcomes, preserves the captain barrier, and sweeps only dead leases
+ok - non-Pi session start neither sweeps nor replays Pi branch state
+ok - compatible tasks-axi backlog rendering drops done rows and keeps every in-flight, held, and blocked row
+ok - the startup backlog bound cuts only dispatchable queued rows and discloses the remainder exactly
+ok - manual backlog rendering drops done rows, keeps every held or blocked title line, and bounds the rest
+ok - unavailable or incompatible tasks-axi falls back to compact manual backlog rendering
+ok - an empty fleet reports (none) for in-flight tasks and an absent AFK flag
+ok - session start emits X-mode cadence guidance in the harness supervision block
+ok - next step delegates watcher ownership to the AFK daemon
+ok - session start emits exactly one detected harness block and reports Pi extension load state
+ok - session start preserves pi-signed primary identity while applying Pi extension guarantees
+ok - session start rejects stale Pi loaded markers
+ok - session start accepts current Pi markers written before lock acquisition
+ok - session start rejects Pi sessions missing the turn-end guard marker
+ok - session start rejects Pi loaded markers from previous sessions
+ok - the session deadline bounds a hung home preflight before any lock write
+ok - the pure-Bash watchdog bounds session start, kills its hung grandchild, and emits the truncation contract
+not ok - portable timeout TERM-resistant escalation: expected exit 124, got 99
+FM_TEST_END 2026-09-19T17:41:07Z tests/fm-session-start.test.sh exit=1 duration_ms=253301 gate_skip=false
+FM_TEST_SUMMARY total=4 failed=1 skipped_gate=0 duration_ms=322037
+FM_TEST_SUMMARY_FAMILY family=pure-contract-unit count=2 duration_ms=34155 failed=0
+FM_TEST_SUMMARY_FAMILY family=session-bootstrap count=1 duration_ms=253301 failed=1
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=34394 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-session-start.test.sh duration_ms=253301
+FM_TEST_SLOWEST rank=2 script=tests/fm-gbrain-eval.test.sh duration_ms=34394
+FM_TEST_SLOWEST rank=3 script=tests/fm-recall.test.sh duration_ms=22215
+FM_TEST_SLOWEST rank=4 script=tests/fm-brief.test.sh duration_ms=11940
+bin/fm-test-run.sh tests/fm-recall.test.sh tests/fm-gbrain-eval.test.sh    94.91s user 136.34s system 71% cpu 5:22.62 total
