@@ -58,8 +58,10 @@
 # redirects. A session batch gives each query an equal share of the time
 # left, and its retrieval_mode is the weakest mode of its queries.
 # A missing token, a refused or timed-out POST, or a bad JSON-RPC shape is
-# down: auto keeps overlap, hybrid is unavailable. keyword_relaxed or
-# _meta.retrieval.vector_enabled false / embed_unavailable is keyword.
+# down: auto keeps overlap, hybrid is unavailable.
+# _meta.retrieval.vector_enabled false or a degraded embed_unavailable stage
+# is keyword. A keyword_relaxed row is keyword unless vector_enabled is true.
+# vector_enabled true is hybrid. No vector signal is hybrid-unverified.
 # A leading YAML header and a terminal Related: footer are metadata only:
 # they are read for date and status, excluded from the title and ranking
 # text, and never followed to other documents.

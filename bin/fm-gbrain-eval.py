@@ -27,8 +27,9 @@ Modes:
      before search; expected identities are the prior set.
   C  mode B plus --as-of probe_date on both arms.
 
-The overlap arm is the shipped recall JSON and its identities are
-hits[].id; its retrieval mode is recorded as "overlap". The hybrid arm
+The overlap arm is the shipped recall JSON under --ranker overlap, so
+the GBRAIN_RECALL switch never changes it. Its identities are hits[].id
+and its retrieval mode is recorded as "overlap". The hybrid arm
 is bin/fm-recall.sh --ranker hybrid --surface pointers --now DATE and
 reads hits[].id plus retrieval_mode from that payload. Multiple chunks
 of one identity collapse to the first rank. A done-archive path is not
