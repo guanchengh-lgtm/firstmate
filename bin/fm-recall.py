@@ -7,6 +7,13 @@ safety timeout, and passes explicit inputs here.
 The script header on bin/fm-recall.sh owns the operator help contract.
 Leading YAML and a terminal Related footer are metadata only: they are
 stripped before first_heading and rank_lines and never expand the corpus.
+
+Hybrid ranking posts one bearer-token JSON-RPC tools/call search to the
+loopback gbrain serve. It registers no MCP tool and uses no MCP client
+library. Keyword-only detection uses gbrain 0.48.2.0
+buildRetrievalResponseMeta: _meta.retrieval.vector_enabled is false or
+_meta.retrieval.degraded contains stage embed_unavailable. A gbrain
+slug-rule change is a home-smoke regression.
 """
 
 from __future__ import annotations
@@ -17,14 +24,28 @@ import io
 import json
 import os
 import re
+import socket
 import stat
 import sys
 import time
+import unicodedata
+import urllib.error
+import urllib.parse
+import urllib.request
 from collections import OrderedDict
 from datetime import date as date_type
 from datetime import datetime
 
 RANKER_ID = "term-overlap-3-1"
+RANKER_HYBRID_ID = "gbrain-hybrid+term-overlap-3-1"
+RANKER_KEYWORD_ID = "gbrain-keyword+term-overlap-3-1"
+HYBRID_OVERFETCH = 25
+DEFAULT_HYBRID_MS = 400
+RENDER_RESERVE_MS = 50
+MIN_HYBRID_BUDGET_MS = 100
+DEFAULT_GBRAIN_PORT = 3131
+ARCHIVE_SLUG = "data/done-archive"
+SLUG_MARK_RANGES = ((0x0300, 0x036F), (0x0591, 0x05C7))
 TITLE_WEIGHT = 3.0
 BODY_WEIGHT = 1.0
 TITLE_CUT = 90
@@ -113,6 +134,10 @@ class Deadline(object):
 
     def expired(self):
         return (time.monotonic() - self.start) * 1000.0 >= self.ms
+
+    def remaining_ms(self):
+        used = (time.monotonic() - self.start) * 1000.0
+        return max(0.0, float(self.ms) - used)
 
     def check(self):
         if self.expired():
@@ -1316,6 +1341,353 @@ def extract_identities(text, root):
     return found
 
 
+def slugify_segment(segment):
+    text = unicodedata.normalize("NFD", segment)
+    stripped = []
+    for ch in text:
+        code = ord(ch)
+        if any(lo <= code <= hi for lo, hi in SLUG_MARK_RANGES):
+            continue
+        stripped.append(ch)
+    text = unicodedata.normalize("NFC", "".join(stripped)).lower()
+    kept = []
+    for ch in text:
+        if ch in "._-":
+            kept.append(ch)
+        elif ch.isspace():
+            kept.append("-")
+        elif ch.isalnum():
+            kept.append(ch)
+        elif unicodedata.category(ch) in ("Lm", "Lo", "M", "Nl", "No"):
+            kept.append(ch)
+    slug = "".join(kept)
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return slug.strip("-")
+
+
+def slugify_path(file_path):
+    path = file_path.replace("\\", "/")
+    path = re.sub(r"\.mdx?$", "", path, flags=re.I)
+    path = re.sub(r"^\./", "", path)
+    if path.startswith("/"):
+        path = path[1:]
+    parts = [slugify_segment(part) for part in path.split("/")]
+    return "/".join(part for part in parts if part)
+
+
+def build_slug_index(docs, diagnostics):
+    index = {}
+    collisions = set()
+    for doc in docs:
+        slug = slugify_path(doc.path)
+        prior = index.get(slug)
+        if prior is None:
+            index[slug] = doc
+            continue
+        if prior.identity.token() != doc.identity.token():
+            collisions.add(slug)
+    for slug in collisions:
+        index.pop(slug, None)
+        diagnostics.append("hybrid-slug-collision: %s" % slug)
+    return index
+
+
+def ranker_id_for(retrieval_mode):
+    if retrieval_mode == "keyword":
+        return RANKER_KEYWORD_ID
+    if retrieval_mode in ("hybrid", "hybrid-unverified"):
+        return RANKER_HYBRID_ID
+    return RANKER_ID
+
+
+def resolve_hybrid_settings(args):
+    ranker = args.ranker or os.environ.get("FM_RECALL_RANKER") or "auto"
+    if ranker not in ("overlap", "hybrid", "auto"):
+        ranker = "auto"
+    switch = (args.gbrain_recall or os.environ.get("GBRAIN_RECALL") or "off").lower()
+    if switch not in ("on", "off"):
+        switch = "off"
+    url = args.recall_url or os.environ.get("GBRAIN_RECALL_URL") or ""
+    token_file = args.token_file or os.environ.get("GBRAIN_RECALL_TOKEN_FILE") or ""
+    raw_ms = args.hybrid_ms or os.environ.get("FM_RECALL_HYBRID_MS")
+    raw_ms = raw_ms or DEFAULT_HYBRID_MS
+    try:
+        hybrid_ms = int(raw_ms)
+    except (TypeError, ValueError):
+        hybrid_ms = DEFAULT_HYBRID_MS
+    if hybrid_ms <= 0:
+        hybrid_ms = DEFAULT_HYBRID_MS
+    if not url:
+        port = os.environ.get("GBRAIN_PORT") or str(DEFAULT_GBRAIN_PORT)
+        url = "http://127.0.0.1:%s/mcp" % port
+    return ranker, switch, url, token_file, hybrid_ms
+
+
+def read_token_file(path):
+    if not path:
+        return None
+    try:
+        if os.path.islink(path) or not os.path.isfile(path):
+            return None
+        with open(path, encoding="utf-8") as handle:
+            token = handle.read().strip()
+    except OSError:
+        return None
+    if not token:
+        return None
+    return token
+
+
+def url_hostport(url):
+    parsed = urllib.parse.urlparse(url)
+    host = parsed.hostname or ""
+    port = parsed.port
+    if port is None:
+        port = 443 if parsed.scheme == "https" else 80
+    return "%s:%s" % (host, port)
+
+
+def extract_search_rows(payload):
+    if isinstance(payload, list):
+        return payload
+    if not isinstance(payload, dict):
+        return None
+    for key in ("results", "items", "data"):
+        value = payload.get(key)
+        if isinstance(value, list):
+            return value
+    return None
+
+
+def retrieval_signal(meta_obj, rows):
+    retrieval = {}
+    if isinstance(meta_obj, dict):
+        meta = meta_obj.get("_meta")
+        if isinstance(meta, dict):
+            candidate = meta.get("retrieval")
+            retrieval = candidate if isinstance(candidate, dict) else meta
+        elif isinstance(meta_obj.get("retrieval"), dict):
+            retrieval = meta_obj["retrieval"]
+    vector_enabled = retrieval.get("vector_enabled") if retrieval else None
+    degraded = retrieval.get("degraded") if retrieval else None
+    embed_unavail = False
+    if isinstance(degraded, list):
+        for entry in degraded:
+            if entry == "embed_unavailable":
+                embed_unavail = True
+            if isinstance(entry, dict) and entry.get("stage") == "embed_unavailable":
+                embed_unavail = True
+    relaxed = False
+    for row in rows or []:
+        if isinstance(row, dict) and row.get("keyword_relaxed"):
+            relaxed = True
+            break
+    if vector_enabled is False or embed_unavail:
+        return "keyword"
+    if relaxed and vector_enabled is not True:
+        return "keyword"
+    if vector_enabled is True:
+        return "hybrid"
+    return "hybrid-unverified"
+
+
+def parse_mcp_search(raw, content_type):
+    ctype = content_type or ""
+    if "text/event-stream" in ctype and "application/json" not in ctype:
+        return None, "hybrid-bad-shape"
+    try:
+        message = json.loads(raw)
+    except ValueError:
+        return None, "hybrid-bad-json"
+    if not isinstance(message, dict):
+        return None, "hybrid-bad-shape"
+    error = message.get("error")
+    if error:
+        code = ""
+        if isinstance(error, dict) and "code" in error:
+            code = error["code"]
+        return None, "hybrid-rpc:%s" % code
+    result = message.get("result")
+    if result is None:
+        return None, "hybrid-bad-shape"
+    structured = None
+    result_obj = result if isinstance(result, dict) else {}
+    if isinstance(result, dict):
+        structured = result.get("structuredContent")
+        if structured is None:
+            content = result.get("content") or []
+            if isinstance(content, list):
+                for item in content:
+                    if not isinstance(item, dict) or item.get("type") != "text":
+                        continue
+                    try:
+                        structured = json.loads(item.get("text") or "")
+                    except ValueError:
+                        return None, "hybrid-bad-shape"
+                    break
+        if structured is None and isinstance(result.get("results"), list):
+            structured = result
+    rows = extract_search_rows(structured)
+    if rows is None:
+        return None, "hybrid-bad-shape"
+    mode = retrieval_signal(result_obj, rows)
+    if isinstance(structured, dict):
+        structured_mode = retrieval_signal(structured, rows)
+        if structured_mode == "keyword" or mode == "hybrid-unverified":
+            mode = structured_mode
+    slugs = []
+    for row in rows:
+        if isinstance(row, dict) and row.get("slug"):
+            slugs.append(row["slug"])
+    return {"slugs": slugs, "mode": mode, "count": len(rows)}, None
+
+
+def gbrain_search(url, token, query, timeout_sec):
+    body = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "search",
+            "arguments": {
+                "query": query,
+                "limit": HYBRID_OVERFETCH,
+                "recency": "off",
+                "salience": "off",
+            },
+        },
+    }
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        method="POST",
+        headers={
+            "Authorization": "Bearer %s" % token,
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_sec) as resp:
+            content_type = resp.headers.get("Content-Type") or ""
+            raw = resp.read()
+            status = getattr(resp, "status", 200)
+    except socket.timeout:
+        return None, "hybrid-timeout"
+    except TimeoutError:
+        return None, "hybrid-timeout"
+    except urllib.error.HTTPError as exc:
+        return None, "hybrid-http:%s" % exc.code
+    except urllib.error.URLError as exc:
+        reason = exc.reason
+        if isinstance(reason, socket.timeout) or isinstance(reason, TimeoutError):
+            return None, "hybrid-timeout"
+        return None, "hybrid-refused:%s" % url_hostport(url)
+    except OSError:
+        return None, "hybrid-refused:%s" % url_hostport(url)
+    if status != 200:
+        return None, "hybrid-http:%s" % status
+    parsed, error = parse_mcp_search(raw.decode("utf-8", "replace"), content_type)
+    if error:
+        return None, error
+    return parsed, None
+
+
+def hybrid_timeout_sec(deadline, hybrid_ms, queries_left):
+    remaining = deadline.remaining_ms()
+    share = remaining / float(max(queries_left, 1))
+    budget = min(float(hybrid_ms), share - RENDER_RESERVE_MS)
+    if budget < MIN_HYBRID_BUDGET_MS:
+        return None
+    return budget / 1000.0
+
+
+def resolve_hybrid_docs(slugs, slug_index, exclude_tokens, as_of):
+    resolved = []
+    seen = set()
+    for slug in slugs:
+        if slug == ARCHIVE_SLUG or slug.startswith(ARCHIVE_SLUG + "/"):
+            continue
+        doc = slug_index.get(slug)
+        if doc is None:
+            continue
+        if doc.identity.token() in exclude_tokens:
+            continue
+        if any(alias and ("task:" + alias) in exclude_tokens for alias in doc.aliases):
+            continue
+        if as_of and (not doc.date_valid or doc.date > as_of):
+            continue
+        token = doc.identity.token()
+        if token in seen:
+            continue
+        seen.add(token)
+        resolved.append(doc)
+    return resolved
+
+
+def merge_hybrid_overlap(hybrid_docs, overlap_scored):
+    seen = set(doc.identity.token() for doc in hybrid_docs)
+    merged = [(0.0, doc) for doc in hybrid_docs]
+    for score, doc in overlap_scored:
+        token = doc.identity.token()
+        if token in seen:
+            continue
+        seen.add(token)
+        merged.append((score, doc))
+    return merged
+
+
+def note_hybrid(diagnostics, message):
+    if message not in diagnostics:
+        diagnostics.append(message)
+
+
+def attempt_hybrid(
+    ranker,
+    switch,
+    url,
+    token_file,
+    hybrid_ms,
+    deadline,
+    query,
+    slug_index,
+    overlap,
+    exclude_tokens,
+    as_of,
+    diagnostics,
+    queries_left=1,
+):
+    if ranker == "overlap":
+        return overlap, "overlap", 0, False
+    if ranker == "auto" and switch != "on":
+        return overlap, "overlap", 0, False
+    token = read_token_file(token_file)
+    if token is None:
+        note_hybrid(diagnostics, "hybrid-skipped: no token")
+        if ranker == "hybrid":
+            return None, "unavailable", 0, False
+        return overlap, "overlap", 0, False
+    timeout_sec = hybrid_timeout_sec(deadline, hybrid_ms, queries_left)
+    if timeout_sec is None:
+        note_hybrid(diagnostics, "hybrid-skipped: deadline")
+        if ranker == "hybrid":
+            return None, "unavailable", 0, False
+        return overlap, "overlap", 0, False
+    parsed, error = gbrain_search(url, token, query, timeout_sec)
+    if error:
+        note_hybrid(diagnostics, error)
+        if ranker == "hybrid":
+            return None, "unavailable", 0, False
+        return overlap, "overlap", 0, False
+    resolved = resolve_hybrid_docs(
+        parsed["slugs"], slug_index, exclude_tokens, as_of
+    )
+    merged = merge_hybrid_overlap(resolved, overlap)
+    truncated = parsed["count"] >= HYBRID_OVERFETCH
+    return merged, parsed["mode"], len(resolved), truncated
+
+
 def render_session_batch(queries, ranked, token_cap, now):
     chosen = [[] for _ in queries]
     used = set()
@@ -1447,7 +1819,15 @@ def run_session_batch_main(args, root, statuses, now, diagnostics):
     token_cap = args.token_budget
     if token_cap < 0:
         token_cap = 450
-    extras = {"ranker": RANKER_ID, "diagnostics": diagnostics, "task_id": ""}
+    ranker, switch, url, token_file, hybrid_ms = resolve_hybrid_settings(args)
+    extras = {
+        "ranker": RANKER_ID,
+        "retrieval_mode": "overlap",
+        "diagnostics": diagnostics,
+        "task_id": "",
+        "item_retrieval_modes": [],
+        "identities": [],
+    }
     if not cleaned or token_cap == 0:
         payload = {
             "status": "empty",
@@ -1482,6 +1862,9 @@ def run_session_batch_main(args, root, statuses, now, diagnostics):
             corpus,
         )
         ranked = []
+        item_modes = []
+        slug_index = build_slug_index(corpus.docs, diagnostics)
+        queries_left = len(cleaned)
         for item in cleaned:
             own = set(exclude)
             own.add(
@@ -1490,8 +1873,33 @@ def run_session_batch_main(args, root, statuses, now, diagnostics):
             terms = query_terms(item["title"], item["body"], item["sources"])
             if not terms:
                 ranked.append([])
+                item_modes.append("overlap")
+                queries_left -= 1
                 continue
-            ranked.append(rank_docs(corpus.docs, terms, own, args.as_of or None))
+            overlap = rank_docs(corpus.docs, terms, own, args.as_of or None)
+            query_text = item["title"] or item["id"]
+            merged, mode, _resolved, _truncated = attempt_hybrid(
+                ranker,
+                switch,
+                url,
+                token_file,
+                hybrid_ms,
+                deadline,
+                query_text,
+                slug_index,
+                overlap,
+                own,
+                args.as_of or None,
+                diagnostics,
+                queries_left,
+            )
+            if merged is None:
+                ranked.append([])
+                item_modes.append("unavailable")
+            else:
+                ranked.append(merged)
+                item_modes.append(mode)
+            queries_left -= 1
             deadline.check()
     except DeadlineExpired:
         extras["diagnostics"] = diagnostics
@@ -1506,6 +1914,21 @@ def run_session_batch_main(args, root, statuses, now, diagnostics):
         for score, doc in picked:
             identities.append(doc.identity.token())
             hits.append(hit_payload(score, doc, now))
+    batch_mode = "overlap"
+    for mode in item_modes:
+        if mode == "keyword":
+            batch_mode = "keyword"
+            break
+        if mode == "hybrid-unverified" and batch_mode == "overlap":
+            batch_mode = "hybrid-unverified"
+        if mode == "hybrid":
+            batch_mode = "hybrid"
+        if mode == "unavailable" and batch_mode == "overlap":
+            batch_mode = "unavailable"
+    extras["ranker"] = ranker_id_for(batch_mode)
+    extras["retrieval_mode"] = batch_mode
+    extras["item_retrieval_modes"] = item_modes
+    extras["identities"] = identities
     payload = {
         "status": "ok" if hits else "empty",
         "reason": "" if hits else "no matches",
@@ -1539,7 +1962,9 @@ def emit_unavailable(reason, as_json, extras=None):
             "status": "unavailable",
             "reason": reason,
             "ranker": RANKER_ID,
+            "retrieval_mode": "unavailable",
             "hits": [],
+            "identities": [],
             "rendered": "",
             "pointer_count": 0,
             "bytes": 0,
@@ -1547,6 +1972,10 @@ def emit_unavailable(reason, as_json, extras=None):
         }
         if extras:
             payload.update(extras)
+        if "retrieval_mode" not in payload:
+            payload["retrieval_mode"] = "unavailable"
+        if "identities" not in payload:
+            payload["identities"] = []
         sys.stdout.write(json.dumps(payload, indent=1) + "\n")
     return 1
 
@@ -1559,7 +1988,37 @@ def build_parser():
     parser.add_argument(
         "--task-id", default="", help="Task id used in receipts and title fallback"
     )
-    parser.add_argument("--title", default="", help="Query title")
+    parser.add_argument(
+        "--title", "--query", dest="title", default="", help="Query title"
+    )
+    parser.add_argument(
+        "--ranker",
+        choices=("overlap", "hybrid", "auto"),
+        default="",
+        help="overlap, hybrid, or auto (default auto)",
+    )
+    parser.add_argument(
+        "--token-file",
+        default="",
+        help="Path to the gbrain read token file",
+    )
+    parser.add_argument(
+        "--recall-url",
+        default="",
+        help="Loopback MCP JSON-RPC URL",
+    )
+    parser.add_argument(
+        "--gbrain-recall",
+        choices=("on", "off"),
+        default="",
+        help="Home switch; off skips hybrid under auto",
+    )
+    parser.add_argument(
+        "--hybrid-ms",
+        type=int,
+        default=0,
+        help="Hybrid HTTP budget in milliseconds",
+    )
     parser.add_argument("--body-file", default="", help="Finalized task-section file")
     parser.add_argument(
         "--source", action="append", default=[], help="Literal named source"
@@ -1662,13 +2121,19 @@ def main(argv=None):
     if token_cap < 0:
         token_cap = BRIEF_TOKEN_CAP if args.surface == "brief" else None
 
+    ranker, switch, url, token_file, hybrid_ms = resolve_hybrid_settings(args)
     extras = {
         "ranker": RANKER_ID,
+        "retrieval_mode": "overlap",
+        "identities": [],
         "input_fingerprint": fingerprint,
         "task_id": args.task_id,
         "title": title,
         "query_terms": terms,
         "diagnostics": diagnostics,
+        "hybrid_resolved": 0,
+        "truncated": False,
+        "over_fetch": None,
     }
     if not terms:
         rendered = ""
@@ -1706,7 +2171,24 @@ def main(argv=None):
             args.exclude_file,
             corpus,
         )
-        ranked = rank_docs(corpus.docs, terms, exclude, args.as_of or None)
+        overlap = rank_docs(corpus.docs, terms, exclude, args.as_of or None)
+        deadline.check()
+        slug_index = build_slug_index(corpus.docs, diagnostics)
+        query_text = title or " ".join(terms)
+        ranked, retrieval_mode, hybrid_resolved, truncated = attempt_hybrid(
+            ranker,
+            switch,
+            url,
+            token_file,
+            hybrid_ms,
+            deadline,
+            query_text,
+            slug_index,
+            overlap,
+            exclude,
+            args.as_of or None,
+            diagnostics,
+        )
         deadline.check()
     except DeadlineExpired:
         extras["diagnostics"] = diagnostics
@@ -1714,6 +2196,23 @@ def main(argv=None):
     except Unavailable as exc:
         extras["diagnostics"] = diagnostics
         return emit_unavailable(exc.reason, args.json, extras)
+
+    if ranked is None:
+        extras["ranker"] = RANKER_HYBRID_ID
+        extras["retrieval_mode"] = "unavailable"
+        extras["diagnostics"] = diagnostics
+        reason = "hybrid unavailable"
+        for item in reversed(diagnostics):
+            if item.startswith("hybrid-"):
+                reason = item
+                break
+        return emit_unavailable(reason, args.json, extras)
+
+    extras["ranker"] = ranker_id_for(retrieval_mode)
+    extras["retrieval_mode"] = retrieval_mode
+    extras["hybrid_resolved"] = hybrid_resolved
+    extras["truncated"] = truncated
+    extras["over_fetch"] = HYBRID_OVERFETCH if retrieval_mode != "overlap" else None
 
     hits = ranked[:limit]
     rendered, omitted = render_block(hits, args.surface, token_cap, now)
@@ -1724,6 +2223,7 @@ def main(argv=None):
     if args.surface == "pointers":
         used_hits = hits
         kept_count = len(hits)
+    extras["identities"] = [doc.id for _score, doc in used_hits]
     payload = {
         "status": "ok" if kept_count else "empty",
         "reason": "" if kept_count else "no matches",

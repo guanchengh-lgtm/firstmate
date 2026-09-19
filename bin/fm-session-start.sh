@@ -207,7 +207,8 @@
 # consumes this manifest through bin/fm-brief.sh.
 # It also publishes state/.session-recall-receipt.<session-pid>.json with the
 # residual allocation, selected-item and pointer counts, recalled bytes and
-# estimated tokens, and missing-input or truncation indicators.
+# estimated tokens, ranker, retrieval_mode, and missing-input or truncation
+# indicators.
 # The parent records complete digest bytes in that newly published receipt.
 # A completed locked --reemit replaces this session's receipt and manifest;
 # receipts for earlier sessions remain. A lock-refused digest can render
@@ -702,9 +703,11 @@ session_start_emit_recall() {
   local budget memory_tokens=0 fold_bytes=0 fold_tokens=0 residual=0 allocated=0
   local queries_file result_file ident_file items_file backlog_file missing=none truncation=none
   local item_count=0 pointer_count=0 recall_bytes=0 recall_tokens=0 omitted=0
-  local partial_input=0
+  local partial_input=0 recall_ranker=term-overlap-3-1 recall_mode=overlap
   local heading heading_bytes heading_tokens rendered rc
   SESSION_RECALL_IDENTITIES=""
+  SESSION_RECALL_RANKER=term-overlap-3-1
+  SESSION_RECALL_MODE=overlap
   if [ -n "${SESSION_STATUS_EMITTED:-}" ] && [ -f "$SESSION_STATUS_EMITTED" ]; then
     SESSION_RECALL_IDENTITIES=$(
       python3 -B "$SCRIPT_DIR/fm-recall.py" --root "$DATA" --extract-identities \
@@ -801,7 +804,9 @@ PY
   done < <(fm_backlog_status_overrides "$backlog_file")
 
   rc=0
-  FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-recall.sh" "${recall_args[@]}" \
+  FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" \
+    FM_RECALL_RANKER="${FM_RECALL_RANKER:-auto}" \
+    "$SCRIPT_DIR/fm-recall.sh" "${recall_args[@]}" \
     > "$result_file" 2>/dev/null || rc=$?
   if [ "$rc" -ne 0 ] || [ ! -s "$result_file" ]; then
     printf 'Recall is unavailable for this session; prior pointers were not looked up.\n'
@@ -819,6 +824,8 @@ print("recall_bytes=%s" % int(payload.get("bytes") or 0))
 print("recall_tokens=%s" % int(payload.get("estimated_tokens") or 0))
 print("omitted=%s" % int(payload.get("omitted") or 0))
 print("partial_input=%s" % (1 if payload.get("partial_input") else 0))
+print("recall_ranker=%s" % (payload.get("ranker") or "term-overlap-3-1"))
+print("recall_mode=%s" % (payload.get("retrieval_mode") or "overlap"))
 PY
 )"
   rendered=$(python3 -c 'import json,sys; sys.stdout.write(json.load(open(sys.argv[1],encoding="utf-8")).get("rendered") or "")' "$result_file")
@@ -849,6 +856,8 @@ PY
     SESSION_RECALL_RECEIPT_STATUS=zero
   fi
   SESSION_RECALL_STATS="$allocated $pointer_count $item_count $recall_bytes $missing $truncation $recall_tokens"
+  SESSION_RECALL_RANKER=${recall_ranker:-term-overlap-3-1}
+  SESSION_RECALL_MODE=${recall_mode:-overlap}
   rm -f "$queries_file" "$result_file" "$ident_file" "$items_file" "$backlog_file"
 }
 
@@ -878,7 +887,10 @@ session_start_publish_recall_artifacts() {
     return 0
   }
   SESSION_RECALL_STATS=$SESSION_RECALL_STATS SESSION_RECALL_RECEIPT_STATUS=$SESSION_RECALL_RECEIPT_STATUS \
-    SESSION_RECALL_PID=$pid SESSION_RECALL_HOME=$FM_HOME python3 - "$tmp" <<'PY'
+    SESSION_RECALL_PID=$pid SESSION_RECALL_HOME=$FM_HOME \
+    SESSION_RECALL_RANKER=${SESSION_RECALL_RANKER:-term-overlap-3-1} \
+    SESSION_RECALL_MODE=${SESSION_RECALL_MODE:-overlap} \
+    python3 - "$tmp" <<'PY'
 import json, os, sys
 from datetime import datetime, timezone
 parts = (os.environ.get("SESSION_RECALL_STATS") or "").split()
@@ -907,6 +919,8 @@ payload = {
     "estimated_tokens": recall_tokens,
     "missing_input": missing,
     "truncation": truncation,
+    "ranker": os.environ.get("SESSION_RECALL_RANKER") or "term-overlap-3-1",
+    "retrieval_mode": os.environ.get("SESSION_RECALL_MODE") or "overlap",
     "Related": [],
 }
 json.dump(payload, open(sys.argv[1], "w", encoding="utf-8"), indent=2, sort_keys=True)

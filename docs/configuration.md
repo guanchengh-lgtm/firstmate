@@ -278,6 +278,8 @@ There is no full-digest overflow policy and no new targeted-recovery path for an
 `bin/fm-prior-session-fold.sh`'s header owns that fold's residual bound, format, and incompleteness contract.
 `bin/fm-session-start.sh`'s header owns open-item selection, exact-identity dedupe, receipt publication, and when recall is omitted.
 `bin/fm-recall.sh`'s header owns ranking, pointer format, freshness display, and exit behavior.
+Brief and session-start recall use `--ranker auto`.
+The `GBRAIN_RECALL` home switch defaults to off; [`docs/gbrain.md`](gbrain.md) owns that switch and the loopback search keys.
 `bin/fm-brief.sh`'s header owns ship and scout recall refresh and `data/<id>/recall.json`.
 The internal [`/stow` skill](../.agents/skills/stow/SKILL.md) owns curation and its automatic secondmate cascade, which accounts every home against this same per-home allowance separately rather than against a fleet total.
 `bin/fm-startup-memory-budget.sh`'s header owns exact parsing, publication, and report output mechanics.

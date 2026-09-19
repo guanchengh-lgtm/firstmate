@@ -996,6 +996,7 @@ assert len(p["named_sources"]) <= 10, p
 assert len(p["preexisting_cited_paths"]) <= 10, p
 assert all(len(entry) <= 200 for entry in p["preexisting_cited_paths"]), p
 assert "receipt bound:" in p["receipt_bound"], p
+assert p["retrieval_mode"] in ("overlap", "hybrid", "keyword", "hybrid-unverified", "unavailable"), p
 PYX
   pass "fm-brief.sh: manifest warnings, current backlog state, concurrent refresh, and receipt bounds hold"
 }

@@ -10,7 +10,8 @@ Do not point a gbrain home, brain directory, working directory, or source at the
 ## What this ship does
 
 The maintenance executable copies committed Record text into a disposable local Git tree, calls pinned gbrain commands, and publishes only scanned pages under `wiki/gbrain/` and `wiki/views/gbrain/`.
-T2 term overlap stays the brief ranker until a later two-week verdict ship.
+Brief and session-start recall use `--ranker auto`.
+`GBRAIN_RECALL` defaults to off when absent, so those calls stay on term overlap until I4 flips the switch after install smoke.
 Ambient writeback stays off.
 Dream is not used.
 T12 is the nightly owner.
@@ -26,7 +27,9 @@ Private roots live under `$FM_HOME/state/gbrain/` and are never a Record path.
 
 Configuration is `$FM_HOME/config/gbrain.env` as `KEY=VALUE` lines.
 Required key for the nightly phase is `GBRAIN_BIN`, which must be an executable versioned binary.
-Optional keys are `GBRAIN_HOME`, `GBRAIN_BRAIN`, `GBRAIN_LABEL`, `GBRAIN_PORT`, `GBRAIN_TRANSCRIPT_MANIFEST`, `GBRAIN_LAUNCHCTL`, and `GBRAIN_SCAN`.
+Optional keys are `GBRAIN_HOME`, `GBRAIN_BRAIN`, `GBRAIN_LABEL`, `GBRAIN_PORT`, `GBRAIN_TRANSCRIPT_MANIFEST`, `GBRAIN_LAUNCHCTL`, `GBRAIN_SCAN`, `GBRAIN_RECALL`, `GBRAIN_RECALL_TOKEN_FILE`, and `GBRAIN_RECALL_URL`.
+`GBRAIN_RECALL` is off when absent.
+`bin/fm-recall.sh` owns those recall keys and the loopback search call.
 The nightly views stage runs the maintenance command only on a local home when `GBRAIN_BIN` is executable.
 Cloud record-only nights never start this Mac's database or ingest its local transcripts.
 
@@ -91,27 +94,29 @@ Cursor, Grok, and Pi adapters are out of scope.
 
 ## Measurement
 
-`fm-gbrain-eval.py run` calls `bin/fm-recall.sh` and a hybrid helper, using [`tests/fixtures/recall/probe-expected.tsv`](../tests/fixtures/recall/probe-expected.tsv) unchanged.
+`fm-gbrain-eval.py run` calls `bin/fm-recall.sh` for overlap and the same command with `--ranker hybrid`, using [`tests/fixtures/recall/probe-expected.tsv`](../tests/fixtures/recall/probe-expected.tsv) unchanged.
 Modes A, B, and C match the locked probe contract.
-A keyword-only or unavailable hybrid arm is not a completed hybrid trial.
+A keyword-only, hybrid-unverified, or unavailable hybrid arm is not a completed hybrid trial.
 Hybrid wins only when both arms complete every row.
 A timeout on either arm keeps overlap.
-The brief keeps overlap until I5 reads a two-week verdict.
+The two-week eval still compares `--ranker hybrid` against `--ranker overlap` regardless of the brief switch.
+Serve-up for brief ranking means a successful search POST, not `GET /health`.
 
 ## Verification
 
 ```sh
-bin/fm-test-run.sh tests/fm-gbrain-maintain.test.sh tests/fm-gbrain-eval.test.sh
+bin/fm-test-run.sh tests/fm-gbrain-maintain.test.sh tests/fm-gbrain-eval.test.sh tests/fm-recall.test.sh
 ```
 
-Those suites prove projection isolation, collisions, lock busy, primary-only ingest, footer publication, restore on failure, digest-checked archive install, and scoring rules through the public executables.
-A real gbrain and Ollama smoke is a home operation after this documentation lands.
+Those suites prove projection isolation, collisions, lock busy, primary-only ingest, footer publication, restore on failure, digest-checked archive install, scoring rules, and the recall hybrid client through the public executables.
+A real gbrain and Ollama smoke is a home operation after I4.
 `GET http://127.0.0.1:3131/health` is liveness only.
-Authenticated MCP initialize plus a known-page lookup is the retrieval health check.
+A successful authenticated search POST is the retrieval health check.
 
 ## Removal
 
-If the two-week comparison does not beat overlap, leave the brief on T2.
+Set `GBRAIN_RECALL=off` or delete the recall token file to return brief and session-start ranking to term overlap with no code change.
+If the two-week comparison does not beat overlap, leave that switch off.
 If the derived layer is later disabled, unload only `com.firstmate.ks-t17-gbrain`, keep the Record and generated pages, and do not delete original transcripts.
 Stop Ollama only when this installation is its sole consumer.
 

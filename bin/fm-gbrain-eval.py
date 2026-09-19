@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Paired recall probe runner for the gbrain trial.
 
-This program compares the shipped brief recall executable with a hybrid
-query helper. It does not implement a third ranker and it does not rewrite
-the gold answers. T2 term overlap remains the brief floor until a later
-two-week verdict ship.
+This program compares the shipped brief recall executable with the same
+owner under --ranker hybrid. It does not implement a third ranker and it
+does not rewrite the gold answers. T2 term overlap remains the brief
+floor until a later two-week verdict ship. The brief default is --ranker
+auto with GBRAIN_RECALL off until I4 flips that switch.
 
 Usage:
   fm-gbrain-eval.py run --record R --gold FILE --recall-bin PATH
@@ -26,11 +27,13 @@ Modes:
 
 The overlap arm is the shipped recall JSON and its identities are
 hits[].id; its retrieval mode is recorded as "overlap". The hybrid arm
-returns {"status", "mode", "identities"}. Multiple chunks of one identity
-collapse to the first rank. A done-archive path is not rewritten into
-every expected task id here; the recall owner already keeps those
-identities distinct. Timeouts, misses, and degraded rows stay in the
-denominator. A keyword-only hybrid row is not a completed hybrid trial.
+is bin/fm-recall.sh --ranker hybrid --surface pointers --now DATE and
+reads identities plus retrieval_mode from that payload. Multiple chunks
+of one identity collapse to the first rank. A done-archive path is not
+rewritten into every expected task id here; the recall owner already
+keeps those identities distinct. Timeouts, misses, and degraded rows
+stay in the denominator. A keyword-only or hybrid-unverified hybrid row
+is not a completed hybrid trial.
 
 Verdict rule:
   Keep overlap when either arm has a timeout, unavailable, or degraded
@@ -197,7 +200,7 @@ def normalize_payload(payload, elapsed, arm):
         mode = "overlap"
     else:
         identities = list(payload.get("identities") or [])
-        mode = payload.get("mode") or "unknown"
+        mode = payload.get("retrieval_mode") or payload.get("mode") or "unknown"
     collapsed = []
     seen = set()
     for ident in identities:
@@ -235,8 +238,19 @@ def recall_argv(recall_bin, record, query, now):
     }
 
 
-def hybrid_argv(hybrid_bin, query, as_of, exclude_ids):
-    argv = [hybrid_bin, "--json", "--query", query]
+def hybrid_argv(hybrid_bin, query, as_of, exclude_ids, now):
+    argv = [
+        hybrid_bin,
+        "--json",
+        "--ranker",
+        "hybrid",
+        "--surface",
+        "pointers",
+        "--now",
+        now,
+        "--query",
+        query,
+    ]
     if as_of:
         argv.extend(["--as-of", as_of])
     for ident in exclude_ids:
@@ -246,7 +260,7 @@ def hybrid_argv(hybrid_bin, query, as_of, exclude_ids):
 
 def score_identities(identities, expected, status, hybrid_mode, arm):
     degraded = status in ("timeout", "unavailable", "degraded")
-    if arm == "hybrid" and hybrid_mode == "keyword":
+    if arm == "hybrid" and hybrid_mode in ("keyword", "hybrid-unverified"):
         degraded = True
         status = "degraded"
     first = 0
@@ -280,9 +294,9 @@ def one_probe(row, mode, now, recall_bin, hybrid_bin, record, deadline_ms):
         rec_argv.extend(["--exclude-id", ident])
     overlap = run_json(rec_argv, timeout_sec, env, "overlap")
     hybrid = run_json(
-        hybrid_argv(hybrid_bin, row["query"], as_of, exclude),
+        hybrid_argv(hybrid_bin, row["query"], as_of, exclude, now),
         timeout_sec,
-        os.environ.copy(),
+        env,
         "hybrid",
     )
     rows = []
@@ -383,7 +397,10 @@ def cmd_run(args):
     record = require_abs("--record", args.record)
     gold_path = require_abs("--gold", args.gold)
     recall_bin = require_abs("--recall-bin", args.recall_bin)
-    hybrid_bin = require_abs("--hybrid-bin", args.hybrid_bin)
+    hybrid_bin = args.hybrid_bin or os.path.abspath(
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "fm-recall.sh")
+    )
+    hybrid_bin = require_abs("--hybrid-bin", hybrid_bin)
     out_dir = require_abs("--out", args.out)
     if args.deadline_ms <= 0:
         raise UsageError("--deadline-ms must be positive")
@@ -470,7 +487,7 @@ def main(argv=None):
     parser.add_argument("--record")
     parser.add_argument("--gold")
     parser.add_argument("--recall-bin")
-    parser.add_argument("--hybrid-bin")
+    parser.add_argument("--hybrid-bin", default="")
     parser.add_argument("--out")
     parser.add_argument("--now", default="2026-09-13")
     parser.add_argument("--deadline-ms", type=int, default=1000)
@@ -489,13 +506,11 @@ def main(argv=None):
                 args.record,
                 args.gold,
                 args.recall_bin,
-                args.hybrid_bin,
                 args.out,
             )
             if not all(needed):
                 raise UsageError(
-                    "run requires --record, --gold, --recall-bin, "
-                    "--hybrid-bin, and --out"
+                    "run requires --record, --gold, --recall-bin, and --out"
                 )
             return cmd_run(args)
         if args.command == "verdict":

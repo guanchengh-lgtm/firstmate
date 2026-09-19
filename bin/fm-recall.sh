@@ -7,8 +7,9 @@
 #                [--exclude-id <id>]... [--exclude-path <path>]...
 #                [--exclude-identity <id-or-path>]... [--exclude-file <path>]...
 #                [--token-budget N] [--as-of YYYY-MM-DD] [--now YYYY-MM-DD]
-#                [--deadline-ms N] [--json]
-#                [--session-batch <queries.json>] [--extract-identities]
+#                [--deadline-ms N] [--json] [--ranker overlap|hybrid|auto]
+#                [--query <title>] [--session-batch <queries.json>]
+#                [--extract-identities]
 #   fm-recall.sh --help
 #
 # This command is the public recall entry point. bin/fm-recall.py is the only
@@ -27,12 +28,29 @@
 # selected Record are not indexed. Named sources are query terms only and are
 # never fetched or bulk-read.
 #
-# Ranking. The ranker is term-overlap with title weight 3 and body weight 1.
-# Query terms are the union of the title, the finalized task body, and each
-# literal named source. Positive-score documents are ordered by descending
-# relevance, then document id, then path. Recency, status, importance, and
-# freshness never affect rank. Date is display, historical --as-of filtering,
-# and the check-freshness mark only.
+# Ranking. The ranker is term-overlap with title weight 3 and body weight 1
+# unless --ranker hybrid or auto engages the loopback gbrain search.
+# --ranker overlap never opens a socket. --ranker hybrid never falls back.
+# --ranker auto is the brief and session-start default, from FM_RECALL_RANKER
+# when unset. Query terms are the union of the title, the finalized task body,
+# and each literal named source. --query is an alias of --title.
+# Overlap is always computed first. Hybrid order is resolved served slugs
+# first, then overlap-only fill, then the same cap as today.
+# Recency, status, importance, and freshness never affect rank. Date is
+# display, historical --as-of filtering, and the check-freshness mark only.
+# GBRAIN_RECALL defaults to off when absent. auto then stays on overlap.
+# I4 flips that home switch on after install smoke. Serve-up means a
+# successful search POST, not GET /health. One bearer-token JSON-RPC
+# tools/call search is posted to loopback /mcp. No MCP tool is registered
+# in any harness. No MCP client library is used. No REST search path is
+# used. No CLI search is used while serve holds the lock.
+# The token is read from GBRAIN_RECALL_TOKEN_FILE, default
+# $FM_HOME/config/gbrain-recall.token, and is never placed in argv values,
+# receipts, diagnostics, or test output. GBRAIN_RECALL_URL defaults to
+# http://127.0.0.1:$GBRAIN_PORT/mcp. FM_RECALL_HYBRID_MS defaults to 400.
+# A missing token, a refused or timed-out POST, or a bad JSON-RPC shape is
+# down: auto keeps overlap, hybrid is unavailable. keyword_relaxed or
+# _meta.retrieval.vector_enabled false / embed_unavailable is keyword.
 # A leading YAML header and a terminal Related: footer are metadata only:
 # they are read for date and status, excluded from the title and ranking
 # text, and never followed to other documents.
@@ -90,10 +108,14 @@
 # Exit status. 0 means a successful lookup, including an explicit empty
 # result. 1 means unavailable. 2 means usage. Unavailable prints
 # "recall: unavailable: <reason>" on stderr. Successful lookups and ranking
-# failures with --json include status, ranker, hits, rendered text,
-# pointer_count, bytes, and estimated_tokens. Shell preflight and usage
-# failures can return without JSON. Successful lookup diagnostics appear on
-# stderr for plain output and in diagnostics for JSON output.
+# failures with --json include status, ranker, retrieval_mode, identities,
+# hits, rendered text, pointer_count, bytes, and estimated_tokens.
+# ranker is term-overlap-3-1, gbrain-hybrid+term-overlap-3-1, or
+# gbrain-keyword+term-overlap-3-1. retrieval_mode is
+# overlap, hybrid, keyword, hybrid-unverified, or unavailable.
+# Shell preflight and usage failures can return without JSON. Successful
+# lookup diagnostics appear on stderr for plain output and in diagnostics
+# for JSON output. Diagnostics never include the token or response bodies.
 # tests/fm-recall.test.sh owns the public-command regression and probe harness.
 set -eu
 
@@ -138,7 +160,9 @@ print_timeout_unavailable() {
  "status": "unavailable",
  "reason": "ranking timed out",
  "ranker": "term-overlap-3-1",
+ "retrieval_mode": "unavailable",
  "hits": [],
+ "identities": [],
  "rendered": "",
  "pointer_count": 0,
  "bytes": 0,
@@ -174,6 +198,41 @@ else
   DATA="$FM_HOME/data"
 fi
 
+load_gbrain_recall_env() {
+  local file=$1 key val
+  [ -f "$file" ] || return 0
+  while IFS= read -r line; do
+    case "$line" in
+      GBRAIN_RECALL=*|GBRAIN_RECALL_TOKEN_FILE=*|GBRAIN_RECALL_URL=*|GBRAIN_PORT=*)
+        key=${line%%=*}
+        val=${line#*=}
+        case "$key" in
+          GBRAIN_RECALL)
+            [ -n "${GBRAIN_RECALL:-}" ] || GBRAIN_RECALL=$val
+            ;;
+          GBRAIN_RECALL_TOKEN_FILE)
+            [ -n "${GBRAIN_RECALL_TOKEN_FILE:-}" ] || GBRAIN_RECALL_TOKEN_FILE=$val
+            ;;
+          GBRAIN_RECALL_URL)
+            [ -n "${GBRAIN_RECALL_URL:-}" ] || GBRAIN_RECALL_URL=$val
+            ;;
+          GBRAIN_PORT)
+            [ -n "${GBRAIN_PORT:-}" ] || GBRAIN_PORT=$val
+            ;;
+        esac
+        ;;
+    esac
+  done < "$file"
+}
+
+load_gbrain_recall_env "$FM_HOME/config/gbrain.env"
+GBRAIN_RECALL=${GBRAIN_RECALL:-off}
+GBRAIN_PORT=${GBRAIN_PORT:-3131}
+GBRAIN_RECALL_TOKEN_FILE=${GBRAIN_RECALL_TOKEN_FILE:-$FM_HOME/config/gbrain-recall.token}
+GBRAIN_RECALL_URL=${GBRAIN_RECALL_URL:-http://127.0.0.1:${GBRAIN_PORT}/mcp}
+FM_RECALL_RANKER=${FM_RECALL_RANKER:-auto}
+FM_RECALL_HYBRID_MS=${FM_RECALL_HYBRID_MS:-400}
+
 TIMEOUT=${FM_RECALL_TIMEOUT:-1}
 DEADLINE_MS=${FM_RECALL_DEADLINE_MS:-750}
 case "$TIMEOUT" in
@@ -194,12 +253,42 @@ for arg in "$@"; do
   esac
 done
 
+have_ranker=0
+have_token_file=0
+have_recall_url=0
+have_gbrain_recall=0
+have_hybrid_ms=0
+for arg in "$@"; do
+  case "$arg" in
+    --ranker|--ranker=*) have_ranker=1 ;;
+    --token-file|--token-file=*) have_token_file=1 ;;
+    --recall-url|--recall-url=*) have_recall_url=1 ;;
+    --gbrain-recall|--gbrain-recall=*) have_gbrain_recall=1 ;;
+    --hybrid-ms|--hybrid-ms=*) have_hybrid_ms=1 ;;
+  esac
+done
+
 args=()
 args+=(--root "$DATA")
 if [ "$have_deadline" -eq 0 ]; then
   args+=(--deadline-ms "$DEADLINE_MS")
 fi
 args+=("$@")
+if [ "$have_ranker" -eq 0 ]; then
+  args+=(--ranker "$FM_RECALL_RANKER")
+fi
+if [ "$have_gbrain_recall" -eq 0 ]; then
+  args+=(--gbrain-recall "$GBRAIN_RECALL")
+fi
+if [ "$have_token_file" -eq 0 ]; then
+  args+=(--token-file "$GBRAIN_RECALL_TOKEN_FILE")
+fi
+if [ "$have_recall_url" -eq 0 ]; then
+  args+=(--recall-url "$GBRAIN_RECALL_URL")
+fi
+if [ "$have_hybrid_ms" -eq 0 ]; then
+  args+=(--hybrid-ms "$FM_RECALL_HYBRID_MS")
+fi
 
 extract_only=0
 for arg in "$@"; do

@@ -2808,6 +2808,8 @@ import json,sys
 p=json.load(open(sys.argv[1],encoding="utf-8"))
 assert p["selected_item_count"]==5, p
 assert p["surface"]=="session-start"
+assert p.get("retrieval_mode") in ("overlap", "hybrid", "keyword", "hybrid-unverified", "unavailable"), p
+assert p.get("ranker"), p
 PY
   pass "session start selects at most five unique open items and keeps the remaining live rows"
 }

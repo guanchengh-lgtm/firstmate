@@ -43,8 +43,9 @@
 #   at most 500 diagnostic characters. A successful refresh writes
 #   data/<id>/recall.json with
 #   the surface, UTC timestamp, task id, input fingerprint, ranker identity,
-#   emitted paths, named sources, preexisting cited paths, bytes, and estimated
-#   tokens. The receipt is bounded: it keeps at most ten named sources and ten
+#   retrieval_mode, emitted paths, named sources, preexisting cited paths,
+#   bytes, and estimated tokens. The receipt is bounded: it keeps at most ten
+#   named sources and ten
 #   cited paths, cuts every entry at 200 characters, and states in one
 #   receipt_bound line how many entries of each kind it omitted. A failed
 #   receipt write warns that metrics coverage is incomplete. An absent, stale,
@@ -522,6 +523,7 @@ receipt = {
     "task_id": task_id,
     "input_fingerprint": payload.get("input_fingerprint", ""),
     "ranker": payload.get("ranker", "term-overlap-3-1"),
+    "retrieval_mode": payload.get("retrieval_mode", "overlap"),
     "emitted_paths": [
         (hit.get("path") or "")[:RECEIPT_ENTRY_CHARS]
         for hit in payload.get("hits") or []
@@ -621,7 +623,9 @@ PY
   done < "$pre_tmp"
 
   rc=0
-  FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" "$SCRIPT_DIR/fm-recall.sh" "${recall_args[@]}" > "$result_tmp" 2>"$result_tmp.err" || rc=$?
+  FM_HOME="$FM_HOME" FM_DATA_OVERRIDE="$DATA" \
+    FM_RECALL_RANKER="${FM_RECALL_RANKER:-auto}" \
+    "$SCRIPT_DIR/fm-recall.sh" "${recall_args[@]}" > "$result_tmp" 2>"$result_tmp.err" || rc=$?
   if [ "$rc" -ne 0 ]; then
     echo "warning: recall lookup unavailable; dispatch may continue" >&2
     if [ -s "$result_tmp.err" ]; then

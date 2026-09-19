@@ -89,9 +89,10 @@ argv = sys.argv
 query = ""
 as_of = ""
 exclude = []
+ranker = ""
 i = 0
 while i < len(argv):
-    if argv[i] == "--query" and i + 1 < len(argv):
+    if argv[i] in ("--query", "--title") and i + 1 < len(argv):
         query = argv[i + 1]
         i += 2
         continue
@@ -103,6 +104,10 @@ while i < len(argv):
         exclude.append(argv[i + 1])
         i += 2
         continue
+    if argv[i] == "--ranker" and i + 1 < len(argv):
+        ranker = argv[i + 1]
+        i += 2
+        continue
     i += 1
 mode = os.environ.get("HYBRID_MODE", "hybrid")
 status = os.environ.get("HYBRID_STATUS", "ok")
@@ -110,7 +115,6 @@ if os.environ.get("HYBRID_TIMEOUT_QUERY") and os.environ["HYBRID_TIMEOUT_QUERY"]
     status = "timeout"
     identities = []
 else:
-    # Known probe 5 prior identities, plus a duplicate chunk for collapse.
     identities = [
         "ov-kb-graphify",
         "ov-kb-graphify",
@@ -119,13 +123,16 @@ else:
     ]
 print(json.dumps({
     "status": status,
-    "mode": mode,
+    "retrieval_mode": mode,
+    "ranker": "gbrain-%s+term-overlap-3-1" % mode if mode in ("hybrid", "keyword") else "term-overlap-3-1",
     "identities": identities,
+    "hits": [{"id": ident} for ident in identities],
     "elapsed_ms": 12,
     "cache": "off",
     "as_of": as_of,
     "exclude": exclude,
     "query": query,
+    "ranker_flag": ranker,
 }))
 PY
 SH
@@ -171,6 +178,8 @@ assert "--exclude-id" in recall
 assert "--as-of" in recall
 assert "--as-of" in hybrid
 assert "--exclude-id" in hybrid
+assert "--ranker hybrid" in hybrid or "--ranker\nhybrid" in hybrid.replace(" ", "\n")
+assert "--query" in hybrid or "--title" in hybrid
 rows=[json.loads(line) for line in open(sys.argv[4]) if line.strip()]
 assert set(row["retrieval_mode"] for row in rows if row["arm"]=="overlap")=={"overlap"}, "overlap retrieval_mode drifted"
 assert set(row["retrieval_mode"] for row in rows if row["arm"]=="hybrid")=={"hybrid"}, "hybrid retrieval_mode drifted"
@@ -292,8 +301,98 @@ test_outer_repository_stays_clean() {
   pass 'fm-gbrain-eval: fixtures leave the outer repository and gold file unchanged'
 }
 
+test_real_recall_refused_and_keyword() {
+  local home wrap out dir token
+  home="$TMP_ROOT/real/home"
+  seed_probe_corpus "$home"
+  wrap="$TMP_ROOT/real/recall"
+  write_recall_wrap "$wrap"
+  token="$home/config/gbrain-recall.token"
+  mkdir -p "$home/config"
+  printf '%s\n' 'tok-t17b-throwaway-never-print' > "$token"
+  out="$TMP_ROOT/real/out-refused"
+  GBRAIN_RECALL=on GBRAIN_RECALL_TOKEN_FILE="$token" \
+    GBRAIN_RECALL_URL="http://127.0.0.1:1/mcp" \
+    run_e run --record "$home/data" --gold "$GOLD" --recall-bin "$wrap" \
+    --hybrid-bin "$RECALL" --out "$out" --now 2026-09-13 --deadline-ms 4000 --format json
+  expect_code 0 "$RC" 'refused hybrid'
+  python3 - "$out/rows.jsonl" "$out/summary.json" <<'PY' || fail "refused serve did not keep overlap"
+import json,sys
+rows=[json.loads(line) for line in open(sys.argv[1]) if line.strip()]
+hybrid=[row for row in rows if row["arm"]=="hybrid"]
+overlap=[row for row in rows if row["arm"]=="overlap"]
+assert hybrid and all(row["status"]=="unavailable" for row in hybrid), hybrid[:2]
+assert overlap and all(row["status"] in ("ok","empty") for row in overlap), overlap[:2]
+summary=json.load(open(sys.argv[2]))
+assert summary["winner"]=="overlap"
+assert "incomplete" in summary["reason"] or "degraded" in summary["reason"]
+PY
+  dir="$TMP_ROOT/real/fake"
+  mkdir -p "$dir"
+  python3 - "$dir/body" <<'PY'
+import json, sys
+payload = {
+    "jsonrpc": "2.0",
+    "id": 1,
+    "result": {
+        "structuredContent": {
+            "results": [{"slug": "data/ov-kb-graphify/report", "keyword_relaxed": True}]
+        },
+        "_meta": {"retrieval": {"vector_enabled": False, "degraded": [{"stage": "embed_unavailable"}]}},
+    },
+}
+open(sys.argv[1], "w", encoding="utf-8").write(json.dumps(payload))
+PY
+  python3 - "$dir" <<'PY' &
+import json, os, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+root = sys.argv[1]
+class H(BaseHTTPRequestHandler):
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        self.rfile.read(n)
+        body = open(os.path.join(root, "body"), encoding="utf-8").read().encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    def log_message(self, *_a):
+        return
+s = HTTPServer(("127.0.0.1", 0), H)
+open(os.path.join(root, "port"), "w", encoding="utf-8").write(str(s.server_address[1]))
+s.serve_forever()
+PY
+  fake_pid=$!
+  i=0
+  while [ ! -f "$dir/port" ]; do
+    i=$((i + 1))
+    [ "$i" -lt 50 ] || fail "eval fake server did not bind"
+    sleep 0.05
+  done
+  out2="$TMP_ROOT/real/out-keyword"
+  GBRAIN_RECALL=on GBRAIN_RECALL_TOKEN_FILE="$token" \
+    GBRAIN_RECALL_URL="http://127.0.0.1:$(cat "$dir/port")/mcp" \
+    run_e run --record "$home/data" --gold "$GOLD" --recall-bin "$wrap" \
+    --hybrid-bin "$RECALL" --out "$out2" --now 2026-09-13 --deadline-ms 4000 --format json
+  expect_code 0 "$RC" 'keyword hybrid'
+  python3 - "$out2/rows.jsonl" "$out2/summary.json" <<'PY' || fail "keyword hybrid did not degrade"
+import json,sys
+rows=[json.loads(line) for line in open(sys.argv[1]) if line.strip()]
+hybrid=[row for row in rows if row["arm"]=="hybrid"]
+assert hybrid and all(row["retrieval_mode"]=="keyword" for row in hybrid), hybrid[:2]
+assert all(row["available"]=="degraded" for row in hybrid), hybrid[:2]
+summary=json.load(open(sys.argv[2]))
+assert summary["winner"]=="overlap"
+PY
+  kill "$fake_pid" 2>/dev/null || true
+  wait "$fake_pid" 2>/dev/null || true
+  pass 'fm-gbrain-eval: refused serve and keyword signal keep overlap'
+}
+
 test_help_and_gold_shape
 test_official_lanes_call_shipped_recall
 test_timeout_and_keyword_do_not_win
 test_verdict_keeps_overlap_on_regression
+test_real_recall_refused_and_keyword
 test_outer_repository_stays_clean
