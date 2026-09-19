@@ -10,7 +10,9 @@
 # undefined. The Record chain adds Gitleaks default rules and archive
 # inspection; the feeder does not run those additional passes. A match refuses
 # the run, naming only a safe locator and the pattern class, never matched bytes.
-# The OpenAI class is exactly `sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,255}`.
+# The OpenAI and Stripe live-key arms require the token-start prefix
+# `(^|[^A-Za-z0-9]|\\[nrt])`; a key glued onto a preceding letter or digit,
+# including percent-encoded or `\u` escaped separators, is not matched.
 # It fails closed: a false positive blocks export; a false negative can leak.
 # When executed:
 #   fm-record-scan.sh tree <dir>...
@@ -37,9 +39,11 @@ set -u
 
 export LC_ALL=C
 
-OPENAI_SECRET='sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,255}'
+TOKEN_START='(^|[^A-Za-z0-9]|\\[nrt])'
+OPENAI_SECRET="${TOKEN_START}sk-(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,255}"
+STRIPE_SECRET="${TOKEN_START}[sr]k_live_[A-Za-z0-9]{16,255}"
 PRIVATE_KEY_HEADER='-----BEGIN ((RSA|EC|DSA|OPENSSH|ENCRYPTED) )?PRIVATE KEY-----'
-SECRET_COMBINED="$PRIVATE_KEY_HEADER|gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{20,255}|(AKIA|ASIA)[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{10,255}|[sr]k_live_[A-Za-z0-9]{16,255}|AIza[A-Za-z0-9_-]{35}|$OPENAI_SECRET"
+SECRET_COMBINED="$PRIVATE_KEY_HEADER|gh[pousr]_[A-Za-z0-9]{36,255}|github_pat_[A-Za-z0-9_]{20,255}|(AKIA|ASIA)[A-Z0-9]{16}|xox[baprs]-[A-Za-z0-9-]{10,255}|$STRIPE_SECRET|AIza[A-Za-z0-9_-]{35}|$OPENAI_SECRET"
 
 fm_record_scan_die() { # <exit-code> <message>...
   local code=$1
@@ -83,7 +87,7 @@ secret_class_of() { # <file>; prints the first matching class name
   secret_pattern_matches 'github_pat_[A-Za-z0-9_]{20,255}' "$file" && { printf '%s\n' github-fine-grained-token; return 0; }
   secret_pattern_matches '(AKIA|ASIA)[A-Z0-9]{16}' "$file" && { printf '%s\n' aws-access-key-id; return 0; }
   secret_pattern_matches 'xox[baprs]-[A-Za-z0-9-]{10,255}' "$file" && { printf '%s\n' slack-token; return 0; }
-  secret_pattern_matches '[sr]k_live_[A-Za-z0-9]{16,255}' "$file" && { printf '%s\n' stripe-live-key; return 0; }
+  secret_pattern_matches "$STRIPE_SECRET" "$file" && { printf '%s\n' stripe-live-key; return 0; }
   secret_pattern_matches 'AIza[A-Za-z0-9_-]{35}' "$file" && { printf '%s\n' google-api-key; return 0; }
   secret_pattern_matches "$OPENAI_SECRET" "$file" && { printf '%s\n' openai-key; return 0; }
   printf 'unclassified\n'
