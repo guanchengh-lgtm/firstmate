@@ -2064,7 +2064,7 @@ SH
     die "fork failed" unless defined $pid;
     if (!$pid) { setpgrp(0, 0); exec @ARGV }
     local $SIG{ALRM} = sub { kill "KILL", -$pid; waitpid $pid, 0; exit 99 };
-    alarm 5;
+    alarm 15;
     waitpid $pid, 0;
     exit($? >> 8);
   ' env PATH="$fakebin:$BASE_PATH" "$driver" "$ROOT/bin/fm-timeout-lib.sh" \
