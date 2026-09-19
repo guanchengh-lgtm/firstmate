@@ -28,7 +28,7 @@ Modes:
 The overlap arm is the shipped recall JSON and its identities are
 hits[].id; its retrieval mode is recorded as "overlap". The hybrid arm
 is bin/fm-recall.sh --ranker hybrid --surface pointers --now DATE and
-reads identities plus retrieval_mode from that payload. Multiple chunks
+reads hits[].id plus retrieval_mode from that payload. Multiple chunks
 of one identity collapse to the first rank. A done-archive path is not
 rewritten into every expected task id here; the recall owner already
 keeps those identities distinct. Timeouts, misses, and degraded rows
@@ -195,11 +195,10 @@ def run_json(argv, timeout_sec, env, arm):
 
 
 def normalize_payload(payload, elapsed, arm):
+    identities = [hit["id"] for hit in payload.get("hits") or []]
     if arm == "overlap":
-        identities = [hit["id"] for hit in payload.get("hits") or []]
         mode = "overlap"
     else:
-        identities = list(payload.get("identities") or [])
         mode = payload.get("retrieval_mode") or payload.get("mode") or "unknown"
     collapsed = []
     seen = set()

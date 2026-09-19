@@ -48,6 +48,10 @@
 # $FM_HOME/config/gbrain-recall.token, and is never placed in argv values,
 # receipts, diagnostics, or test output. GBRAIN_RECALL_URL defaults to
 # http://127.0.0.1:$GBRAIN_PORT/mcp. FM_RECALL_HYBRID_MS defaults to 400.
+# A recall URL whose host is not 127.0.0.1, ::1, or localhost is down; the
+# token is never sent to it. The POST ignores proxy settings and refuses
+# redirects. A session batch gives each query an equal share of the time
+# left, and its retrieval_mode is the weakest mode of its queries.
 # A missing token, a refused or timed-out POST, or a bad JSON-RPC shape is
 # down: auto keeps overlap, hybrid is unavailable. keyword_relaxed or
 # _meta.retrieval.vector_enabled false / embed_unavailable is keyword.
@@ -226,7 +230,10 @@ load_gbrain_recall_env() {
 }
 
 load_gbrain_recall_env "$FM_HOME/config/gbrain.env"
-GBRAIN_RECALL=${GBRAIN_RECALL:-off}
+case "${GBRAIN_RECALL:-off}" in
+  on) GBRAIN_RECALL=on ;;
+  *) GBRAIN_RECALL=off ;;
+esac
 GBRAIN_PORT=${GBRAIN_PORT:-3131}
 GBRAIN_RECALL_TOKEN_FILE=${GBRAIN_RECALL_TOKEN_FILE:-$FM_HOME/config/gbrain-recall.token}
 GBRAIN_RECALL_URL=${GBRAIN_RECALL_URL:-http://127.0.0.1:${GBRAIN_PORT}/mcp}

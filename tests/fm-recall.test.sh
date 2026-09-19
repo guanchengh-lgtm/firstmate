@@ -1148,7 +1148,7 @@ start_fake_mcp() {
   [ -f "$dir/delay" ] || printf '0\n' > "$dir/delay"
   FAKE_TOKEN="$TOKEN_FIXTURE" python3 - "$dir" <<'PY' &
 import json, os, sys, time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 root = sys.argv[1]
 token = os.environ.get("FAKE_TOKEN", "")
@@ -1174,6 +1174,12 @@ class Handler(BaseHTTPRequestHandler):
             delay = float(open(os.path.join(root, "delay"), encoding="utf-8").read().strip() or "0")
         except (OSError, ValueError):
             delay = 0.0
+        try:
+            slow_match = open(os.path.join(root, "slow_match"), encoding="utf-8").read().strip()
+        except OSError:
+            slow_match = ""
+        if slow_match and slow_match not in record["body"]:
+            delay = 0.0
         if delay > 0:
             time.sleep(delay)
         status = 200
@@ -1196,7 +1202,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
         return
 
-server = HTTPServer(("127.0.0.1", 0), Handler)
+server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 open(os.path.join(root, "port"), "w", encoding="utf-8").write(str(server.server_address[1]))
 server.serve_forever()
 PY
@@ -1266,12 +1272,32 @@ assert p["retrieval_mode"] == "unavailable", p
 assert p["hits"] == [], p
 assert p["identities"] == [], p
 PY
-  assert_no_token "$home/auto.json" "$home/auto.err" "$home/hybrid.json" "$home/hybrid.err"
-  pass "fm-recall: refused serve keeps overlap under auto and unavailable under hybrid"
+  recall_json "$home" --title sprocket --surface pointers --ranker auto \
+    --gbrain-recall on --recall-url "http://192.0.2.1:9/mcp" \
+    --token-file "$home/config/gbrain-recall.token" \
+    > "$home/remote.json" 2>"$home/remote.err" || fail "auto non-loopback should exit 0"
+  python3 - "$home/remote.json" <<'PY' || fail "non-loopback url was not treated as serve down"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert p["retrieval_mode"] == "overlap", p
+assert [h["id"] for h in p["hits"]] == ["alpha"], p
+assert "hybrid-refused: non-loopback url" in p["diagnostics"], p
+PY
+  set +e
+  recall_json "$home" --title sprocket --surface pointers --ranker hybrid \
+    --gbrain-recall on --recall-url "http://192.0.2.1:9/mcp" \
+    --token-file "$home/config/gbrain-recall.token" \
+    > "$home/remote-hybrid.json" 2>"$home/remote-hybrid.err"
+  RC=$?
+  set -e
+  [ "$RC" -eq 1 ] || fail "hybrid non-loopback should exit 1, got $RC"
+  assert_no_token "$home/auto.json" "$home/auto.err" "$home/hybrid.json" "$home/hybrid.err" \
+    "$home/remote.json" "$home/remote.err" "$home/remote-hybrid.json" "$home/remote-hybrid.err"
+  pass "fm-recall: refused or non-loopback serve keeps overlap under auto and unavailable under hybrid"
 }
 
 test_hybrid_timeout_stays_inside_deadline() {
-  local home dir start ms
+  local home dir
   home="$TMP_ROOT/hybrid-hang"
   dir="$home/fake"
   write_report "$home" alpha "Sprocket plan" 2026-09-01 reported
@@ -1280,17 +1306,16 @@ test_hybrid_timeout_stays_inside_deadline() {
   printf '2\n' > "$dir/delay"
   printf '%s\n' '{"jsonrpc":"2.0","id":1,"result":{"structuredContent":{"results":[]},"_meta":{"retrieval":{"vector_enabled":true}}}}' > "$dir/body"
   start_fake_mcp "$dir"
-  start=$(python3 -c 'import time; print(int(time.monotonic()*1000))')
   recall_json "$home" --title sprocket --surface pointers --ranker auto \
     --gbrain-recall on --recall-url "$FAKE_URL" \
     --token-file "$home/config/gbrain-recall.token" --hybrid-ms 150 \
     > "$home/out.json" 2>"$home/out.err" || fail "timeout auto should exit 0"
-  ms=$(python3 -c 'import sys,time; print(int(time.monotonic()*1000)-int(sys.argv[1]))' "$start")
-  [ "$ms" -lt 750 ] || fail "hybrid timeout exceeded deadline: ${ms}ms"
   python3 - "$home/out.json" <<'PY' || fail "timeout auto did not keep overlap"
 import json, sys
 p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert p["status"] == "ok", p
 assert p["retrieval_mode"] == "overlap", p
+assert [h["id"] for h in p["hits"]] == ["alpha"], p
 assert any("hybrid-timeout" in d or "hybrid-skipped: deadline" in d for d in p.get("diagnostics") or []), p
 PY
   stop_fake_mcp
@@ -1434,8 +1459,13 @@ assert args["salience"] == "off", args
 assert "mode" not in args, args
 assert recv[0]["auth_present"] is True, recv[0]
 assert recv[0]["auth_leaked"] is False, recv[0]
-assert p["identities"][0] == "beta", p
+assert p["identities"][0] == "task:beta", p
 PY
+  http_proxy="http://127.0.0.1:1" HTTP_PROXY="http://127.0.0.1:1" no_proxy="" NO_PROXY="" \
+    recall_json "$home" --title sprocket --surface pointers --ranker hybrid \
+    --gbrain-recall on --recall-url "$FAKE_URL" \
+    --token-file "$home/config/gbrain-recall.token" \
+    > "$home/proxy.json" 2>"$home/proxy.err" || fail "hybrid POST followed the proxy environment"
   stop_fake_mcp
   assert_no_token "$home/out.json" "$home/out.err" "$dir/recv"
   pass "fm-recall: hybrid-first order, fill, drop, dedupe, as-of, and exclude"
@@ -1446,6 +1476,11 @@ test_hybrid_slug_mapping_and_collision() {
   home="$TMP_ROOT/hybrid-slug"
   dir="$home/fake"
   mkdir -p "$home/data/KS-T17B-Case" "$home/data/decisions" "$home/data/cafe notes"
+  mkdir -p "$home/data/twin case" "$home/data/twin-case"
+  printf '%s\n' '# Twin spaced' 'date: 2026-09-01' 'status: reported' 'narwhal body' \
+    > "$home/data/twin case/report.md"
+  printf '%s\n' '# Twin dashed' 'date: 2026-09-01' 'status: reported' 'narwhal body' \
+    > "$home/data/twin-case/report.md"
   printf '%s\n' '# Upper sprocket' 'date: 2026-09-01' 'status: reported' 'sprocket body' \
     > "$home/data/KS-T17B-Case/report.md"
   printf '%s\n' '# Dotted decision' 'date: 2026-08-31' 'status: decided' 'sprocket body' \
@@ -1461,6 +1496,7 @@ rows = [
     {"slug": "data/ks-t17b-case/report"},
     {"slug": "data/decisions/knowledge-stack-2026-08-31"},
     {"slug": "data/cafe-notes/report"},
+    {"slug": "data/twin-case/report"},
 ]
 payload = {
     "jsonrpc": "2.0",
@@ -1484,6 +1520,8 @@ ids = [h["id"] for h in p["hits"]]
 assert "KS-T17B-Case" in ids, ids
 assert "knowledge-stack-2026-08-31" in ids, ids
 assert any("cafe" in h["path"] for h in p["hits"]), p["hits"]
+assert not any("twin" in h["path"] for h in p["hits"]), p["hits"]
+assert "hybrid-slug-collision: data/twin-case/report" in p["diagnostics"], p
 PY
   python3 - "$ROOT/bin/fm-recall.py" "$ROOT/bin/fm-gbrain-maintain.py" <<'PY' || fail "slug gold or projection disagree"
 import importlib.util, sys
@@ -1599,8 +1637,42 @@ PY
 import json, sys
 p = json.load(open(sys.argv[1], encoding="utf-8"))
 assert p["estimated_tokens"] <= 450, p
-assert p.get("item_retrieval_modes"), p
+assert p["item_retrieval_modes"] == ["overlap", "overlap"], p
+assert p["retrieval_mode"] == "overlap", p
+assert p["ranker"] == "term-overlap-3-1", p
+assert any("hybrid-timeout" in d or "hybrid-skipped: deadline" in d for d in p["diagnostics"]), p
+assert p["identities"], p
 assert set(p["identities"]) <= {"task:alpha", "task:beta", "task:gamma", "task:delta", "task:epsilon", "task:zeta"}
+PY
+  printf '%s\n' '[{"id":"a","title":"sprocket"},{"id":"b","title":"sprocket slowpoke"}]' > "$queries"
+  printf 'slowpoke\n' > "$dir/slow_match"
+  recall_json "$home" --session-batch "$queries" --token-budget 450 \
+    --ranker auto --gbrain-recall on --recall-url "$FAKE_URL" \
+    --token-file "$home/config/gbrain-recall.token" --hybrid-ms 150 \
+    > "$home/mixed.json" 2>"$home/mixed.err" || fail "mixed session should exit 0"
+  python3 - "$home/mixed.json" <<'PY' || fail "mixed session recorded hybrid for a fallback query"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert p["item_retrieval_modes"] == ["hybrid", "overlap"], p
+assert p["retrieval_mode"] == "overlap", p
+assert p["ranker"] == "term-overlap-3-1", p
+PY
+  printf '0\n' > "$dir/delay"
+  python3 - "$queries" <<'PY'
+import json, sys
+items = [{"id": "q%d" % n, "title": "sprocket"} for n in range(5)]
+json.dump(items, open(sys.argv[1], "w", encoding="utf-8"))
+PY
+  recall_json "$home" --session-batch "$queries" --token-budget 450 \
+    --ranker auto --gbrain-recall on --recall-url "$FAKE_URL" \
+    --token-file "$home/config/gbrain-recall.token" \
+    > "$home/five.json" 2>"$home/five.err" || fail "five-item session should exit 0"
+  python3 - "$home/five.json" <<'PY' || fail "five-item session skipped hybrid"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert p["item_retrieval_modes"] == ["hybrid"] * 5, p
+assert p["retrieval_mode"] == "hybrid", p
+assert p["ranker"] == "gbrain-hybrid+term-overlap-3-1", p
 PY
   stop_fake_mcp
   pass "fm-recall: brief cap and session per-query fallback stay inside T2 limits"

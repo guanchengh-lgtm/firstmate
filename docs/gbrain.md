@@ -30,6 +30,7 @@ Required key for the nightly phase is `GBRAIN_BIN`, which must be an executable 
 Optional keys are `GBRAIN_HOME`, `GBRAIN_BRAIN`, `GBRAIN_LABEL`, `GBRAIN_PORT`, `GBRAIN_TRANSCRIPT_MANIFEST`, `GBRAIN_LAUNCHCTL`, `GBRAIN_SCAN`, `GBRAIN_RECALL`, `GBRAIN_RECALL_TOKEN_FILE`, and `GBRAIN_RECALL_URL`.
 `GBRAIN_RECALL` is off when absent.
 `bin/fm-recall.sh` owns those recall keys and the loopback search call.
+`GBRAIN_RECALL_URL` must name host `127.0.0.1`, `::1`, or `localhost`; any other host counts as serve down and the token is not sent.
 The nightly views stage runs the maintenance command only on a local home when `GBRAIN_BIN` is executable.
 Cloud record-only nights never start this Mac's database or ingest its local transcripts.
 

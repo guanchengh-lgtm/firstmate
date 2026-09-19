@@ -13,6 +13,16 @@ OUTER_STATUS_BEFORE=$(git -C "$ROOT" status --short --untracked-files=all)
 fm_git_identity fmtest fmtest@example.invalid
 GOLD_BEFORE=$(python3 -c 'import hashlib,sys;print(hashlib.sha256(open(sys.argv[1],"rb").read()).hexdigest())' "$GOLD")
 
+FAKE_PID=""
+stop_fake_server() {
+  if [ -n "$FAKE_PID" ]; then
+    kill "$FAKE_PID" 2>/dev/null || true
+    wait "$FAKE_PID" 2>/dev/null || true
+  fi
+  FAKE_PID=""
+}
+trap 'stop_fake_server; fm_test_cleanup' EXIT
+
 run_e() {
   set +e
   OUT=$(python3 "$EVAL" "$@" 2>&1)
@@ -363,7 +373,7 @@ s = HTTPServer(("127.0.0.1", 0), H)
 open(os.path.join(root, "port"), "w", encoding="utf-8").write(str(s.server_address[1]))
 s.serve_forever()
 PY
-  fake_pid=$!
+  FAKE_PID=$!
   i=0
   while [ ! -f "$dir/port" ]; do
     i=$((i + 1))
@@ -385,8 +395,7 @@ assert all(row["available"]=="degraded" for row in hybrid), hybrid[:2]
 summary=json.load(open(sys.argv[2]))
 assert summary["winner"]=="overlap"
 PY
-  kill "$fake_pid" 2>/dev/null || true
-  wait "$fake_pid" 2>/dev/null || true
+  stop_fake_server
   pass 'fm-gbrain-eval: refused serve and keyword signal keep overlap'
 }
 
