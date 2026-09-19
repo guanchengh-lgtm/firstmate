@@ -80,6 +80,111 @@ openai-key:openai-underscore-suffix'
   pass "fm-record-scan: every feeder class refuses without echoing the value"
 }
 
+test_word_internal_lookalikes_are_clean_and_real_keys_still_refuse() {
+  local dir slug cite stripe_look key_proj key_plain key_stripe
+
+  dir="$TMP_ROOT/sk-boundary-neg"
+  mkdir -p "$dir"
+  slug=$(printf '%s%s' 'nm-pipeline-high-risk-fab' 'le-medium-2026-09-13')
+  cite=$(printf '%s%s' 'tv-desk-ke' 'ep-10m-regular-2026-08-26')
+  stripe_look=$(printf '%s%s%s' 'ta' 'sk' '_live_0123456789abcdefgh')
+  printf 'cite %s.md and %s\n' "$cite" "$stripe_look" > "$dir/${slug}.md"
+  printf 'see %s.md\n' "$slug" > "$dir/captain.md"
+  run_scan tree "$dir"
+  expect_code 0 "$RC" 'word-internal tree'
+  run_scan archive-preflight --dir "$dir"
+  expect_code 0 "$RC" 'word-internal archive-preflight'
+  run_scan chain --dir "$dir"
+  expect_code 0 "$RC" 'word-internal chain'
+
+  key_proj=$(secret_fixture openai-project)
+  key_plain=$(secret_fixture openai-plain)
+  key_stripe=$(secret_fixture stripe-live)
+
+  dir="$TMP_ROOT/sk-boundary-pos"
+  mkdir -p "$dir"
+  printf 'key: %s\n' "$key_proj" > "$dir/payload.md"
+  run_scan tree "$dir"
+  expect_code 2 "$RC" 'project key after key:'
+  assert_contains "$OUT" 'openai-key' 'project key class'
+  assert_not_contains "$OUT" "$key_proj" 'project key echoed'
+  run_scan chain --dir "$dir"
+  expect_code 2 "$RC" 'project key chain'
+  assert_not_contains "$OUT" "$key_proj" 'project key chain echoed'
+
+  printf '%s\n' "$key_plain" > "$dir/payload.md"
+  run_scan tree "$dir"
+  expect_code 2 "$RC" 'classic key at line start'
+  assert_contains "$OUT" 'openai-key' 'classic key class'
+  assert_not_contains "$OUT" "$key_plain" 'classic key echoed'
+  run_scan chain --dir "$dir"
+  expect_code 2 "$RC" 'classic key chain'
+  assert_not_contains "$OUT" "$key_plain" 'classic key chain echoed'
+
+  printf "  \`%s\`\n" "$key_proj" > "$dir/payload.md"
+  run_scan tree "$dir"
+  expect_code 2 "$RC" 'project key in backticks'
+  assert_not_contains "$OUT" "$key_proj" 'backtick key echoed'
+  run_scan chain --dir "$dir"
+  expect_code 2 "$RC" 'project key backticks chain'
+  assert_not_contains "$OUT" "$key_proj" 'backtick key chain echoed'
+
+  printf '{"k":"x\\n%s"}\n' "$key_plain" > "$dir/payload.md"
+  run_scan tree "$dir"
+  expect_code 2 "$RC" 'classic key after escaped newline'
+  assert_not_contains "$OUT" "$key_plain" 'escaped-newline key echoed'
+  run_scan chain --dir "$dir"
+  expect_code 2 "$RC" 'classic key escaped-newline chain'
+  assert_not_contains "$OUT" "$key_plain" 'escaped-newline key chain echoed'
+
+  printf 'KEY=%s\n' "$key_stripe" > "$dir/payload.md"
+  run_scan tree "$dir"
+  expect_code 2 "$RC" 'stripe after KEY='
+  assert_contains "$OUT" 'stripe-live-key' 'stripe class'
+  assert_not_contains "$OUT" "$key_stripe" 'stripe echoed'
+  run_scan chain --dir "$dir"
+  expect_code 2 "$RC" 'stripe KEY= chain'
+  assert_not_contains "$OUT" "$key_stripe" 'stripe chain echoed'
+
+  printf '{"k":"x\\t%s"}\n' "$key_stripe" > "$dir/payload.md"
+  run_scan tree "$dir"
+  expect_code 2 "$RC" 'stripe after escaped tab'
+  assert_not_contains "$OUT" "$key_stripe" 'escaped-tab stripe echoed'
+  run_scan chain --dir "$dir"
+  expect_code 2 "$RC" 'stripe escaped-tab chain'
+  assert_not_contains "$OUT" "$key_stripe" 'escaped-tab stripe chain echoed'
+
+  dir="$TMP_ROOT/sk-boundary-names"
+  mkdir -p "$dir"
+  printf 'harmless content\n' > "$dir/${key_proj}.md"
+  run_scan chain --dir "$dir"
+  expect_code 2 "$RC" 'project-key filename'
+  assert_contains "$OUT" 'credential-shaped source path redacted' 'project-key filename not redacted'
+  assert_not_contains "$OUT" "$key_proj" 'project-key filename leaked'
+  rm -f "$dir/${key_proj}.md"
+  printf 'harmless content\n' > "$dir/notes-${key_plain}.md"
+  run_scan chain --dir "$dir"
+  expect_code 2 "$RC" 'notes-classic filename'
+  assert_contains "$OUT" 'credential-shaped source path redacted' 'notes-classic filename not redacted'
+  assert_not_contains "$OUT" "$key_plain" 'notes-classic filename leaked'
+  rm -f "$dir/notes-${key_plain}.md"
+  mkdir -p "$dir/${key_plain}"
+  printf 'harmless content\n' > "$dir/${key_plain}/ok.md"
+  run_scan chain --dir "$dir"
+  expect_code 2 "$RC" 'classic-key directory'
+  assert_contains "$OUT" 'credential-shaped source path redacted' 'classic-key directory not redacted'
+  assert_not_contains "$OUT" "$key_plain" 'classic-key directory leaked'
+
+  dir="$TMP_ROOT/sk-boundary-glued"
+  mkdir -p "$dir"
+  printf '%s%s\n' 'x' "$key_plain" > "$dir/glued.txt"
+  run_scan tree "$dir"
+  expect_code 0 "$RC" 'glued classic residual tree'
+  run_scan chain --dir "$dir"
+  expect_code 0 "$RC" 'glued classic residual chain'
+  pass "fm-record-scan: word-internal sk slugs stay clean and real keys still refuse"
+}
+
 test_lookalikes_are_clean() {
   local dir
   dir="$TMP_ROOT/lookalikes"
@@ -515,6 +620,7 @@ PY
 
 test_help_names_owner_and_codes
 test_eight_classes_refuse_without_echoing_values
+test_word_internal_lookalikes_are_clean_and_real_keys_still_refuse
 test_lookalikes_are_clean
 test_credential_shaped_path_is_redacted
 test_binary_bytes_and_scan_errors_fail_closed
