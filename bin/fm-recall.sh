@@ -8,6 +8,8 @@
 #                [--exclude-identity <id-or-path>]... [--exclude-file <path>]...
 #                [--token-budget N] [--as-of YYYY-MM-DD] [--now YYYY-MM-DD]
 #                [--deadline-ms N] [--json] [--ranker overlap|hybrid|auto]
+#                [--gbrain-recall on|off] [--token-file <path>]
+#                [--recall-url <url>] [--hybrid-ms N]
 #                [--query <title>] [--session-batch <queries.json>]
 #                [--extract-identities]
 #   fm-recall.sh --help
@@ -48,6 +50,9 @@
 # $FM_HOME/config/gbrain-recall.token, and is never placed in argv values,
 # receipts, diagnostics, or test output. GBRAIN_RECALL_URL defaults to
 # http://127.0.0.1:$GBRAIN_PORT/mcp. FM_RECALL_HYBRID_MS defaults to 400.
+# --gbrain-recall, --token-file, --recall-url, and --hybrid-ms override
+# GBRAIN_RECALL, GBRAIN_RECALL_TOKEN_FILE, GBRAIN_RECALL_URL, and
+# FM_RECALL_HYBRID_MS for one call.
 # A recall URL whose host is not 127.0.0.1, ::1, or localhost is down; the
 # token is never sent to it. The POST ignores proxy settings and refuses
 # redirects. A session batch gives each query an equal share of the time

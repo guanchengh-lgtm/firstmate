@@ -9,11 +9,13 @@ auto with GBRAIN_RECALL off until I4 flips that switch.
 
 Usage:
   fm-gbrain-eval.py run --record R --gold FILE --recall-bin PATH
-    --hybrid-bin PATH --out DIR --now YYYY-MM-DD
+    --out DIR --now YYYY-MM-DD [--hybrid-bin PATH]
     [--deadline-ms N] [--run-id ID] [--format text|json]
   fm-gbrain-eval.py verdict --day0 DIR --day7 DIR --day14 DIR --out FILE
     [--format text|json]
   fm-gbrain-eval.py --help
+
+--hybrid-bin defaults to the bin/fm-recall.sh beside this file.
 
 Gold is the locked TSV used by tests/fm-recall.test.sh:
   n, probe_date, dispatched_ids, prior_ids, query
