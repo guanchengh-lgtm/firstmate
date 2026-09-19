@@ -1,0 +1,25 @@
+FM_TEST_BEGIN 2026-09-19T13:20:59Z tests/fm-record-scan.test.sh family=unclassified expected_gate_skip=none
+ok - fm-record-scan: --help names the scan contract
+ok - fm-record-scan: every feeder class refuses without echoing the value
+ok - fm-record-scan: word-internal sk slugs stay clean and real keys still refuse
+ok - fm-record-scan: lookalikes stay clean
+ok - fm-record-scan: credential-shaped path labels are redacted
+ok - fm-record-scan: binary hits and scanner errors fail closed
+ok - fm-record-scan: missing, failing, and incomplete gitleaks scans fail closed
+ok - fm-record-scan: gitleaks-only and feeder-only hits each block independently
+ok - fm-record-scan: gitleaks:allow comments do not exempt a hit
+ok - fm-record-scan: corrupt and encrypted archives refuse
+ok - fm-record-scan: LFS pointer text is not enough; payload bytes are scanned
+ok - fm-record-scan: private key headers refuse in indented and serialized text
+ok - fm-record-scan: compressed feeder patterns block the archive-aware chain
+ok - fm-record-scan: Gitleaks exclusions cannot hide payloads or credential filenames
+ok - fm-record-scan: nested archives refuse because they cannot be scanned
+ok - fm-record-scan: unsupported archives refuse even under hidden or nested names
+ok - fm-record-scan: executable scans remove only their own temporary stages
+ok - fm-record-scan: gitleaks execution has an enforced deadline
+ok - fm-record-scan: chain accepts a clean tree
+ok - fm-record-scan: a misnamed zip and a tgz each block alone
+FM_TEST_END 2026-09-19T13:21:08Z tests/fm-record-scan.test.sh exit=0 duration_ms=8727 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=8797
+FM_TEST_SUMMARY_FAMILY family=unclassified count=1 duration_ms=8727 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-record-scan.test.sh duration_ms=8727

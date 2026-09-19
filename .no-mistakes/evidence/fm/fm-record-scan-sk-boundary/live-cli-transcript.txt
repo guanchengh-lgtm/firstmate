@@ -1,0 +1,60 @@
+## BASE scanner, slug tree (reproduces false positive)
+  expected=2 actual=2 PASS
+  | fm-record-scan: refusing to publish: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.2jep3CWgZo/neg/captain.md matches the openai-key credential pattern
+## slug tree
+  expected=0 actual=0 PASS
+  | 
+## slug archive-preflight
+  expected=0 actual=0 PASS
+  | 
+## slug chain
+  expected=0 actual=0 PASS
+  | 
+## sk-proj key in content, tree
+  expected=2 actual=2 PASS
+  | fm-record-scan: refusing to publish: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.2jep3CWgZo/pos/p.md matches the openai-key credential pattern
+## sk-proj key in content, chain
+  expected=2 actual=2 PASS
+  | fm-record-scan: refusing to publish: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.2jep3CWgZo/pos/p.md matches the firstmate-feeder credential pattern
+## classic key at line start, tree
+  expected=2 actual=2 PASS
+  | fm-record-scan: refusing to publish: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.2jep3CWgZo/pos/p.md matches the openai-key credential pattern
+## classic key after JSON-escaped newline, tree
+  expected=2 actual=2 PASS
+  | fm-record-scan: refusing to publish: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.2jep3CWgZo/pos/p.md matches the openai-key credential pattern
+## same, chain
+  expected=2 actual=2 PASS
+  | fm-record-scan: refusing to publish: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.2jep3CWgZo/pos/p.md matches the firstmate-feeder credential pattern
+## classic key after escaped CR, tree
+  expected=2 actual=2 PASS
+  | fm-record-scan: refusing to publish: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.2jep3CWgZo/pos/p.md matches the openai-key credential pattern
+## stripe key after KEY=, tree
+  expected=2 actual=2 PASS
+  | fm-record-scan: refusing to publish: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.2jep3CWgZo/pos/p.md matches the stripe-live-key credential pattern
+## stripe key after escaped tab, tree
+  expected=2 actual=2 PASS
+  | fm-record-scan: refusing to publish: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.2jep3CWgZo/pos/p.md matches the stripe-live-key credential pattern
+## adversarial: key after hyphen (slug-like lead), tree
+  expected=2 actual=2 PASS
+  | fm-record-scan: refusing to publish: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.2jep3CWgZo/pos/p.md matches the openai-key credential pattern
+## adversarial: stripe after underscore, tree
+  expected=2 actual=2 PASS
+  | fm-record-scan: refusing to publish: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.2jep3CWgZo/pos/p.md matches the stripe-live-key credential pattern
+## filename starts with sk-proj key, chain
+  expected=2 actual=2 PASS
+  | fm-record-scan: refusing to publish: [credential-shaped source path redacted] matches the credential filename pattern
+## same name, tree (tree reads content only; base commit gives 0 also)
+  expected=0 actual=0 PASS
+  | 
+## same name, BASE tree
+  expected=0 actual=0 PASS
+  | 
+## x glued to classic key (accepted residual), tree
+  expected=0 actual=0 PASS
+  | 
+## same, chain
+  expected=0 actual=0 PASS
+  | 
+## unchanged class: glued github token, tree
+  expected=2 actual=2 PASS
+  | fm-record-scan: refusing to publish: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/tmp.2jep3CWgZo/other/o.txt matches the github-classic-token credential pattern
