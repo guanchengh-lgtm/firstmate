@@ -201,7 +201,7 @@ def normalize_payload(payload, elapsed, arm):
     if arm == "overlap":
         mode = "overlap"
     else:
-        mode = payload.get("retrieval_mode") or payload.get("mode") or "unknown"
+        mode = payload.get("retrieval_mode") or "unknown"
     collapsed = []
     seen = set()
     for ident in identities:
@@ -225,6 +225,8 @@ def recall_argv(recall_bin, record, query, now):
     argv = [
         recall_bin,
         "--json",
+        "--ranker",
+        "overlap",
         "--surface",
         "pointers",
         "--title",

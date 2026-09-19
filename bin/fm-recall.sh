@@ -208,13 +208,14 @@ else
 fi
 
 load_gbrain_recall_env() {
-  local file=$1 key val
+  local file=$1 line key val
   [ -f "$file" ] || return 0
-  while IFS= read -r line; do
+  while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       GBRAIN_RECALL=*|GBRAIN_RECALL_TOKEN_FILE=*|GBRAIN_RECALL_URL=*|GBRAIN_PORT=*)
         key=${line%%=*}
         val=${line#*=}
+        val=${val%"${val##*[![:space:]]}"}
         case "$key" in
           GBRAIN_RECALL)
             [ -n "${GBRAIN_RECALL:-}" ] || GBRAIN_RECALL=$val
