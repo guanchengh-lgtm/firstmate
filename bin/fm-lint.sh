@@ -31,8 +31,8 @@
 # malformed GitHub workflow, including a self-broken ci.yml, fails locally
 # before merge instead of only failing to run as CI.
 # The same no-argument path also lints the Python executables listed in
-# PYTHON_LINT_TARGETS (bin/fm-recall.py, bin/fm-record-links.py, and
-# bin/fm-maintain.py) with python3 syntax compilation and a pinned Ruff check
+# PYTHON_LINT_TARGETS (bin/fm-recall.py, bin/fm-record-links.py,
+# bin/fm-maintain.py, and bin/fm-graphify.py) with python3 syntax compilation and a pinned Ruff check
 # for standard-error and undefined-name rules (E and F, including F821). That
 # Python gate is a development dependency only; the shipped Python executables
 # still use the standard library alone. A missing or different Ruff version is
@@ -78,7 +78,7 @@ set -u
 
 REQUIRED_SHELLCHECK=0.11.0
 REQUIRED_RUFF=0.16.6
-PYTHON_LINT_TARGETS=(bin/fm-recall.py bin/fm-record-links.py bin/fm-maintain.py)
+PYTHON_LINT_TARGETS=(bin/fm-recall.py bin/fm-record-links.py bin/fm-maintain.py bin/fm-graphify.py)
 RUFF_SELECT=E,F
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SELF="$SELF_DIR/fm-lint.sh"

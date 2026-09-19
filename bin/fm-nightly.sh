@@ -84,6 +84,10 @@
 #                              GBRAIN_BIN runs bin/fm-gbrain-maintain.py run.
 #                              --record-only never starts that phase.
 #                              Dry-run stays on this views row.
+#   graphify|cloud-ok          fm-graphify.sh nightly; skipped as cloud
+#                              scope under --record-only; not-configured
+#                              when the T10 ledger is absent; exit 1 is
+#                              finding docs-stale
 #   archive|cloud-ok
 #   weekly-check|cloud-ok      skipped when archive found no sources or
 #                              failed
@@ -145,6 +149,7 @@ RECORD_SH="$FM_ROOT/bin/fm-record.sh"
 MAINTAIN_PY="$FM_ROOT/bin/fm-maintain.py"
 GBRAIN_MAINTAIN_PY="$FM_ROOT/bin/fm-gbrain-maintain.py"
 SCAN_SH="$FM_ROOT/bin/fm-record-scan.sh"
+GRAPHIFY_SH="$FM_ROOT/bin/fm-graphify.sh"
 
 STAGES=(
   "config|local"
@@ -155,6 +160,7 @@ STAGES=(
   "rollout|record"
   "fold|record"
   "views|record"
+  "graphify|cloud-ok"
   "archive|cloud-ok"
   "weekly-check|cloud-ok"
   "injected-measures|cloud-ok"
@@ -494,6 +500,10 @@ archive_ready() {
   return 0
 }
 
+graphify_ready() {
+  [ -f "$RECORD/knowledge-system-wayfinder/research/T10-graphify/inputs.tsv" ]
+}
+
 is_cursor_spec() {
   [ "$1" = ".cursor/projects/*/agent-transcripts" ]
 }
@@ -771,6 +781,12 @@ skip_reason() {
         return 0
       fi
       ;;
+    graphify)
+      if ! graphify_ready; then
+        printf 'not-configured'
+        return 0
+      fi
+      ;;
   esac
   return 0
 }
@@ -786,6 +802,7 @@ would_text() {
     rollout) printf 'fm-maintain.py rollout advance' ;;
     fold) printf 'fm-maintain.py fold' ;;
     views) printf 'fm-maintain.py views --apply' ;;
+    graphify) printf 'fm-graphify.sh nightly' ;;
     archive) printf 'restic backup' ;;
     weekly-check) printf 'restic check --read-data-subset' ;;
     injected-measures) printf 'fm-maintain.py measure --apply' ;;
@@ -1147,6 +1164,24 @@ stage_views() {
   run_gbrain_views_phase
 }
 
+stage_graphify() {
+  if [ "$RECORD_WRITES" -eq 0 ]; then
+    stage_record graphify skipped 0 writes-disabled
+    return 0
+  fi
+  if [ ! -x "$GRAPHIFY_SH" ]; then
+    stage_record graphify failed 0 helper-missing
+    return 0
+  fi
+  STAGE_FINDING_CODES="1"
+  STAGE_FINDING_DETAIL=docs-stale
+  stage_run graphify "$NIGHTLY_STAGE_BOUND_SECONDS" \
+    "$GRAPHIFY_SH" nightly --record "$RECORD" --projects-root "$FM_HOME_ARG/projects" \
+    --state "${FM_STATE_OVERRIDE:-$FM_HOME/state}"
+  STAGE_FINDING_CODES=
+  STAGE_FINDING_DETAIL=
+}
+
 stage_archive() {
   local snap='' last_exit=0 last_result=ok prev_snap
   collect_transcript_sources
@@ -1452,6 +1487,7 @@ run_named_stage() {
     rollout) stage_rollout ;;
     fold) stage_fold ;;
     views) stage_views ;;
+    graphify) stage_graphify ;;
     archive) stage_archive ;;
     weekly-check) stage_weekly_check ;;
     injected-measures) stage_measure ;;
