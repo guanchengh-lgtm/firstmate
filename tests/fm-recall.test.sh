@@ -1364,17 +1364,21 @@ assert p["retrieval_mode"] == "overlap", p
 assert any("hybrid-bad-json" in d for d in p.get("diagnostics") or []), p
 PY
   stop_fake_mcp
-  recall_json "$home" --title sprocket --surface pointers --ranker auto \
-    --gbrain-recall on --recall-url "http://127.0.0.1:abc/mcp" \
-    --token-file "$home/config/gbrain-recall.token" \
-    > "$home/badport.json" 2>"$home/badport.err" || fail "malformed port should exit 0"
-  python3 - "$home/badport.json" <<'PY' || fail "malformed port did not keep overlap"
+  local port
+  for port in abc 99999; do
+    recall_json "$home" --title sprocket --surface pointers --ranker auto \
+      --gbrain-recall on --recall-url "http://127.0.0.1:$port/mcp" \
+      --token-file "$home/config/gbrain-recall.token" \
+      > "$home/badport.json" 2>"$home/badport.err" || fail "bad port $port should exit 0"
+    python3 - "$home/badport.json" <<'PY' || fail "bad port $port did not keep overlap"
 import json, sys
 p = json.load(open(sys.argv[1], encoding="utf-8"))
 assert p["status"] == "ok", p
 assert p["retrieval_mode"] == "overlap", p
-assert "hybrid-bad-shape" in p["diagnostics"], p
+assert [h["id"] for h in p["hits"]] == ["alpha"], p
+assert any(d.startswith("hybrid-") for d in p["diagnostics"]), p
 PY
+  done
   assert_no_token "$home/bad.json" "$home/bad.err" "$home/badport.json" "$home/badport.err"
   pass "fm-recall: 401 403 500 and invalid JSON keep overlap without leaking secrets"
 }
@@ -1397,6 +1401,18 @@ assert p["retrieval_mode"] == "overlap", p
 assert "hybrid-skipped: no token" in (p.get("diagnostics") or []), p
 PY
   [ ! -s "$dir/recv" ] || fail "missing token still posted to serve"
+  mkdir -p "$home/config"
+  printf '\377\376\n' > "$home/config/binary.token"
+  recall_json "$home" --title sprocket --surface pointers --ranker auto \
+    --gbrain-recall on --recall-url "$FAKE_URL" --token-file "$home/config/binary.token" \
+    > "$home/binary.json" 2>"$home/binary.err" || fail "undecodable token should exit 0"
+  python3 - "$home/binary.json" <<'PY' || fail "undecodable token did not skip hybrid"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert p["retrieval_mode"] == "overlap", p
+assert "hybrid-skipped: no token" in p["diagnostics"], p
+PY
+  [ ! -s "$dir/recv" ] || fail "undecodable token still posted to serve"
   hybrid_env "$home"
   recall_json "$home" --title sprocket --surface pointers --ranker overlap \
     --gbrain-recall on --recall-url "$FAKE_URL" \
@@ -1533,6 +1549,13 @@ assert "knowledge-stack-2026-08-31" in ids, ids
 assert any("cafe" in h["path"] for h in p["hits"]), p["hits"]
 assert not any("twin" in h["path"] for h in p["hits"]), p["hits"]
 assert "hybrid-slug-collision: data/twin-case/report" in p["diagnostics"], p
+PY
+  recall_json "$home" --title sprocket --surface pointers --ranker overlap \
+    > "$home/overlap.json" 2>"$home/overlap.err" || fail "overlap with slug twins should exit 0"
+  python3 - "$home/overlap.json" <<'PY' || fail "overlap lookup reported a hybrid slug diagnostic"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert not any(d.startswith("hybrid-") for d in p["diagnostics"]), p
 PY
   python3 - "$ROOT/bin/fm-recall.py" "$ROOT/bin/fm-gbrain-maintain.py" <<'PY' || fail "slug gold or projection disagree"
 import importlib.util, sys

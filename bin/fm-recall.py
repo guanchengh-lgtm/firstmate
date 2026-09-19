@@ -1416,7 +1416,7 @@ def read_token_file(path):
             return None
         with open(path, encoding="utf-8") as handle:
             token = handle.read().strip()
-    except OSError:
+    except (OSError, ValueError):
         return None
     if not token:
         return None
@@ -1493,9 +1493,10 @@ class RefuseRedirect(urllib.request.HTTPRedirectHandler):
 def is_loopback_url(url):
     try:
         parsed = urllib.parse.urlparse(url)
+        host, _port = parsed.hostname, parsed.port
     except ValueError:
         return False
-    return parsed.scheme in ("http", "https") and parsed.hostname in LOOPBACK_HOSTS
+    return parsed.scheme in ("http", "https") and host in LOOPBACK_HOSTS
 
 
 def gbrain_search(url, token, query, timeout_sec):
@@ -1611,7 +1612,8 @@ def attempt_hybrid(
     hybrid_ms,
     deadline,
     query,
-    slug_index,
+    docs,
+    slug_cache,
     overlap,
     exclude_tokens,
     as_of,
@@ -1645,8 +1647,10 @@ def attempt_hybrid(
         if ranker == "hybrid":
             return None, "unavailable", 0, False
         return overlap, "overlap", 0, False
+    if "index" not in slug_cache:
+        slug_cache["index"] = build_slug_index(docs, diagnostics)
     resolved = resolve_hybrid_docs(
-        parsed["slugs"], slug_index, exclude_tokens, as_of
+        parsed["slugs"], slug_cache["index"], exclude_tokens, as_of
     )
     merged = merge_hybrid_overlap(resolved, overlap)
     truncated = parsed["count"] >= HYBRID_OVERFETCH
@@ -1828,7 +1832,7 @@ def run_session_batch_main(args, root, statuses, now, diagnostics):
         ranked = []
         item_modes = []
         attempted_modes = []
-        slug_index = build_slug_index(corpus.docs, diagnostics)
+        slug_cache = {}
         queries_left = len(cleaned)
         for item in cleaned:
             own = set(exclude)
@@ -1851,7 +1855,8 @@ def run_session_batch_main(args, root, statuses, now, diagnostics):
                 args.hybrid_ms,
                 deadline,
                 query_text,
-                slug_index,
+                corpus.docs,
+                slug_cache,
                 overlap,
                 own,
                 args.as_of or None,
@@ -2128,7 +2133,6 @@ def main(argv=None):
         )
         overlap = rank_docs(corpus.docs, terms, exclude, args.as_of or None)
         deadline.check()
-        slug_index = build_slug_index(corpus.docs, diagnostics)
         query_text = title or " ".join(terms)
         ranked, retrieval_mode, hybrid_resolved, truncated = attempt_hybrid(
             args.ranker,
@@ -2138,7 +2142,8 @@ def main(argv=None):
             args.hybrid_ms,
             deadline,
             query_text,
-            slug_index,
+            corpus.docs,
+            {},
             overlap,
             exclude,
             args.as_of or None,
