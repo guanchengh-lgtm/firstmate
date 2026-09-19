@@ -1364,7 +1364,18 @@ assert p["retrieval_mode"] == "overlap", p
 assert any("hybrid-bad-json" in d for d in p.get("diagnostics") or []), p
 PY
   stop_fake_mcp
-  assert_no_token "$home/bad.json" "$home/bad.err"
+  recall_json "$home" --title sprocket --surface pointers --ranker auto \
+    --gbrain-recall on --recall-url "http://127.0.0.1:abc/mcp" \
+    --token-file "$home/config/gbrain-recall.token" \
+    > "$home/badport.json" 2>"$home/badport.err" || fail "malformed port should exit 0"
+  python3 - "$home/badport.json" <<'PY' || fail "malformed port did not keep overlap"
+import json, sys
+p = json.load(open(sys.argv[1], encoding="utf-8"))
+assert p["status"] == "ok", p
+assert p["retrieval_mode"] == "overlap", p
+assert "hybrid-bad-shape" in p["diagnostics"], p
+PY
+  assert_no_token "$home/bad.json" "$home/bad.err" "$home/badport.json" "$home/badport.err"
   pass "fm-recall: 401 403 500 and invalid JSON keep overlap without leaking secrets"
 }
 

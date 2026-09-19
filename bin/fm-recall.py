@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import io
 import json
 import os
@@ -1541,6 +1542,8 @@ def gbrain_search(url, token, query, timeout_sec):
         if isinstance(reason, socket.timeout) or isinstance(reason, TimeoutError):
             return None, "hybrid-timeout"
         return None, "hybrid-refused:%s" % url_hostport(url)
+    except (http.client.HTTPException, ValueError):
+        return None, "hybrid-bad-shape"
     except OSError:
         return None, "hybrid-refused:%s" % url_hostport(url)
     if status != 200:
