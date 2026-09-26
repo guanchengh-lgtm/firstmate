@@ -83,9 +83,9 @@
 # entries, except those under the .claude/ allowance, so a nested repository
 # there can still survive the return.
 # After a return that succeeds, teardown reads `git status --porcelain --untracked-files=all`.
-# Any remaining output is reported at once with the lost pool slot and those
-# paths, and teardown finishes its cleanup but exits nonzero instead of
-# reporting a clean return.
+# Any remaining output, or a status read that fails, is reported at once with
+# the lost pool slot and what remains, and teardown finishes its cleanup but
+# exits nonzero instead of reporting a clean return.
 # Before destructive cleanup, teardown validates task check artifacts as
 # ordinary single-link files on the state device. It refuses and preserves
 # task state when that proof fails; otherwise it removes the task's check,
