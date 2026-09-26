@@ -1,0 +1,21 @@
+$ WT=$(sed -n "s/^worktree=//p" "$FM_HOME/state/scout-base.meta"); echo "BASE CODE (bb69be62) teardown of scout-base, copy $WT"; "$FM_HOME/base-root/bin/fm-teardown.sh" scout-base; echo "teardown rc=$?"; echo "--- slot 2 status after base-code teardown:"; git -C "$WT" status --porcelain --untracked-files=all; echo "--- treehouse status:"; (cd "$FM_HOME/projects/demo" && treehouse status)
+BASE CODE (bb69be62) teardown of scout-base, copy /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.nsDCt5/pool/.treehouse/demo-3cb31c/2/demo
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.nsDCt5
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown: reaping leaked worktree process(es) for scout-base: 69562 71840
+teardown: force-killing leaked worktree process(es) for scout-base: 69562
+treehouse: recovered untracked files from /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.nsDCt5/pool/.treehouse/demo-3cb31c/2/demo into retained backup /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.nsDCt5/pool/.treehouse/treehouse-recovered-backup-demo-3cb31c-2
+🌳 Worktree returned to pool.
+teardown scout-base complete (window primary:fm-scout-base, worktree /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.nsDCt5/pool/.treehouse/demo-3cb31c/2/demo)
+Backlog: scout-base just finished (this home keeps no markdown backlog at /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.nsDCt5/data/backlog.md). Update /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.nsDCt5/data/backlog.md - move scout-base to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+teardown rc=0
+--- slot 2 status after base-code teardown:
+--- treehouse status:
+base  main  (repository default)
+1     in-use       /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.nsDCt5/pool/.treehouse/demo-3cb31c/1/demo  (detached)
+                   zsh (52708), sleep (54278)
+2     available    /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.nsDCt5/pool/.treehouse/demo-3cb31c/2/demo  (detached)  (recovered untracked files kept in /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.nsDCt5/pool/.treehouse/treehouse-recovered-backup-demo-3cb31c-2)
+1     leased       /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.nsDCt5/pool/.treehouse/demo-3cb31c/1/demo  (detached)  (held by recovered: state file was corrupt or truncated; verify before reuse)  (recovery held: a process is using this worktree (a shell standing in it counts); stop it or leave the worktree; inspect it, then free it with: treehouse return '/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.nsDCt5/pool/.treehouse/demo-3cb31c/1/demo')
+                   zsh (52708), sleep (54278)
+2     available    /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.nsDCt5/pool/.treehouse/demo-3cb31c/2/demo  (detached)  (recovered untracked files kept in /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.nsDCt5/pool/.treehouse/treehouse-recovered-backup-demo-3cb31c-2)
+[exit 0]

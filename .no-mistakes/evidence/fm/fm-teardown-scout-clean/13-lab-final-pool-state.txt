@@ -1,0 +1,10 @@
+$ echo "== final lab pool state (slots 1 and 3: base-code returns; slot 2: .claude/ residue reported loudly by changed code; slot 4: changed-code scout return):"; (cd "$FM_HOME/projects/demo" && treehouse status); echo "== task records left in lab state:"; ls "$FM_HOME/state"/*.meta 2>&1
+== final lab pool state (slots 1 and 3: base-code returns; slot 2: .claude/ residue reported loudly by changed code; slot 4: changed-code scout return):
+base  main  (repository default)
+1     dirty        /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/1/demo  (detached)
+2     dirty        /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo  (detached)
+3     dirty        /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/3/demo  (detached)
+4     available    /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/4/demo  (detached)
+== task records left in lab state:
+ls: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/state/*.meta: No such file or directory
+[exit 1]

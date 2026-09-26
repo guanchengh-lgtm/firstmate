@@ -1,0 +1,4 @@
+$ bin/fm-spawn.sh scout-a "$FM_HOME/projects/demo" --scout --harness "sh -c 'exec sleep 86400'"
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.nsDCt5
+spawned scout-a harness=sh kind=scout window=primary:fm-scout-a worktree=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.nsDCt5/pool/.treehouse/demo-3cb31c/1/demo
+[exit 0]

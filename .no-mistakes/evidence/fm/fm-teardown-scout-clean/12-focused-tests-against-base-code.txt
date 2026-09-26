@@ -1,0 +1,9 @@
+### test_scout_nested_clone_returns_with_no_untracked_entries against base bb69be62 fm-teardown.sh
+not ok - scout-nested-clean: untracked entries remain: ?? scratch-clone/
+[exit ]
+### test_dirty_return_warns_which_slot_was_lost against base bb69be62 fm-teardown.sh
+not ok - dirty-return: a residue return should not succeed as a clean return: expected exit 1, got 0
+[exit ]
+### test_forced_secondmate_child_scout_nested_clone_returns_clean against base bb69be62 fm-teardown.sh
+not ok - secondmate-child-nested-clean: untracked entries remain: ?? scratch-clone/
+[exit ]

@@ -1,0 +1,28 @@
+$ bash "$FM_HOME/steps/mkship.sh" ship-c .claude/worktrees/sub; WT=$(sed -n "s/^worktree=//p" "$FM_HOME/state/ship-c.meta"); echo "== bin/fm-teardown.sh ship-c   (no --force; nested repo under .claude/)"; bin/fm-teardown.sh ship-c > "$FM_HOME/ship-c.stdout" 2> "$FM_HOME/ship-c.stderr"; rc=$?; echo "== teardown rc=$rc"; echo "== teardown stdout:"; cat "$FM_HOME/ship-c.stdout"; echo "== teardown stderr:"; grep -v "^●" "$FM_HOME/ship-c.stderr"; echo "== task record removed?"; ls "$FM_HOME/state/ship-c.meta" 2>&1; echo "== copy status after teardown:"; git -C "$WT" status --porcelain --untracked-files=all; echo "== treehouse status:"; (cd "$FM_HOME/projects/demo" && treehouse status)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd
+notice: ship-c ships mode=local-only while the standing posture for demo is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+spawned ship-c harness=sh kind=ship mode=local-only yolo=off window=primary:fm-ship-c worktree=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo
+== ship ship-c copy: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo (branch )
+== copy status (untracked, all):
+?? .claude/worktrees/sub/
+== bin/fm-teardown.sh ship-c   (no --force; nested repo under .claude/)
+== teardown rc=1
+== teardown stdout:
+🌳 Worktree returned to pool.
+Backlog: ship-c just finished (this home keeps no markdown backlog at /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/data/backlog.md). Update /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/data/backlog.md - move ship-c to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+== teardown stderr:
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd
+teardown: reaping leaked worktree process(es) for ship-c: 56480 57480 58168
+teardown: force-killing leaked worktree process(es) for ship-c: 56480
+warning: treehouse return left pool slot 2 (/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo) dirty; the pool lost this slot. Remaining paths:
+?? .claude/worktrees/sub/
+teardown ship-c finished its cleanup and removed its task record, but a returned pool slot stayed dirty (see the warning above); clear those paths so the pool can reuse the slot
+== task record removed?
+ls: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/state/ship-c.meta: No such file or directory
+== copy status after teardown:
+?? .claude/worktrees/sub/
+== treehouse status:
+base  main  (repository default)
+1     dirty        /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/1/demo  (detached)
+2     dirty        /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo  (detached)
+[exit 0]

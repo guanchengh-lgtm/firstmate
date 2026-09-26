@@ -1,0 +1,20 @@
+$ WT=$(sed -n "s/^worktree=//p" "$FM_HOME/state/ship-n.meta"); echo "== copy status before forced teardown:"; git -C "$WT" status --porcelain --untracked-files=all; echo "== bin/fm-teardown.sh ship-n --force"; bin/fm-teardown.sh ship-n --force 2>&1 | grep -v "^●"; echo "== teardown rc=${PIPESTATUS[0]}"; echo "== copy status after forced teardown (untracked, all):"; git -C "$WT" status --porcelain --untracked-files=all; echo "== (end of status)"; ls -d "$WT/nested-clone" 2>&1; echo "== treehouse status:"; (cd "$FM_HOME/projects/demo" && treehouse status)
+== copy status before forced teardown:
+?? nested-clone/
+== bin/fm-teardown.sh ship-n --force
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+teardown: reaping leaked worktree process(es) for ship-n: 46026 47474 50181
+teardown: force-killing leaked worktree process(es) for ship-n: 46026
+🌳 Worktree returned to pool.
+teardown ship-n complete (window primary:fm-ship-n, worktree /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo)
+Backlog: ship-n just finished (this home keeps no markdown backlog at /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/data/backlog.md). Update /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/data/backlog.md - move ship-n to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+== teardown rc=0
+== copy status after forced teardown (untracked, all):
+== (end of status)
+ls: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo/nested-clone: No such file or directory
+== treehouse status:
+base  main  (repository default)
+1     dirty        /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/1/demo  (detached)
+2     available    /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo  (detached)
+[exit 0]

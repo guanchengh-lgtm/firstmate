@@ -1,0 +1,20 @@
+$ bash "$FM_HOME/steps/mkscout.sh" scout-reuse | grep -E "^spawned|copy:"; echo "== treehouse status with scout-reuse running:"; (cd "$FM_HOME/projects/demo" && treehouse status); bin/fm-teardown.sh scout-reuse 2>&1 | grep -v "^●"; echo "== teardown rc=${PIPESTATUS[0]}"; echo "== treehouse status after second changed-code return of slot 2:"; (cd "$FM_HOME/projects/demo" && treehouse status)
+spawned scout-reuse harness=sh kind=scout window=primary:fm-scout-reuse worktree=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo
+== scout scout-reuse copy: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo
+== treehouse status with scout-reuse running:
+base  main  (repository default)
+1     dirty        /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/1/demo  (detached)
+2     in-use       /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo  (detached)
+                   zsh (30228), sleep (33439)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd
+teardown: reaping leaked worktree process(es) for scout-reuse: 30228 33439
+teardown: force-killing leaked worktree process(es) for scout-reuse: 30228
+🌳 Worktree returned to pool.
+teardown scout-reuse complete (window primary:fm-scout-reuse, worktree /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo)
+Backlog: scout-reuse just finished (this home keeps no markdown backlog at /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/data/backlog.md). Update /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/data/backlog.md - move scout-reuse to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+== teardown rc=0
+== treehouse status after second changed-code return of slot 2:
+base  main  (repository default)
+1     dirty        /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/1/demo  (detached)
+2     available    /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo  (detached)
+[exit 0]

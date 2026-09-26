@@ -1,0 +1,19 @@
+$ bash "$FM_HOME/steps/mkship.sh" ship-cb .claude/worktrees/sub | grep -E "^spawned|^\?\?"; WT=$(sed -n "s/^worktree=//p" "$FM_HOME/state/ship-cb.meta"); echo "== BASE CODE (bb69be62) bin/fm-teardown.sh ship-cb   (no --force; nested repo under .claude/)"; "$FM_HOME/base-root/bin/fm-teardown.sh" ship-cb 2>&1 | grep -v "^●"; echo "== teardown rc=${PIPESTATUS[0]}"; echo "== copy status after base-code teardown:"; git -C "$WT" status --porcelain --untracked-files=all; echo "== treehouse status:"; (cd "$FM_HOME/projects/demo" && treehouse status)
+spawned ship-cb harness=sh kind=ship mode=local-only yolo=off window=primary:fm-ship-cb worktree=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/3/demo
+?? .claude/worktrees/sub/
+== BASE CODE (bb69be62) bin/fm-teardown.sh ship-cb   (no --force; nested repo under .claude/)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd
+teardown: reaping leaked worktree process(es) for ship-cb: 61024 62134 63301
+teardown: force-killing leaked worktree process(es) for ship-cb: 61024
+🌳 Worktree returned to pool.
+teardown ship-cb complete (window primary:fm-ship-cb, worktree /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/3/demo)
+Backlog: ship-cb just finished (this home keeps no markdown backlog at /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/data/backlog.md). Update /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/data/backlog.md - move ship-cb to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+== teardown rc=0
+== copy status after base-code teardown:
+?? .claude/worktrees/sub/
+== treehouse status:
+base  main  (repository default)
+1     dirty        /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/1/demo  (detached)
+2     dirty        /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo  (detached)
+3     dirty        /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/3/demo  (detached)
+[exit 0]

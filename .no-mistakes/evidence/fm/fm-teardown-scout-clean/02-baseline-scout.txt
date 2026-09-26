@@ -1,0 +1,16 @@
+$ bash "$FM_HOME/steps/mkscout.sh" scout-base; echo "== treehouse status before teardown:"; (cd "$FM_HOME/projects/demo" && treehouse status)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd
+spawned scout-base harness=sh kind=scout window=primary:fm-scout-base worktree=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/1/demo
+== scout scout-base copy: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/1/demo
+== copy status after scout work (untracked):
+?? scratch-clone/
+?? scratch-init/
+?? scratch.txt
+== ignored:
+!! cache/
+complete: scout-base captain-call inventory reviewed
+== treehouse status before teardown:
+base  main  (repository default)
+1     in-use       /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/1/demo  (detached)
+                   zsh (6541), sleep (7965)
+[exit 0]

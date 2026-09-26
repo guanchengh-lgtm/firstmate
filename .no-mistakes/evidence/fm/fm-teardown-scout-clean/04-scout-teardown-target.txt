@@ -1,0 +1,39 @@
+$ bash "$FM_HOME/steps/mkscout.sh" scout-a; WT=$(sed -n "s/^worktree=//p" "$FM_HOME/state/scout-a.meta"); echo "== CHANGED CODE ($(git rev-parse --short HEAD)) bin/fm-teardown.sh scout-a"; bin/fm-teardown.sh scout-a; echo "== teardown rc=$?"; echo "== copy status after teardown (untracked, all):"; git -C "$WT" status --porcelain --untracked-files=all; echo "== (end of status)"; echo "== nested repos present?"; ls -d "$WT/scratch-clone" "$WT/scratch-init" "$WT/scratch.txt" 2>&1; echo "== ignored cache survives?"; cat "$WT/cache/blob"; echo "== treehouse status:"; (cd "$FM_HOME/projects/demo" && treehouse status)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd
+spawned scout-a harness=sh kind=scout window=primary:fm-scout-a worktree=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo
+== scout scout-a copy: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo
+== copy status after scout work (untracked):
+?? scratch-clone/
+?? scratch-init/
+?? scratch.txt
+== ignored:
+!! cache/
+complete: scout-a captain-call inventory reviewed
+== CHANGED CODE (74e61a27) bin/fm-teardown.sh scout-a
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown: reaping leaked worktree process(es) for scout-a: 19749 21189
+teardown: force-killing leaked worktree process(es) for scout-a: 19749
+🌳 Worktree returned to pool.
+teardown scout-a complete (window primary:fm-scout-a, worktree /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo)
+Backlog: scout-a just finished (this home keeps no markdown backlog at /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/data/backlog.md). Update /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/data/backlog.md - move scout-a to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+== teardown rc=0
+== copy status after teardown (untracked, all):
+== (end of status)
+== nested repos present?
+ls: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo/scratch-clone: No such file or directory
+ls: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo/scratch-init: No such file or directory
+ls: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo/scratch.txt: No such file or directory
+== ignored cache survives?
+keep-me
+== treehouse status:
+base  main  (repository default)
+1     dirty        /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/1/demo  (detached)
+2     available    /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo  (detached)
+[exit 0]

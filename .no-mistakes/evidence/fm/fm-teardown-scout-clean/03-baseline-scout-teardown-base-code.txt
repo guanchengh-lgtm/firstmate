@@ -1,0 +1,23 @@
+$ WT=$(sed -n "s/^worktree=//p" "$FM_HOME/state/scout-base.meta"); echo "== BASE CODE (bb69be62) bin/fm-teardown.sh scout-base"; "$FM_HOME/base-root/bin/fm-teardown.sh" scout-base; echo "== teardown rc=$?"; echo "== copy status after base-code teardown:"; git -C "$WT" status --porcelain --untracked-files=all; echo "== treehouse status:"; (cd "$FM_HOME/projects/demo" && treehouse status)
+== BASE CODE (bb69be62) bin/fm-teardown.sh scout-base
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+teardown: reaping leaked worktree process(es) for scout-base: 6541 7965
+teardown: force-killing leaked worktree process(es) for scout-base: 6541
+🌳 Worktree returned to pool.
+teardown scout-base complete (window primary:fm-scout-base, worktree /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/1/demo)
+Backlog: scout-base just finished (this home keeps no markdown backlog at /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/data/backlog.md). Update /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/data/backlog.md - move scout-base to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+== teardown rc=0
+== copy status after base-code teardown:
+?? scratch-clone/
+?? scratch-init/
+== treehouse status:
+base  main  (repository default)
+1     dirty        /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/1/demo  (detached)
+[exit 0]

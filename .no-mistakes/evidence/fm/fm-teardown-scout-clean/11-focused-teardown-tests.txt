@@ -1,0 +1,29 @@
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - dirty worktree is refused even when its committed work has landed (dirty always wins)
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - scout copy with a nested clone and a scratch file returns with no untracked entries
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - ship copy with a nested clone is refused and its bytes stay
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - a return that leaves residue names the lost slot and the remaining paths
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - a dirty return is reported even when a later teardown step refuses
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - a forced secondmate teardown returns a child scout copy with a nested clone clean
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - ignored files survive the scratch clean and plain scratch does not
+bash "$F"  4.96s user 5.74s system 73% cpu 14.558 total

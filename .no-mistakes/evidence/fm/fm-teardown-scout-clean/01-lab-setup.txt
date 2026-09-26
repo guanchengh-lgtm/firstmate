@@ -1,0 +1,9 @@
+$ echo "lab primary: TMUX=$TMUX"; echo "FM_HOME=$FM_HOME"; echo "TREEHOUSE_ROOT=$TREEHOUSE_ROOT"; echo "NO_MISTAKES_GATE=${NO_MISTAKES_GATE:-unset}"; echo "cwd=$(pwd)"; echo "fm-teardown.sh at $(git rev-parse --short HEAD)"; treehouse --version
+lab primary: TMUX=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/tmux/tmux-502/fm-lab,96800,0
+FM_HOME=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd
+TREEHOUSE_ROOT=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool
+NO_MISTAKES_GATE=unset
+cwd=/Users/AI/.no-mistakes/worktrees/edb446952c22/01M3FQ7YEV9KJY0WP6MH7ZCDBQ
+fm-teardown.sh at 74e61a27
+v3.1.0
+[exit 0]

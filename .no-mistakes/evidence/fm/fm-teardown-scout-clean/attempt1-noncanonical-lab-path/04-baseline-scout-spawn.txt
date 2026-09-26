@@ -1,0 +1,15 @@
+$ bin/fm-brief.sh scout-base demo --scout >/dev/null && python3 -c "import sys;p=sys.argv[1];s=open(p).read().replace(\"{TASK}\",\"Baseline lab scout: clone a repository and run git init inside the copy.\",1).replace(\"{FIRSTMATE_SPEC}\",\"Plant nested repositories in the copy and write the report.\",1);open(p,\"w\").write(s)" "$FM_HOME/data/scout-base/brief.md" && bin/fm-spawn.sh scout-base "$FM_HOME/projects/demo" --scout --harness "sh -c 'exec sleep 86400'" && WT=$(sed -n "s/^worktree=//p" "$FM_HOME/state/scout-base.meta") && cd "$WT" && git clone -q "$FM_HOME/nested-src" scratch-clone && git init -q scratch-init && git -C scratch-init -c user.email=t@t -c user.name=t commit -q --allow-empty -m wip && echo scratch > scratch.txt && mkdir -p cache && echo keep-me > cache/blob && git status --porcelain --untracked-files=all && cd - >/dev/null && printf "# Scout report\n" > "$FM_HOME/data/scout-base/report.md" && bin/fm-captain-hold.sh complete scout-base --none
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.nsDCt5
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+spawned scout-base harness=sh kind=scout window=primary:fm-scout-base worktree=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.nsDCt5/pool/.treehouse/demo-3cb31c/2/demo
+?? scratch-clone/
+?? scratch-init/
+?? scratch.txt
+complete: scout-base captain-call inventory reviewed
+[exit 0]

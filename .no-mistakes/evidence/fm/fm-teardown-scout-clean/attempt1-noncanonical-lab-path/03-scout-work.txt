@@ -1,0 +1,14 @@
+$ WT=$(sed -n "s/^worktree=//p" "$FM_HOME/state/scout-a.meta"); echo "scout copy: $WT"; cd "$WT" && git clone -q "$FM_HOME/nested-src" scratch-clone && git init -q scratch-init && git -C scratch-init -c user.email=t@t -c user.name=t commit -q --allow-empty -m wip && echo scratch > scratch.txt && mkdir -p cache && echo keep-me > cache/blob && echo "--- copy status after scout work:" && git status --porcelain --untracked-files=all && echo "--- ignored:" && git status --porcelain --ignored | grep "^!!"; printf "# Scout report\nNested repos planted.\n" > "$FM_HOME/data/scout-a/report.md"; echo "done [at=$(date +%s)]: report written" >> "$FM_HOME/state/scout-a.status"; cd - >/dev/null; bin/fm-captain-hold.sh complete scout-a --none; echo "--- treehouse status before teardown:"; (cd "$FM_HOME/projects/demo" && treehouse status)
+scout copy: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.nsDCt5/pool/.treehouse/demo-3cb31c/1/demo
+--- copy status after scout work:
+?? scratch-clone/
+?? scratch-init/
+?? scratch.txt
+--- ignored:
+!! cache/
+complete: scout-a captain-call inventory reviewed
+--- treehouse status before teardown:
+base  main  (repository default)
+1     in-use       /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.nsDCt5/pool/.treehouse/demo-3cb31c/1/demo  (detached)
+                   zsh (52708), sleep (54278)
+[exit 0]

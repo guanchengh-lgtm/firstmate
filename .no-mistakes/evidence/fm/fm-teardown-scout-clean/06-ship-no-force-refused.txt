@@ -1,0 +1,24 @@
+$ bash "$FM_HOME/steps/mkship.sh" ship-n nested-clone; WT=$(sed -n "s/^worktree=//p" "$FM_HOME/state/ship-n.meta"); before=$(cksum "$WT/nested-clone/payload.txt"); nhead=$(git -C "$WT/nested-clone" rev-parse HEAD); echo "== bin/fm-teardown.sh ship-n   (no --force)"; bin/fm-teardown.sh ship-n 2>&1 | grep -v "^●"; echo "== teardown rc=${PIPESTATUS[0]}"; echo "== nested clone still there, bytes unchanged?"; after=$(cksum "$WT/nested-clone/payload.txt"); [ "$before" = "$after" ] && echo "payload bytes unchanged: $after"; [ "$(git -C "$WT/nested-clone" rev-parse HEAD)" = "$nhead" ] && echo "nested HEAD unchanged: $nhead"; echo "== task record kept?"; ls "$FM_HOME/state/ship-n.meta"; echo "== treehouse status:"; (cd "$FM_HOME/projects/demo" && treehouse status)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd
+notice: ship-n ships mode=local-only while the standing posture for demo is no-mistakes - less rigor than the captain's standing posture; proceed only on a current explicit captain instruction or an intake judgment you can state
+spawned ship-n harness=sh kind=ship mode=local-only yolo=off window=primary:fm-ship-n worktree=/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo
+== ship ship-n copy: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo (branch )
+== copy status (untracked, all):
+?? nested-clone/
+== bin/fm-teardown.sh ship-n   (no --force)
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd
+REFUSED: worktree /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo has uncommitted changes.
+uncommitted changes present
+Commit them (or get the captain's explicit OK to discard, then --force).
+== teardown rc=1
+== nested clone still there, bytes unchanged?
+payload bytes unchanged: 2573135066 8 /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo/nested-clone/payload.txt
+nested HEAD unchanged: 4342a5cbce921e71eb6746a62785283a141cff2b
+== task record kept?
+/private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/state/ship-n.meta
+== treehouse status:
+base  main  (repository default)
+1     dirty        /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/1/demo  (detached)
+2     in-use       /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.sENugd/pool/.treehouse/demo-557ca3/2/demo  (detached)
+                   zsh (46026), sleep (47474)
+[exit 0]
