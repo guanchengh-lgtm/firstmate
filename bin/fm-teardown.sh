@@ -3841,7 +3841,7 @@ if [ -d "$STATE" ]; then
   "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
 fi
 if [ "$TEARDOWN_POOL_SLOT_LOST" = 1 ]; then
-  echo "teardown $ID finished its cleanup and removed its task record, but a returned pool slot stayed dirty (see the warning above); clear those paths so the pool can reuse the slot, and do not rerun this teardown" >&2
+  echo "teardown $ID finished its cleanup and removed its task record, but a returned pool slot stayed dirty (see the warning above); clear those paths so the pool can reuse the slot" >&2
   backlog_refresh_reminder || true
   exit 1
 fi
