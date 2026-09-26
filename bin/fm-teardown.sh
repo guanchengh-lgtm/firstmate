@@ -73,6 +73,16 @@
 # declared scratch and the report at data/<task-id>/report.md is the work
 # product. Teardown proceeds only once the report exists and the shared
 # unresolved-decision completion gate verifies its captain-held inventory.
+# A scratch copy (kind=scout) and a --force run discard untracked content.
+# Treehouse's return resets with `git clean -fd`, which never deletes a nested
+# git repository, so the pool slot stays dirty and later checkouts skip it.
+# Before that return, teardown runs `git clean -ffdq` in the copy.
+# The second -f removes nested repositories, and -x stays off so ignored files remain.
+# A ship teardown without --force does not run that clean: it already refuses
+# untracked entries, nested repositories included.
+# After a return that succeeds, teardown reads `git status --porcelain --untracked-files=all`.
+# Any remaining output names the lost pool slot and those paths, and teardown
+# does not report a clean return.
 # Before destructive cleanup, teardown validates task check artifacts as
 # ordinary single-link files on the state device. It refuses and preserves
 # task state when that proof fails; otherwise it removes the task's check,
@@ -1119,6 +1129,9 @@ ORCA_PATH_MATCH_VERIFIED=0
 CLEANUP_RECOVERY=$TEARDOWN_CLEANUP_RECOVERY
 
 KIND=$TEARDOWN_META_KIND
+TEARDOWN_POOL_SLOT_LOST=0
+TEARDOWN_POOL_SLOT_LABEL=
+TEARDOWN_RETURN_RESIDUE=
 EXPECTED_TREEHOUSE_PROJECT_LOCK=
 if [ "$KIND" != secondmate ] && [ "$BACKEND" != orca ] \
    && fm_treehouse_pool_slot "$PROJ" "$WT"; then
@@ -1842,6 +1855,37 @@ teardown_treehouse_return() {
 
   echo "teardown: $label return failed: git index.lock signature persisted across ${max_retries} retries (waiting ${TREEHOUSE_RETURN_LOCK_RETRY_WAIT_SECS}s each) even after the lock file disappeared" >&2
   return 1
+}
+
+# Scratch and --force copies are scrubbed before Treehouse return. See the
+# script header for why `git clean -fd` is not enough and why a dirty return
+# is not reported as clean.
+teardown_scrub_scratch_copy() {
+  # A non-git path has no nested repository this clean can remove.
+  git -C "$WT" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  git -C "$WT" clean -ffdq || {
+    echo "error: could not clean scratch in worktree $WT before returning it; teardown aborted" >&2
+    exit 1
+  }
+}
+
+teardown_note_dirty_return() {
+  local residue_rc=0 residue slot_dir
+  git -C "$WT" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
+  residue=$(git -C "$WT" status --porcelain --untracked-files=all) || residue_rc=$?
+  [ "$residue_rc" -ne 0 ] || [ -n "$residue" ] || return 0
+  TEARDOWN_POOL_SLOT_LOST=1
+  if fm_treehouse_pool_slot "$PROJ" "$WT"; then
+    slot_dir=$(canonical_existing_dir "$WT") || slot_dir=$WT
+    TEARDOWN_POOL_SLOT_LABEL=$(basename "$(dirname "$slot_dir")")
+  else
+    TEARDOWN_POOL_SLOT_LABEL=$WT
+  fi
+  if [ "$residue_rc" -ne 0 ]; then
+    TEARDOWN_RETURN_RESIDUE="could not read worktree status after return"
+  else
+    TEARDOWN_RETURN_RESIDUE=$residue
+  fi
 }
 
 validate_worktree_teardown_safety() {
@@ -3584,10 +3628,14 @@ elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   if [ "$FORCE" != "--force" ] && [ "$KIND" != scout ] && [ "$KIND" != secondmate ]; then
     post_lock_cleanup_check=validate_worktree_teardown_safety
   fi
+  if [ "$KIND" = scout ] || [ "$FORCE" = "--force" ]; then
+    teardown_scrub_scratch_copy
+  fi
   teardown_treehouse_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check" || {
     echo "error: treehouse return failed for worktree $WT; teardown aborted" >&2
     exit 1
   }
+  teardown_note_dirty_return
   # The slot is back in the pool, so this task's claim on it is spent. Dropping
   # it here - and only after a return that succeeded - keeps a returned slot
   # unclaimed until its next holder claims it, and leaves the claim in place
@@ -3789,6 +3837,11 @@ fi
 # state directory. Do not let the side-band refresh recreate that retired home.
 if [ -d "$STATE" ]; then
   "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
+fi
+if [ "$TEARDOWN_POOL_SLOT_LOST" = 1 ]; then
+  echo "warning: treehouse return left pool slot $TEARDOWN_POOL_SLOT_LABEL ($WT) dirty; the pool lost this slot. Remaining paths:" >&2
+  printf '%s\n' "$TEARDOWN_RETURN_RESIDUE" >&2
+  exit 1
 fi
 if [ "$TEARDOWN_LEGACY_ACCEPTED" = 1 ]; then
   echo "teardown $ID complete (window ${T:-none}, worktree $WT, legacy record accepted without spawn_gen: endpoint $TEARDOWN_LEGACY_ENDPOINT, incarnation $TEARDOWN_META_SPAWN_GEN)"
