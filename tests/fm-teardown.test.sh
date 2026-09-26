@@ -58,6 +58,8 @@
 #   (z1) scout + nested clone + scratch file                 -> no untracked entries
 #   (z2) ship + nested clone, no --force                     -> REFUSE, bytes unchanged
 #   (z3) return leaves residue                               -> lost-slot warning, not a clean return
+#   (z3b) residue, then a later step refuses                 -> lost-slot warning still printed
+#   (z3c) forced secondmate + child scout nested clone       -> child copy returns clean
 #   (z4) scout + ignored file                                -> ignored file survives
 set -u
 
@@ -1328,7 +1330,75 @@ test_dirty_return_warns_which_slot_was_lost() {
   assert_grep "lost this slot" "$case_dir/stderr" "dirty-return: warning did not say the pool lost the slot"
   assert_no_grep "teardown task-x1 complete" "$case_dir/stdout" \
     "dirty-return: stdout still reported a clean return"
+  assert_grep "Backlog: task-x1" "$case_dir/stdout" \
+    "dirty-return: the finished teardown skipped its backlog reminder"
+  assert_absent "$case_dir/state/task-x1.meta" "dirty-return: task record was not removed"
   pass "a return that leaves residue names the lost slot and the remaining paths"
+}
+
+test_dirty_return_warns_even_when_a_later_step_refuses() {
+  local case_dir wt rc
+  case_dir=$(make_case dirty-return-later-refusal)
+  wt=$(move_case_to_pool_slot "$case_dir" 8)
+  write_meta "$case_dir" no-mistakes scout "$wt"
+  prepare_scout_teardown "$case_dir"
+  add_treehouse_that_leaves_residue "$case_dir"
+  cat > "$case_dir/fakebin/tmux" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  kill-window) exit 1 ;;
+  list-windows) printf '%s\n' fm-task-x1 ;;
+esac
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/tmux"
+
+  set +e
+  FM_HOME="$case_dir" run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr"
+  rc=$?
+  set -e
+
+  expect_code 1 "$rc" "dirty-return-later-refusal: the endpoint refusal should fail teardown"
+  assert_grep "could not be closed" "$case_dir/stderr" \
+    "dirty-return-later-refusal: fixture did not reach the endpoint close refusal"
+  assert_grep "pool slot 8" "$case_dir/stderr" \
+    "dirty-return-later-refusal: a later refusal dropped the lost-slot warning"
+  assert_grep "left-behind-clone" "$case_dir/stderr" \
+    "dirty-return-later-refusal: a later refusal dropped the remaining paths"
+  pass "a dirty return is reported even when a later teardown step refuses"
+}
+
+test_forced_secondmate_child_scout_nested_clone_returns_clean() {
+  local case_dir home child_wt rc
+  case_dir=$(make_case secondmate-child-nested-clean)
+  write_meta "$case_dir" local-only secondmate
+  home="$case_dir/secondmate-home"
+  mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects"
+  printf '%s\n' task-x1 > "$home/.fm-secondmate-home"
+  printf '%s\n' "home=$home" >> "$case_dir/state/task-x1.meta"
+  child_wt="$case_dir/child-scout-wt"
+  git -C "$case_dir/project" worktree add -q -b fm/child-scout "$child_wt" main
+  fm_write_meta "$home/state/child-scout.meta" \
+    "window=firstmate:fm-child-scout" \
+    "endpoint_task_id=child-scout" \
+    "worktree=$child_wt" \
+    "project=$case_dir/project" \
+    "kind=scout" \
+    "mode=local-only"
+  seed_nested_clone_and_scratch "$case_dir" "$child_wt"
+  add_treehouse_clean_fd "$case_dir"
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "secondmate-child-nested-clean: forced secondmate teardown should succeed"
+  [ -z "$(git -C "$child_wt" status --porcelain --untracked-files=all)" ] \
+    || fail "secondmate-child-nested-clean: untracked entries remain: $(git -C "$child_wt" status --porcelain --untracked-files=all)"
+  assert_absent "$child_wt/scratch-clone" "secondmate-child-nested-clean: nested clone survived return"
+  assert_absent "$child_wt/scratch.txt" "secondmate-child-nested-clean: scratch file survived return"
+  assert_no_grep "lost this slot" "$case_dir/stderr" \
+    "secondmate-child-nested-clean: a clean child return was reported as a lost slot"
+  pass "a forced secondmate teardown returns a child scout copy with a nested clone clean"
 }
 
 test_scout_ignored_files_survive_scratch_clean() {
@@ -4295,6 +4365,8 @@ test_dirty_worktree_refuses
 test_scout_nested_clone_returns_with_no_untracked_entries
 test_ship_nested_clone_is_refused_and_bytes_stay
 test_dirty_return_warns_which_slot_was_lost
+test_dirty_return_warns_even_when_a_later_step_refuses
+test_forced_secondmate_child_scout_nested_clone_returns_clean
 test_scout_ignored_files_survive_scratch_clean
 test_gh_error_and_content_absent_refuses
 test_legacy_record_without_the_flag_refuses
