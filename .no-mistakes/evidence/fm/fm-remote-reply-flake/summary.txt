@@ -1,0 +1,21 @@
+fm-remote-reply await_reply_result: base 65c75b0d vs change 93ae5875
+
+== Injected race: listener gone, first ownership sample reads 'live' ==
+base:   PROBE-RESULT: NOT captured after 142s
+change: PROBE-RESULT: captured after 7s
+
+== Listener killed mid-wait, line arrives later ==
+base:   PROBE-RC: 1 after 136s PROBE-STARTS: 1 
+change: PROBE-RC: 0 after 7s PROBE-STARTS: 2 
+
+== Healthy listener, line arrives after 4s (no double launch) ==
+change: PROBE-RC: 0 after 5s PROBE-STARTS: 1 PROBE-DISTINCT-CLAIM-PIDS: 1 
+
+== Capture impossible (reads fail): timeout diagnostic and launch cadence ==
+PROBE-RC: 1 after 146s
+PROBE-STARTS: 40
+PROBE-STDERR: await_reply_result: remote-reply-ios.4.result was not applied within the wait (owner=none, listener launched by this wait=37955)
+
+== 5 concurrent full-test copies each, loaded 28-cpu host ==
+base: 5 of 5 exit=0
+head: 5 of 5 exit=0

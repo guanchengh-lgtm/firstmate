@@ -1,0 +1,11 @@
+ok - a blocking non-destructive remote delta reaches durable process-event capture
+ok - a captured delta is applied, acknowledged, and re-armed without a handler
+ok - ingest appends one validated line, fetches its document, and advances the cursor
+ok - replayed capture has one deduplicated append and one durable handling identity
+ok - later generations cannot invalidate an unacknowledged ingested result
+PROBE-MODE: killed
+PROBE-RC: 0 after 7s
+PROBE-STARTS: 2
+PROBE-DISTINCT-CLAIM-PIDS: 2
+PROBE-STDERR: 
+exit=0
