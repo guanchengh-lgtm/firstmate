@@ -1,0 +1,16 @@
+--- FIXED adapter: send_text_submit '/exit' on the same scrolled-back pane (offset 9)
+before: scroll={"max_offset_from_bottom":178,"offset_from_bottom":9,"viewport_rows":40} agent=idle
+unknownrc=0
+claude exited=1 after 0s
+  /skill-creator                                 Create new skills, modify and improve exi
+                                                 skill performance. Use when users want to
+  /chrome-browser                                Read this skill before the first step tha
+                                                 the browser extension whose tools are nam
+  /pdf                                           Use this skill whenever the user wants to
+                                                 files. This includes reading or extractin
+  /stow                                          Sweep the current session for uncaptured 
+                                                 to disk, persist the open work records th
+01M3RXMC8Y7GFEMT6GBF5X0VR4 on  HEAD 2m19s
+❯
+01M3RXMC8Y7GFEMT6GBF5X0VR4 on  HEAD
+❯

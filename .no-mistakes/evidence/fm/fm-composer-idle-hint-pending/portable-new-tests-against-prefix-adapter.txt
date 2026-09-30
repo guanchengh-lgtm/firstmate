@@ -1,0 +1,6 @@
+== PRE-FIX adapter: test_composer_state_scrolled_back_pane_reads_the_live_empty_composer
+not ok - an idle empty composer under a scrolled-back view must read empty, got 'pending'
+== PRE-FIX adapter: test_composer_state_scrolled_back_pane_never_hides_a_typed_draft
+not ok - a typed draft under a scrolled-back view of an old empty composer must read pending, got 'empty'
+== PRE-FIX adapter: test_visible_capture_scrolled_back_pane_is_trimmed_to_the_viewport
+not ok - a scrolled-back read must end on the live screen's last row

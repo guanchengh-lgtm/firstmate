@@ -1,0 +1,6 @@
+ok - documentation inventory classifies every maintained prose surface exactly once
+ok - classification, setup routing, and maintained-prose scope fail safely
+ok - required documentation owner pointers cannot silently disappear
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - local links resolve while dates, versions, commands, and incident prose remain semantically reviewed
+bash tests/fm-documentation-audiences.test.sh  0.73s user 0.23s system 70% cpu 1.360 total

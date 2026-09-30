@@ -1,0 +1,10 @@
+### Scenario E: which pane-read calls does the fixed adapter make? (real lab herdr behind a tracing wrapper)
+-- offset=0 pane-get-fails=0
+     pane get
+     pane read w1:p1 --source visible
+-- offset=30 pane-get-fails=0
+     pane get
+     pane read w1:p1 --source recent --lines 200
+-- offset=30 pane-get-fails=1
+     pane get
+     pane read w1:p1 --source visible

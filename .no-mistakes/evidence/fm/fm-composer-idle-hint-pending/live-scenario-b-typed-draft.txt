@@ -1,0 +1,13 @@
+### Scenario B: live composer HOLDS a typed draft, view scrolled back
+offset=0(actual 0) pre-fix=pending fixed=pending fixed-content='half typed draft' | window last glyph: 35:❯ half typed draft
+offset=1(actual 1) pre-fix=pending fixed=pending fixed-content='half typed draft' | window last glyph: 36:❯ half typed draft
+offset=3(actual 3) pre-fix=pending fixed=pending fixed-content='half typed draft' | window last glyph: 38:❯ half typed draft
+offset=5(actual 5) pre-fix=pending fixed=pending fixed-content='half typed draft' | window last glyph: 40:❯ half typed draft
+offset=7(actual 7) pre-fix=pending fixed=pending fixed-content='half typed draft' | window last glyph: 35:❯ Reply with exactly SCROLLPONG and nothing else.
+offset=9(actual 9) pre-fix=pending fixed=pending fixed-content='half typed draft' | window last glyph: 37:❯ Reply with exactly SCROLLPONG and nothing else.
+offset=11(actual 11) pre-fix=pending fixed=pending fixed-content='half typed draft' | window last glyph: 39:❯ Reply with exactly SCROLLPONG and nothing else.
+offset=13(actual 13) pre-fix=pending fixed=pending fixed-content='half typed draft' | window last glyph: 34:❯ CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_
+offset=17(actual 17) pre-fix=pending fixed=pending fixed-content='half typed draft' | window last glyph: 38:❯ CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_
+offset=25(actual 25) pre-fix=unknown fixed=pending fixed-content='half typed draft' | window last glyph: none
+offset=60(actual 60) pre-fix=unknown fixed=pending fixed-content='half typed draft' | window last glyph: none
+offset=103(actual 103) pre-fix=pending fixed=pending fixed-content='half typed draft' | window last glyph: 2:❯ seq 1 120

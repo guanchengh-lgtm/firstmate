@@ -1,0 +1,13 @@
+### Scenario A2: offsets 1..30, idle Claude with EMPTY composer (scan for the transcript-echo window)
+offset=1 pre-fix=empty fixed=empty | last prompt glyph in visible window: 36:❯
+offset=3 pre-fix=empty fixed=empty | last prompt glyph in visible window: 38:❯
+offset=5 pre-fix=empty fixed=empty | last prompt glyph in visible window: 40:❯
+offset=7 pre-fix=pending fixed=empty | last prompt glyph in visible window: 35:❯ Reply with exactly SCROLLPONG and nothing else.
+offset=9 pre-fix=pending fixed=empty | last prompt glyph in visible window: 37:❯ Reply with exactly SCROLLPONG and nothing else.
+offset=11 pre-fix=pending fixed=empty | last prompt glyph in visible window: 39:❯ Reply with exactly SCROLLPONG and nothing else.
+offset=13 pre-fix=pending fixed=empty | last prompt glyph in visible window: 34:❯ CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDB
+offset=15 pre-fix=pending fixed=empty | last prompt glyph in visible window: 36:❯ CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDB
+offset=17 pre-fix=pending fixed=empty | last prompt glyph in visible window: 38:❯ CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDB
+offset=19 pre-fix=pending fixed=empty | last prompt glyph in visible window: 40:❯ CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDB
+offset=25 pre-fix=unknown fixed=empty | last prompt glyph in visible window: none
+offset=30 pre-fix=unknown fixed=empty | last prompt glyph in visible window: none

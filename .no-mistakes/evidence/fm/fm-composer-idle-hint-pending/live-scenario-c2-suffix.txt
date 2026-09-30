@@ -1,0 +1,5 @@
+### Scenario C2 (retry, compare as strings): the at-bottom live read is the tail of the fixed scrolled-back read
+at bottom: plain rows=      38 ansi rows=      38 (viewport_rows=40)
+offset=9: fixed plain rows=      40, ansi rows=      40; bottom-read is exact tail of fixed read: plain=YES ansi=YES
+offset=60: fixed plain rows=      40, ansi rows=      40; bottom-read is exact tail of fixed read: plain=YES ansi=YES
+offset=178: fixed plain rows=      40, ansi rows=      40; bottom-read is exact tail of fixed read: plain=YES ansi=YES

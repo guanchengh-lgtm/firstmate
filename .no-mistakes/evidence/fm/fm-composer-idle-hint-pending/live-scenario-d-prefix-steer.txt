@@ -1,0 +1,11 @@
+### Scenario D: steer/exit into a scrolled-back idle Claude pane with an EMPTY composer
+before: scroll={"max_offset_from_bottom":178,"offset_from_bottom":9,"viewport_rows":40} agent=idle
+--- PRE-FIX adapter: send_text_submit '/exit'
+send-failedrc=0
+after pre-fix attempt: agent=idle; live composer (bottom, unscrolled read): 
+
+────────────────────────────────────────────────────────────────────────────────
+❯
+────────────────────────────────────────────────────────────────────────────────
+  ⚠ Transcript saving is off — inherited CLAUDE_CODE_CHILD_SESSION marker · rest
+  ⏵⏵ bypass permissions on (shift+tab to cycle)                                 

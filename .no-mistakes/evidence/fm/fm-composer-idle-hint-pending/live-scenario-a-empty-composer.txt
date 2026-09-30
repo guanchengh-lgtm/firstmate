@@ -1,0 +1,19 @@
+### Scenario A: idle Claude, EMPTY composer, view scrolled back
+{"max_offset_from_bottom":103,"offset_from_bottom":0,"viewport_rows":40}
+  visible window row2: 103
+  offset=0  pre-fix adapter: empty   fixed adapter: empty
+{"max_offset_from_bottom":103,"offset_from_bottom":20,"viewport_rows":40}
+  visible window row2: 83
+  offset=20  pre-fix adapter: unknown   fixed adapter: empty
+{"max_offset_from_bottom":103,"offset_from_bottom":40,"viewport_rows":40}
+  visible window row2: 63
+  offset=40  pre-fix adapter: unknown   fixed adapter: empty
+{"max_offset_from_bottom":103,"offset_from_bottom":60,"viewport_rows":40}
+  visible window row2: 43
+  offset=60  pre-fix adapter: unknown   fixed adapter: empty
+{"max_offset_from_bottom":103,"offset_from_bottom":80,"viewport_rows":40}
+  visible window row2: 23
+  offset=80  pre-fix adapter: unknown   fixed adapter: empty
+{"max_offset_from_bottom":103,"offset_from_bottom":103,"viewport_rows":40}
+  visible window row2: ❯ seq 1 120
+  offset=103  pre-fix adapter: pending   fixed adapter: empty
