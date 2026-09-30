@@ -622,7 +622,7 @@ fm_backend_source_readable() {  # <path>
 }
 
 fm_backend_source() {  # <name>
-  local name=$1 adapter rel path
+  local name=$1 adapter rel sibling
   fm_backend_validate "$name" || return 1
   adapter="$FM_BACKEND_LIB_DIR/backends/$name.sh"
   # The sibling list rides in the positional parameters: zsh does not
@@ -649,8 +649,8 @@ fm_backend_source() {  # <name>
   esac
   fm_backend_source_readable "$adapter" || return 1
   for rel in "$@"; do
-    path="$FM_BACKEND_LIB_DIR/$rel"
-    fm_backend_source_readable "$path" || return 1
+    sibling="$FM_BACKEND_LIB_DIR/$rel"
+    fm_backend_source_readable "$sibling" || return 1
   done
   case "$name" in
     tmux)

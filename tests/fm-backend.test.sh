@@ -502,7 +502,7 @@ test_backend_validate_refuses_unknown() {
 }
 
 test_backend_source_shell_portable() {
-  local out status
+  local out status stub probe
   # zsh does not word-split unquoted expansions; sourcing fm-backend.sh from
   # an interactive zsh session must still recognize known backend names.
   if command -v zsh >/dev/null 2>&1; then
@@ -513,6 +513,19 @@ test_backend_source_shell_portable() {
     assert_contains "$out" "unknown backend 'bogus'" \
       "zsh: fm_backend_source did not reject bogus with the expected error"
     pass "zsh: fm_backend_source recognizes known backends and rejects unknown ones"
+
+    # zsh ties the lowercase `path` array to PATH; a backend loaded while
+    # fm_backend_source clobbers PATH cannot resolve external commands.
+    stub="$TMP_ROOT/zsh-source-path"
+    probe="$stub/probe"
+    mkdir -p "$stub/backends"
+    printf 'command -v dirname > "%s"\n' "$probe" > "$stub/backends/orca.sh"
+    : > "$stub/fm-composer-lib.sh"
+    zsh -c "cd '$ROOT' && source bin/fm-backend.sh && FM_BACKEND_LIB_DIR='$stub' && fm_backend_source orca" >/dev/null 2>&1 \
+      || fail "zsh: fm_backend_source orca should load a stub adapter"
+    [ -s "$probe" ] \
+      || fail "zsh: fm_backend_source clobbered PATH while loading a backend adapter"
+    pass "zsh: fm_backend_source keeps PATH intact while loading a backend adapter"
   else
     pass "zsh: shell-portable backend matching skipped (zsh not found)"
   fi
