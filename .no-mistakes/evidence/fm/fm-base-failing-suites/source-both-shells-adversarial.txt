@@ -1,0 +1,12 @@
+[/bin/bash] tmux: rc=0 rerun_rc=0 argc=2 args=keep1|keep 2 PATH_ok=y
+[/bin/bash] herdr: rc=0 rerun_rc=0 argc=2 args=keep1|keep 2 PATH_ok=y
+[/bin/bash] zellij: rc=0 rerun_rc=0 argc=2 args=keep1|keep 2 PATH_ok=y
+[/bin/bash] orca: rc=0 rerun_rc=0 argc=2 args=keep1|keep 2 PATH_ok=y
+[/bin/bash] cmux: rc=0 rerun_rc=0 argc=2 args=keep1|keep 2 PATH_ok=y
+[zsh] tmux: rc=0 rerun_rc=0 argc=2 args=keep1|keep 2 PATH_ok=y
+[zsh] herdr: rc=0 rerun_rc=0 argc=2 args=keep1|keep 2 PATH_ok=y
+[zsh] zellij: rc=0 rerun_rc=0 argc=2 args=keep1|keep 2 PATH_ok=y
+[zsh] orca: rc=0 rerun_rc=0 argc=2 args=keep1|keep 2 PATH_ok=y
+[zsh] cmux: rc=0 rerun_rc=0 argc=2 args=keep1|keep 2 PATH_ok=y
+[/bin/bash] missing sibling fm-composer-lib.sh => rc=1|
+[zsh] missing sibling fm-composer-lib.sh => rc=1|

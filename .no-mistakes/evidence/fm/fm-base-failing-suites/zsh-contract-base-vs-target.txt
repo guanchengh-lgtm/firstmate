@@ -1,0 +1,2 @@
+[BASE] zsh herdr load + whence fm_backend_herdr_capture => exit=1
+[TARGET] zsh herdr load + whence fm_backend_herdr_capture => exit=0

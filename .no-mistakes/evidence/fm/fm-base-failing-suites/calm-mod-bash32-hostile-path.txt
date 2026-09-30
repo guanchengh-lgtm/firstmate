@@ -1,0 +1,8 @@
+ok - the Calm mod is one hooks module, linked into the project's auto-load path, with no c
+ok - the Pi working ship renders byte-for-byte the shared sprite core's frame painted in s
+ok - the Raster packing lays the shared frame out row-major in Claude Code's dark or light
+ok - the Calm policy resolves the shared preference exactly as Pi does, reads on, max, and
+ok - the supervision notes read the store owner's tail copy and markers as Pi does: sailbo
+ok - the mod's operational-input classifier agrees with bin/fm-operational-input.sh on all
+ok - the mod's doorbell port agrees with bin/fm-operational-input.sh doorbell-kind on all 
+exit=

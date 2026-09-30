@@ -1,0 +1,2 @@
+base /bin/bash 3.2 exit=1
+bad substitution

@@ -1,0 +1,25 @@
+--- target zsh tmux
+rc=0
+PATH_intact=yes
+/usr/bin/dirname
+0
+--- target zsh herdr
+rc=0
+PATH_intact=yes
+/usr/bin/dirname
+0
+--- target zsh zellij
+rc=0
+PATH_intact=yes
+/usr/bin/dirname
+0
+--- target zsh orca
+rc=0
+PATH_intact=yes
+/usr/bin/dirname
+0
+--- target zsh cmux
+rc=0
+PATH_intact=yes
+/usr/bin/dirname
+0

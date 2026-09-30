@@ -1,0 +1,12 @@
+[BASE] zsh tmux => rc=1|
+[BASE] zsh herdr => rc=1|
+[BASE] zsh zellij => rc=1|
+[BASE] zsh orca => /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-base.p4GujC/bin/backends/orca.sh:13: command not found: dirname|/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-base.p4GujC/bin/backends/orca.sh:.:13: no such file or directory: /../fm-composer-lib.sh|rc=
+[BASE] zsh cmux => rc=1|
+[BASE] zsh bogus => error: unknown backend 'bogus' (known: tmux herdr zellij orca cmux)|rc=1|
+[TARGET] zsh tmux => /Users/AI/.no-mistakes/worktrees/edb446952c22/01M3S0VSNPBC79CNB6F8T42W33/bin/fm-tmux-lib.sh:.:49: no such file or directory: ./fm-composer-lib.sh|/Users/AI/.no-mistakes/worktrees/edb446952c22/01M3S0VSNPBC79CNB6F8T42W33/bin/fm-tmux-lib.sh:.:51: no such file or 
+[TARGET] zsh herdr => /Users/AI/.no-mistakes/worktrees/edb446952c22/01M3S0VSNPBC79CNB6F8T42W33/bin/backends/herdr.sh:.:79: no such file or directory: /Users/AI/.no-mistakes/worktrees/bin/fm-composer-lib.sh|/Users/AI/.no-mistakes/worktrees/edb446952c22/01M3S0VSNPBC79CNB6F8T42W33/bin
+[TARGET] zsh zellij => /Users/AI/.no-mistakes/worktrees/edb446952c22/01M3S0VSNPBC79CNB6F8T42W33/bin/backends/zellij.sh:.:120: no such file or directory: /Users/AI/.no-mistakes/worktrees/bin/fm-backend-hometag-lib.sh|/Users/AI/.no-mistakes/worktrees/edb446952c22/01M3S0VSNPBC79CNB6F8T
+[TARGET] zsh orca => /Users/AI/.no-mistakes/worktrees/edb446952c22/01M3S0VSNPBC79CNB6F8T42W33/bin/backends/orca.sh:.:13: no such file or directory: ./../fm-composer-lib.sh|rc=0|
+[TARGET] zsh cmux => /Users/AI/.no-mistakes/worktrees/edb446952c22/01M3S0VSNPBC79CNB6F8T42W33/bin/backends/cmux.sh:.:115: no such file or directory: /Users/AI/.no-mistakes/worktrees/bin/fm-backend-hometag-lib.sh|/Users/AI/.no-mistakes/worktrees/edb446952c22/01M3S0VSNPBC79CNB6F8T42
+[TARGET] zsh bogus => error: unknown backend 'bogus' (known: tmux herdr zellij orca cmux)|rc=1|
