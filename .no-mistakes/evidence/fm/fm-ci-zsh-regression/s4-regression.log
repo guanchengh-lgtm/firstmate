@@ -1,0 +1,5 @@
+=== S4: bin/fm-backend.sh reverted to pre-#6221, test file current ===
+not ok - zsh: fm_backend_source herdr should accept the known backend name and find its sibling libraries
+
+::error::expected 3 shell-portable backend regressions (2 zsh, 1 bash), got 0
+exit=1

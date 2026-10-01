@@ -1,0 +1,4 @@
+ok - zsh: fm_backend_source recognizes known backends and rejects unknown ones
+ok - zsh: fm_backend_source keeps PATH intact while loading a backend adapter
+ok - bash: fm_backend_source recognizes known backends and rejects unknown ones
+exit=0

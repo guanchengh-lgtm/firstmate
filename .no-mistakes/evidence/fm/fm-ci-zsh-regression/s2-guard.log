@@ -1,0 +1,2 @@
+::error::zsh is required for the shell-portable backend regression
+exit=1

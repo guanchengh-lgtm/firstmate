@@ -1,0 +1,4 @@
+ok - zsh: shell-portable backend matching skipped (zsh not found)
+ok - bash: fm_backend_source recognizes known backends and rejects unknown ones
+::error::expected 3 shell-portable backend regressions (2 zsh, 1 bash), got 2
+exit=1
