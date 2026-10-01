@@ -1,0 +1,28 @@
+=== BASE 549e07f3 ===
+zsh fm_backend_source tmux -> RC=1 PATH_OK  | 
+zsh fm_backend_source herdr -> RC=1 PATH_OK  | 
+zsh fm_backend_source zellij -> RC=1 PATH_OK  | 
+zsh fm_backend_source orca -> RC=0 PATH_OK  | /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-base.U6RPEn/bin/backends/orca.sh:13: command not found: dirname
+zsh fm_backend_source cmux -> RC=1 PATH_OK  | 
+zsh fm_backend_source bogus -> RC=1 PATH_OK  | error: unknown backend 'bogus' (known: tmux herdr zellij orca cmux)
+--- bash 3.2 ---
+bash fm_backend_source tmux -> RC=0
+bash fm_backend_source herdr -> RC=0
+bash fm_backend_source zellij -> RC=0
+bash fm_backend_source orca -> RC=0
+bash fm_backend_source cmux -> RC=0
+bash fm_backend_source bogus -> RC=1
+=== HEAD ffb67ec0 ===
+zsh fm_backend_source tmux -> RC=0 PATH_OK  | 
+zsh fm_backend_source herdr -> RC=0 PATH_OK  | 
+zsh fm_backend_source zellij -> RC=0 PATH_OK  | 
+zsh fm_backend_source orca -> RC=0 PATH_OK  | 
+zsh fm_backend_source cmux -> RC=0 PATH_OK  | 
+zsh fm_backend_source bogus -> RC=1 PATH_OK  | error: unknown backend 'bogus' (known: tmux herdr zellij orca cmux)
+--- bash 3.2 ---
+bash fm_backend_source tmux -> RC=0
+bash fm_backend_source herdr -> RC=0
+bash fm_backend_source zellij -> RC=0
+bash fm_backend_source orca -> RC=0
+bash fm_backend_source cmux -> RC=0
+bash fm_backend_source bogus -> RC=1
