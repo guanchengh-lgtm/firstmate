@@ -37,7 +37,7 @@ run_node() {  # <script-file>
 # generated scripts below. ${value@Q} would need Bash 4.4 and yields shell
 # quoting; stock macOS Bash 3.2 reports a bad substitution.
 js_string() {  # <value>
-  node -e 'process.stdout.write(JSON.stringify(process.argv[1]))' "$1"
+  node -e 'process.stdout.write(JSON.stringify(process.argv[1]))' -- "$1"
 }
 
 test_plugin_shape() {
