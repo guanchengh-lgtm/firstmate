@@ -1,0 +1,13 @@
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+not ok - captain: the host never started a watcher cycle
+/tmp/fmsh-dbg.sh: line 165: 49740 Terminated: 15          FM_HOME="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" MIRROR_ROOT="$MIRROR_ROOT" "$FAKE_CLAUDE" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
+      rm -f "$FM_HOME/host.rc"
+      for seed in "$FM_HOME"/mirror-seed.*; do
+        [ -f "$seed" ] || continue
+        FM_ROOT_OVERRIDE="$MIRROR_ROOT" "$MIRROR_ROOT/bin/fm-host-mirror.sh" hook claude < "$seed"
+      done
+      "$0" park "$@" > "$FM_HOME/host.out" 2>&1
+      printf "%s\n" "$?" > "$FM_HOME/host.rc"
+    ' "$HOST" "$@" 2>> "$home/claude.err"

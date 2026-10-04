@@ -1,0 +1,152 @@
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - host: an attended captain outcome wakes main once and stays in its drain until main acknowledges it
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - host+hook: a captain outcome handed back to main keeps the fleet watched while main is busy
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - host+hook: the next park takes over the cycle a captain-outcome hand-back left, and nothing reaches main again
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - host+hook: the next park takes over the cycle a main-only pass-through left, so one arm owns it
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - host+hook: a successor that cannot be recorded is stopped, and main's next turn end arms a fresh cycle
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - host+hook: a successor closed before exit_to_main does not suppress the branch-outcome rewake
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - host+hook: a successor that closes during a held engine turn does not suppress the branch-outcome rewake
+ok - host: a captain outcome recorded after the captain left waits for the return, then reaches main's drain
+ok - host: a main-only pass-through leaves the successor watcher running and the close undelivered for main
+/Users/AI/.no-mistakes/evidence/01M44GP7BMJVGQMK6S6BQ66M66/targeted-supervision-host.sh: line 164: 11843 Terminated: 15          FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" "$FAKE_CLAUDE" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
+      for seed in "$FM_HOME"/mirror-seed.*; do
+        [ -f "$seed" ] || continue
+        "$FM_HOME/bin/fm-host-mirror.sh" hook claude < "$seed"
+      done
+      while [ ! -e "$FM_HOME/session.stop" ]; do
+        if [ -e "$FM_HOME/stop.go" ]; then
+          rm -f "$FM_HOME/stop.go"
+          printf "{\"session_id\":\"sess-host-hook\",\"stop_hook_active\":false}\n" \
+            | "$FM_HOME/bin/fm-claude-stop-autoarm.sh" > "$FM_HOME/hook.out" 2> "$FM_HOME/hook.err"
+          printf "%s\n" "$?" > "$FM_HOME/hook.rc"
+        fi
+        sleep 0.1
+      done
+    ' 2>> "$home/claude.err"
+/Users/AI/.no-mistakes/evidence/01M44GP7BMJVGQMK6S6BQ66M66/targeted-supervision-host.sh: line 164: 11843 Terminated: 15          FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" "$FAKE_CLAUDE" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
+      for seed in "$FM_HOME"/mirror-seed.*; do
+        [ -f "$seed" ] || continue
+        "$FM_HOME/bin/fm-host-mirror.sh" hook claude < "$seed"
+      done
+      while [ ! -e "$FM_HOME/session.stop" ]; do
+        if [ -e "$FM_HOME/stop.go" ]; then
+          rm -f "$FM_HOME/stop.go"
+          printf "{\"session_id\":\"sess-host-hook\",\"stop_hook_active\":false}\n" \
+            | "$FM_HOME/bin/fm-claude-stop-autoarm.sh" > "$FM_HOME/hook.out" 2> "$FM_HOME/hook.err"
+          printf "%s\n" "$?" > "$FM_HOME/hook.rc"
+        fi
+        sleep 0.1
+      done
+    ' 2>> "$home/claude.err"
+/Users/AI/.no-mistakes/evidence/01M44GP7BMJVGQMK6S6BQ66M66/targeted-supervision-host.sh: line 164: 50994 Terminated: 15          FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" "$FAKE_CLAUDE" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
+      for seed in "$FM_HOME"/mirror-seed.*; do
+        [ -f "$seed" ] || continue
+        "$FM_HOME/bin/fm-host-mirror.sh" hook claude < "$seed"
+      done
+      while [ ! -e "$FM_HOME/session.stop" ]; do
+        if [ -e "$FM_HOME/stop.go" ]; then
+          rm -f "$FM_HOME/stop.go"
+          printf "{\"session_id\":\"sess-host-hook\",\"stop_hook_active\":false}\n" \
+            | "$FM_HOME/bin/fm-claude-stop-autoarm.sh" > "$FM_HOME/hook.out" 2> "$FM_HOME/hook.err"
+          printf "%s\n" "$?" > "$FM_HOME/hook.rc"
+        fi
+        sleep 0.1
+      done
+    ' 2>> "$home/claude.err"
+/Users/AI/.no-mistakes/evidence/01M44GP7BMJVGQMK6S6BQ66M66/targeted-supervision-host.sh: line 164: 50994 Terminated: 15          FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" "$FAKE_CLAUDE" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
+      for seed in "$FM_HOME"/mirror-seed.*; do
+        [ -f "$seed" ] || continue
+        "$FM_HOME/bin/fm-host-mirror.sh" hook claude < "$seed"
+      done
+      while [ ! -e "$FM_HOME/session.stop" ]; do
+        if [ -e "$FM_HOME/stop.go" ]; then
+          rm -f "$FM_HOME/stop.go"
+          printf "{\"session_id\":\"sess-host-hook\",\"stop_hook_active\":false}\n" \
+            | "$FM_HOME/bin/fm-claude-stop-autoarm.sh" > "$FM_HOME/hook.out" 2> "$FM_HOME/hook.err"
+          printf "%s\n" "$?" > "$FM_HOME/hook.rc"
+        fi
+        sleep 0.1
+      done
+    ' 2>> "$home/claude.err"
+/Users/AI/.no-mistakes/evidence/01M44GP7BMJVGQMK6S6BQ66M66/targeted-supervision-host.sh: line 164: 50994 Terminated: 15          FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" "$FAKE_CLAUDE" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
+      for seed in "$FM_HOME"/mirror-seed.*; do
+        [ -f "$seed" ] || continue
+        "$FM_HOME/bin/fm-host-mirror.sh" hook claude < "$seed"
+      done
+      while [ ! -e "$FM_HOME/session.stop" ]; do
+        if [ -e "$FM_HOME/stop.go" ]; then
+          rm -f "$FM_HOME/stop.go"
+          printf "{\"session_id\":\"sess-host-hook\",\"stop_hook_active\":false}\n" \
+            | "$FM_HOME/bin/fm-claude-stop-autoarm.sh" > "$FM_HOME/hook.out" 2> "$FM_HOME/hook.err"
+          printf "%s\n" "$?" > "$FM_HOME/hook.rc"
+        fi
+        sleep 0.1
+      done
+    ' 2>> "$home/claude.err"
+/Users/AI/.no-mistakes/evidence/01M44GP7BMJVGQMK6S6BQ66M66/targeted-supervision-host.sh: line 164: 61861 Terminated: 15          FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" "$FAKE_CLAUDE" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
+      for seed in "$FM_HOME"/mirror-seed.*; do
+        [ -f "$seed" ] || continue
+        "$FM_HOME/bin/fm-host-mirror.sh" hook claude < "$seed"
+      done
+      while [ ! -e "$FM_HOME/session.stop" ]; do
+        if [ -e "$FM_HOME/stop.go" ]; then
+          rm -f "$FM_HOME/stop.go"
+          printf "{\"session_id\":\"sess-host-hook\",\"stop_hook_active\":false}\n" \
+            | "$FM_HOME/bin/fm-claude-stop-autoarm.sh" > "$FM_HOME/hook.out" 2> "$FM_HOME/hook.err"
+          printf "%s\n" "$?" > "$FM_HOME/hook.rc"
+        fi
+        sleep 0.1
+      done
+    ' 2>> "$home/claude.err"
+/Users/AI/.no-mistakes/evidence/01M44GP7BMJVGQMK6S6BQ66M66/targeted-supervision-host.sh: line 164: 50994 Terminated: 15          FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" "$FAKE_CLAUDE" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
+      for seed in "$FM_HOME"/mirror-seed.*; do
+        [ -f "$seed" ] || continue
+        "$FM_HOME/bin/fm-host-mirror.sh" hook claude < "$seed"
+      done
+      while [ ! -e "$FM_HOME/session.stop" ]; do
+        if [ -e "$FM_HOME/stop.go" ]; then
+          rm -f "$FM_HOME/stop.go"
+          printf "{\"session_id\":\"sess-host-hook\",\"stop_hook_active\":false}\n" \
+            | "$FM_HOME/bin/fm-claude-stop-autoarm.sh" > "$FM_HOME/hook.out" 2> "$FM_HOME/hook.err"
+          printf "%s\n" "$?" > "$FM_HOME/hook.rc"
+        fi
+        sleep 0.1
+      done
+    ' 2>> "$home/claude.err"
+/Users/AI/.no-mistakes/evidence/01M44GP7BMJVGQMK6S6BQ66M66/targeted-supervision-host.sh: line 164: 61861 Terminated: 15          FM_HOME="$home" FM_ROOT_OVERRIDE="$home" FM_CREW_STATE_BIN="$home/fakebin/fm-crew-state.sh" PATH="$home/fakebin:$PATH" "$FAKE_CLAUDE" -c '
+      printf "%s\n" "$$" > "$FM_HOME/state/.lock"
+      printf "%s\n" "$$" >> "$FM_HOME/claude-pids"
+      for seed in "$FM_HOME"/mirror-seed.*; do
+        [ -f "$seed" ] || continue
+        "$FM_HOME/bin/fm-host-mirror.sh" hook claude < "$seed"
+      done
+      while [ ! -e "$FM_HOME/session.stop" ]; do
+        if [ -e "$FM_HOME/stop.go" ]; then
+          rm -f "$FM_HOME/stop.go"
+          printf "{\"session_id\":\"sess-host-hook\",\"stop_hook_active\":false}\n" \
+            | "$FM_HOME/bin/fm-claude-stop-autoarm.sh" > "$FM_HOME/hook.out" 2> "$FM_HOME/hook.err"
+          printf "%s\n" "$?" > "$FM_HOME/hook.rc"
+        fi
+        sleep 0.1
+      done
+    ' 2>> "$home/claude.err"

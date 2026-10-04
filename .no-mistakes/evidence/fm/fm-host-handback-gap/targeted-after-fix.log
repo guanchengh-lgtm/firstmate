@@ -1,0 +1,6 @@
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+not ok - the exit must name the captain outcome's store row and send main to its drain
+--- /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-supervision-host.L4Qs7h/attended-captain/host.out ---
+watcher: started pid=4421 (beacon fresh)
+signal: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-supervision-host.L4Qs7h/attended-captain/state/demo.status
+supervision-host: the supervision session could not take this wake: the engine turn failed (exit 1); this wake is yours

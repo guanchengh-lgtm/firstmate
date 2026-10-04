@@ -1,0 +1,9 @@
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+# 07:00:34 setup: primary idle (claude pid 36470, 2.1.289 (Claude Code), model haiku); config/supervision-host present (default engine); host pid 47453 parked on watcher 47852
+# 07:00:34 setup: lab tree = git archive 3ddfdc75 + temporary patch temp-bashpid.patch (bin/fm-timeout-lib.sh:224 "$BASHPID" -> "${BASHPID:-}"), GNU bash, version 3.2.57(1)-release (arm64-apple-darwin25)
+# 07:00:34 A: done line on demo at 1791154834
+# 07:00:54 A: host log: 1791154853	handled	turn=host-47453-1791154833.1	posture=attended
+# 07:00:54 A: host log: 1791154853	to-main	branch-outcome: the supervision session handled this wake and recorded captain outcomes for you (store rows 1); run bin/fm-wake-drain.sh, act on its BRANCH OUTCOMES section, and ack
+# 07:00:54 A (scenario 1): host exited; watcher 50317 alive; arms: 50286 1 ; left record: 50286; marker: pending:downtime:47453.1791154853.9bf5y4
+# 07:00:54 A: rewake delivered at ; ledger: epoch=1 owner_pid=47035 outcome=arming updated_at=1791154832
+exit 143
