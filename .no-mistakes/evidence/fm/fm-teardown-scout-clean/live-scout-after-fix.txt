@@ -1,0 +1,30 @@
+== [after-fix] leased slot: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.ynRTWI/treehouse/.treehouse/demo-2e9065/1/demo
+== [after-fix] slot status before teardown:
+?? scratch-clone/
+?? scratch.txt
+== [after-fix] running: fm-teardown.sh scout-1 
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.ynRTWI
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  1 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A new version of treehouse is available: v3.1.0 → v3.1.2
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown scout-1 complete (window firstmate:fm-scout-1, worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.ynRTWI/treehouse/.treehouse/demo-2e9065/1/demo)
+Backlog: scout-1 just finished (this home keeps no markdown backlog at /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.ynRTWI/data/backlog.md). Update /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.ynRTWI/data/backlog.md - move scout-1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+== [after-fix] teardown exit=0
+== [after-fix] slot status after return (empty = clean):
+== [after-fix] treehouse status:
+A new version of treehouse is available: v3.1.0 → v3.1.2
+Run "treehouse update" to update
+
+base  main  (repository default)
+1     available    /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.ynRTWI/treehouse/.treehouse/demo-2e9065/1/demo  (detached)
+== [after-fix] next treehouse get picks:
+🌳 Leased worktree at /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.ynRTWI/treehouse/.treehouse/demo-2e9065/1/demo. Run 'treehouse return /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.ynRTWI/treehouse/.treehouse/demo-2e9065/1/demo' to release it.
+/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.ynRTWI/treehouse/.treehouse/demo-2e9065/1/demo

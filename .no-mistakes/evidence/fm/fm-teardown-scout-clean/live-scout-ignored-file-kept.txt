@@ -1,0 +1,24 @@
+== [scout-ignored] leased slot: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.PRgvtk/treehouse/.treehouse/demo-186dc2/1/demo
+== [scout-ignored] slot status before teardown:
+?? scratch-clone/
+?? scratch.txt
+== [scout-ignored] running: fm-teardown.sh scout-1 
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.PRgvtk
+A new version of treehouse is available: v3.1.0 → v3.1.2
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown scout-1 complete (window firstmate:fm-scout-1, worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.PRgvtk/treehouse/.treehouse/demo-186dc2/1/demo)
+Backlog: scout-1 just finished (this home keeps no markdown backlog at /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.PRgvtk/data/backlog.md). Update /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.PRgvtk/data/backlog.md - move scout-1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+== [scout-ignored] teardown exit=0
+== [scout-ignored] slot status after return (empty = clean):
+== [scout-ignored] ignored file after return: keep-me
+== [scout-ignored] treehouse status:
+A new version of treehouse is available: v3.1.0 → v3.1.2
+Run "treehouse update" to update
+
+base  main  (repository default)
+1     available    /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.PRgvtk/treehouse/.treehouse/demo-186dc2/1/demo  (detached)
+== [scout-ignored] next treehouse get picks:
+🌳 Leased worktree at /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.PRgvtk/treehouse/.treehouse/demo-186dc2/1/demo. Run 'treehouse return /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.PRgvtk/treehouse/.treehouse/demo-186dc2/1/demo' to release it.
+/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.PRgvtk/treehouse/.treehouse/demo-186dc2/1/demo

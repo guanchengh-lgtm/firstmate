@@ -1,0 +1,25 @@
+== [ship-noforce] leased slot: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.Ym76rY/treehouse/.treehouse/demo-90ae57/1/demo
+== [ship-noforce] slot status before teardown:
+?? scratch-clone/
+?? scratch.txt
+== [ship-noforce] running: fm-teardown.sh scout-1 
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.Ym76rY
+REFUSED: local-only worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.Ym76rY/treehouse/.treehouse/demo-90ae57/1/demo has work not yet merged into main and not on any remote.
+uncommitted changes present (untracked-only leftovers)
+untracked paths (up to 10):
+  scratch-clone/
+  scratch.txt
+Merge the branch into local main first (bin/fm-merge-local.sh after the captain approves), or push to a fork/remote, or get the captain's explicit OK to discard, then --force.
+== [ship-noforce] teardown exit=1
+== [ship-noforce] slot status after return (empty = clean):
+?? scratch-clone/
+?? scratch.txt
+== [ship-noforce] treehouse status:
+A new version of treehouse is available: v3.1.0 → v3.1.2
+Run "treehouse update" to update
+
+base  main  (repository default)
+1     leased       /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.Ym76rY/treehouse/.treehouse/demo-90ae57/1/demo  [fm/scout-1]
+== [ship-noforce] next treehouse get picks:
+🌳 Leased worktree at /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.Ym76rY/treehouse/.treehouse/demo-90ae57/2/demo. Run 'treehouse return /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.Ym76rY/treehouse/.treehouse/demo-90ae57/2/demo' to release it.
+/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.Ym76rY/treehouse/.treehouse/demo-90ae57/2/demo

@@ -1,0 +1,23 @@
+== [before-fix] leased slot: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.KwWsCB/treehouse/.treehouse/demo-93e992/1/demo
+== [before-fix] slot status before teardown:
+?? scratch-clone/
+?? scratch.txt
+== [before-fix] running: fm-teardown.sh scout-1 
+A new version of treehouse is available: v3.1.0 → v3.1.2
+Run "treehouse update" to update
+
+🌳 Worktree returned to pool.
+teardown scout-1 complete (window firstmate:fm-scout-1, worktree /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.KwWsCB/treehouse/.treehouse/demo-93e992/1/demo)
+Backlog: scout-1 just finished (this home keeps no markdown backlog at /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.KwWsCB/data/backlog.md). Update /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.KwWsCB/data/backlog.md - move scout-1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+== [before-fix] teardown exit=0
+== [before-fix] slot status after return (empty = clean):
+?? scratch-clone/
+== [before-fix] treehouse status:
+A new version of treehouse is available: v3.1.0 → v3.1.2
+Run "treehouse update" to update
+
+base  main  (repository default)
+1     dirty        /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.KwWsCB/treehouse/.treehouse/demo-93e992/1/demo  (detached)
+== [before-fix] next treehouse get picks:
+🌳 Leased worktree at /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.KwWsCB/treehouse/.treehouse/demo-93e992/2/demo. Run 'treehouse return /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.KwWsCB/treehouse/.treehouse/demo-93e992/2/demo' to release it.
+/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.KwWsCB/treehouse/.treehouse/demo-93e992/2/demo
