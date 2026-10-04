@@ -60,6 +60,8 @@
 #   (z3) return leaves residue                               -> lost-slot warning, not a clean return
 #   (z3b) residue, then a later step refuses                 -> lost-slot warning still printed
 #   (z3c) forced secondmate + child scout nested clone       -> child copy returns clean
+#   (z3d) forced secondmate + child return leaves residue    -> warning, retirement completes
+#   (z3e) return removes the copy                            -> cannot-verify warning, not clean
 #   (z4) scout + ignored file                                -> ignored file survives
 set -u
 
@@ -1439,7 +1441,7 @@ test_dirty_return_warns_which_slot_was_lost() {
   rc=$?
   set -e
 
-  expect_code 1 "$rc" "dirty-return: a residue return should not succeed as a clean return"
+  expect_code 0 "$rc" "dirty-return: the lost-slot warning should not change the exit status"
   assert_grep "pool slot 9" "$case_dir/stderr" "dirty-return: warning did not name the slot"
   assert_grep "left-behind-clone" "$case_dir/stderr" "dirty-return: warning did not name the remaining path"
   assert_grep "lost this slot" "$case_dir/stderr" "dirty-return: warning did not say the pool lost the slot"
@@ -1514,6 +1516,76 @@ test_forced_secondmate_child_scout_nested_clone_returns_clean() {
   assert_no_grep "lost this slot" "$case_dir/stderr" \
     "secondmate-child-nested-clean: a clean child return was reported as a lost slot"
   pass "a forced secondmate teardown returns a child scout copy with a nested clone clean"
+}
+
+# Return succeeds but leaves no readable worktree behind to verify.
+add_treehouse_that_removes_copy() {
+  local case_dir=$1
+  cat > "$case_dir/fakebin/treehouse" <<'SH'
+#!/usr/bin/env bash
+if [ "${1:-}" = return ]; then
+  for a in "$@"; do wt=$a; done
+  rm -f "$wt/.git"
+fi
+exit 0
+SH
+  chmod +x "$case_dir/fakebin/treehouse"
+}
+
+# The remote host runs exactly this forced secondmate teardown for
+# `fm-remote-secondmate-control.sh retire --force`; the local side finishes the
+# route, record, and reply-source cleanup only when it exits 0.
+test_forced_secondmate_dirty_child_return_warns_and_completes() {
+  local case_dir home child_wt rc
+  case_dir=$(make_case secondmate-child-dirty-return)
+  write_meta "$case_dir" local-only secondmate
+  home="$case_dir/secondmate-home"
+  mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects"
+  printf '%s\n' task-x1 > "$home/.fm-secondmate-home"
+  printf '%s\n' "home=$home" >> "$case_dir/state/task-x1.meta"
+  child_wt="$case_dir/child-scout-wt"
+  git -C "$case_dir/project" worktree add -q -b fm/child-scout "$child_wt" main
+  fm_write_meta "$home/state/child-scout.meta" \
+    "window=firstmate:fm-child-scout" \
+    "endpoint_task_id=child-scout" \
+    "worktree=$child_wt" \
+    "project=$case_dir/project" \
+    "kind=scout" \
+    "mode=local-only"
+  add_treehouse_that_leaves_residue "$case_dir"
+
+  rc=0
+  run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "secondmate-child-dirty-return: the lost-slot warning failed the retirement"
+  assert_grep "lost this slot" "$case_dir/stderr" \
+    "secondmate-child-dirty-return: no lost-slot warning for the dirty child return"
+  assert_grep "left-behind-clone" "$case_dir/stderr" \
+    "secondmate-child-dirty-return: warning did not name the remaining path"
+  assert_absent "$case_dir/state/task-x1.meta" "secondmate-child-dirty-return: task record was not removed"
+  assert_absent "$home" "secondmate-child-dirty-return: secondmate home was not removed"
+  pass "a forced secondmate teardown warns about a dirty child return and still completes"
+}
+
+test_return_that_removes_copy_warns_cannot_verify() {
+  local case_dir wt rc
+  case_dir=$(make_case return-removes-copy)
+  wt=$(move_case_to_pool_slot "$case_dir" 7)
+  write_meta "$case_dir" no-mistakes scout "$wt"
+  prepare_scout_teardown "$case_dir"
+  add_treehouse_that_removes_copy "$case_dir"
+
+  rc=0
+  FM_HOME="$case_dir" run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
+
+  expect_code 0 "$rc" "return-removes-copy: the cannot-verify warning should not change the exit status"
+  assert_grep "lost this slot" "$case_dir/stderr" "return-removes-copy: no lost-slot warning"
+  assert_grep "cannot verify" "$case_dir/stderr" "return-removes-copy: warning did not say the slot is unverified"
+  assert_grep "$wt" "$case_dir/stderr" "return-removes-copy: warning did not name the copy"
+  assert_no_grep "teardown task-x1 complete" "$case_dir/stdout" \
+    "return-removes-copy: stdout still reported a clean return"
+  assert_absent "$case_dir/state/task-x1.meta" "return-removes-copy: task record was not removed"
+  pass "a return that leaves no readable copy reports the slot as unverified, not clean"
 }
 
 test_scout_ignored_files_survive_scratch_clean() {
@@ -4677,6 +4749,8 @@ test_ship_nested_clone_is_refused_and_bytes_stay
 test_dirty_return_warns_which_slot_was_lost
 test_dirty_return_warns_even_when_a_later_step_refuses
 test_forced_secondmate_child_scout_nested_clone_returns_clean
+test_forced_secondmate_dirty_child_return_warns_and_completes
+test_return_that_removes_copy_warns_cannot_verify
 test_scout_ignored_files_survive_scratch_clean
 test_gh_error_and_content_absent_refuses
 test_legacy_record_without_the_flag_refuses

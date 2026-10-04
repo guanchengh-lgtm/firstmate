@@ -84,9 +84,11 @@
 # entries, except those under the .claude/ allowance, so a nested repository
 # there can still survive the return.
 # After a return that succeeds, teardown reads `git status --porcelain --untracked-files=all`.
-# Any remaining output, or a status read that fails, is reported at once with
-# the lost pool slot and what remains, and teardown finishes its cleanup but
-# exits nonzero instead of reporting a clean return.
+# Any remaining output, a status read that fails, or a copy that is missing or
+# no longer a readable worktree is reported at once with the lost pool slot and
+# what remains. Teardown then finishes its cleanup with its normal exit status,
+# but reports the lost slot instead of a clean return. The warning does not fail
+# teardown, so a remote secondmate retirement still completes locally.
 # Before destructive cleanup, teardown validates task check artifacts as
 # ordinary single-link files on the state device. It refuses and preserves
 # task state when that proof fails; otherwise it removes the task's check,
@@ -1058,6 +1060,8 @@ remote_secondmate_teardown() {
     fi
     return "$rc"
   fi
+  # A successful remote run can still warn that a child pool slot was lost.
+  [ -z "$out" ] || printf '%s\n' "$out" >&2
   remote_recovery_paths_validate recheck || {
     echo "error: remote home retired but local recovery paths changed; preserving the local route for retry" >&2
     return 1
@@ -1911,9 +1915,12 @@ teardown_scrub_scratch_copy() {
 
 teardown_note_dirty_return() {
   local wt=$1 proj=$2 residue_rc=0 residue slot_dir slot_label
-  git -C "$wt" rev-parse --is-inside-work-tree >/dev/null 2>&1 || return 0
-  residue=$(git -C "$wt" status --porcelain --untracked-files=all) || residue_rc=$?
-  [ "$residue_rc" -ne 0 ] || [ -n "$residue" ] || return 0
+  if git -C "$wt" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    residue=$(git -C "$wt" status --porcelain --untracked-files=all) || residue_rc=$?
+    [ "$residue_rc" -ne 0 ] || [ -n "$residue" ] || return 0
+  else
+    residue_rc=1
+  fi
   TEARDOWN_POOL_SLOT_LOST=1
   if fm_treehouse_pool_slot "$proj" "$wt"; then
     slot_dir=$(canonical_existing_dir "$wt") || slot_dir=$wt
@@ -1921,8 +1928,8 @@ teardown_note_dirty_return() {
   else
     slot_label=$wt
   fi
-  [ "$residue_rc" -eq 0 ] || residue="could not read worktree status after return"
-  echo "warning: treehouse return left pool slot $slot_label ($wt) dirty; the pool lost this slot. Remaining paths:" >&2
+  [ "$residue_rc" -eq 0 ] || residue="cannot verify: the copy is missing or not a readable git worktree after return"
+  echo "warning: treehouse return left pool slot $slot_label ($wt) dirty or unverified; the pool lost this slot. Remaining paths:" >&2
   printf '%s\n' "$residue" >&2
 }
 
@@ -3915,11 +3922,8 @@ if [ -d "$STATE" ]; then
   "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
 fi
 if [ "$TEARDOWN_POOL_SLOT_LOST" = 1 ]; then
-  echo "teardown $ID finished its cleanup and removed its task record, but a returned pool slot stayed dirty (see the warning above); clear those paths so the pool can reuse the slot" >&2
-  backlog_refresh_reminder || true
-  exit 1
-fi
-if [ "$TEARDOWN_LEGACY_ACCEPTED" = 1 ]; then
+  echo "teardown $ID finished its cleanup and removed its task record, but a returned pool slot did not come back clean (see the warning above); clear those paths so the pool can reuse the slot" >&2
+elif [ "$TEARDOWN_LEGACY_ACCEPTED" = 1 ]; then
   echo "teardown $ID complete (window ${T:-none}, worktree $WT, legacy record accepted without spawn_gen: endpoint $TEARDOWN_LEGACY_ENDPOINT, incarnation $TEARDOWN_META_SPAWN_GEN)"
 elif teardown_owns_worktree; then
   echo "teardown $ID complete (window ${T:-none}, worktree $WT)"
