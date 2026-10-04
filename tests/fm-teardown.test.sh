@@ -57,11 +57,11 @@
 # Nested repositories survive Treehouse's own `git clean -fd`:
 #   (z1) scout + nested clone + scratch file                 -> no untracked entries
 #   (z2) ship + nested clone, no --force                     -> REFUSE, bytes unchanged
-#   (z3) return leaves residue                               -> lost-slot warning, not a clean return
+#   (z3) return leaves residue                               -> lost-slot warning, cleanup, exit 4
 #   (z3b) residue, then a later step refuses                 -> lost-slot warning still printed
 #   (z3c) forced secondmate + child scout nested clone       -> child copy returns clean
-#   (z3d) forced secondmate + child return leaves residue    -> warning, retirement completes
-#   (z3e) return removes the copy                            -> cannot-verify warning, not clean
+#   (z3d) forced secondmate + child return leaves residue    -> warning, retirement completes, exit 4
+#   (z3e) return removes the copy                            -> cannot-verify warning, exit 4
 #   (z4) scout + ignored file                                -> ignored file survives
 set -u
 
@@ -1441,7 +1441,7 @@ test_dirty_return_warns_which_slot_was_lost() {
   rc=$?
   set -e
 
-  expect_code 0 "$rc" "dirty-return: the lost-slot warning should not change the exit status"
+  expect_code 4 "$rc" "dirty-return: a lost slot should exit 4 after cleanup"
   assert_grep "pool slot 9" "$case_dir/stderr" "dirty-return: warning did not name the slot"
   assert_grep "left-behind-clone" "$case_dir/stderr" "dirty-return: warning did not name the remaining path"
   assert_grep "lost this slot" "$case_dir/stderr" "dirty-return: warning did not say the pool lost the slot"
@@ -1534,7 +1534,7 @@ SH
 
 # The remote host runs exactly this forced secondmate teardown for
 # `fm-remote-secondmate-control.sh retire --force`; the local side finishes the
-# route, record, and reply-source cleanup only when it exits 0.
+# route, record, and reply-source cleanup when it exits 0 or 4 (lost slot).
 test_forced_secondmate_dirty_child_return_warns_and_completes() {
   local case_dir home child_wt rc
   case_dir=$(make_case secondmate-child-dirty-return)
@@ -1557,7 +1557,7 @@ test_forced_secondmate_dirty_child_return_warns_and_completes() {
   rc=0
   run_teardown "$case_dir" --force > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
-  expect_code 0 "$rc" "secondmate-child-dirty-return: the lost-slot warning failed the retirement"
+  expect_code 4 "$rc" "secondmate-child-dirty-return: a lost child slot should exit 4 after retirement"
   assert_grep "lost this slot" "$case_dir/stderr" \
     "secondmate-child-dirty-return: no lost-slot warning for the dirty child return"
   assert_grep "left-behind-clone" "$case_dir/stderr" \
@@ -1578,7 +1578,7 @@ test_return_that_removes_copy_warns_cannot_verify() {
   rc=0
   FM_HOME="$case_dir" run_teardown "$case_dir" > "$case_dir/stdout" 2> "$case_dir/stderr" || rc=$?
 
-  expect_code 0 "$rc" "return-removes-copy: the cannot-verify warning should not change the exit status"
+  expect_code 4 "$rc" "return-removes-copy: an unverified slot should exit 4 after cleanup"
   assert_grep "lost this slot" "$case_dir/stderr" "return-removes-copy: no lost-slot warning"
   assert_grep "cannot verify" "$case_dir/stderr" "return-removes-copy: warning did not say the slot is unverified"
   assert_grep "$wt" "$case_dir/stderr" "return-removes-copy: warning did not name the copy"

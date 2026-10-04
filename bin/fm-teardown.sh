@@ -86,9 +86,12 @@
 # After a return that succeeds, teardown reads `git status --porcelain --untracked-files=all`.
 # Any remaining output, a status read that fails, or a copy that is missing or
 # no longer a readable worktree is reported at once with the lost pool slot and
-# what remains. Teardown then finishes its cleanup with its normal exit status,
-# but reports the lost slot instead of a clean return. The warning does not fail
-# teardown, so a remote secondmate retirement still completes locally.
+# what remains. Teardown then finishes every cleanup step, reports the lost slot
+# instead of a clean return, and exits 4. Exit 4 means only "cleaned up, but a
+# returned pool slot was lost"; refusals and errors exit 1, and an invalid
+# request exits 2. A local retirement of a remote secondmate whose remote run
+# exits 4 still completes locally, forwards only the remote lost-slot warning
+# to stderr, and then exits 4.
 # Before destructive cleanup, teardown validates task check artifacts as
 # ordinary single-link files on the state device. It refuses and preserves
 # task state when that proof fails; otherwise it removes the task's check,
@@ -395,6 +398,7 @@ if [ "$#" -lt 1 ] || ! fm_task_id_path_safe "$1"; then
   exit 2
 fi
 ID=$1
+TEARDOWN_LOST_SLOT_EXIT=4
 FORCE=
 LEGACY_RECORD_GIVEN=0
 shift
@@ -1051,7 +1055,7 @@ remote_secondmate_teardown() {
   else
     if out=$("$SCRIPT_DIR/fm-on.sh" "$ID" fm-remote-secondmate-control.sh retire "$ID" < /dev/null 2>&1); then rc=0; else rc=$?; fi
   fi
-  if [ "$rc" -ne 0 ]; then
+  if [ "$rc" -ne 0 ] && [ "$rc" -ne "$TEARDOWN_LOST_SLOT_EXIT" ]; then
     [ -z "$out" ] || printf '%s\n' "$out" >&2
     if [ "$rc" -eq 255 ]; then
       echo "error: remote retirement completion is unknown; preserving the route and local records for same-host reconciliation" >&2
@@ -1060,8 +1064,9 @@ remote_secondmate_teardown() {
     fi
     return "$rc"
   fi
-  # A successful remote run can still warn that a child pool slot was lost.
-  [ -z "$out" ] || printf '%s\n' "$out" >&2
+  if [ "$rc" -eq "$TEARDOWN_LOST_SLOT_EXIT" ]; then
+    printf '%s\n' "$out" | grep -E '^(warning: treehouse return left pool slot |  )' >&2 || true
+  fi
   remote_recovery_paths_validate recheck || {
     echo "error: remote home retired but local recovery paths changed; preserving the local route for retry" >&2
     return 1
@@ -1087,7 +1092,7 @@ remote_secondmate_teardown() {
     "$(fm_wake_signal_seen_path "$STATE" "$STATE/$ID.turn-ended")" \
     "$STATE/.secondmate-relaunch-$ID" "$STATE/.secondmate-relaunch-bound-$ID"
   printf 'teardown %s complete (remote %s:%s)\n' "$ID" "$remote_host" "$remote_home"
-  return 0
+  return "$rc"
 }
 
 remote_secondmate_teardown_locked() {
@@ -1111,10 +1116,13 @@ remote_secondmate_teardown_locked() {
 }
 
 if remote_secondmate_teardown_locked; then
-  "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
-  exit 0
+  remote_teardown_rc=0
 else
   remote_teardown_rc=$?
+fi
+if [ "$remote_teardown_rc" -eq 0 ] || [ "$remote_teardown_rc" -eq "$TEARDOWN_LOST_SLOT_EXIT" ]; then
+  "$SCRIPT_DIR/fm-home-summary-refresh.sh" --best-effort || true
+  exit "$remote_teardown_rc"
 fi
 [ "$remote_teardown_rc" -eq 3 ] || exit "$remote_teardown_rc"
 
@@ -1930,7 +1938,7 @@ teardown_note_dirty_return() {
   fi
   [ "$residue_rc" -eq 0 ] || residue="cannot verify: the copy is missing or not a readable git worktree after return"
   echo "warning: treehouse return left pool slot $slot_label ($wt) dirty or unverified; the pool lost this slot. Remaining paths:" >&2
-  printf '%s\n' "$residue" >&2
+  printf '%s\n' "$residue" | sed 's/^/  /' >&2
 }
 
 validate_worktree_teardown_safety() {
@@ -3931,3 +3939,4 @@ else
   echo "teardown $ID complete (window ${T:-none}; pool slot $WT left to task $TEARDOWN_SLOT_REASSIGNED_TO${TEARDOWN_SLOT_REASSIGNED_HOME:+ (home $TEARDOWN_SLOT_REASSIGNED_HOME)}, which it was reassigned to)"
 fi
 backlog_refresh_reminder
+[ "$TEARDOWN_POOL_SLOT_LOST" = 0 ] || exit "$TEARDOWN_LOST_SLOT_EXIT"
