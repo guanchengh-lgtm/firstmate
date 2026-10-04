@@ -1921,8 +1921,10 @@ teardown_scrub_scratch_copy() {
   }
 }
 
+# Callers run this only for a copy that was a Treehouse pool slot before the
+# return; a return removes any other copy, and the pool cannot lose it.
 teardown_note_dirty_return() {
-  local wt=$1 proj=$2 residue_rc=0 residue slot_dir slot_label
+  local wt=$1 residue_rc=0 residue slot_dir slot_label
   if git -C "$wt" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     residue=$(git -C "$wt" status --porcelain --untracked-files=all) || residue_rc=$?
     [ "$residue_rc" -ne 0 ] || [ -n "$residue" ] || return 0
@@ -1930,12 +1932,8 @@ teardown_note_dirty_return() {
     residue_rc=1
   fi
   TEARDOWN_POOL_SLOT_LOST=1
-  if fm_treehouse_pool_slot "$proj" "$wt"; then
-    slot_dir=$(canonical_existing_dir "$wt") || slot_dir=$wt
-    slot_label=$(basename "$(dirname "$slot_dir")")
-  else
-    slot_label=$wt
-  fi
+  slot_dir=$(canonical_existing_dir "$wt") || slot_dir=$wt
+  slot_label=$(basename "$(dirname "$slot_dir")")
   [ "$residue_rc" -eq 0 ] || residue="cannot verify: the copy is missing or not a readable git worktree after return"
   echo "warning: treehouse return left pool slot $slot_label ($wt) dirty or unverified; the pool lost this slot. Remaining paths:" >&2
   printf '%s\n' "$residue" | sed 's/^/  /' >&2
@@ -3279,7 +3277,7 @@ endpoint_close_refusal() {  # <subject> <backend> <target> <honors-force>
 }
 
 cleanup_firstmate_home_children() {
-  local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_return_rc child_busy_gen child_owner_rc
+  local home=$1 sub_state child_meta child_id child_t child_wt child_proj child_kind child_home child_backend child_orca_worktree_id child_return_rc child_busy_gen child_owner_rc child_pool_slot
   sub_state="$home/state"
   [ -d "$sub_state" ] || return 0
   for child_meta in "$sub_state"/*.meta; do
@@ -3357,8 +3355,10 @@ cleanup_firstmate_home_children() {
           "$child_wt/.fm-grok-turnend" "$child_wt/.fm-kimi-turnend"
         if [ -n "$child_proj" ] && [ -d "$child_proj" ] && command -v treehouse >/dev/null 2>&1; then
           teardown_scrub_scratch_copy "$child_wt" || return 1
+          child_pool_slot=0
+          fm_treehouse_pool_slot "$child_proj" "$child_wt" && child_pool_slot=1
           if teardown_treehouse_return "$child_wt" "$child_proj" "child worktree"; then
-            teardown_note_dirty_return "$child_wt" "$child_proj"
+            [ "$child_pool_slot" = 0 ] || teardown_note_dirty_return "$child_wt"
             fm_treehouse_slot_owner_release "$child_wt" "$child_id"
           else
             child_return_rc=$?
@@ -3693,11 +3693,13 @@ elif [ -d "$WT" ] && [ "$KIND" != secondmate ]; then
   if [ "$KIND" = scout ] || [ "$FORCE" = "--force" ]; then
     teardown_scrub_scratch_copy "$WT" || exit 1
   fi
+  wt_pool_slot=0
+  fm_treehouse_pool_slot "$PROJ" "$WT" && wt_pool_slot=1
   teardown_treehouse_return "$WT" "$PROJ" "worktree" "$post_lock_cleanup_check" || {
     echo "error: treehouse return failed for worktree $WT; teardown aborted" >&2
     exit 1
   }
-  teardown_note_dirty_return "$WT" "$PROJ"
+  [ "$wt_pool_slot" = 0 ] || teardown_note_dirty_return "$WT"
   # The slot is back in the pool, so this task's claim on it is spent. Dropping
   # it here - and only after a return that succeeded - keeps a returned slot
   # unclaimed until its next holder claims it, and leaves the claim in place

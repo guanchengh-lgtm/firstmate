@@ -1543,8 +1543,11 @@ test_forced_secondmate_dirty_child_return_warns_and_completes() {
   mkdir -p "$home/state" "$home/data" "$home/config" "$home/projects"
   printf '%s\n' task-x1 > "$home/.fm-secondmate-home"
   printf '%s\n' "home=$home" >> "$case_dir/state/task-x1.meta"
-  child_wt="$case_dir/child-scout-wt"
+  child_wt="$case_dir/pool/6/repo"
+  mkdir -p "$case_dir/pool/6"
   git -C "$case_dir/project" worktree add -q -b fm/child-scout "$child_wt" main
+  printf '{"worktrees":[{"name":"6","path":"%s"}]}\n' "$child_wt" \
+    > "$case_dir/pool/treehouse-state.json"
   fm_write_meta "$home/state/child-scout.meta" \
     "window=firstmate:fm-child-scout" \
     "endpoint_task_id=child-scout" \
