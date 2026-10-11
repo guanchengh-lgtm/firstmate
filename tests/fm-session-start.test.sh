@@ -2073,6 +2073,8 @@ EOF
     "a tight budget did not name the ready retrieval"
   assert_contains "$out" "WITHHELD backlog in_flight=1 :: bin/fm-tasks-axi.sh list --state in_flight --fields hold_kind,hold_until" \
     "a tight budget did not name the in-flight retrieval"
+  assert_contains "$out" "WITHHELD backlog held=1 captain=1 other=0 :: bin/fm-tasks-axi.sh list --state held --fields hold_kind,hold_reason" \
+    "a tight budget counted an in-flight captain hold in the held retrieval"
   assert_not_contains "$out" "ready-7" "a tight budget still printed the ready id list"
   assert_not_contains "$out" "captain choice pending" "a tight budget printed a hold reason"
 

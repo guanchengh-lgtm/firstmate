@@ -560,7 +560,7 @@ ss_render_backlog_texts() {
     BACKLOG_BODY="$BACKLOG_BODY"$'\n'"WITHHELD hold reasons :: bin/fm-tasks-axi.sh list --state held --fields hold_kind,hold_reason"
     BACKLOG_WITHHELD=$(printf '%s\n' \
       "WITHHELD backlog in_flight=$SS_IN :: bin/fm-tasks-axi.sh list --state in_flight --fields hold_kind,hold_until" \
-      "WITHHELD backlog held=$SS_HELD captain=$SS_CAP_N other=$SS_OTHER :: bin/fm-tasks-axi.sh list --state held --fields hold_kind,hold_reason" \
+      "WITHHELD backlog held=$SS_HELD captain=$((SS_HELD - SS_OTHER)) other=$SS_OTHER :: bin/fm-tasks-axi.sh list --state held --fields hold_kind,hold_reason" \
       "WITHHELD backlog blocked=$SS_BLOCKED :: bin/fm-tasks-axi.sh list --state queued --blocked --fields blocked_by" \
       "WITHHELD backlog ready=$SS_READY :: bin/fm-tasks-axi.sh ready" \
       "$done_line")
