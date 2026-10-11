@@ -457,8 +457,8 @@ It uses a TERM-resistant digest that exceeds its budget and proves that the dige
 
 `tests/fm-sessionstart-hook-live-e2e.test.sh` is the opt-in live guard for the Claude, Codex exec, and Pi run-tier adapters.
 It confirms each installed adapter in that suite invokes the run wrapper and delivers its output into context.
-On Claude and Codex exec the recorder prints a core token, a second token after byte 2,000, and separate preferences and learnings tokens.
-[`verification/supervision.md`](verification/supervision.md#native-session-start-delivery) records a dated pass for that split only after the guard has been run.
+On Claude and Codex exec the recorder prints a core token, a late token after about 6,700 bytes of core output, and separate preferences and learnings tokens, each stamped per open.
+[`verification/supervision.md`](verification/supervision.md#native-session-start-delivery) records the dated result for that split.
 It verifies context-preserving reopen sources for those adapters, and context-reset delivery wherever their tracked TUI surface is reachable.
 
 Its separate `FM_PI_SESSIONSTART_RACE_LIVE_E2E=1` mode uses real Pi with an offline deterministic provider and a barrier-controlled `/new` digest.

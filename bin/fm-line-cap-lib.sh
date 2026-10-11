@@ -17,10 +17,9 @@
 # The cap counts characters, so a plain-ASCII line - what status lines are in
 # practice - is bounded to the same number of bytes, and a multibyte character
 # is never cut in half into an invalid sequence.
-# Truncation stays recoverable because each session-start fleet row begins
-# with the task id and names its status file, while every OPEN DECISIONS
-# entry begins with the task id that identifies its durable state/<id>.status
-# source.
+# Truncation stays recoverable because each session-start fleet row and every
+# OPEN DECISIONS entry begins with the task id that identifies its durable
+# state/<id>.status source.
 
 FM_LINE_CAP_DEFAULT=220
 FM_LINE_CAP_SUFFIX=' [truncated]'

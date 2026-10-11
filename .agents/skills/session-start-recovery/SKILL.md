@@ -34,17 +34,16 @@ The locked startup inactive-outcome scan joins that worker so a slow local curre
    A remote task adds `remote`.
    The row does not print the status tail or the full meta.
    An orphan-status count and the away or quiet posture follow the rows.
-   That liveness line is a fast presence check only, not a full state read - when you need a crew's actual current state (a run-step, not just "is the pane there"), read it with `bin/fm-crew-state.sh <id>` as before; the digest deliberately skips that deeper, slower read for every task so it stays fast and bounded.
-   The backlog summary follows the rows: counts, ready ids, captain-held ids, and a count of other holds.
-   Hold reasons are not printed.
-   `bin/fm-tasks-axi.sh list --state held --fields hold_kind,hold_reason` retrieves them.
-6. **Network checks** - after the backlog summary, the deferred stage's result, or an explicit statement of what it has not confirmed yet.
+   That endpoint verdict is a fast presence check only, not a full state read - when you need a crew's actual current state (a run-step, not just "is the pane there"), read it with `bin/fm-crew-state.sh <id>` as before; the digest deliberately skips that deeper, slower read for every task so it stays fast and bounded.
+6. **Network checks** - after the fleet rows, the deferred stage's result, or an explicit statement of what it has not confirmed yet.
    A read-only session runs no network checks at all and says so.
-7. **Context digest and next step** - project names and secondmate names, each with a read-only command for the full file when the names fit, then the closing reminder.
+7. **Context digest and next step** - the backlog summary (counts, ready ids, captain-held ids, and a count of other holds), then project names and secondmate names, each with a read-only command for the full file, then the closing reminder.
+   Hold reasons are not printed; `bin/fm-tasks-axi.sh list --state held --fields hold_kind,hold_reason` retrieves them.
+   Each of these sections that does not fit the byte budget prints a `WITHHELD` line in its place instead.
    Captain preferences and learnings are separate parts.
    `--part all` prints those parts after the core.
    A file that does not exist prints an explicit `ABSENT` marker, never confused with an empty-but-present file: absence is meaningful (`captain.md` absent means use the firstmate repo's built-in defaults, `projects.md` absent means rebuild it from the clones under `projects/`, etc.).
-   The closing reminder points back to the emitted supervision block and names each withheld section's read-only command.
+   The closing reminder points back to the emitted supervision block and to the `WITHHELD` lines above it.
 
 Bootstrap detects first, asks for consent, and installs only after the captain approves in the current session.
 Do not dispatch until the essential launch tools are present and GitHub authentication is good; presentation availability follows `bootstrap-diagnostics` and does not block nonvisual work.

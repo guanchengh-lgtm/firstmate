@@ -45,17 +45,19 @@
 #                       primary harness. It is never withheld. Claude uses
 #                       --brief; every other harness gets the full block.
 #   5. fleet digest   - one row per task (kind, project, endpoint verdict,
-#                       last status state and age, PR URL, open decision keys,
-#                       status path), the away posture, an orphan-status count,
+#                       last status state and age, PR URL, open decision keys),
+#                       the away posture, an orphan-status count,
 #                       and a cheap per-task endpoint read. Full meta and
 #                       status tails are not printed. The per-task reads run
 #                       serially, so with a wedged backend the stage's ceiling
 #                       is tasks x the per-read bound
 #                       (FM_SESSION_START_ENDPOINT_TIMEOUT, default 10s).
 #   6. network checks - the result of the deferred network stage started back at
-#                       step 1, harvested WITHOUT waiting for it.
-#   7. context        - project names and the secondmate count. Captain
-#                       preferences and learnings are separate --part messages.
+#                       step 1, harvested WITHOUT waiting for it. It prints
+#                       before the budgeted sections, so it is never withheld.
+#   7. context        - the backlog summary, project names, and secondmate
+#                       names, each budgeted. Captain preferences and learnings
+#                       are separate --part messages.
 #   8. closing reminder - points back at the supervision block and never arms
 #                       the watcher itself.
 #
@@ -74,7 +76,7 @@
 # call. The five that did - `gh auth status`, secondmate liveness, secondmate
 # convergence, pending remote handoff delivery, and the fleet-sync fetch - are
 # started as one detached bounded worker right after the lock (step 1) and
-# harvested at step 7 without ever blocking on it. The bounded inactive-outcome
+# harvested at step 6 without ever blocking on it. The bounded inactive-outcome
 # startup scan joins that worker because its local current-state reads can also
 # be slow. bin/fm-startup-network.sh owns that stage and its safety argument;
 # bin/fm-bootstrap.sh and bin/fm-inactive-reconcile.sh remain the owners of the
@@ -90,7 +92,9 @@
 # a trailing index of omissions is lost when the child dies mid-run. The child
 # therefore measures its own output in bytes and, when the next budgeted
 # section would pass the harness budget, prints a WITHHELD line in that
-# section's place. The line names a read-only command. Never-cut sections
+# section's place. The line names a read-only command. Every budgeted section
+# prints after the never-cut ones except the closing text, whose size is
+# reserved before the budgeted sections are measured. Never-cut sections
 # still print when they alone exceed the budget. Captain preferences and
 # learnings are not in the core budget; they are their own parts.
 # The LOCK/BOOTSTRAP/WAKE-QUEUE safety preamble keeps its order: it establishes
@@ -130,9 +134,10 @@
 # Full bodies stay on demand: `bin/fm-tasks-axi.sh show <id> --full`, or
 # `data/backlog.md` when the file body is truly needed.
 #
-# FLEET ROWS: bin/fm-line-cap-lib.sh bounds each row. The row names the status
-# file. It does not print a status tail. bin/fm-crew-state.sh owns current
-# state. Open decision keys come from bin/fm-classify-lib.sh.
+# FLEET ROWS: bin/fm-line-cap-lib.sh bounds each row. One line above the rows
+# names the per-task record files and the current-state commands; the row
+# itself prints no status tail, meta, or record path. bin/fm-crew-state.sh owns
+# current state. Open decision keys come from bin/fm-classify-lib.sh.
 # The byte budget is bytes, not characters: claude 8500, codex 7000, every
 # other harness 8500. FM_SESSION_START_BUDGET_BYTES overrides it for tests.
 # The Pi/pi-signed compaction AGENTS.md refresh is outside that budget.
@@ -427,7 +432,7 @@ try_budgeted() {
   local body=$1 withheld=$2 n
   n=$(printf '%s' "$body" | wc -c | tr -d '[:space:]')
   case "$n" in ''|*[!0-9]*) n=0 ;; esac
-  if [ $((COUNTED_BYTES + n)) -le "$BUDGET_BYTES" ]; then
+  if [ $((COUNTED_BYTES + n + TAIL_RESERVE)) -le "$BUDGET_BYTES" ]; then
     emit "$body"
   else
     emit "$withheld"
@@ -455,7 +460,7 @@ print_preferences_part() {
   hn=$(printf '%s' "$headers" | wc -c | tr -d '[:space:]')
   case "$hn" in ''|*[!0-9]*) hn=0 ;; esac
   if [ $((hn + n)) -gt "$BUDGET_BYTES" ]; then
-    headers=$(part_header_lines preferences "OVERFLOW ${n} bytes; read data/captain-shared.md and data/captain.md")
+    headers=$(part_header_lines preferences "OVERFLOW ${n} bytes, printed in full below; if a preview cut it, read data/captain-shared.md and data/captain.md")
   fi
   printf '%s%s' "$headers" "$body"
 }
@@ -474,7 +479,7 @@ print_learnings_part() {
   hn=$(printf '%s' "$headers" | wc -c | tr -d '[:space:]')
   case "$hn" in ''|*[!0-9]*) hn=0 ;; esac
   if [ $((hn + n)) -gt "$BUDGET_BYTES" ]; then
-    headers=$(part_header_lines learnings "OVERFLOW ${n} bytes; read data/learnings.md")
+    headers=$(part_header_lines learnings "OVERFLOW ${n} bytes, printed in full below; if a preview cut it, read data/learnings.md")
   fi
   printf '%s%s' "$headers" "$body"
 }
@@ -782,10 +787,22 @@ print_registry_section() {
   try_budgeted "$body" "$withheld"
 }
 
+format_age() {  # <seconds>
+  local s=$1
+  if [ "$s" -lt 120 ]; then
+    printf '%ss\n' "$s"
+  elif [ "$s" -lt 7200 ]; then
+    printf '%sm\n' "$((s / 60))"
+  elif [ "$s" -lt 172800 ]; then
+    printf '%sh\n' "$((s / 3600))"
+  else
+    printf '%sd\n' "$((s / 86400))"
+  fi
+}
+
 print_fleet_row() {
   local meta=$1 id kind project window target backend endpoint_rc verdict
   local status line last age epoch now keys pr remote row endpoint_text
-  local meta_field status_field
   id=$(basename "$meta" .meta)
   kind=$(fm_meta_get "$meta" kind)
   [ -n "$kind" ] || kind=ship
@@ -814,7 +831,7 @@ print_fleet_row() {
         now=$(date +%s)
         case "$now" in
           ''|*[!0-9]*) age=- ;;
-          *) age=$((now - epoch))s ;;
+          *) age=$(format_age $((now - epoch))) ;;
         esac
       fi
     fi
@@ -833,25 +850,16 @@ print_fleet_row() {
     else
       verdict=DEAD
     fi
-    endpoint_text="endpoint=$verdict backend=$backend window=$window"
-    if [ "$verdict" = ERROR ]; then
-      endpoint_text="$endpoint_text hit its ${ENDPOINT_TIMEOUT}s bound; the digest continued past it"
-    fi
+    endpoint_text="endpoint=$verdict"
   else
     endpoint_text="endpoint=NO-WINDOW"
-  fi
-  meta_field=$meta
-  status_field=$status
-  if [ "$meta" = "$FM_HOME/state/$id.meta" ]; then
-    meta_field="state/$id.meta"
-    status_field="state/$id.status"
   fi
   row="$id kind=$kind project=$project $endpoint_text last=$last age=$age pr=$pr decisions=$keys"
   if [ -n "$remote" ]; then
     row="$row remote"
   fi
   fm_cap_line_var "$row"
-  printf '%s meta=%s status=%s\n' "$FM_LINE_CAP_LINE" "$meta_field" "$status_field"
+  printf '%s\n' "$FM_LINE_CAP_LINE"
 }
 
 print_orphan_count() {
@@ -916,9 +924,13 @@ print_public_commitments() {
 }
 
 print_fleet_block() {
-  local meta found=0
+  local meta found=0 records=state
   _fm_wake_require_classify
   section "FLEET STATE"
+  [ "$STATE" = "$FM_HOME/state" ] || records=$STATE
+  printf 'One row per task. Records: %s/<id>.meta and %s/<id>.status (wake history, not current state).\n' "$records" "$records"
+  printf 'Current state: bin/fm-crew-state.sh <id>; whole fleet: bin/fm-fleet-view.sh.\n'
+  printf 'endpoint=ERROR means the read died or hit its %ss bound; NO-WINDOW means no window is recorded.\n' "$ENDPOINT_TIMEOUT"
   for meta in "$STATE"/*.meta; do
     [ -f "$meta" ] || continue
     found=1
@@ -1056,6 +1068,9 @@ EOF
 
 BUDGET_BYTES=$(session_start_budget_bytes)
 COUNTED_BYTES=0
+# Bytes of the never-cut text that prints after the budgeted sections, so a
+# budgeted section is withheld rather than pushing that tail over the budget.
+TAIL_RESERVE=0
 case "$PART" in
   preferences)
     stage preferences
@@ -1221,32 +1236,6 @@ fleet_text=$(print_fleet_block; printf x)
 fleet_text=${fleet_text%x}
 emit "$fleet_text"
 
-prepare_backlog "$DATA/backlog.md"
-case "$BACKLOG_KIND" in
-  absent)
-    backlog_text=$(subsection "data/backlog.md"; printf 'ABSENT\n'; printf x)
-    backlog_text=${backlog_text%x}
-    emit "$backlog_text"
-    ;;
-  empty)
-    backlog_text=$(subsection "data/backlog.md"; printf '(present, empty)\n'; printf x)
-    backlog_text=${backlog_text%x}
-    emit "$backlog_text"
-    ;;
-  *)
-    if [ -n "$BACKLOG_ERROR" ]; then
-      backlog_err=$(printf 'tasks-axi compact listing failed; falling back to title-line rendering.\n%s\n' "$BACKLOG_ERROR"; printf x)
-      backlog_err=${backlog_err%x}
-      emit "$backlog_err"
-    fi
-    backlog_body=$(subsection "data/backlog.md"; printf '%s\n' "$BACKLOG_BODY"; printf x)
-    backlog_body=${backlog_body%x}
-    backlog_withheld=$(subsection "data/backlog.md"; printf '%s\n' "$BACKLOG_WITHHELD"; printf x)
-    backlog_withheld=${backlog_withheld%x}
-    try_budgeted "$backlog_body" "$backlog_withheld"
-    ;;
-esac
-
 stage network-checks
 net_text=$(
   section "NETWORK CHECKS"
@@ -1264,16 +1253,9 @@ net_text=${net_text%x}
 emit "$net_text"
 
 stage context
-ctx_head=$(section "CONTEXT"; printf x)
-ctx_head=${ctx_head%x}
-emit "$ctx_head"
-print_registry_section "$DATA/projects.md" "data/projects.md" "projects"
-print_registry_section "$DATA/secondmates.md" "data/secondmates.md" "secondmates"
-absence=$(print_core_absence_lines; printf x)
-absence=${absence%x}
-emit "$absence"
-
-stage next-step
+# The closing text is fixed before the budgeted sections print, so its size
+# is reserved in the budget. The completion lines are reserved at their
+# longest because they are decided only after the closing text prints.
 next_text=$(
   section "NEXT STEP"
   if [ "$READ_ONLY" -eq 1 ]; then
@@ -1313,6 +1295,47 @@ next_text=$(
   printf x
 )
 next_text=${next_text%x}
+absence=$(print_core_absence_lines; printf x)
+absence=${absence%x}
+TAIL_RESERVE=$(printf '%s%s' "$absence" "$next_text" | wc -c | tr -d '[:space:]')
+case "$TAIL_RESERVE" in ''|*[!0-9]*) TAIL_RESERVE=0 ;; esac
+if [ "$READ_ONLY" -eq 0 ] && [ "$REEMIT" -eq 0 ]; then
+  TAIL_RESERVE=$((TAIL_RESERVE + 256))
+fi
+ctx_head=$(section "CONTEXT"; printf x)
+ctx_head=${ctx_head%x}
+emit "$ctx_head"
+prepare_backlog "$DATA/backlog.md"
+case "$BACKLOG_KIND" in
+  absent)
+    backlog_text=$(subsection "data/backlog.md"; printf 'ABSENT\n'; printf x)
+    backlog_text=${backlog_text%x}
+    emit "$backlog_text"
+    ;;
+  empty)
+    backlog_text=$(subsection "data/backlog.md"; printf '(present, empty)\n'; printf x)
+    backlog_text=${backlog_text%x}
+    emit "$backlog_text"
+    ;;
+  *)
+    if [ -n "$BACKLOG_ERROR" ]; then
+      backlog_err=$(printf 'tasks-axi compact listing failed; falling back to title-line rendering.\n%s\n' "$BACKLOG_ERROR"; printf x)
+      backlog_err=${backlog_err%x}
+      emit "$backlog_err"
+    fi
+    backlog_body=$(subsection "data/backlog.md"; printf '%s\n' "$BACKLOG_BODY"; printf x)
+    backlog_body=${backlog_body%x}
+    backlog_withheld=$(subsection "data/backlog.md"; printf '%s\n' "$BACKLOG_WITHHELD"; printf x)
+    backlog_withheld=${backlog_withheld%x}
+    try_budgeted "$backlog_body" "$backlog_withheld"
+    ;;
+esac
+
+print_registry_section "$DATA/projects.md" "data/projects.md" "projects"
+print_registry_section "$DATA/secondmates.md" "data/secondmates.md" "secondmates"
+emit "$absence"
+
+stage next-step
 emit "$next_text"
 
 if [ "$READ_ONLY" -eq 0 ] && [ "$REEMIT" -eq 0 ]; then
