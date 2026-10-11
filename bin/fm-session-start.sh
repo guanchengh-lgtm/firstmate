@@ -821,7 +821,7 @@ print_fleet_row() {
     line=$(last_status_line "$status")
     if [ -n "$line" ]; then
       status_line_verb "$line" last
-      [ -n "$last" ] || last=-
+      _fm_status_verb_recognized "$last" || last=-
       if epoch=$(status_line_at_epoch "$line"); then
         now=$(date +%s)
         case "$now" in

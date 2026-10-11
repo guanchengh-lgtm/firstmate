@@ -1153,7 +1153,8 @@ EOF
 }
 
 # The fleet row reads the verb and [at=] stamp through bin/fm-classify-lib.sh:
-# a stamp in the note, a duplicate stamp, or a future stamp is unknown time.
+# a stamp in the note, a duplicate stamp, or a future stamp is unknown time,
+# and a line without a recognized status verb prints last=-.
 test_fleet_row_status_fields_use_owner_grammar() {
   local rec root home fakebin out row
   rec=$(new_world fleet-row-grammar)
@@ -1172,6 +1173,10 @@ EOF
   printf 'working [at=%s]: step\n' "$(( $(date +%s) + 3600 ))" > "$home/state/task-future.status"
   printf 'window=fm-sess:live\nkind=ship\n' > "$home/state/task-ok.meta"
   printf 'working [at=%s]: step\n' "$(( $(date +%s) - 30 ))" > "$home/state/task-ok.status"
+  printf 'window=fm-sess:live\nkind=ship\n' > "$home/state/task-prose.meta"
+  printf 'Rebasing onto main now\n' > "$home/state/task-prose.status"
+  printf 'window=fm-sess:live\nkind=ship\n' > "$home/state/task-ci.meta"
+  printf 'waiting on ci: run 3\n' > "$home/state/task-ci.status"
 
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   row=$(printf '%s\n' "$out" | grep '^task-note kind=' | head -1)
@@ -1182,6 +1187,10 @@ EOF
   assert_contains "$row" "last=working age=- " "a future stamp gave a fleet row age"
   row=$(printf '%s\n' "$out" | grep '^task-ok kind=' | head -1)
   assert_contains "$row" "last=working age=3" "a well-formed stamp lost its fleet row age"
+  row=$(printf '%s\n' "$out" | grep '^task-prose kind=' | head -1)
+  assert_contains "$row" "last=- age=- " "a prose-only status line leaked into the fleet row"
+  row=$(printf '%s\n' "$out" | grep '^task-ci kind=' | head -1)
+  assert_contains "$row" "last=- age=- " "an unrecognized verb leaked into the fleet row"
 
   pass "a fleet row reads the status verb and stamp through the owner grammar"
 }
