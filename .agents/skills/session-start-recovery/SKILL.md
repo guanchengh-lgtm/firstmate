@@ -32,7 +32,6 @@ The locked startup inactive-outcome scan joins that worker so a slow local curre
 5. **Fleet rows** - one row per task after the supervision block.
    The row names kind, project, the endpoint verdict (`alive`, `DEAD`, `ERROR`, or `NO-WINDOW`), the last status word and its age, the PR URL, and open decision keys.
    One line above the rows names the per-task meta and status record pattern.
-   A remote task adds `remote`.
    The row does not print the status tail or the full meta.
    An orphan-status count and the away or quiet posture follow the rows.
    That endpoint verdict is a fast presence check only, not a full state read - when you need a crew's actual current state (a run-step, not just "is the pane there"), read it with `bin/fm-crew-state.sh <id>` as before; the digest deliberately skips that deeper, slower read for every task so it stays fast and bounded.

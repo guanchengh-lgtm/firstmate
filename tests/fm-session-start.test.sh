@@ -1152,8 +1152,41 @@ EOF
   pass "a fleet row keeps the latest status state and the status path, not the tail"
 }
 
-# A fleet row is in the never-cut set: its open decision keys and the remote
-# marker come last, and in a read-only session the row is the only place the
+# The fleet row reads the verb and [at=] stamp through bin/fm-classify-lib.sh:
+# a stamp in the note, a duplicate stamp, or a future stamp is unknown time.
+test_fleet_row_status_fields_use_owner_grammar() {
+  local rec root home fakebin out row
+  rec=$(new_world fleet-row-grammar)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_claude "$fakebin"
+  make_fake_tmux "$fakebin" "fm-sess:live"
+
+  printf 'window=fm-sess:live\nkind=ship\n' > "$home/state/task-note.meta"
+  printf 'done:merged relayed [at=1]\n' > "$home/state/task-note.status"
+  printf 'window=fm-sess:live\nkind=ship\n' > "$home/state/task-dup.meta"
+  printf 'working [at=1] [at=2]: step\n' > "$home/state/task-dup.status"
+  printf 'window=fm-sess:live\nkind=ship\n' > "$home/state/task-future.meta"
+  printf 'working [at=%s]: step\n' "$(( $(date +%s) + 3600 ))" > "$home/state/task-future.status"
+  printf 'window=fm-sess:live\nkind=ship\n' > "$home/state/task-ok.meta"
+  printf 'working [at=%s]: step\n' "$(( $(date +%s) - 30 ))" > "$home/state/task-ok.status"
+
+  out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
+  row=$(printf '%s\n' "$out" | grep '^task-note kind=' | head -1)
+  assert_contains "$row" "last=done age=- " "a done:merged row or a note stamp leaked into the fleet row"
+  row=$(printf '%s\n' "$out" | grep '^task-dup kind=' | head -1)
+  assert_contains "$row" "last=working age=- " "a duplicate stamp gave a fleet row age"
+  row=$(printf '%s\n' "$out" | grep '^task-future kind=' | head -1)
+  assert_contains "$row" "last=working age=- " "a future stamp gave a fleet row age"
+  row=$(printf '%s\n' "$out" | grep '^task-ok kind=' | head -1)
+  assert_contains "$row" "last=working age=3" "a well-formed stamp lost its fleet row age"
+
+  pass "a fleet row reads the status verb and stamp through the owner grammar"
+}
+
+# A fleet row is in the never-cut set: its open decision keys come last, and in a read-only session the row is the only place the
 # keys appear. A long PR URL plus two run-scoped keys must not push them off.
 test_fleet_row_is_never_cut() {
   local rec root home fakebin out pr row
@@ -1180,12 +1213,12 @@ EOF
   assert_contains "$row" "nm-01m4nv304ctj1efpvckk8xaa7g-review" "the fleet row lost the first decision key"
   assert_contains "$row" "nm-01m4nv304ctj1efpvckk8xaa7g-push" "the fleet row lost the second decision key"
   case "$row" in
-    *" remote") ;;
-    *) fail "the fleet row lost its remote marker: $row" ;;
+    *" decisions=nm-01m4nv304ctj1efpvckk8xaa7g-review,nm-01m4nv304ctj1efpvckk8xaa7g-push") ;;
+    *) fail "the fleet row did not end with its decision keys: $row" ;;
   esac
   assert_not_contains "$row" "pick one" "the fleet row dumped the status note"
 
-  pass "a fleet row prints whole, with every decision key and the remote marker"
+  pass "a fleet row prints whole, with every decision key"
 }
 
 test_orphan_status_logs_are_printed() {
@@ -3302,6 +3335,7 @@ test_session_start_preserves_transiently_unreadable_tmux
 test_session_start_preserves_proven_bare_shell_recovery
 test_session_start_relaunches_herdr_husk_secondmate
 test_status_tail_bounding
+test_fleet_row_status_fields_use_owner_grammar
 test_fleet_row_is_never_cut
 test_orphan_status_logs_are_printed
 test_endpoint_liveness_tmux

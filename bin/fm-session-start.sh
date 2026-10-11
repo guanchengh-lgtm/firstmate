@@ -800,7 +800,7 @@ format_age() {  # <seconds>
 
 print_fleet_row() {
   local meta=$1 id kind project window target backend endpoint_rc verdict
-  local status line last age epoch now keys pr remote row endpoint_text
+  local status line last age epoch now keys pr row endpoint_text
   id=$(basename "$meta" .meta)
   kind=$(fm_meta_get "$meta" kind)
   [ -n "$kind" ] || kind=ship
@@ -812,7 +812,6 @@ print_fleet_row() {
   fi
   pr=$(fm_meta_get "$meta" pr)
   [ -n "$pr" ] || pr=-
-  remote=$(fm_meta_get "$meta" remote_host)
   window=$(fm_meta_get "$meta" window)
   status="$STATE/$id.status"
   last=-
@@ -821,15 +820,13 @@ print_fleet_row() {
   if [ -f "$status" ]; then
     line=$(last_status_line "$status")
     if [ -n "$line" ]; then
-      last=${line%% *}
-      last=${last%:}
+      status_line_verb "$line" last
       [ -n "$last" ] || last=-
-      epoch=$(printf '%s\n' "$line" | sed -n 's/.*\[at=\([0-9][0-9]*\)\].*/\1/p' | head -n 1)
-      if [ -n "$epoch" ]; then
+      if epoch=$(status_line_at_epoch "$line"); then
         now=$(date +%s)
         case "$now" in
-          ''|*[!0-9]*) age=- ;;
-          *) age=$(format_age $((now - epoch))) ;;
+          ''|*[!0-9]*) ;;
+          *) [ "$now" -lt "$epoch" ] || age=$(format_age $((now - epoch))) ;;
         esac
       fi
     fi
@@ -853,9 +850,6 @@ print_fleet_row() {
     endpoint_text="endpoint=NO-WINDOW"
   fi
   row="$id kind=$kind project=$project $endpoint_text last=$last age=$age pr=$pr decisions=$keys"
-  if [ -n "$remote" ]; then
-    row="$row remote"
-  fi
   printf '%s\n' "$row"
 }
 
