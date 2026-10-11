@@ -1,0 +1,21 @@
+$ bin/fm-tasks-axi.sh list --state in_flight --fields hold_kind,hold_until
+rc=0
+count: 0
+tasks: 0 in_flight tasks in this backlog
+$ bin/fm-tasks-axi.sh list --state held --fields hold_kind,hold_reason
+rc=0
+count: 17
+tasks[17]{id,state,kind,repo,title,hold_kind,hold_reason}:
+  h-1,queued,ship,demo,captain held task 1 title,captain,captain decision pending item 1
+  h-2,queued,ship,demo,captain held task 2 title,captain,captain decision pending item 2
+$ bin/fm-tasks-axi.sh list --state queued --blocked --fields blocked_by
+rc=0
+count: 0
+tasks: 0 blocked queued tasks in this backlog
+$ bin/fm-tasks-axi.sh ready
+rc=0
+count: 40
+ready[40]{id,state,kind,repo,title}:
+  q-1,queued,ship,demo,"queued task number 1 with a long descriptive title for padding the backlog diges\n... (truncated, 88 chars total - use show q-1 --full to see complete text)"
+  q-2,queued,ship,demo,"queued task number 2 with a long descriptive title for padding the backlog diges\n... (truncated, 88 chars total - use show q-2 --full to see complete text)"
+data-before=88d621fc23dfca78ba56dbd7ab0a4da9f19991ad  - data-after=88d621fc23dfca78ba56dbd7ab0a4da9f19991ad  -

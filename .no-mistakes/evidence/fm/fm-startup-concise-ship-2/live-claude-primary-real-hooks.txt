@@ -1,0 +1,91 @@
+ ▐▛███▛█   Claude Code v2.1.296
+ ▐▛███▛█   Claude Code v2.1.296
+▝▜██████▀  Opus 5.5 with medium effort · Claude Max
+ ▝▝   ▝▝   /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.2sAq1y/checkout
+
+
+❯ This is a hook delivery test. Without running any tool other than reading files, answer: (1) what the first line of your session-start core message says the budget is; (2) the exact text of the
+  last line of data/captain.md as delivered by your preferences session-start message (if it reached you as a truncated preview, read the full output file the harness named); (3) the last line of the
+  learnings message; (4) any WITHHELD lines in the core message, verbatim.
+
+  Read 1 file (ctrl+o to expand)
+
+⏺ Captain, here are the hook delivery test answers. I used only one file read.
+
+  1. Core budget: The first line of the core message says "budget 8500 bytes". The full line is:
+     SESSION START /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y - core part, budget 8500 bytes; withheld sections are named inline with a read-only command to retrieve each.
+  2. Last line of data/captain.md: The preferences message came to me as a truncated preview. I read the full output file that the harness named. The last line is:
+     CAPTAIN_TOKEN_OMEGA Outside Voice standing rule
+  3. Last line of the learnings message: LEARN_TOKEN_OMEGA. This message came to me in full.
+  4. WITHHELD lines in the core message, verbatim:
+     - WITHHELD hold reasons :: bin/fm-tasks-axi.sh list --state held --fields hold_kind,hold_reason
+     - WITHHELD projects :: sed -n p '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/data/projects.md'
+     - WITHHELD secondmates lines :: sed -n p '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/data/secondmates.md'
+     - The core message also has one footer line that is not a WITHHELD entry: WITHHELD lines above name a read-only command for each omission.
+
+  All four startup messages arrived. The preferences message was the only truncated one, and the full file contained it completely. Its header says "OVERFLOW 16986 bytes, printed in full below".
+
+✻ Baked for 11s · done 2:39 AM
+
+⏺ Stop hook feedback
+
+⏺ Bash(bin/fm-wake-drain.sh)
+  ⎿  1791743963      1       check   /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/state/contributions.check.sh    check:
+     /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/state/contr
+     ibutions.check.sh: contributions: observation unavailable for https://github.com/example/demo/pull/2 contributions: observation unavailable for https://github.com/example/demo/pull/3 contrib
+     utions: observation unavailable for https://github.com/example/demo/pull/4 contributions: observation unavailable for https://github.com/example/demo/pull/5 contributions: observation unavai
+     … +10 lines (ctrl+o to expand)
+
+⏺ Skill(bearings)
+  ⎿  Successfully loaded skill
+
+⏺ Bash(bin/fm-contributions.sh pending 2>&1 | head -60)
+  ⎿  []
+
+⏺ Bash(bin/fm-wake-drain.sh --ack-through 1 --recovery-generation 48194.1791743963.vRzhNm)
+  ⎿  (No output)
+
+⏺ Captain, the monitor could not check six pull requests. I recorded the notice as handled. Nothing needs your action now.
+
+  - What happened: The monitor could not read the state of these six pull requests:
+    - https://github.com/example/demo/pull/1
+    - https://github.com/example/demo/pull/2
+    - https://github.com/example/demo/pull/3
+    - https://github.com/example/demo/pull/4
+    - https://github.com/example/demo/pull/5
+    - https://github.com/example/demo/pull/6
+  - What I checked: The contribution record has no reviewer comments or maintainer verdicts in the queue. I did not post, merge, or close anything.
+  - Effect: A failed check does not mean that the pull requests are clear. The monitor still does not know their state.
+  - Probable cause: These pull requests are in the example/demo test repository. They are probably test fixtures that do not exist on GitHub. If so, this same notice will come back on each check.
+  - Your decision, if you want one: I can stop monitoring these six pull requests. I will do that only if you tell me that they are test fixtures and not real work.
+
+  Your five review decisions for tasks 1 to 5 are still open. Each one waits for you to pick an option.
+
+✻ Cogitated for 21s · done 2:39 AM
+
+⏺ Stop hook feedback
+
+⏺ Bash(bin/fm-wake-drain.sh)
+  ⎿  1791744018      8       signal  task-1.status   needs-decision: /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/state/task-1.status
+     /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sA
+     q1y/state/task-2.status /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/state/task-3.status /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/state/task-4.statu
+     s /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/state/task-5.status /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/state/task-6.status
+     … +26 lines (ctrl+o to expand)
+
+⏺ Bash(H=/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y; for i in 1 6; do echo "== task-$i status"; cat $H/state/task-$i.status; echo "== meta"; cat $…)
+  ⎿  == task-1 status
+     working [at=1791743419]: step
+     needs-decision [key=nm-task1-review]: pick one
+     … +19 lines (ctrl+o to expand)
+
+⏺ Bash(bin/fm-wake-drain.sh --ack-through 13 --recovery-generation 59894.1791744018.hh8UK2)
+  ⎿  (No output)
+
+✻ Gallivanting… (19s · ↓ 893 tokens · thinking with medium effort)
+  ⎿  Tip: Run /install-slack-app to use Claude in Slack
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt · ← 1 agent                                                                                                                     /rc
+

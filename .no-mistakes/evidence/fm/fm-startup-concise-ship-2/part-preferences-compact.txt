@@ -1,0 +1,173 @@
+SESSION START /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y - preferences part, budget 8500 bytes, OVERFLOW 16986 bytes, printed in full below; if a preview cut it, read data/captain-shared.md and data/captain.md; withheld sections are named inline with a read-only command to retrieve each.
+If this message reached you as a truncated preview, read the full output file the harness named before any other action.
+data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)
+--------------------------------------------------------------------------------
+# Shared captain prefs
+SHARED_TOKEN_ALPHA first line
+- shared preference line 1: Outside Voice rule padding padding padding padding padding
+- shared preference line 2: Outside Voice rule padding padding padding padding padding
+- shared preference line 3: Outside Voice rule padding padding padding padding padding
+- shared preference line 4: Outside Voice rule padding padding padding padding padding
+- shared preference line 5: Outside Voice rule padding padding padding padding padding
+- shared preference line 6: Outside Voice rule padding padding padding padding padding
+- shared preference line 7: Outside Voice rule padding padding padding padding padding
+- shared preference line 8: Outside Voice rule padding padding padding padding padding
+- shared preference line 9: Outside Voice rule padding padding padding padding padding
+- shared preference line 10: Outside Voice rule padding padding padding padding padding
+- shared preference line 11: Outside Voice rule padding padding padding padding padding
+- shared preference line 12: Outside Voice rule padding padding padding padding padding
+- shared preference line 13: Outside Voice rule padding padding padding padding padding
+- shared preference line 14: Outside Voice rule padding padding padding padding padding
+- shared preference line 15: Outside Voice rule padding padding padding padding padding
+- shared preference line 16: Outside Voice rule padding padding padding padding padding
+- shared preference line 17: Outside Voice rule padding padding padding padding padding
+- shared preference line 18: Outside Voice rule padding padding padding padding padding
+- shared preference line 19: Outside Voice rule padding padding padding padding padding
+- shared preference line 20: Outside Voice rule padding padding padding padding padding
+- shared preference line 21: Outside Voice rule padding padding padding padding padding
+- shared preference line 22: Outside Voice rule padding padding padding padding padding
+- shared preference line 23: Outside Voice rule padding padding padding padding padding
+- shared preference line 24: Outside Voice rule padding padding padding padding padding
+- shared preference line 25: Outside Voice rule padding padding padding padding padding
+- shared preference line 26: Outside Voice rule padding padding padding padding padding
+- shared preference line 27: Outside Voice rule padding padding padding padding padding
+- shared preference line 28: Outside Voice rule padding padding padding padding padding
+- shared preference line 29: Outside Voice rule padding padding padding padding padding
+- shared preference line 30: Outside Voice rule padding padding padding padding padding
+- shared preference line 31: Outside Voice rule padding padding padding padding padding
+- shared preference line 32: Outside Voice rule padding padding padding padding padding
+- shared preference line 33: Outside Voice rule padding padding padding padding padding
+- shared preference line 34: Outside Voice rule padding padding padding padding padding
+- shared preference line 35: Outside Voice rule padding padding padding padding padding
+- shared preference line 36: Outside Voice rule padding padding padding padding padding
+- shared preference line 37: Outside Voice rule padding padding padding padding padding
+- shared preference line 38: Outside Voice rule padding padding padding padding padding
+- shared preference line 39: Outside Voice rule padding padding padding padding padding
+- shared preference line 40: Outside Voice rule padding padding padding padding padding
+- shared preference line 41: Outside Voice rule padding padding padding padding padding
+- shared preference line 42: Outside Voice rule padding padding padding padding padding
+- shared preference line 43: Outside Voice rule padding padding padding padding padding
+- shared preference line 44: Outside Voice rule padding padding padding padding padding
+- shared preference line 45: Outside Voice rule padding padding padding padding padding
+- shared preference line 46: Outside Voice rule padding padding padding padding padding
+- shared preference line 47: Outside Voice rule padding padding padding padding padding
+- shared preference line 48: Outside Voice rule padding padding padding padding padding
+- shared preference line 49: Outside Voice rule padding padding padding padding padding
+- shared preference line 50: Outside Voice rule padding padding padding padding padding
+- shared preference line 51: Outside Voice rule padding padding padding padding padding
+- shared preference line 52: Outside Voice rule padding padding padding padding padding
+- shared preference line 53: Outside Voice rule padding padding padding padding padding
+- shared preference line 54: Outside Voice rule padding padding padding padding padding
+- shared preference line 55: Outside Voice rule padding padding padding padding padding
+- shared preference line 56: Outside Voice rule padding padding padding padding padding
+- shared preference line 57: Outside Voice rule padding padding padding padding padding
+- shared preference line 58: Outside Voice rule padding padding padding padding padding
+- shared preference line 59: Outside Voice rule padding padding padding padding padding
+- shared preference line 60: Outside Voice rule padding padding padding padding padding
+SHARED_TOKEN_OMEGA last line
+
+data/captain.md
+--------------------------------------------------------------------------------
+# Captain
+CAPTAIN_TOKEN_ALPHA
+- standing preference 1: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 2: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 3: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 4: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 5: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 6: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 7: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 8: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 9: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 10: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 11: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 12: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 13: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 14: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 15: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 16: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 17: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 18: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 19: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 20: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 21: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 22: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 23: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 24: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 25: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 26: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 27: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 28: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 29: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 30: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 31: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 32: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 33: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 34: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 35: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 36: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 37: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 38: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 39: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 40: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 41: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 42: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 43: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 44: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 45: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 46: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 47: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 48: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 49: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 50: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 51: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 52: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 53: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 54: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 55: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 56: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 57: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 58: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 59: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 60: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 61: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 62: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 63: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 64: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 65: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 66: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 67: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 68: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 69: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 70: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 71: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 72: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 73: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 74: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 75: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 76: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 77: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 78: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 79: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 80: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 81: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 82: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 83: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 84: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 85: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 86: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 87: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 88: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 89: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 90: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 91: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 92: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 93: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 94: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 95: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 96: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 97: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 98: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 99: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 100: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+CAPTAIN_TOKEN_OMEGA Outside Voice standing rule

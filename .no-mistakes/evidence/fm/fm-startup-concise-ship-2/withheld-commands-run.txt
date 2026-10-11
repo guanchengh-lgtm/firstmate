@@ -1,0 +1,41 @@
+$ bin/fm-supervision-instructions.sh --harness claude --read-only 0 --afk 0 --afk-mode away --x-mode 0
+================================================================================
+SUPERVISION OPERATING INSTRUCTIONS - primary harness: claude
+================================================================================
+Current state:
+- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.
+- Away/quiet mode: inactive.
+- X mode: inactive; use the default watcher cadence.
+- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol at the end of this block).
+rc=
+$ bin/fm-tasks-axi.sh list --state held --fields hold_kind,hold_reason
+count: 17
+tasks[17]{id,state,kind,repo,title,hold_kind,hold_reason}:
+  h-1,queued,ship,demo,captain held task 1 title,captain,captain decision pending item 1
+  h-2,queued,ship,demo,captain held task 2 title,captain,captain decision pending item 2
+  h-3,queued,ship,demo,captain held task 3 title,captain,captain decision pending item 3
+  h-4,queued,ship,demo,captain held task 4 title,captain,captain decision pending item 4
+  h-5,queued,ship,demo,captain held task 5 title,captain,captain decision pending item 5
+  h-6,queued,ship,demo,captain held task 6 title,captain,captain decision pending item 6
+rc=
+$ sed -n p '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/data/projects.md'
+- proj01-with-a-longish-name [no-mistakes] - project description number 1 padding padding padding (added 2026-07-01)
+- proj02-with-a-longish-name [no-mistakes] - project description number 2 padding padding padding (added 2026-07-01)
+- proj03-with-a-longish-name [no-mistakes] - project description number 3 padding padding padding (added 2026-07-01)
+- proj04-with-a-longish-name [no-mistakes] - project description number 4 padding padding padding (added 2026-07-01)
+- proj05-with-a-longish-name [no-mistakes] - project description number 5 padding padding padding (added 2026-07-01)
+- proj06-with-a-longish-name [no-mistakes] - project description number 6 padding padding padding (added 2026-07-01)
+- proj07-with-a-longish-name [no-mistakes] - project description number 7 padding padding padding (added 2026-07-01)
+- proj08-with-a-longish-name [no-mistakes] - project description number 8 padding padding padding (added 2026-07-01)
+rc=
+$ sed -n p '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/data/secondmates.md'
+- sm-01-secondmate-name - home /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/sm-homes/sm-01 - scope padding text
+- sm-02-secondmate-name - home /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/sm-homes/sm-02 - scope padding text
+- sm-03-secondmate-name - home /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/sm-homes/sm-03 - scope padding text
+- sm-04-secondmate-name - home /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/sm-homes/sm-04 - scope padding text
+- sm-05-secondmate-name - home /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/sm-homes/sm-05 - scope padding text
+- sm-06-secondmate-name - home /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/sm-homes/sm-06 - scope padding text
+- sm-07-secondmate-name - home /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/sm-homes/sm-07 - scope padding text
+- sm-08-secondmate-name - home /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/sm-homes/sm-08 - scope padding text
+rc=
+state-before=d787e6b1f17a14f6ae4abbe80f7c230b3eeab5cc  - state-after=d787e6b1f17a14f6ae4abbe80f7c230b3eeab5cc  -

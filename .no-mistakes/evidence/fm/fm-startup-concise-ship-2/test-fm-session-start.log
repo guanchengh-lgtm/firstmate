@@ -1,0 +1,149 @@
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - context digest distinguishes ABSENT, empty-but-present, and populated files
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - a lock refusal prints a loud read-only banner, skips every mutating step, and still completes the digest
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start stays read-only when lock ownership cannot be published
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - locked session start freezes trace context and lock refusal leaves it unchanged
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - concurrent session-lock acquisition admits exactly one live harness
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - digest sections are ordered safety-preamble first, live fleet state before curated memory
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - startup names a truncated preview and the files a missing part would have carried
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - preferences and learnings are separate messages, and an unknown part is refused
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - Pi keeps the full supervision block, and Codex uses the 7000 byte budget
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - a WITHHELD project command reads the registry and changes nothing
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - a small core stays inside its budget, and a large fleet keeps every row without printing hold reasons
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - every WITHHELD command and the supervision pointer run as printed, exit 0, and change no home record
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - a budgeted section that would push the closing text past the budget is withheld instead
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start: configured and auto-detected Herdr homes never require tmux
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start: an absent recorded tmux window relaunches its Pi secondmate exactly once, off the blocking path
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start: a deferred relaunch is always reported, so the digest's stale endpoint record cannot stand
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start: inactive reconciliation runs after the digest and retains its durable wake
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start: an unreachable host delays a reported check, not the digest
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start: a deferred result the digest outran still reaches the agent as a wake
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start: a read-only session declares its skipped network checks rather than dropping them
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start: the tasks-axi compatibility verdict is computed once and reused
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start: an existing ambiguous Pi process prevents duplicate recovery
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start: transient tmux unreadability never licenses a relaunch
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start: the proven bare-shell recovery path remains intact
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start: a confirmed Herdr husk is closed and relaunched
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - a fleet row keeps the latest status state and the status path, not the tail
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - a fleet row reads the status verb and stamp through the owner grammar
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - a fleet row prints whole, with every decision key
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - orphan status logs are counted, and status tails are not printed
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - tmux endpoint liveness is reported per task: alive for a live window, dead for a gone one
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - herdr endpoint liveness is reported per task: alive, dead for exit 1, dead for any other probe status
+skip: /proc not readable (the read-death shape needs process ancestry)
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+Terminated: 15
+ok - a hung per-task endpoint read hits its configured bound, reports the task, and leaves nothing stuck
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+Terminated: 15
+ok - a padded-zero per-read bound falls back to the 10s default instead of removing the bound
+ok - the perl timeout fallback reports a signal death as a nonzero status
+skip: /proc not readable (the digest-death shape needs process ancestry)
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - fm-session-start.sh composes the real fm-lock.sh, fm-bootstrap.sh, and fm-wake-drain.sh output verbatim
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - locked Pi session start replays leading routine outcomes, preserves the captain barrier, and sweeps only dead leases
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - non-Pi session start neither sweeps nor replays Pi branch state
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start seeds an existing outcome store's absent display tail copy while away, moving no marker
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - tasks-axi startup prints counts and ids, and does not print hold reasons or done rows
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - a tight byte budget withholds the backlog summary and keeps the never-cut sections
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - manual backlog rendering prints counts and ids, and does not print bodies or hold reasons
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - unavailable or incompatible tasks-axi falls back to title-line counts
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - an empty fleet reports (none) for in-flight tasks and an absent AFK flag
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start emits X-mode cadence guidance in the harness supervision block
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - next step delegates watcher ownership to the AFK daemon
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - next step delegates watcher ownership to the daemon in quiet mode, distinctly from away mode
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - the AFK digest reads a quiet record as a present captain holding nothing, and an away record as hold-for-return
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - a legacy empty .afk flag (written before mode existed) still reads as away mode
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start emits exactly one detected harness block and reports Pi extension load state
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start preserves pi-signed primary identity while applying Pi extension guarantees
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start rejects stale Pi loaded markers
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start rejects a Pi watcher generation left in handoff
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start accepts current Pi markers written before lock acquisition
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start emits the omp block and reports omp extension load state
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start accepts current omp markers written before lock acquisition
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start rejects Pi sessions missing the turn-end guard marker
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - session start rejects Pi loaded markers from previous sessions
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - the pure-Bash watchdog bounds session start, kills its hung grandchild, and emits the truncation contract
+ok - the portable timeout path force-kills a command that ignores TERM
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - a session start inside its budget prints no truncation banner
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - the runtime bound leaves enough ancestry headroom for a deeply nested session to take the lock
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - the harness is detected above the runtime bound, so a codex hook gets its budget
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - --reemit reprints the digest without repeating startup's mutating sweeps and still drains queued wakes
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - true-start AGENTS baselines stay immutable while every drifted Pi compact re-emits the current contract
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - read-only Pi compact refreshes against the rebuilding session identity without mutation
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - Codex reset sources do not claim an unavailable instruction-refresh channel
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - instruction baselines require SHA-256 and successful startup completion
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - --reemit re-verifies lock ownership and keeps repair ownership with whoever holds it
+# fm-session-start.test.sh: all assertions passed

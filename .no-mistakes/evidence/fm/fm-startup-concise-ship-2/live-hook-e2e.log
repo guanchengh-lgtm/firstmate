@@ -1,0 +1,19 @@
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - claude 2.1.296 (Claude Code): a cold open reports source 'startup' and its hook stdout reaches model context
+ok - claude 2.1.296 (Claude Code): a worker detached by the session-open hook outlives it, so the deferred network checks still run
+ok - claude 2.1.296 (Claude Code): a context-preserving reopen reports source 'resume', which the run tier routes without a re-emit
+ok - claude 2.1.296 (Claude Code): '/clear' reports source 'clear' and re-injects hook stdout into model context
+ok - claude 2.1.296 (Claude Code): a compaction reports source 'compact' and re-injects hook stdout into model context
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - codex codex-cli 0.153.4: a cold open reports source 'startup' and its hook stdout reaches model context
+ok - codex codex-cli 0.153.4: a worker detached by the session-open hook outlives it, so the deferred network checks still run
+ok - codex codex-cli 0.153.4: a context-preserving reopen reports source 'resume', which the run tier routes without a re-emit
+# codex codex-cli 0.153.4: codex exec run-tier evidence refreshed; the interactive TUI remains uncovered because tracked project hooks provide no session-open or re-emit channel there
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - pi 1.0.0: a cold open reports source 'startup' and its hook stdout reaches model context
+ok - pi 1.0.0: a worker detached by the session-open hook outlives it, so the deferred network checks still run
+ok - pi 1.0.0: a context-preserving reopen reports source 'resume', which the run tier routes without a re-emit
+ok - pi 1.0.0: '/new' reports source 'clear' and re-injects hook stdout into model context
+ok - pi 1.0.0: a compaction reports source 'compact' and re-injects hook stdout into model context
+# fm-sessionstart-hook-live-e2e.test.sh: all live assertions passed
+exit=0

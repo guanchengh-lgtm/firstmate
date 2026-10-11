@@ -1,0 +1,314 @@
+SESSION START /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y - core part, budget 8500 bytes; withheld sections are named inline with a read-only command to retrieve each.
+If this message reached you as a truncated preview, read the full output file the harness named before any other action.
+SESSION START - /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y
+
+LOCK
+--------------------------------------------------------------------------------
+lock acquired: harness pid 9178
+
+BOOTSTRAP
+--------------------------------------------------------------------------------
+BOOTSTRAP_INFO: lavish-axi >=0.1.80 enables confirmed board replies; this older compatible version retains the legacy reply path, but upgrade to prevent handing back a board before its reply is accepted
+
+WAKE QUEUE
+--------------------------------------------------------------------------------
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+task-1 [key=nm-task1-review] needs-decision: pick one
+task-2 [key=nm-task2-review] needs-decision: pick one
+task-3 [key=nm-task3-review] needs-decision: pick one
+task-4 [key=nm-task4-review] needs-decision: pick one
+task-5 [key=nm-task5-review] needs-decision: pick one
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+================================================================================
+SUPERVISION OPERATING INSTRUCTIONS - primary harness: claude
+================================================================================
+Current state:
+- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.
+- Away/quiet mode: inactive.
+- X mode: inactive; use the default watcher cadence.
+- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol from the Full protocol command at the end of this block).
+- Ordinary wake: the Stop-owned auto-arm (bin/fm-claude-stop-autoarm.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.
+
+Mode: Claude Stop-hook-owned supervision.
+
+When this session owns supervision and away mode is not active:
+1. Drain first with `bin/fm-wake-drain.sh`.
+   After handling all emitted wakes and reconciling open decisions and unread status lines, run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`; until then the work remains durable for idempotent re-handling after interruption.
+2. Routine watcher arm and re-arm are owned by the Stop `asyncRewake` hook (`bin/fm-claude-stop-autoarm.sh`), never by you.
+   Every turn end while supervision is needed launches or attaches one home-scoped watcher cycle with no model command and no model tokens.
+   An actionable close wakes you through the hook's exit-2 rewake, delivered as a `Stop hook feedback` message.
+3. On a `Stop hook feedback` wake (`signal:`, `stale:`, `check:`, or `heartbeat`), run `bin/fm-wake-drain.sh` first and handle the wake.
+   Do not run `bin/fm-watch-arm.sh` after an ordinary wake; the next turn end re-arms automatically when supervision is still needed.
+   Do not invent a wake from an attach-status line alone; drain and act only on real wake records, the drain's `OPEN DECISIONS` and `UNREAD STATUS` entries, or a real watcher reason line.
+
+Full protocol: bin/fm-supervision-instructions.sh --harness claude --read-only 0 --afk 0 --afk-mode away --x-mode 0
+
+================================================================================
+FLEET STATE
+================================================================================
+One row per task. Records: state/<id>.meta and state/<id>.status (wake history, not current state).
+Current state: bin/fm-crew-state.sh <id>; whole fleet: bin/fm-fleet-view.sh.
+endpoint=ERROR means the read died or hit its 10s bound; NO-WINDOW means no window is recorded.
+task-1 kind=ship project=demo endpoint=DEAD last=needs-decision age=- pr=https://github.com/example/demo/pull/1 decisions=nm-task1-review
+task-2 kind=ship project=demo endpoint=DEAD last=needs-decision age=- pr=https://github.com/example/demo/pull/2 decisions=nm-task2-review
+task-3 kind=ship project=demo endpoint=DEAD last=needs-decision age=- pr=https://github.com/example/demo/pull/3 decisions=nm-task3-review
+task-4 kind=ship project=demo endpoint=DEAD last=needs-decision age=- pr=https://github.com/example/demo/pull/4 decisions=nm-task4-review
+task-5 kind=ship project=demo endpoint=DEAD last=needs-decision age=- pr=https://github.com/example/demo/pull/5 decisions=nm-task5-review
+task-6 kind=ship project=demo endpoint=DEAD last=- age=- pr=https://github.com/example/demo/pull/6 decisions=-
+Orphan status logs: none
+
+AFK
+--------------------------------------------------------------------------------
+absent
+
+================================================================================
+NETWORK CHECKS
+================================================================================
+completed off the startup path in 2s: GitHub authentication, dead-secondmate relaunch, secondmate convergence, pending handoff delivery, project clone refresh with its drift reporting, and inactive terminal-outcome reconciliation.
+(silent - no problems found)
+
+================================================================================
+CONTEXT
+================================================================================
+
+data/backlog.md
+--------------------------------------------------------------------------------
+backlog (tasks-axi): in_flight=0 held=17 blocked=0 ready=40
+ready ids: q-1 q-2 q-3 q-4 q-5 q-6 q-7 q-8 q-9 q-10 q-11 q-12 q-13 q-14 q-15 q-16 q-17 q-18 q-19 q-20 q-21 q-22 q-23 q-24 q-25 q-26 q-27 q-28 q-29 q-30 q-31 q-32 q-33 q-34 q-35 q-36 q-37 q-38 q-39 q-40
+captain-held ids: h-1 h-2 h-3 h-4 h-5 h-6 h-7 h-8 h-9 h-10 h-11 h-12
+other holds: 5
+done rows omitted
+ready_public_followups: 0 delivery-ready obligations
+Full task bodies: bin/fm-tasks-axi.sh show <id> --full
+WITHHELD hold reasons :: bin/fm-tasks-axi.sh list --state held --fields hold_kind,hold_reason
+
+data/projects.md
+--------------------------------------------------------------------------------
+WITHHELD projects :: sed -n p '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/data/projects.md'
+
+data/secondmates.md
+--------------------------------------------------------------------------------
+secondmates: sm-01-secondmate-name sm-02-secondmate-name sm-03-secondmate-name sm-04-secondmate-name sm-05-secondmate-name sm-06-secondmate-name sm-07-secondmate-name sm-08-secondmate-name sm-09-secondmate-name sm-10-secondmate-name sm-11-secondmate-name sm-12-secondmate-name sm-13-secondmate-name sm-14-secondmate-name sm-15-secondmate-name sm-16-secondmate-name sm-17-secondmate-name sm-18-secondmate-name sm-19-secondmate-name sm-20-secondmate-name sm-21-secondmate-name sm-22-secondmate-name sm-23-secondmate-name sm-24-secondmate-name sm-25-secondmate-name sm-26-secondmate-name sm-27-secondmate-name sm-28-secondmate-name sm-29-secondmate-name sm-30-secondmate-name sm-31-secondmate-name sm-32-secondmate-name sm-33-secondmate-name sm-34-secondmate-name sm-35-secondmate-name sm-36-secondmate-name sm-37-secondmate-name sm-38-secondmate-name sm-39-secondmate-name sm-40-secondmate-name
+WITHHELD secondmates lines :: sed -n p '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y/data/secondmates.md'
+If preferences are absent, read data/captain-shared.md and data/captain.md now.
+If the learnings message is absent, read data/learnings.md now.
+
+================================================================================
+NEXT STEP
+================================================================================
+Follow the supervision operating instructions block above for harness 'claude'.
+This script never starts supervision itself.
+
+WITHHELD lines above name a read-only command for each omission.
+Captain preferences and learnings are separate messages unless this run used --part all.
+SESSION START /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y - preferences part, budget 8500 bytes, OVERFLOW 16986 bytes, printed in full below; if a preview cut it, read data/captain-shared.md and data/captain.md; withheld sections are named inline with a read-only command to retrieve each.
+If this message reached you as a truncated preview, read the full output file the harness named before any other action.
+data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)
+--------------------------------------------------------------------------------
+# Shared captain prefs
+SHARED_TOKEN_ALPHA first line
+- shared preference line 1: Outside Voice rule padding padding padding padding padding
+- shared preference line 2: Outside Voice rule padding padding padding padding padding
+- shared preference line 3: Outside Voice rule padding padding padding padding padding
+- shared preference line 4: Outside Voice rule padding padding padding padding padding
+- shared preference line 5: Outside Voice rule padding padding padding padding padding
+- shared preference line 6: Outside Voice rule padding padding padding padding padding
+- shared preference line 7: Outside Voice rule padding padding padding padding padding
+- shared preference line 8: Outside Voice rule padding padding padding padding padding
+- shared preference line 9: Outside Voice rule padding padding padding padding padding
+- shared preference line 10: Outside Voice rule padding padding padding padding padding
+- shared preference line 11: Outside Voice rule padding padding padding padding padding
+- shared preference line 12: Outside Voice rule padding padding padding padding padding
+- shared preference line 13: Outside Voice rule padding padding padding padding padding
+- shared preference line 14: Outside Voice rule padding padding padding padding padding
+- shared preference line 15: Outside Voice rule padding padding padding padding padding
+- shared preference line 16: Outside Voice rule padding padding padding padding padding
+- shared preference line 17: Outside Voice rule padding padding padding padding padding
+- shared preference line 18: Outside Voice rule padding padding padding padding padding
+- shared preference line 19: Outside Voice rule padding padding padding padding padding
+- shared preference line 20: Outside Voice rule padding padding padding padding padding
+- shared preference line 21: Outside Voice rule padding padding padding padding padding
+- shared preference line 22: Outside Voice rule padding padding padding padding padding
+- shared preference line 23: Outside Voice rule padding padding padding padding padding
+- shared preference line 24: Outside Voice rule padding padding padding padding padding
+- shared preference line 25: Outside Voice rule padding padding padding padding padding
+- shared preference line 26: Outside Voice rule padding padding padding padding padding
+- shared preference line 27: Outside Voice rule padding padding padding padding padding
+- shared preference line 28: Outside Voice rule padding padding padding padding padding
+- shared preference line 29: Outside Voice rule padding padding padding padding padding
+- shared preference line 30: Outside Voice rule padding padding padding padding padding
+- shared preference line 31: Outside Voice rule padding padding padding padding padding
+- shared preference line 32: Outside Voice rule padding padding padding padding padding
+- shared preference line 33: Outside Voice rule padding padding padding padding padding
+- shared preference line 34: Outside Voice rule padding padding padding padding padding
+- shared preference line 35: Outside Voice rule padding padding padding padding padding
+- shared preference line 36: Outside Voice rule padding padding padding padding padding
+- shared preference line 37: Outside Voice rule padding padding padding padding padding
+- shared preference line 38: Outside Voice rule padding padding padding padding padding
+- shared preference line 39: Outside Voice rule padding padding padding padding padding
+- shared preference line 40: Outside Voice rule padding padding padding padding padding
+- shared preference line 41: Outside Voice rule padding padding padding padding padding
+- shared preference line 42: Outside Voice rule padding padding padding padding padding
+- shared preference line 43: Outside Voice rule padding padding padding padding padding
+- shared preference line 44: Outside Voice rule padding padding padding padding padding
+- shared preference line 45: Outside Voice rule padding padding padding padding padding
+- shared preference line 46: Outside Voice rule padding padding padding padding padding
+- shared preference line 47: Outside Voice rule padding padding padding padding padding
+- shared preference line 48: Outside Voice rule padding padding padding padding padding
+- shared preference line 49: Outside Voice rule padding padding padding padding padding
+- shared preference line 50: Outside Voice rule padding padding padding padding padding
+- shared preference line 51: Outside Voice rule padding padding padding padding padding
+- shared preference line 52: Outside Voice rule padding padding padding padding padding
+- shared preference line 53: Outside Voice rule padding padding padding padding padding
+- shared preference line 54: Outside Voice rule padding padding padding padding padding
+- shared preference line 55: Outside Voice rule padding padding padding padding padding
+- shared preference line 56: Outside Voice rule padding padding padding padding padding
+- shared preference line 57: Outside Voice rule padding padding padding padding padding
+- shared preference line 58: Outside Voice rule padding padding padding padding padding
+- shared preference line 59: Outside Voice rule padding padding padding padding padding
+- shared preference line 60: Outside Voice rule padding padding padding padding padding
+SHARED_TOKEN_OMEGA last line
+
+data/captain.md
+--------------------------------------------------------------------------------
+# Captain
+CAPTAIN_TOKEN_ALPHA
+- standing preference 1: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 2: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 3: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 4: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 5: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 6: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 7: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 8: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 9: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 10: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 11: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 12: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 13: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 14: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 15: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 16: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 17: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 18: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 19: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 20: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 21: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 22: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 23: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 24: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 25: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 26: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 27: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 28: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 29: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 30: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 31: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 32: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 33: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 34: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 35: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 36: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 37: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 38: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 39: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 40: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 41: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 42: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 43: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 44: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 45: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 46: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 47: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 48: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 49: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 50: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 51: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 52: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 53: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 54: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 55: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 56: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 57: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 58: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 59: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 60: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 61: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 62: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 63: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 64: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 65: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 66: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 67: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 68: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 69: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 70: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 71: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 72: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 73: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 74: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 75: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 76: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 77: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 78: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 79: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 80: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 81: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 82: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 83: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 84: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 85: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 86: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 87: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 88: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 89: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 90: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 91: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 92: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 93: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 94: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 95: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 96: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 97: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 98: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 99: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+- standing preference 100: No silent elision. Prefer a pointer read at use time over a summary cached in context.
+CAPTAIN_TOKEN_OMEGA Outside Voice standing rule
+SESSION START /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y - learnings part, budget 8500 bytes; withheld sections are named inline with a read-only command to retrieve each.
+If this message reached you as a truncated preview, read the full output file the harness named before any other action.
+data/learnings.md
+--------------------------------------------------------------------------------
+# Learnings
+LEARN_TOKEN_ALPHA
+- learning 1 padding
+- learning 2 padding
+- learning 3 padding
+- learning 4 padding
+- learning 5 padding
+- learning 6 padding
+- learning 7 padding
+- learning 8 padding
+- learning 9 padding
+- learning 10 padding
+- learning 11 padding
+- learning 12 padding
+- learning 13 padding
+- learning 14 padding
+- learning 15 padding
+- learning 16 padding
+- learning 17 padding
+- learning 18 padding
+- learning 19 padding
+- learning 20 padding
+- learning 21 padding
+- learning 22 padding
+- learning 23 padding
+- learning 24 padding
+- learning 25 padding
+- learning 26 padding
+- learning 27 padding
+- learning 28 padding
+- learning 29 padding
+- learning 30 padding
+LEARN_TOKEN_OMEGA

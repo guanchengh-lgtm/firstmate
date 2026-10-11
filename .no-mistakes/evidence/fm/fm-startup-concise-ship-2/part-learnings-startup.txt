@@ -1,0 +1,37 @@
+SESSION START /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.2sAq1y - learnings part, budget 8500 bytes; withheld sections are named inline with a read-only command to retrieve each.
+If this message reached you as a truncated preview, read the full output file the harness named before any other action.
+data/learnings.md
+--------------------------------------------------------------------------------
+# Learnings
+LEARN_TOKEN_ALPHA
+- learning 1 padding
+- learning 2 padding
+- learning 3 padding
+- learning 4 padding
+- learning 5 padding
+- learning 6 padding
+- learning 7 padding
+- learning 8 padding
+- learning 9 padding
+- learning 10 padding
+- learning 11 padding
+- learning 12 padding
+- learning 13 padding
+- learning 14 padding
+- learning 15 padding
+- learning 16 padding
+- learning 17 padding
+- learning 18 padding
+- learning 19 padding
+- learning 20 padding
+- learning 21 padding
+- learning 22 padding
+- learning 23 padding
+- learning 24 padding
+- learning 25 padding
+- learning 26 padding
+- learning 27 padding
+- learning 28 padding
+- learning 29 padding
+- learning 30 padding
+LEARN_TOKEN_OMEGA

@@ -1,0 +1,12 @@
+preferences startup bytes=17416
+learnings startup bytes=1112
+preferences clear bytes=17416
+learnings clear bytes=1112
+preferences compact bytes=17416
+learnings compact bytes=1112
+preferences resume bytes=0
+learnings resume bytes=0
+preferences reload bytes=0
+learnings reload bytes=0
+preferences fork bytes=0
+learnings fork bytes=0
