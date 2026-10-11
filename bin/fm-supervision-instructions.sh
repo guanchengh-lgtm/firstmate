@@ -285,7 +285,11 @@ else
   printf '%s\n' '- X mode: inactive; use the default watcher cadence.'
 fi
 if [ -n "$HOST_SNIPPET" ]; then
-  printf '%s\n' '- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol at the end of this block).'
+  if [ "$BRIEF" -eq 1 ] && [ "$HARNESS" = claude ]; then
+    printf '%s\n' '- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol from the Full protocol command at the end of this block).'
+  else
+    printf '%s\n' '- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol at the end of this block).'
+  fi
 fi
 ordinary_wake_line
 printf '\n'

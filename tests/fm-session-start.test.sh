@@ -1152,13 +1152,12 @@ EOF
   pass "a fleet row keeps the latest status state and the status path, not the tail"
 }
 
-# A crewmate writes its own status lines, so nothing upstream bounds their
-# length: an observed one ran 865 characters. The tail is a wake-EVENT view
-# whose full log path is printed beside it, so a long line is cut, marked, and
-# left recoverable rather than allowed to scale the digest with fleet load.
-test_status_tail_line_cap() {
-  local rec root home fakebin out window row longest
-  rec=$(new_world status-line-cap)
+# A fleet row is in the never-cut set: its open decision keys and the remote
+# marker come last, and in a read-only session the row is the only place the
+# keys appear. A long PR URL plus two run-scoped keys must not push them off.
+test_fleet_row_is_never_cut() {
+  local rec root home fakebin out pr row
+  rec=$(new_world fleet-row-uncut)
   IFS='|' read -r root home fakebin <<EOF
 $rec
 EOF
@@ -1166,23 +1165,31 @@ EOF
   make_fake_ps_claude "$fakebin"
   make_fake_tmux "$fakebin" "fm-sess:live"
 
-  window=$(awk 'BEGIN { while (i++ < 400) printf "w" }')
-  printf 'window=fm-sess:live\nkind=ship\npr=https://example.invalid/%s\n' "$window" > "$home/state/task-cap.meta"
-  printf 'working: short line kept whole\n' > "$home/state/task-cap.status"
+  pr="https://example.invalid/$(awk 'BEGIN { while (i++ < 200) printf "w" }')"
+  printf 'window=fm-sess:live\nkind=ship\npr=%s\nremote_host=build-box\n' "$pr" > "$home/state/task-cap.meta"
+  {
+    printf 'needs-decision [key=nm-01m4nv304ctj1efpvckk8xaa7g-review]: pick one\n'
+    printf 'needs-decision [key=nm-01m4nv304ctj1efpvckk8xaa7g-push]: confirm push\n'
+  } > "$home/state/task-cap.status"
 
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
   row=$(printf '%s\n' "$out" | grep '^task-cap kind=' | head -1)
   [ -n "$row" ] || fail "the long fleet row was missing: $out"
-  assert_contains "$row" " [truncated]" "an over-long fleet row was not marked as truncated"
-  assert_not_contains "$out" "short line kept whole" "the fleet row dumped the status note"
-  longest=$(printf '%s' "$row" | wc -m | tr -d '[:space:]')
-  [ "$longest" -le 220 ] || fail "a fleet row ran $longest characters past the 220-character cap"
+  assert_not_contains "$row" "[truncated]" "a fleet row was cut"
+  assert_contains "$row" "pr=$pr " "the fleet row lost its PR URL"
+  assert_contains "$row" "nm-01m4nv304ctj1efpvckk8xaa7g-review" "the fleet row lost the first decision key"
+  assert_contains "$row" "nm-01m4nv304ctj1efpvckk8xaa7g-push" "the fleet row lost the second decision key"
+  case "$row" in
+    *" remote") ;;
+    *) fail "the fleet row lost its remote marker: $row" ;;
+  esac
+  assert_not_contains "$row" "pick one" "the fleet row dumped the status note"
 
-  pass "a fleet row is capped with a truncation marker while the task id stays on the line"
+  pass "a fleet row prints whole, with every decision key and the remote marker"
 }
 
 test_orphan_status_logs_are_printed() {
-  local rec root home fakebin out matched_count orphan_count
+  local rec root home fakebin out matched_count
   rec=$(new_world orphan-status)
   IFS='|' read -r root home fakebin <<EOF
 $rec
@@ -2085,7 +2092,7 @@ EOF
 
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
 
-  assert_contains "$out" "backlog (manual backend): in_flight=1 held=2 blocked=1 ready=25" \
+  assert_contains "$out" "backlog (manual backend): in_flight=1 held=1 blocked=1 ready=25" \
     "manual backend did not print backlog counts"
   assert_contains "$out" "captain-held ids: compact-startup held-queued" \
     "manual backend omitted a captain-held id"
@@ -2115,7 +2122,7 @@ EOF
 
   out=$(run_session_start "$home" "$root" "$fakebin:$BASE_PATH")
 
-  assert_contains "$out" "backlog (tasks-axi unavailable or incompatible): in_flight=1 held=2 blocked=1 ready=25" \
+  assert_contains "$out" "backlog (tasks-axi unavailable or incompatible): in_flight=1 held=1 blocked=1 ready=25" \
     "unavailable tasks-axi did not fall back to title-line counts"
   assert_contains "$out" "captain-held ids: compact-startup held-queued" \
     "unavailable tasks-axi fallback omitted a captain-held id"
@@ -3248,7 +3255,7 @@ test_session_start_preserves_transiently_unreadable_tmux
 test_session_start_preserves_proven_bare_shell_recovery
 test_session_start_relaunches_herdr_husk_secondmate
 test_status_tail_bounding
-test_status_tail_line_cap
+test_fleet_row_is_never_cut
 test_orphan_status_logs_are_printed
 test_endpoint_liveness_tmux
 test_endpoint_liveness_herdr

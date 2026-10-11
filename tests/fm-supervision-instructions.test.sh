@@ -308,6 +308,10 @@ test_brief_keeps_each_harness_first_action() {
         "claude brief pointer dropped the flags the composer passes"
       assert_not_contains "$brief" '--brief' \
         "claude brief pointer repeated --brief"
+      assert_contains "$brief" '(protocol from the Full protocol command at the end of this block).' \
+        "claude brief host line did not name the Full protocol command"
+      assert_not_contains "$brief" '(protocol at the end of this block).' \
+        "claude brief host line still promised a protocol in the block"
       assert_not_contains "$brief" 'supervision-host: cycle boundary' \
         "claude brief kept the supervision-host addendum"
       assert_contains "$full" 'supervision-host: cycle boundary' \

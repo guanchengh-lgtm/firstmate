@@ -134,7 +134,8 @@
 # Full bodies stay on demand: `bin/fm-tasks-axi.sh show <id> --full`, or
 # `data/backlog.md` when the file body is truly needed.
 #
-# FLEET ROWS: bin/fm-line-cap-lib.sh bounds each row. One line above the rows
+# FLEET ROWS: each row prints whole and is never cut; every field is
+# structured, with no status prose. One line above the rows
 # names the per-task record files and the current-state commands; the row
 # itself prints no status tail, meta, or record path. bin/fm-crew-state.sh owns
 # current state. Open decision keys come from bin/fm-classify-lib.sh.
@@ -348,10 +349,6 @@ PRIMARY_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
 . "$SCRIPT_DIR/fm-trace-context-lib.sh"
 # shellcheck source=bin/fm-wake-lib.sh
 . "$SCRIPT_DIR/fm-wake-lib.sh"
-# shellcheck source=bin/fm-line-cap-lib.sh
-. "$SCRIPT_DIR/fm-line-cap-lib.sh"
-# shellcheck source=bin/fm-hold-reason-lib.sh
-. "$SCRIPT_DIR/fm-hold-reason-lib.sh"
 
 
 # One per-task endpoint read may never outlive this bound: a hung backend CLI
@@ -451,18 +448,9 @@ print_preferences_files() {
 }
 
 print_preferences_part() {
-  local body n headers hn
+  local body
   body=$(print_preferences_files; printf x)
-  body=${body%x}
-  n=$(printf '%s' "$body" | wc -c | tr -d '[:space:]')
-  case "$n" in ''|*[!0-9]*) n=0 ;; esac
-  headers=$(part_header_lines preferences)
-  hn=$(printf '%s' "$headers" | wc -c | tr -d '[:space:]')
-  case "$hn" in ''|*[!0-9]*) hn=0 ;; esac
-  if [ $((hn + n)) -gt "$BUDGET_BYTES" ]; then
-    headers=$(part_header_lines preferences "OVERFLOW ${n} bytes, printed in full below; if a preview cut it, read data/captain-shared.md and data/captain.md")
-  fi
-  printf '%s%s' "$headers" "$body"
+  print_file_part preferences "${body%x}" "read data/captain-shared.md and data/captain.md"
 }
 
 print_learnings_files() {
@@ -470,16 +458,20 @@ print_learnings_files() {
 }
 
 print_learnings_part() {
-  local body n headers hn
+  local body
   body=$(print_learnings_files; printf x)
-  body=${body%x}
+  print_file_part learnings "${body%x}" "read data/learnings.md"
+}
+
+print_file_part() {
+  local part=$1 body=$2 hint=$3 n headers hn
   n=$(printf '%s' "$body" | wc -c | tr -d '[:space:]')
   case "$n" in ''|*[!0-9]*) n=0 ;; esac
-  headers=$(part_header_lines learnings)
+  headers=$(part_header_lines "$part")
   hn=$(printf '%s' "$headers" | wc -c | tr -d '[:space:]')
   case "$hn" in ''|*[!0-9]*) hn=0 ;; esac
   if [ $((hn + n)) -gt "$BUDGET_BYTES" ]; then
-    headers=$(part_header_lines learnings "OVERFLOW ${n} bytes, printed in full below; if a preview cut it, read data/learnings.md")
+    headers=$(part_header_lines "$part" "OVERFLOW ${n} bytes, printed in full below; if a preview cut it, $hint")
   fi
   printf '%s%s' "$headers" "$body"
 }
@@ -686,8 +678,8 @@ fill_backlog_from_manual() {
       }
       if (state == "queued") {
         if ($0 ~ /blocked-by:/) { blocked++; next }
-        if ($0 ~ /hold-kind:[[:space:]]*captain/) { print "CAP", id; next }
-        if ($0 ~ /\(hold[):]/ || $0 ~ /hold-until:/) { other++; next }
+        if ($0 ~ /hold-kind:[[:space:]]*captain/) { held++; print "CAP", id; next }
+        if ($0 ~ /\(hold[):]/ || $0 ~ /hold-until:/) { held++; other++; next }
         print "READY", id
         next
       }
@@ -695,6 +687,7 @@ fill_backlog_from_manual() {
     END {
       print "IN", inflight + 0
       print "BLOCKED", blocked + 0
+      print "HELD", held + 0
       print "OTHER", other + 0
       print "DONE", done + 0
     }
@@ -704,6 +697,7 @@ fill_backlog_from_manual() {
     case "$tag" in
       IN) SS_IN=$rest ;;
       BLOCKED) SS_BLOCKED=$rest ;;
+      HELD) SS_HELD=$rest ;;
       OTHER) SS_OTHER=$rest ;;
       DONE) SS_DONE=$rest ;;
       CAP)
@@ -718,7 +712,6 @@ fill_backlog_from_manual() {
   done <<EOF
 $parsed
 EOF
-  SS_HELD=$((SS_CAP_N + SS_OTHER))
   ss_render_backlog_texts "$mode" file "sed -n p $(shell_quote "$path")"
 }
 
@@ -858,8 +851,7 @@ print_fleet_row() {
   if [ -n "$remote" ]; then
     row="$row remote"
   fi
-  fm_cap_line_var "$row"
-  printf '%s\n' "$FM_LINE_CAP_LINE"
+  printf '%s\n' "$row"
 }
 
 print_orphan_count() {

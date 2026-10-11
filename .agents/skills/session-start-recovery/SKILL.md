@@ -30,7 +30,8 @@ The locked startup inactive-outcome scan joins that worker so a slow local curre
    Every other harness gets the full block.
    The script itself never starts supervision; the emitted harness protocol owns the exact wait or wake mechanism.
 5. **Fleet rows** - one row per task after the supervision block.
-   The row names kind, project, the endpoint verdict (`alive`, `DEAD`, `ERROR`, or `NO-WINDOW`), the last status word and its age, the PR URL, open decision keys, and the meta and status paths.
+   The row names kind, project, the endpoint verdict (`alive`, `DEAD`, `ERROR`, or `NO-WINDOW`), the last status word and its age, the PR URL, and open decision keys.
+   One line above the rows names the per-task meta and status record pattern.
    A remote task adds `remote`.
    The row does not print the status tail or the full meta.
    An orphan-status count and the away or quiet posture follow the rows.
