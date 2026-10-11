@@ -2352,6 +2352,45 @@ SH
   pass "the runtime bound leaves enough ancestry headroom for a deeply nested session to take the lock"
 }
 
+test_harness_is_detected_above_the_runtime_bound() {
+  local rec root home fakebin nest out
+  rec=$(new_world runtime-bound-harness)
+  IFS='|' read -r root home fakebin <<EOF
+$rec
+EOF
+  make_fake_toolchain "$fakebin"
+  make_fake_ps_harness "$fakebin" codex
+
+  # A Codex exec hook starts the composer a few shells below codex. The
+  # composer's parent can still see codex inside the eight levels
+  # bin/fm-harness.sh climbs, but the timed child sits further down, so the
+  # harness must be detected before the runtime bound adds its levels.
+  nest="$home/nest.sh"
+  cat > "$nest" <<'SH'
+#!/usr/bin/env bash
+set -u
+levels=$1
+shift
+if [ "$levels" -gt 0 ]; then
+  bash "$0" $((levels - 1)) "$@"
+  exit $?
+fi
+exec "$@"
+SH
+  chmod +x "$nest"
+
+  # shellcheck disable=SC2016 # $$ must expand in the launched shell, not here.
+  out=$(env -u CLAUDECODE -u PI_CODING_AGENT -u FM_PI_HARNESS -u GROK_AGENT \
+    FM_HOME="$home" FM_ROOT_OVERRIDE="$root" PATH="$fakebin:$BASE_PATH" \
+    bash -c 'export FM_FAKE_HARNESS_PID=$$; exec "$1" 5 "$2" --part core' _ "$nest" "$SESSION_START")
+
+  assert_contains "$out" "SUPERVISION OPERATING INSTRUCTIONS - primary harness: codex" \
+    "the timed child lost the codex harness above the runtime bound"
+  assert_contains "$out" "budget 7000 bytes" "a codex hook did not get the codex byte budget"
+
+  pass "the harness is detected above the runtime bound, so a codex hook gets its budget"
+}
+
 # --- context re-emit (--reemit) ----------------------------------------------
 
 test_reemit_skips_startup_sweeps_but_keeps_the_wake_drain() {
@@ -3114,8 +3153,11 @@ EOF
 
 # snapshot_home_records <home>: one checksum line per file under state/ and
 # data/, so a retrieval command that writes anything there changes the result.
+# The detached network stage's own lock files are skipped: that stage still
+# releases them after the digest returns, and no retrieval command takes them.
 snapshot_home_records() {
-  (cd "$1" && find state data -type f -print 2>/dev/null | LC_ALL=C sort | while IFS= read -r f; do
+  (cd "$1" && find state data -type f ! -path 'state/.startup-network.lock*' -print 2>/dev/null | LC_ALL=C sort | while IFS= read -r f; do
+    [ -f "$f" ] || continue
     printf '%s %s\n' "$(cksum < "$f")" "$f"
   done)
 }
@@ -3127,6 +3169,9 @@ snapshot_home_records() {
 run_every_retrieval_line() {
   local out=$1 home=$2 root=$3 path=$4 label=$5 cmds cmd before after status n=0
   cmds=$(printf '%s\n' "$out" | sed -n 's/^WITHHELD .* :: //p; s/^Full protocol: //p')
+  # The digest's detached network stage still writes its own state files, so
+  # let it finish before the snapshot.
+  wait_for_network_stage "$home" "$root" >/dev/null 2>&1 || true
   before=$(snapshot_home_records "$home")
   while IFS= read -r cmd; do
     [ -n "$cmd" ] || continue
@@ -3293,6 +3338,7 @@ test_runtime_bound_truncates_loudly_and_exits_zero
 test_portable_timeout_escalates_term_resistant_process
 test_runtime_bound_leaves_a_healthy_digest_untouched
 test_runtime_bound_leaves_harness_ancestry_headroom
+test_harness_is_detected_above_the_runtime_bound
 test_reemit_skips_startup_sweeps_but_keeps_the_wake_drain
 test_agents_baseline_stays_at_true_start_and_reemits_on_every_drifted_pi_compact
 test_read_only_pi_compact_refreshes_against_its_own_session_identity

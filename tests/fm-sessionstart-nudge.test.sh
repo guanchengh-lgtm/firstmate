@@ -228,11 +228,25 @@ run_hook() {  # <root> [args...]
     FM_GATE_REFUSE_BYPASS=0 FM_ROOT_OVERRIDE="$root" FM_HOME="$root" PATH="$RUN_PATH" "$RUN" "$@"
 }
 
+# run_hook_pi gives Pi an ancestor, not only its markers: this test shell
+# reports as pi, so a real harness further up the host (an agent running these
+# tests) cannot outrank the Pi markers in bin/fm-harness.sh.
+PI_FAKEBIN="$TMP_ROOT/pi-fakebin"
+mkdir -p "$PI_FAKEBIN"
+cat > "$PI_FAKEBIN/ps" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *" -p $$ "*comm=* | *comm=*" -p $$ "* | *" -p $$ "*args=* | *args=*" -p $$ "*) echo pi; exit 0 ;;
+esac
+exec /bin/ps "\$@"
+SH
+chmod +x "$PI_FAKEBIN/ps"
+
 run_hook_pi() {  # <root> [args...]
   local root=$1
   shift
   env -u CLAUDECODE -u GROK_AGENT PI_CODING_AGENT=true FM_PI_HARNESS=pi \
-    FM_GATE_REFUSE_BYPASS=0 FM_ROOT_OVERRIDE="$root" FM_HOME="$root" PATH="$RUN_PATH" "$RUN" "$@"
+    FM_GATE_REFUSE_BYPASS=0 FM_ROOT_OVERRIDE="$root" FM_HOME="$root" PATH="$PI_FAKEBIN:$RUN_PATH" "$RUN" "$@"
 }
 
 # Every run-tier assertion keys off the digest banner, which fm-session-start.sh

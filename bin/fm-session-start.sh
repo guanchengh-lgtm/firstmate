@@ -296,8 +296,13 @@ if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
   [ "$REEMIT" -eq 1 ] && CHILD_ARGS+=(--reemit)
   [ -n "$SESSION_SOURCE" ] && CHILD_ARGS+=(--source "$SESSION_SOURCE")
   CHILD_ARGS+=(--part "$PART")
+  # Detect the harness here, not in the child: the timeout wrapper and the
+  # child add process levels, and inside a Codex exec hook that pushed codex
+  # past the eight levels bin/fm-harness.sh climbs, so the child saw unknown.
+  SESSION_START_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
   fm_run_timed "$SESSION_START_BUDGET" \
     env FM_SESSION_START_STAGE_FILE="$SESSION_START_STAGE_FILE" \
+    FM_SESSION_START_PRIMARY_HARNESS="$SESSION_START_HARNESS" \
     "$SCRIPT_DIR/fm-session-start.sh" ${CHILD_ARGS[@]+"${CHILD_ARGS[@]}"}
   SESSION_START_RC=$?
   # ANY nonzero child exit is a truncation: the banner contract promises that
@@ -337,7 +342,7 @@ if [ -z "${FM_SESSION_START_STAGE_FILE:-}" ]; then
   exit 0
 fi
 
-PRIMARY_HARNESS=$("$SCRIPT_DIR/fm-harness.sh" 2>/dev/null || printf unknown)
+PRIMARY_HARNESS=${FM_SESSION_START_PRIMARY_HARNESS:-unknown}
 
 # shellcheck source=bin/fm-backend.sh
 . "$SCRIPT_DIR/fm-backend.sh"
