@@ -87,7 +87,7 @@ send_line() {  # <session> <text>
   tmux -L "$SOCKET" send-keys -t "$1" Enter
 }
 
-ASK='Reply with exactly the FMHOOKTOKEN value from your session-start context and nothing else.'
+ASK='Reply with every FMHOOKTOKEN line from your session-start context, one per line, and nothing else.'
 LIVE_NONCE=$(od -An -N12 -tx1 /dev/urandom | tr -d ' \n')
 
 # --- lab ---------------------------------------------------------------------
@@ -136,17 +136,26 @@ SH
 
   cat > "$lab/bin/fm-sessionstart-run.sh" <<'SH'
 #!/usr/bin/env bash
-# Recorder standing in for the real wrapper: logs the source the harness
-# supplied and prints a source-stamped token for the model to quote back.
 set -u
 record=${FM_LIVE_RECORD:?}
 source=
+part=all
 while [ $# -gt 0 ]; do
   case "$1" in
     --source) source=${2:-}; shift 2 || exit 0 ;;
+    --part) part=${2:-all}; shift 2 || exit 0 ;;
     *) shift ;;
   esac
 done
+if [ "$part" = preferences ] || [ "$part" = learnings ]; then
+  cat >/dev/null 2>&1 || true
+  if [ "$part" = preferences ]; then
+    printf 'FMHOOKTOKEN-PREFS-%s\n' "${FM_LIVE_NONCE:?}"
+  else
+    printf 'FMHOOKTOKEN-LEARN-%s\n' "${FM_LIVE_NONCE:?}"
+  fi
+  exit 0
+fi
 if [ -z "$source" ]; then
   source=$(cat 2>/dev/null | awk '
     BEGIN { RS = "\"" }
@@ -162,7 +171,14 @@ printf '%s\n' "$source" >> "$record"
 if [ -n "${FM_LIVE_DETACH_MARKER:-}" ]; then
   "$(dirname "$0")/fm-startup-network.sh" start --locked 0 --harvest-pid $$ >/dev/null 2>&1 || true
 fi
-printf 'FMHOOKTOKEN-%s-%s-%s\n' "$source" "$(grep -c . "$record" | tr -d ' ')" "${FM_LIVE_NONCE:?}"
+count=$(grep -c . "$record" | tr -d ' ')
+printf 'FMHOOKTOKEN-%s-%s-%s\n' "$source" "$count" "${FM_LIVE_NONCE:?}"
+printf '%s\n' "$(printf 'x%.0s' {1..2100})"
+printf 'FMHOOKTOKEN-LATE-%s-%s-%s\n' "$source" "$count" "${FM_LIVE_NONCE:?}"
+if [ "$part" = all ]; then
+  printf 'FMHOOKTOKEN-PREFS-%s\n' "${FM_LIVE_NONCE:?}"
+  printf 'FMHOOKTOKEN-LEARN-%s\n' "${FM_LIVE_NONCE:?}"
+fi
 exit 0
 SH
   chmod +x "$lab/bin/fm-sessionstart-run.sh"
@@ -213,6 +229,12 @@ probe_process_opens() {  # <harness> <version> <lab> <expect-resume> <cold-argv.
   esac
   printf '%s' "$out" | grep -Fq "FMHOOKTOKEN-$source-1-$LIVE_NONCE" \
     || { printf '# cold-open model reply: %s\n' "$out" >&2; fail "$harness $version: hook stdout did not reach model context on a cold open"; }
+  printf '%s' "$out" | grep -Fq "FMHOOKTOKEN-LATE-$source-1-$LIVE_NONCE" \
+    || fail "$harness $version: the token after byte 2,000 did not reach model context on a cold open"
+  printf '%s' "$out" | grep -Fq "FMHOOKTOKEN-PREFS-$LIVE_NONCE" \
+    || fail "$harness $version: the preferences token did not reach model context on a cold open"
+  printf '%s' "$out" | grep -Fq "FMHOOKTOKEN-LEARN-$LIVE_NONCE" \
+    || fail "$harness $version: the learnings token did not reach model context on a cold open"
   pass "$harness $version: a cold open reports source '$source' and its hook stdout reaches model context"
 
   # (c) The harness process is gone; the worker it detached must not be. The
@@ -246,7 +268,7 @@ probe_process_opens() {  # <harness> <version> <lab> <expect-resume> <cold-argv.
 probe_context_reset() {  # <harness> <version> <lab> <clear-command> <launch-argv...>
   local harness=$1 version=$2 lab=$3 clear_cmd=$4
   shift 4
-  local record="$lab/record" session="fmss-$harness" reset n compact_seed compact_reply
+  local record="$lab/record" session="fmss-$harness" reset n compact_seed compact_reply compact_count
   : > "$record"
   tmux -L "$SOCKET" new-session -d -s "$session" -c "$lab" -x 200 -y 50 \
     -e FM_LIVE_RECORD="$record" -e FM_ROOT_OVERRIDE="$lab" -e FM_HOME="$lab" \
@@ -289,6 +311,12 @@ probe_context_reset() {  # <harness> <version> <lab> <clear-command> <launch-arg
   send_line "$session" "$ASK"
   wait_for_text "$session" "FMHOOKTOKEN-$reset-2-$LIVE_NONCE" \
     || { capture "$session" >&2; fail "$harness $version: hook stdout did not reach model context after '$clear_cmd'"; }
+  wait_for_text "$session" "FMHOOKTOKEN-LATE-$reset-2-$LIVE_NONCE" \
+    || { capture "$session" >&2; fail "$harness $version: the token after byte 2,000 did not reach model context after '$clear_cmd'"; }
+  wait_for_text "$session" "FMHOOKTOKEN-PREFS-$LIVE_NONCE" \
+    || { capture "$session" >&2; fail "$harness $version: the preferences token did not reach model context after '$clear_cmd'"; }
+  wait_for_text "$session" "FMHOOKTOKEN-LEARN-$LIVE_NONCE" \
+    || { capture "$session" >&2; fail "$harness $version: the learnings token did not reach model context after '$clear_cmd'"; }
   pass "$harness $version: '$clear_cmd' reports source '$reset' and re-injects hook stdout into model context"
 
   if [ "$harness" = pi ]; then
@@ -310,8 +338,15 @@ probe_context_reset() {  # <harness> <version> <lab> <clear-command> <launch-arg
   while [ "$n" -lt 40 ] && ! grep -qx compact "$record"; do sleep 3; n=$((n + 1)); done
   if grep -qx compact "$record"; then
     send_line "$session" "$ASK"
-    wait_for_text "$session" "FMHOOKTOKEN-compact-$(grep -c . "$record" | tr -d ' ')-$LIVE_NONCE" \
+    compact_count=$(grep -c . "$record" | tr -d ' ')
+    wait_for_text "$session" "FMHOOKTOKEN-compact-$compact_count-$LIVE_NONCE" \
       || { capture "$session" >&2; fail "$harness $version: hook stdout did not reach model context after a compaction"; }
+    wait_for_text "$session" "FMHOOKTOKEN-LATE-compact-$compact_count-$LIVE_NONCE" \
+      || { capture "$session" >&2; fail "$harness $version: the token after byte 2,000 did not reach model context after a compaction"; }
+    wait_for_text "$session" "FMHOOKTOKEN-PREFS-$LIVE_NONCE" \
+      || { capture "$session" >&2; fail "$harness $version: the preferences token did not reach model context after a compaction"; }
+    wait_for_text "$session" "FMHOOKTOKEN-LEARN-$LIVE_NONCE" \
+      || { capture "$session" >&2; fail "$harness $version: the learnings token did not reach model context after a compaction"; }
     pass "$harness $version: a compaction reports source 'compact' and re-injects hook stdout into model context"
   elif [ "$harness" = pi ]; then
     capture "$session" >&2
