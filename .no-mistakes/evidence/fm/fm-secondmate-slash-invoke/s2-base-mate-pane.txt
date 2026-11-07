@@ -1,0 +1,14 @@
+✻ Brewed for 9s · done 4:24 AM
+❯ [fm-from-firstmate]corr=7944061d27a63118 /pstack:how how does bin/fm-guard.sh decide a tangle? Answer in at most two sentences.
+  Searched for 1 pattern, listed 1 directory (ctrl+o to expand)
+⏺ Bash(d=$(date +%s); echo "done [at=$d]: corr=7944061d27a63118 fm-guard.sh calls fm_primary_tangle_branch (bin/fm-tangle-lib.sh) on the primary checkout, before and i…)
+  ⎿  (No output)
+  ⎿  Allowed by auto mode
+⏺ Captain, I sent the answer to the parent channel as one done line with corr=7944061d27a63118.
+  bin/fm-guard.sh checks the primary checkout first, before and apart from any work in flight. It calls fm_primary_tangle_branch in bin/fm-tangle-lib.sh. A tangle means HEAD sits on a named branch that is not the default
+  branch. A detached HEAD, a directory outside git, or an unknown default branch is not a tangle.
+✻ Churned for 10s · done 4:24 AM
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent                                                                                                                                                                     /rc

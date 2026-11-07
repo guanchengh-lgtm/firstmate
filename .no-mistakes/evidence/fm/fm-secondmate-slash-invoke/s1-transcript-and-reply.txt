@@ -1,0 +1,33 @@
+<command-args>[fm-from-firstmate]corr=6f57c35a0ab90e83 how does bin/fm-send.sh pick between the typed plane and the inbox? Answer in at most three sentences.</command-args>
+<command-name>/pstack:how</command-name>
+Base directory for this skill: ~/.claude/plugins/cache/cursor-plugins/pstack/0.15.36/skills/how
+--- pending-reply record ---
+schema=fm-pending-reply.v1
+corr_id=6f57c35a0ab90e83
+task_id=labf4aa120d954a-mate
+parent_home=/private/tmp/fmlab.fJjgnA/home
+parent_status=/private/tmp/fmlab.fJjgnA/home/state/labf4aa120d954a-mate.status
+parent_status_scan_signature=
+request_summary=/pstack:how how does bin/fm-send.sh pick between the typed plane and the inbox? Answer in at most three sentences.
+created_epoch=1794083049
+turn_seen_busy=0
+request_turn_completed_epoch=
+recovery_attempted_epoch=
+recovery_sender_pid=
+recovery_sender_identity=
+recovery_sent_epoch=
+recovery_delivery_outcome=
+recovery_turn_seen_busy=0
+recovery_turn_completed_epoch=
+escalated_epoch=
+wrong_home_hits=0
+wrong_home_first_sighting=
+wrong_home_sightings=
+wrong_home_scan_signature=
+grace_secs=120
+delivered_epoch=1794083051
+phase=resolved
+resolved_epoch=1794083061
+resolved_via=status
+--- parent status lines with corr ---
+done [at=1794083058]: corr=6f57c35a0ab90e83 fm-send.sh sends text to any task resolved from this home's metadata by the inbox plane (durable record plus a constant doorbell), including remote secondmates which have no typed plane. It uses the typed plane (text submitted straight to the pane) only for an explicit backend target that names an endpoint rather than a task, or for a harness-native invocation (leading '/', or leading '$' to a codex target) that must reach the harness parser. Exit codes differ: inbox 0 means durably recorded, typed 0 means submit confirmed and 3 means unconfirmed so verify before resending.

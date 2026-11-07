@@ -1,0 +1,7 @@
+command-name entries (turn 1 new, turn 2 base):
+2
+skill load count:
+2
+base-turn user message as recorded:
+"content":"[fm-from-firstmate]corr=7944061d27a63118 /pstack:how how does bin/fm-guard.sh decide a tangle? Answer in at most two sentences."
+"content":"[fm-from-firstmate]corr=7944061d27a63118 /pstack:how how does bin/fm-guard.sh decide a tangle? Answer in at most two sentences."

@@ -1,0 +1,10 @@
+⏺ Bash(d=$(date +%s); echo "blocked [at=$d]: corr=467485b96eb7d110 /effort high did not apply - it is a built-in CLI command that I cannot run from a tool call, and no…)
+  ⎿  (No output)
+  ⎿  Allowed by auto mode
+⏺ Captain, the /effort high request did not apply. I reported this on the parent channel with corr=467485b96eb7d110.
+  /effort is a built-in command of the CLI. I cannot run it from a tool call, so no effort setting changed. To apply it, type /effort high in this pane.
+✻ Churned for 4s · done 4:25 AM
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ auto mode on (shift+tab to cycle) · ← 1 agent                                                                                                                                                                     /rc
