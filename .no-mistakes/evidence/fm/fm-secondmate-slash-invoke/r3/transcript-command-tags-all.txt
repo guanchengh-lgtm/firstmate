@@ -1,0 +1,6 @@
+<command-args>[fm-from-firstmate]corr=0569d744ee00b654 NEARLIMIT word word word word word word
+<command-args>[fm-from-firstmate]corr=8e1659922a39fdc1 alpha beta gamma
+<command-args>[fm-from-firstmate]corr=905e15a1f3c400c8 state this principle in one sentence
+<command-name>/fmprobe
+<command-name>/pstack:principle-laziness-protocol
+<command-name>` block is already present this turn, the skill is loaded — follow it directly r

@@ -1,0 +1,3 @@
+$ FM_HOME=<lab> bin/fm-send.sh labsm "/fmprobe LONGARG w w w ... (817 chars)"
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.bkHrbO
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.

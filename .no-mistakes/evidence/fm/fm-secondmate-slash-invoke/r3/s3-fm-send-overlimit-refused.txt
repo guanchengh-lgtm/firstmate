@@ -1,0 +1,10 @@
+$ FM_HOME=<lab> bin/fm-send.sh labsm /fmprobe\ LONGARG\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ word\ 
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.uGPGKp
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+error: slash command /fmprobe for labsm is over the 800-byte limit for a typed Claude command once its marker and corr are added; Claude would paste it as chat instead of running it, so nothing was sent. Shorten the arguments.
+exit=1
+--- new pending-reply records:
+DONE
+--- secondmate pane before/after diff: unchanged
+--- LONGARG occurrences in secondmate transcript: 0
+--- pending-replies after: 8e1659922a39fdc1 905e15a1f3c400c8 

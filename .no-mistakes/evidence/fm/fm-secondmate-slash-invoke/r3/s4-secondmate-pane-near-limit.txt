@@ -1,0 +1,30 @@
+❯ /fmprobe [fm-from-firstmate]corr=0569d744ee00b654 NEARLIMIT word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word    
+word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word 
+word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word      
+word word word word word word word word word word word word word word word word word word word word word word word word word word word word                                                                                 
+                                                                                                                                                                                                                          
+⏺ Bash(d=$(date +%s); args='[fm-from-firstmate]corr=0569d744ee00b654 NEARLIMIT word word word word word word word word word word word word word word word word word wor…)
+  ⎿  date=1795420196 words=148 chars=790
+     done [at=1795420196]: corr=0569d744ee00b654 FMPROBE-RAN-5518 1795420196 args=[fm-from-firstmate]corr=0569d744ee00b654 NEARLIMIT word word wo
+
+⏺ Captain, the near-limit probe ran and its answer is now on the parent status channel.                                                                                                                                     
+
+  The answer line is:                                                                                                                                                                                                       
+
+  FMPROBE-RAN-5518 1795420196 args=[fm-from-firstmate]corr=0569d744ee00b654 NEARLIMIT word word ... word                                                                                                                    
+                                                                                                                                                                                                                          
+  - I ran date +%s one time only. It gave 1795420196.
+  - The args= part holds the full arguments that I received: the marker, the token, NEARLIMIT, and 148 copies of word. The arguments are 790 characters long.
+  - I added one done line with corr=0569d744ee00b654 to the parent status channel. The last line of that channel shows the record.
+  - Caveat 1: I copied the arguments into the command by hand. I could not compare the copy with the original text, so a count error is possible. The parent can compare the 148 count and the 790 length with what it sent.
+  - Caveat 2: As in the previous probes, I could not see the invisible separator after the marker.
+
+  I am idle again and I will wait for the next routed request.
+
+✻ Crunched for 15s · done 3:50 PM                                          
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 1 agent                                                                                                                                                            /rc
+

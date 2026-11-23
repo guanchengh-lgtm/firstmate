@@ -1,0 +1,22 @@
+
+⏺ Bash(t=$(date +%s); echo "failed [at=$t]: corr=4be69a1471262297 /fmprobe LONGARG request arrived as pasted text, not a typed slash command; the skill is user-invocat…)                               
+  ⎿  failed [at=1795419298]: corr=4be69a1471262297 /fmprobe LONGARG request arrived as pasted text, not a typed slash command; the skill is user-invocation-only (disable-model-invocation), so the
+      Skill tool refused it and nothing ran.
+
+⏺ Captain, the long-argument /fmprobe request did not run.         
+
+  - The request arrived as pasted text, not as a typed slash command.
+  - The fmprobe skill is set so that only a person can start it. The skill tool refused my call, and the error said not to copy the skill's steps by other means. So I did not run the time command or  
+    write the token line.                                                                                                                                                                               
+  - An earlier /fmprobe request in a plain message did run through the skill tool. That time, the tool showed a prompt that offered the skill. The pasted message did not get that prompt. The pasted   
+    delivery path is probably the difference.                                                                                                                                                         
+
+  I wrote this failure to the parent channel with its request tag (corr=4be69a1471262297). To run the probe with the long argument, send it again as a typed /fmprobe command.
+
+✻ Cooked for 21s · done 3:35 PM                                                 
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 1 agent                                                                                                                                        /rc
+

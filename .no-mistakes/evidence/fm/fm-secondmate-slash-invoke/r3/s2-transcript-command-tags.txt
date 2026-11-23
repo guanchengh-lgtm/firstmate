@@ -1,0 +1,4 @@
+<command-args>[fm-from-firstmate]corr=8e1659922a39fdc1 alpha beta gamma</command-args>
+<command-args>[fm-from-firstmate]corr=905e15a1f3c400c8 state this principle in one sentence</command-args>
+<command-name>/fmprobe</command-name>
+<command-name>/pstack:principle-laziness-protocol</command-name>

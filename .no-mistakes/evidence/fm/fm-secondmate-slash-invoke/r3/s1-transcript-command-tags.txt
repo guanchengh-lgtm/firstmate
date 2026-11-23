@@ -1,0 +1,2 @@
+<command-args>[fm-from-firstmate]corr=8e1659922a39fdc1 alpha beta gamma</command-args>
+<command-name>/fmprobe</command-name>

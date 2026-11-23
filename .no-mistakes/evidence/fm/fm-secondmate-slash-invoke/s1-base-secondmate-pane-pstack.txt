@@ -1,0 +1,19 @@
+❯ [fm-from-firstmate]corr=14a80a64dceca452 /pstack:principle-subtract-before-you-add state this principle in one sentence                                                                               
+
+⏺ Skill(pstack:principle-subtract-before-you-add)
+  ⎿  Loaded skill
+
+⏺ Bash(t=$(date +%s); echo "done [at=$t]: corr=14a80a64dceca452 subtract-before-you-add: when you change a system, remove complexity first and then build, so the desig…)                               
+  ⎿  done [at=1795419104]: corr=14a80a64dceca452 subtract-before-you-add: when you change a system, remove complexity first and then build, so the design stays as simple or simpler than you found
+      it.
+
+⏺ Captain, here is the principle in one sentence. When you change a system, remove complexity first and then build, so the design is as simple as before or simpler. I wrote this answer to the parent  
+  channel with its request tag (corr=14a80a64dceca452).             
+
+✻ Cooked for 9s · done 3:31 PM                                                                                                                                                                          
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯                                                                                                                                                                                                     
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 1 agent                                                                                                                                        /rc
+

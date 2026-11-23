@@ -1,0 +1,8 @@
+<command-name>/fmprobe</command-name>
+[fm-from-firstmate]corr=a19d307ab8840947 /fmprobe
+[fm-from-firstmate]corr=858e07e85a1f0209 /fmprobe2
+[fm-from-firstmate]corr=14a80a64dceca452 /pstack:principle-subtract-before-you-add
+<command-name>/pstack:principle-laziness-protocol</command-name>
+[fm-from-firstmate]corr=a6f885e7b69ea5a5 /rename
+[fm-from-firstmate]corr=4e7876fcbf7f3a1d /fmnosuchcmd
+[fm-from-firstmate]corr=4be69a1471262297 /fmprobe

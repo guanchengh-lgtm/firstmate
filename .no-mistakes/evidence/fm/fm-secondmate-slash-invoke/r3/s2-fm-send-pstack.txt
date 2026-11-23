@@ -1,0 +1,7 @@
+$ FM_HOME=<lab> bin/fm-send.sh labsm /pstack:principle-laziness-protocol\ state\ this\ principle\ in\ one\ sentence
+fm-gate-refuse: gate agent lifecycle permitted only against lab home /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab.uGPGKp
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+exit=0
+--- new pending-reply records:
+905e15a1f3c400c8
+DONE

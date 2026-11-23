@@ -1,0 +1,50 @@
+
+  I will wait for routed requests. When one arrives, I will do the work and send the answer through the parent status channel.
+
+✻ Brewed for 25s · done 3:47 PM
+
+❯ /fmprobe [fm-from-firstmate]corr=8e1659922a39fdc1 alpha beta gamma
+
+⏺ Bash(date +%s)
+  ⎿  1795420078
+
+⏺ Bash(cd /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-lab-sm.ihDNiJ/home; echo "done [at=1795420078]: corr=8e1659922a39fdc1 FMPROBE-RAN-5518 1795420078…)
+  ⎿  done [at=1795420078]: corr=8e1659922a39fdc1 FMPROBE-RAN-5518 1795420078 args=[fm-from-firstmate]corr=8e1659922a39fdc1 alpha beta gamma
+
+⏺ Captain, the probe ran and its answer is now on the parent status channel.
+
+  The answer line is:
+
+  FMPROBE-RAN-5518 1795420078 args=[fm-from-firstmate]corr=8e1659922a39fdc1 alpha beta gamma
+
+  - I ran date +%s one time only. It gave 1795420078.
+  - The request had the first-mate marker and corr=8e1659922a39fdc1. Thus I added one done line with that token to the parent status channel, as the charter tells me to. The last line of that channel shows the record.
+  - One caveat: I could not see the invisible separator that must come after the marker. The tool probably removed it, so the request could have been typed by hand. I sent the answer on the status channel because the
+    marker and the token were there.
+
+  I am idle again and I will wait for the next routed request.
+
+✻ Worked for 15s · done 3:48 PM
+
+❯ /pstack:principle-laziness-protocol [fm-from-firstmate]corr=905e15a1f3c400c8 state this principle in one sentence
+
+⏺ Bash(t=$(date +%s); echo "done [at=$t]: corr=905e15a1f3c400c8 Laziness Protocol: make each decision in one source of truth and make the smallest change that solves t…)
+  ⎿  done [at=1795420121]: corr=905e15a1f3c400c8 Laziness Protocol: make each decision in one source of truth and make the smallest change that solves the problem.
+
+⏺ Captain, the answer is now on the parent status channel.
+
+  The one-sentence statement of the principle is: "Make each decision in one source of truth and make the smallest change that solves the problem."
+
+  - The request had the first-mate marker and corr=905e15a1f3c400c8. Thus I added one done line with that token to the parent status channel. The last line of that channel shows the record.
+  - The caveat from the previous probe applies again: I could not see the invisible separator after the marker, so the request could have been typed by hand.
+
+  I am idle again and I will wait for the next routed request.
+
+✻ Crunched for 9s · done 3:48 PM
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 1 agent                                                                                                                                                            /rc
+
+

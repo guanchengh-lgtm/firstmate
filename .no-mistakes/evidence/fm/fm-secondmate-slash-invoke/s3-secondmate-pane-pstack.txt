@@ -1,0 +1,15 @@
+❯ /pstack:principle-laziness-protocol [fm-from-firstmate]corr=20e2d46378e56892 state this principle in one sentence                                                                                     
+
+⏺ Bash(t=$(date +%s); echo "done [at=$t]: corr=20e2d46378e56892 laziness-protocol: make each decision in one source of truth and make the smallest change that solves t…)                               
+  ⎿  done [at=1795419158]: corr=20e2d46378e56892 laziness-protocol: make each decision in one source of truth and make the smallest change that solves the problem.
+
+⏺ Captain, here is the principle in one sentence. Make each decision in one source of truth, and make the smallest change that solves the problem. I wrote this answer to the parent channel with its   
+  request tag (corr=20e2d46378e56892).                                                     
+
+✻ Sautéed for 7s · done 3:32 PM                                                                                                                                                                         
+
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯                                                                                                                                                                                                     
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 1 agent                                                                                                                                        /rc
+
