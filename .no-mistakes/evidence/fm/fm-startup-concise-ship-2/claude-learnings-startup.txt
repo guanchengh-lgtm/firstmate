@@ -1,0 +1,65 @@
+SESSION START /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO - learnings part, budget 8500 bytes; withheld sections are named inline with a read-only command to retrieve each.
+If this message reached you as a truncated preview, read the full output file the harness named before any other action.
+data/learnings.md
+--------------------------------------------------------------------------------
+# Learnings
+- LEARNING-1: a learning line that keeps the learnings file realistically large.
+- LEARNING-2: a learning line that keeps the learnings file realistically large.
+- LEARNING-3: a learning line that keeps the learnings file realistically large.
+- LEARNING-4: a learning line that keeps the learnings file realistically large.
+- LEARNING-5: a learning line that keeps the learnings file realistically large.
+- LEARNING-6: a learning line that keeps the learnings file realistically large.
+- LEARNING-7: a learning line that keeps the learnings file realistically large.
+- LEARNING-8: a learning line that keeps the learnings file realistically large.
+- LEARNING-9: a learning line that keeps the learnings file realistically large.
+- LEARNING-10: a learning line that keeps the learnings file realistically large.
+- LEARNING-11: a learning line that keeps the learnings file realistically large.
+- LEARNING-12: a learning line that keeps the learnings file realistically large.
+- LEARNING-13: a learning line that keeps the learnings file realistically large.
+- LEARNING-14: a learning line that keeps the learnings file realistically large.
+- LEARNING-15: a learning line that keeps the learnings file realistically large.
+- LEARNING-16: a learning line that keeps the learnings file realistically large.
+- LEARNING-17: a learning line that keeps the learnings file realistically large.
+- LEARNING-18: a learning line that keeps the learnings file realistically large.
+- LEARNING-19: a learning line that keeps the learnings file realistically large.
+- LEARNING-20: a learning line that keeps the learnings file realistically large.
+- LEARNING-21: a learning line that keeps the learnings file realistically large.
+- LEARNING-22: a learning line that keeps the learnings file realistically large.
+- LEARNING-23: a learning line that keeps the learnings file realistically large.
+- LEARNING-24: a learning line that keeps the learnings file realistically large.
+- LEARNING-25: a learning line that keeps the learnings file realistically large.
+- LEARNING-26: a learning line that keeps the learnings file realistically large.
+- LEARNING-27: a learning line that keeps the learnings file realistically large.
+- LEARNING-28: a learning line that keeps the learnings file realistically large.
+- LEARNING-29: a learning line that keeps the learnings file realistically large.
+- LEARNING-30: a learning line that keeps the learnings file realistically large.
+- LEARNING-31: a learning line that keeps the learnings file realistically large.
+- LEARNING-32: a learning line that keeps the learnings file realistically large.
+- LEARNING-33: a learning line that keeps the learnings file realistically large.
+- LEARNING-34: a learning line that keeps the learnings file realistically large.
+- LEARNING-35: a learning line that keeps the learnings file realistically large.
+- LEARNING-36: a learning line that keeps the learnings file realistically large.
+- LEARNING-37: a learning line that keeps the learnings file realistically large.
+- LEARNING-38: a learning line that keeps the learnings file realistically large.
+- LEARNING-39: a learning line that keeps the learnings file realistically large.
+- LEARNING-40: a learning line that keeps the learnings file realistically large.
+- LEARNING-41: a learning line that keeps the learnings file realistically large.
+- LEARNING-42: a learning line that keeps the learnings file realistically large.
+- LEARNING-43: a learning line that keeps the learnings file realistically large.
+- LEARNING-44: a learning line that keeps the learnings file realistically large.
+- LEARNING-45: a learning line that keeps the learnings file realistically large.
+- LEARNING-46: a learning line that keeps the learnings file realistically large.
+- LEARNING-47: a learning line that keeps the learnings file realistically large.
+- LEARNING-48: a learning line that keeps the learnings file realistically large.
+- LEARNING-49: a learning line that keeps the learnings file realistically large.
+- LEARNING-50: a learning line that keeps the learnings file realistically large.
+- LEARNING-51: a learning line that keeps the learnings file realistically large.
+- LEARNING-52: a learning line that keeps the learnings file realistically large.
+- LEARNING-53: a learning line that keeps the learnings file realistically large.
+- LEARNING-54: a learning line that keeps the learnings file realistically large.
+- LEARNING-55: a learning line that keeps the learnings file realistically large.
+- LEARNING-56: a learning line that keeps the learnings file realistically large.
+- LEARNING-57: a learning line that keeps the learnings file realistically large.
+- LEARNING-58: a learning line that keeps the learnings file realistically large.
+- LEARNING-59: a learning line that keeps the learnings file realistically large.
+- LEARNING-60: a learning line that keeps the learnings file realistically large.

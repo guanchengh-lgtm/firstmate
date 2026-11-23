@@ -1,0 +1,47 @@
+ ▐▛███▛█   Claude Code v2.1.330
+ ▐▛███▛█   Claude Code v2.1.330
+▝▜██████▀  Opus 5.5 with medium effort · Claude Pro
+ ▝▝   ▝▝   /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-labroot.aSSozt
+❯ Do not run any tools in this turn. SessionStart hook messages were added to your context. For each one, quote verbatim its first line that begins with 'SESSION START'. Then quote verbatim the line containing
+  'OUTSIDE-VOICE-RULE', the line containing 'LEARNING-60:', the line beginning 'task-3 kind=', the line beginning 'Full protocol:', and every line beginning 'WITHHELD'. Say NOT PRESENT for anything missing, and say
+  whether any message reached you only as a truncated preview.
+⏺ Captain, here are the requested lines. I ran no tools.
+  First 'SESSION START' line of each message
+  1. Learnings message:
+     SESSION START /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO - learnings part, budget 8500 bytes; withheld sections are named inline with a read-only command to retrieve each.
+  2. Preferences message:
+     SESSION START /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO - preferences part, budget 8500 bytes, OVERFLOW 18009 bytes, printed in full below; if a preview cut it, read data/captain-shared.md and
+     data/captain.md; withheld sections are named inline with a read-only command to retrieve each.
+  3. Core message:
+     SESSION START /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO - core part, budget 8500 bytes; withheld sections are named inline with a read-only command to retrieve each.
+  Other requested lines
+  - 'OUTSIDE-VOICE-RULE': NOT PRESENT in the text that reached me. This line may be in the part of the preferences message that I did not get (see below).
+  - 'LEARNING-60:':
+    - LEARNING-60: a learning line that keeps the learnings file realistically large.
+  - 'task-3 kind=':
+    task-3 kind=ship project=project-3 endpoint=DEAD last=needs-decision age=- pr=https://github.com/example/project-3/pull/1003 decisions=nm-01abc-review
+  - 'Full protocol:':
+    Full protocol: bin/fm-supervision-instructions.sh --harness claude --read-only 0 --afk 0 --afk-mode away --x-mode 0
+  - Lines that begin with 'WITHHELD':
+    - WITHHELD hold reasons :: bin/fm-tasks-axi.sh list --state held --fields hold_kind,hold_reason
+    - WITHHELD projects lines :: sed -n p '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO/data/projects.md'
+    - WITHHELD secondmates lines :: sed -n p '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO/data/secondmates.md'
+    - WITHHELD lines above name a read-only command for each omission.
+  Truncated preview
+  Yes. The preferences message reached me only as a truncated preview. It was 18KB, and I got only the first 2KB, which stopped at SHARED-PREF-14. The full output is in this file:
+  ~/.claude/projects/-private-var-folders-p3-95t2-00n2jl3r2cn79bfn18h0000gp-T-fm-labroot-aSSozt/5ec7fead-752a-46bf-a113-f214738e9e6c/tool-results/hook-a7d796bf-e2ea-4744-96b6-ded376c72943-714a5acfd7352c62de67eb25
+  29e8107c-stdout.txt
+  You told me to run no tools in this turn, so I did not read that file. The learnings message and the core message came through completely.
+⏺ Ran 5 stop hooks (ctrl+o to expand)
+  ⎿  Stop hook reported a problem
+     [command hook 1]: REFUSED (captain chat guard): the captain cannot open local file paths. Your message names data/captain-shared.md and asks ('decision') with no claude.ai link. Publish that document as a claude.ai
+     page with the Artifact tool (start from the captain-page kit's new-page.sh), then send one short message with the https://claude.ai/ link and no local document path.
+⏺ Captain, I did not publish anything. A message check stopped my last reply. The check saw a private file name and the word "decision", so it thought that I asked you to decide something. It also told me to put your
+  shared preferences file on a claude.ai page.
+  That reading was wrong. The file name and the word "decision" came only from the startup lines that you told me to quote word for word. I did not ask you for a decision.
+  Your shared preferences file is private. I did not put it on a claude.ai page because you did not ask for that. The page would be private to you, but it would still put your private data on an outside service. If you
+  want that page, tell me and I will make it.
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+❯ 
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt · ← 1 agent                                                                                                                                         /rc

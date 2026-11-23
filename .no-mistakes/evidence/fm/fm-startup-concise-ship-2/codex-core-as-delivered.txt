@@ -1,0 +1,105 @@
+SESSION START /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO - core part, budget 7000 bytes; withheld sections are named inline with a read-only command to retrieve each.
+If this message reached you as a truncated preview, read the full output file the harness named before any other action.
+SESSION START - /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO
+
+LOCK
+--------------------------------------------------------------------------------
+lock acquired: harness pid 82999
+
+HOME ROLE
+--------------------------------------------------------------------------------
+fm-role: user (default)
+
+BOOTSTRAP
+--------------------------------------------------------------------------------
+(silent - all good)
+
+WAKE QUEUE
+--------------------------------------------------------------------------------
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+task-3 [key=nm-01abc-review] needs-decision: pick one
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+OPEN DECISIONS: <key> is the [key=...] printed before the verb; a token inside a note is prose, not a key.
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+================================================================================
+SUPERVISION OPERATING INSTRUCTIONS - primary harness: codex
+================================================================================
+Current state:
+- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.
+- Away/quiet mode: inactive.
+- X mode: inactive; use the default watcher cadence.
+- Ordinary wake: take the next foreground bin/fm-watch-checkpoint.sh checkpoint as directed below.
+
+Mode: Codex foreground checkpoint.
+
+When this session owns supervision and away mode is not active:
+1. Drain first with `bin/fm-wake-drain.sh`.
+   After handling all emitted wakes and reconciling open decisions and unread status lines, run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`; until then the work remains durable for idempotent re-handling after interruption.
+2. Source `/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO/config/x-mode.env` first when Relay is active.
+3. First cycle: run one foreground watcher checkpoint with `bin/fm-watch-checkpoint.sh --seconds "${FM_CODEX_WATCH_CHECKPOINT:-180}"`.
+4. Ordinary wake: if the command prints `signal:`, `stale:`, `check:`, or `heartbeat`, drain queued wakes, handle that wake, then start the next checkpoint.
+5. If the command prints `checkpoint:` or exits 124 with no wake, drain queued wakes anyway, process any queued user message now visible to Codex, then start the next checkpoint.
+6. Never use shell `&` or Codex background tasks for firstmate watcher supervision.
+7. Do not run `bin/fm-watch-arm.sh` as Codex's normal supervision command.
+   If it is ever shelled anyway, a backgrounded, piped, or bundled anti-pattern is denied automatically by the PreToolUse seatbelt (`bin/fm-arm-pretool-check.sh`) registered in `.codex/hooks.json`.
+8. Failure or missing cycle only: drain queued wakes, inspect the failure, then start a fresh foreground checkpoint.
+
+Codex cannot reason while a foreground tool call is running.
+The bounded checkpoint returns control regularly so user messages and queued wakes can be handled without relying on background-task wake semantics.
+
+
+================================================================================
+FLEET STATE
+================================================================================
+One row per task. Records: state/<id>.meta and state/<id>.status (wake history, not current state).
+Current state: bin/fm-crew-state.sh <id>; whole fleet: bin/fm-fleet-view.sh.
+endpoint=ERROR means the read died or hit its 10s bound; NO-WINDOW means no window is recorded.
+task-1 kind=ship project=project-1 endpoint=DEAD last=working age=4m pr=https://github.com/example/project-1/pull/1001 decisions=-
+task-2 kind=ship project=project-2 endpoint=DEAD last=working age=5m pr=https://github.com/example/project-2/pull/1002 decisions=-
+task-3 kind=ship project=project-3 endpoint=DEAD last=needs-decision age=- pr=https://github.com/example/project-3/pull/1003 decisions=nm-01abc-review
+Orphan status logs: 1 (each file is state/<id>.status with no matching state/<id>.meta)
+
+AFK
+--------------------------------------------------------------------------------
+absent
+
+================================================================================
+NETWORK CHECKS
+================================================================================
+completed off the startup path in 3s: GitHub authentication, dead-secondmate relaunch, secondmate convergence, pending handoff delivery, project clone refresh with its drift reporting, and inactive terminal-outcome reconciliation.
+(silent - no problems found)
+
+================================================================================
+CONTEXT
+================================================================================
+
+data/backlog.md
+--------------------------------------------------------------------------------
+backlog (tasks-axi): in_flight=1 held=2 blocked=1 ready=12
+ready ids: ready-item-1 ready-item-2 ready-item-3 ready-item-4 ready-item-5 ready-item-6 ready-item-7 ready-item-8 ready-item-9 ready-item-10 ready-item-11 ready-item-12
+captain-held ids: cap-held
+other holds: 1
+done rows omitted
+ready_public_followups: 0 delivery-ready obligations
+Full task bodies: bin/fm-tasks-axi.sh show <id> --full
+WITHHELD hold reasons :: bin/fm-tasks-axi.sh list --state held --fields hold_kind,hold_reason
+
+data/projects.md
+--------------------------------------------------------------------------------
+projects: project-1 project-2 project-3 project-4 project-5 project-6 project-7 project-8 project-9 project-10 project-11 project-12
+WITHHELD projects lines :: sed -n p '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO/data/projects.md'
+
+data/secondmates.md
+--------------------------------------------------------------------------------
+WITHHELD secondmates :: sed -n p '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO/data/secondmates.md'
+If preferences are absent, read data/captain-shared.md and data/captain.md now.
+If the learnings message is absent, read data/learnings.md now.
+
+================================================================================
+NEXT STEP
+================================================================================
+Follow the supervision operating instructions block above for harness 'codex'.
+This script never starts supervision itself.
+
+WITHHELD lines above name a read-only command for each omission.
+Captain preferences and learnings are separate messages unless this run used --part all.

@@ -1,0 +1,381 @@
+SESSION START /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO - core part, budget 8500 bytes; withheld sections are named inline with a read-only command to retrieve each.
+If this message reached you as a truncated preview, read the full output file the harness named before any other action.
+SESSION START - /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO
+
+LOCK
+--------------------------------------------------------------------------------
+lock acquired: harness pid 92049
+
+HOME ROLE
+--------------------------------------------------------------------------------
+fm-role: user (default)
+
+BOOTSTRAP
+--------------------------------------------------------------------------------
+(silent - all good)
+
+WAKE QUEUE
+--------------------------------------------------------------------------------
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+task-3 [key=nm-01abc-review] needs-decision: pick one
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+OPEN DECISIONS: <key> is the [key=...] printed before the verb; a token inside a note is prose, not a key.
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+================================================================================
+SUPERVISION OPERATING INSTRUCTIONS - primary harness: claude
+================================================================================
+Current state:
+- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.
+- Away/quiet mode: inactive.
+- X mode: inactive; use the default watcher cadence.
+- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol from the Full protocol command at the end of this block).
+- Ordinary wake: the Stop-owned auto-arm (bin/fm-claude-stop-autoarm.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.
+
+Mode: Claude Stop-hook-owned supervision.
+
+When this session owns supervision and away mode is not active:
+1. Drain first with `bin/fm-wake-drain.sh`.
+   After handling all emitted wakes and reconciling open decisions and unread status lines, run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`; until then the work remains durable for idempotent re-handling after interruption.
+2. Routine watcher arm and re-arm are owned by the Stop `asyncRewake` hook (`bin/fm-claude-stop-autoarm.sh`), never by you.
+   Every turn end while supervision is needed launches or attaches one home-scoped watcher cycle with no model command and no model tokens.
+   An actionable close wakes you through the hook's exit-2 rewake, delivered as a `Stop hook feedback` message.
+3. On a `Stop hook feedback` wake (`signal:`, `stale:`, `check:`, or `heartbeat`), run `bin/fm-wake-drain.sh` first and handle the wake.
+   Do not run `bin/fm-watch-arm.sh` after an ordinary wake; the next turn end re-arms automatically when supervision is still needed.
+   Do not invent a wake from an attach-status line alone; drain and act only on real wake records, the drain's `OPEN DECISIONS` and `UNREAD STATUS` entries, or a real watcher reason line.
+
+Full protocol: bin/fm-supervision-instructions.sh --harness claude --read-only 0 --afk 0 --afk-mode away --x-mode 0
+
+================================================================================
+FLEET STATE
+================================================================================
+One row per task. Records: state/<id>.meta and state/<id>.status (wake history, not current state).
+Current state: bin/fm-crew-state.sh <id>; whole fleet: bin/fm-fleet-view.sh.
+endpoint=ERROR means the read died or hit its 10s bound; NO-WINDOW means no window is recorded.
+task-1 kind=ship project=project-1 endpoint=DEAD last=working age=3m pr=https://github.com/example/project-1/pull/1001 decisions=-
+task-2 kind=ship project=project-2 endpoint=DEAD last=working age=4m pr=https://github.com/example/project-2/pull/1002 decisions=-
+task-3 kind=ship project=project-3 endpoint=DEAD last=needs-decision age=- pr=https://github.com/example/project-3/pull/1003 decisions=nm-01abc-review
+Orphan status logs: 1 (each file is state/<id>.status with no matching state/<id>.meta)
+
+AFK
+--------------------------------------------------------------------------------
+absent
+
+================================================================================
+NETWORK CHECKS
+================================================================================
+IN PROGRESS - the deferred network checks have not finished yet.
+NOT yet confirmed: GitHub authentication, dead-secondmate relaunch, secondmate convergence, pending handoff delivery, project clone refresh with its drift reporting, and inactive terminal-outcome reconciliation.
+Started 5s ago, bounded at 120s.
+Only a FAILED or otherwise actionable result arrives as a `check: startup-network` wake; a clean success stays silent.
+The durable result is readable on demand with /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-labroot.aSSozt/bin/fm-startup-network.sh report; until it finishes, treat none of it as confirmed.
+
+================================================================================
+CONTEXT
+================================================================================
+
+data/backlog.md
+--------------------------------------------------------------------------------
+backlog (tasks-axi): in_flight=1 held=2 blocked=1 ready=12
+ready ids: ready-item-1 ready-item-2 ready-item-3 ready-item-4 ready-item-5 ready-item-6 ready-item-7 ready-item-8 ready-item-9 ready-item-10 ready-item-11 ready-item-12
+captain-held ids: cap-held
+other holds: 1
+done rows omitted
+ready_public_followups: 0 delivery-ready obligations
+Full task bodies: bin/fm-tasks-axi.sh show <id> --full
+WITHHELD hold reasons :: bin/fm-tasks-axi.sh list --state held --fields hold_kind,hold_reason
+
+data/projects.md
+--------------------------------------------------------------------------------
+projects: project-1 project-2 project-3 project-4 project-5 project-6 project-7 project-8 project-9 project-10 project-11 project-12
+WITHHELD projects lines :: sed -n p '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO/data/projects.md'
+
+data/secondmates.md
+--------------------------------------------------------------------------------
+secondmates: sm-1 sm-2 sm-3 sm-4
+WITHHELD secondmates lines :: sed -n p '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO/data/secondmates.md'
+If preferences are absent, read data/captain-shared.md and data/captain.md now.
+If the learnings message is absent, read data/learnings.md now.
+
+================================================================================
+NEXT STEP
+================================================================================
+Follow the supervision operating instructions block above for harness 'claude'.
+This script never starts supervision itself.
+
+WITHHELD lines above name a read-only command for each omission.
+Captain preferences and learnings are separate messages unless this run used --part all.
+SESSION START /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO - preferences part, budget 8500 bytes, OVERFLOW 18009 bytes, printed in full below; if a preview cut it, read data/captain-shared.md and data/captain.md; withheld sections are named inline with a read-only command to retrieve each.
+If this message reached you as a truncated preview, read the full output file the harness named before any other action.
+data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)
+--------------------------------------------------------------------------------
+# Shared captain prefs
+- SHARED-PREF-1: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-2: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-3: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-4: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-5: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-6: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-7: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-8: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-9: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-10: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-11: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-12: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-13: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-14: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-15: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-16: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-17: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-18: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-19: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-20: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-21: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-22: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-23: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-24: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-25: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-26: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-27: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-28: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-29: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-30: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-31: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-32: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-33: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-34: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-35: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-36: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-37: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-38: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-39: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-40: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-41: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-42: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-43: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-44: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-45: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-46: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-47: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-48: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-49: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-50: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-51: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-52: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-53: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-54: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-55: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-56: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-57: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-58: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-59: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-60: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-61: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-62: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-63: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-64: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-65: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-66: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-67: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-68: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-69: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-70: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-71: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-72: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-73: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-74: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-75: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-76: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-77: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-78: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-79: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-80: Optimise always-loaded prose for staleness, not size; pointer at use time.
+
+data/captain.md
+--------------------------------------------------------------------------------
+# Captain
+- CAPTAIN-PREF-1: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-2: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-3: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-4: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-5: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-6: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-7: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-8: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-9: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-10: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-11: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-12: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-13: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-14: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-15: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-16: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-17: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-18: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-19: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-20: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-21: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-22: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-23: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-24: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-25: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-26: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-27: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-28: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-29: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-30: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-31: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-32: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-33: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-34: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-35: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-36: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-37: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-38: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-39: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-40: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-41: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-42: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-43: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-44: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-45: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-46: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-47: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-48: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-49: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-50: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-51: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-52: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-53: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-54: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-55: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-56: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-57: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-58: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-59: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-60: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-61: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-62: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-63: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-64: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-65: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-66: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-67: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-68: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-69: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-70: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-71: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-72: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-73: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-74: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-75: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-76: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-77: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-78: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-79: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-80: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-81: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-82: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-83: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-84: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-85: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-86: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-87: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-88: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-89: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-90: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-91: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-92: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-93: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-94: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-95: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-96: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-97: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-98: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-99: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-100: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-101: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-102: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-103: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-104: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-105: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-106: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-107: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-108: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-109: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-110: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-111: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-112: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-113: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-114: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-115: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-116: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-117: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-118: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-119: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-120: No silent elision. Name what was withheld and how to retrieve it.
+- OUTSIDE-VOICE-RULE: run an Outside Voice review before every build.
+SESSION START /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO - learnings part, budget 8500 bytes; withheld sections are named inline with a read-only command to retrieve each.
+If this message reached you as a truncated preview, read the full output file the harness named before any other action.
+data/learnings.md
+--------------------------------------------------------------------------------
+# Learnings
+- LEARNING-1: a learning line that keeps the learnings file realistically large.
+- LEARNING-2: a learning line that keeps the learnings file realistically large.
+- LEARNING-3: a learning line that keeps the learnings file realistically large.
+- LEARNING-4: a learning line that keeps the learnings file realistically large.
+- LEARNING-5: a learning line that keeps the learnings file realistically large.
+- LEARNING-6: a learning line that keeps the learnings file realistically large.
+- LEARNING-7: a learning line that keeps the learnings file realistically large.
+- LEARNING-8: a learning line that keeps the learnings file realistically large.
+- LEARNING-9: a learning line that keeps the learnings file realistically large.
+- LEARNING-10: a learning line that keeps the learnings file realistically large.
+- LEARNING-11: a learning line that keeps the learnings file realistically large.
+- LEARNING-12: a learning line that keeps the learnings file realistically large.
+- LEARNING-13: a learning line that keeps the learnings file realistically large.
+- LEARNING-14: a learning line that keeps the learnings file realistically large.
+- LEARNING-15: a learning line that keeps the learnings file realistically large.
+- LEARNING-16: a learning line that keeps the learnings file realistically large.
+- LEARNING-17: a learning line that keeps the learnings file realistically large.
+- LEARNING-18: a learning line that keeps the learnings file realistically large.
+- LEARNING-19: a learning line that keeps the learnings file realistically large.
+- LEARNING-20: a learning line that keeps the learnings file realistically large.
+- LEARNING-21: a learning line that keeps the learnings file realistically large.
+- LEARNING-22: a learning line that keeps the learnings file realistically large.
+- LEARNING-23: a learning line that keeps the learnings file realistically large.
+- LEARNING-24: a learning line that keeps the learnings file realistically large.
+- LEARNING-25: a learning line that keeps the learnings file realistically large.
+- LEARNING-26: a learning line that keeps the learnings file realistically large.
+- LEARNING-27: a learning line that keeps the learnings file realistically large.
+- LEARNING-28: a learning line that keeps the learnings file realistically large.
+- LEARNING-29: a learning line that keeps the learnings file realistically large.
+- LEARNING-30: a learning line that keeps the learnings file realistically large.
+- LEARNING-31: a learning line that keeps the learnings file realistically large.
+- LEARNING-32: a learning line that keeps the learnings file realistically large.
+- LEARNING-33: a learning line that keeps the learnings file realistically large.
+- LEARNING-34: a learning line that keeps the learnings file realistically large.
+- LEARNING-35: a learning line that keeps the learnings file realistically large.
+- LEARNING-36: a learning line that keeps the learnings file realistically large.
+- LEARNING-37: a learning line that keeps the learnings file realistically large.
+- LEARNING-38: a learning line that keeps the learnings file realistically large.
+- LEARNING-39: a learning line that keeps the learnings file realistically large.
+- LEARNING-40: a learning line that keeps the learnings file realistically large.
+- LEARNING-41: a learning line that keeps the learnings file realistically large.
+- LEARNING-42: a learning line that keeps the learnings file realistically large.
+- LEARNING-43: a learning line that keeps the learnings file realistically large.
+- LEARNING-44: a learning line that keeps the learnings file realistically large.
+- LEARNING-45: a learning line that keeps the learnings file realistically large.
+- LEARNING-46: a learning line that keeps the learnings file realistically large.
+- LEARNING-47: a learning line that keeps the learnings file realistically large.
+- LEARNING-48: a learning line that keeps the learnings file realistically large.
+- LEARNING-49: a learning line that keeps the learnings file realistically large.
+- LEARNING-50: a learning line that keeps the learnings file realistically large.
+- LEARNING-51: a learning line that keeps the learnings file realistically large.
+- LEARNING-52: a learning line that keeps the learnings file realistically large.
+- LEARNING-53: a learning line that keeps the learnings file realistically large.
+- LEARNING-54: a learning line that keeps the learnings file realistically large.
+- LEARNING-55: a learning line that keeps the learnings file realistically large.
+- LEARNING-56: a learning line that keeps the learnings file realistically large.
+- LEARNING-57: a learning line that keeps the learnings file realistically large.
+- LEARNING-58: a learning line that keeps the learnings file realistically large.
+- LEARNING-59: a learning line that keeps the learnings file realistically large.
+- LEARNING-60: a learning line that keeps the learnings file realistically large.

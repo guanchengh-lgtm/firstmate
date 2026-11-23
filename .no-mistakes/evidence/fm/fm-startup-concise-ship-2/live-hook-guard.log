@@ -1,0 +1,16 @@
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - claude 2.1.330 (Claude Code): a cold open reports source 'startup' and its hook stdout reaches model context
+ok - claude 2.1.330 (Claude Code): a worker detached by the session-open hook outlives it, so the deferred network checks still run
+ok - claude 2.1.330 (Claude Code): a context-preserving reopen reports source 'resume', which the run tier routes without a re-emit
+ok - claude 2.1.330 (Claude Code): '/clear' reports source 'clear' and re-injects hook stdout into model context
+ok - claude 2.1.330 (Claude Code): a compaction reports source 'compact' and re-injects hook stdout into model context
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+ok - codex codex-cli 0.153.4: a cold open reports source 'startup' and its hook stdout reaches model context
+ok - codex codex-cli 0.153.4: a worker detached by the session-open hook outlives it, so the deferred network checks still run
+ok - codex codex-cli 0.153.4: a context-preserving reopen reports source 'resume', which the run tier routes without a re-emit
+# codex codex-cli 0.153.4: codex exec run-tier evidence refreshed; the interactive TUI remains uncovered because tracked project hooks provide no session-open or re-emit channel there
+warning: templates not found in /opt/homebrew/opt/git/share/git-core/templates
+# cold-open model reply: Warning: Extension package "~/.pi/agent/npm/node_modules/pi-web-access/package.json": Host-provided extension packages must be declared in peerDependencies with a "*" range, not dependencies: typebox. Installed copies can bypass the extension loader and create duplicate runtime modules.
+OAuth refresh failed for xai: xAI OAuth token refresh failed (HTTP 400): invalid_grant: Invalid or unknown refresh token
+not ok - pi 1.4.0: hook stdout did not reach model context on a cold open
+EXIT=1

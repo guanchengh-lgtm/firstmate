@@ -1,0 +1,106 @@
+SESSION START /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO - core part, budget 8500 bytes; withheld sections are named inline with a read-only command to retrieve each.
+If this message reached you as a truncated preview, read the full output file the harness named before any other action.
+SESSION START - /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO
+
+LOCK
+--------------------------------------------------------------------------------
+lock acquired: harness pid 92049
+
+HOME ROLE
+--------------------------------------------------------------------------------
+fm-role: user (default)
+
+BOOTSTRAP
+--------------------------------------------------------------------------------
+(silent - all good)
+
+WAKE QUEUE
+--------------------------------------------------------------------------------
+OPEN DECISIONS (still open, folded from the durable status logs - not just the latest line):
+task-3 [key=nm-01abc-review] needs-decision: pick one
+OPEN DECISIONS: close one by answering it: bin/fm-send.sh <task> --resolve-key <key> '<answer>'
+OPEN DECISIONS: <key> is the [key=...] printed before the verb; a token inside a note is prose, not a key.
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+================================================================================
+SUPERVISION OPERATING INSTRUCTIONS - primary harness: claude
+================================================================================
+Current state:
+- Lock: held by this session; this session owns normal supervision unless away mode says otherwise.
+- Away/quiet mode: inactive.
+- X mode: inactive; use the default watcher cadence.
+- Supervision host: on; it takes away-posture wakes and, where the dialog mirror is verified, eligible attended wakes itself, and hands the rest to you (protocol from the Full protocol command at the end of this block).
+- Ordinary wake: the Stop-owned auto-arm (bin/fm-claude-stop-autoarm.sh) already owns watcher continuity; drain and handle the wake, and do not arm another cycle yourself.
+
+Mode: Claude Stop-hook-owned supervision.
+
+When this session owns supervision and away mode is not active:
+1. Drain first with `bin/fm-wake-drain.sh`.
+   After handling all emitted wakes and reconciling open decisions and unread status lines, run the exact `--ack-through` command printed as `WAKE_ACK_REQUIRED`; until then the work remains durable for idempotent re-handling after interruption.
+2. Routine watcher arm and re-arm are owned by the Stop `asyncRewake` hook (`bin/fm-claude-stop-autoarm.sh`), never by you.
+   Every turn end while supervision is needed launches or attaches one home-scoped watcher cycle with no model command and no model tokens.
+   An actionable close wakes you through the hook's exit-2 rewake, delivered as a `Stop hook feedback` message.
+3. On a `Stop hook feedback` wake (`signal:`, `stale:`, `check:`, or `heartbeat`), run `bin/fm-wake-drain.sh` first and handle the wake.
+   Do not run `bin/fm-watch-arm.sh` after an ordinary wake; the next turn end re-arms automatically when supervision is still needed.
+   Do not invent a wake from an attach-status line alone; drain and act only on real wake records, the drain's `OPEN DECISIONS` and `UNREAD STATUS` entries, or a real watcher reason line.
+
+Full protocol: bin/fm-supervision-instructions.sh --harness claude --read-only 0 --afk 0 --afk-mode away --x-mode 0
+
+================================================================================
+FLEET STATE
+================================================================================
+One row per task. Records: state/<id>.meta and state/<id>.status (wake history, not current state).
+Current state: bin/fm-crew-state.sh <id>; whole fleet: bin/fm-fleet-view.sh.
+endpoint=ERROR means the read died or hit its 10s bound; NO-WINDOW means no window is recorded.
+task-1 kind=ship project=project-1 endpoint=DEAD last=working age=2m pr=https://github.com/example/project-1/pull/1001 decisions=-
+task-2 kind=ship project=project-2 endpoint=DEAD last=working age=3m pr=https://github.com/example/project-2/pull/1002 decisions=-
+task-3 kind=ship project=project-3 endpoint=DEAD last=needs-decision age=- pr=https://github.com/example/project-3/pull/1003 decisions=nm-01abc-review
+Orphan status logs: 1 (each file is state/<id>.status with no matching state/<id>.meta)
+
+AFK
+--------------------------------------------------------------------------------
+absent
+
+================================================================================
+NETWORK CHECKS
+================================================================================
+IN PROGRESS - the deferred network checks have not finished yet.
+NOT yet confirmed: GitHub authentication, dead-secondmate relaunch, secondmate convergence, pending handoff delivery, project clone refresh with its drift reporting, and inactive terminal-outcome reconciliation.
+Started 5s ago, bounded at 120s.
+Only a FAILED or otherwise actionable result arrives as a `check: startup-network` wake; a clean success stays silent.
+The durable result is readable on demand with /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-labroot.aSSozt/bin/fm-startup-network.sh report; until it finishes, treat none of it as confirmed.
+
+================================================================================
+CONTEXT
+================================================================================
+
+data/backlog.md
+--------------------------------------------------------------------------------
+backlog (tasks-axi): in_flight=1 held=2 blocked=1 ready=12
+ready ids: ready-item-1 ready-item-2 ready-item-3 ready-item-4 ready-item-5 ready-item-6 ready-item-7 ready-item-8 ready-item-9 ready-item-10 ready-item-11 ready-item-12
+captain-held ids: cap-held
+other holds: 1
+done rows omitted
+ready_public_followups: 0 delivery-ready obligations
+Full task bodies: bin/fm-tasks-axi.sh show <id> --full
+WITHHELD hold reasons :: bin/fm-tasks-axi.sh list --state held --fields hold_kind,hold_reason
+
+data/projects.md
+--------------------------------------------------------------------------------
+projects: project-1 project-2 project-3 project-4 project-5 project-6 project-7 project-8 project-9 project-10 project-11 project-12
+WITHHELD projects lines :: sed -n p '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO/data/projects.md'
+
+data/secondmates.md
+--------------------------------------------------------------------------------
+secondmates: sm-1 sm-2 sm-3 sm-4
+WITHHELD secondmates lines :: sed -n p '/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO/data/secondmates.md'
+If preferences are absent, read data/captain-shared.md and data/captain.md now.
+If the learnings message is absent, read data/learnings.md now.
+
+================================================================================
+NEXT STEP
+================================================================================
+Follow the supervision operating instructions block above for harness 'claude'.
+This script never starts supervision itself.
+
+WITHHELD lines above name a read-only command for each omission.
+Captain preferences and learnings are separate messages unless this run used --part all.

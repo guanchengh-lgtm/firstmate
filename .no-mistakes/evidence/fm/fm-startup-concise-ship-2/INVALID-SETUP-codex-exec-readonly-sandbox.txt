@@ -1,0 +1,43 @@
+Reading additional input from stdin...
+OpenAI Codex v0.153.4
+--------
+workdir: /private/var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T/fm-labroot.aSSozt
+model: gpt-5.6-terra
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: medium
+reasoning summaries: auto
+session id: 01a2078e-f2dc-7323-8c2f-5e81c96b2794
+--------
+user
+Do not run any tools. Session-start hook messages were added to your context. For each one, quote verbatim its first line that begins with 'SESSION START'. Then quote verbatim the line containing 'OUTSIDE-VOICE-RULE', the line containing 'LEARNING-60:', the line beginning 'task-3 kind=', and every line beginning 'WITHHELD'. If something is not in your context, say NOT PRESENT for it.
+warning: `--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation.
+warning: `--dangerously-bypass-hook-trust` is enabled. Enabled hooks may run without review for this invocation.
+warning: Skill descriptions were shortened to fit the skills context budget. Codex can still see every skill, but some descriptions are shorter. Disable unused skills or plugins to leave more room for the rest.
+hook: SessionStart
+hook: SessionStart
+hook: SessionStart
+hook: SessionStart
+hook: SessionStart Completed
+hook: SessionStart Completed
+hook: SessionStart Completed
+hook: SessionStart Completed
+**Confirming absence of session-start hook message**
+codex
+Captain, no session-start hook message is present in my context.
+
+- `SESSION START`: NOT PRESENT
+- `OUTSIDE-VOICE-RULE`: NOT PRESENT
+- `LEARNING-60:`: NOT PRESENT
+- `task-3 kind=`: NOT PRESENT
+- `WITHHELD`: NOT PRESENT
+tokens used
+28,949
+Captain, no session-start hook message is present in my context.
+
+- `SESSION START`: NOT PRESENT
+- `OUTSIDE-VOICE-RULE`: NOT PRESENT
+- `LEARNING-60:`: NOT PRESENT
+- `task-3 kind=`: NOT PRESENT
+- `WITHHELD`: NOT PRESENT

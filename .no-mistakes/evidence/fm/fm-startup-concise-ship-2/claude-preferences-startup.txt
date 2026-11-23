@@ -1,0 +1,210 @@
+SESSION START /var/folders/p3/95t2_00n2jl3r2cn79bfn18h0000gp/T//fm-lab.5QsrpO - preferences part, budget 8500 bytes, OVERFLOW 18009 bytes, printed in full below; if a preview cut it, read data/captain-shared.md and data/captain.md; withheld sections are named inline with a read-only command to retrieve each.
+If this message reached you as a truncated preview, read the full output file the harness named before any other action.
+data/captain-shared.md (shared, main-authoritative, read-only in secondmate homes)
+--------------------------------------------------------------------------------
+# Shared captain prefs
+- SHARED-PREF-1: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-2: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-3: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-4: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-5: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-6: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-7: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-8: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-9: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-10: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-11: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-12: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-13: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-14: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-15: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-16: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-17: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-18: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-19: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-20: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-21: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-22: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-23: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-24: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-25: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-26: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-27: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-28: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-29: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-30: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-31: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-32: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-33: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-34: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-35: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-36: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-37: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-38: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-39: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-40: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-41: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-42: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-43: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-44: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-45: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-46: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-47: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-48: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-49: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-50: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-51: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-52: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-53: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-54: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-55: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-56: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-57: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-58: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-59: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-60: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-61: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-62: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-63: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-64: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-65: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-66: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-67: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-68: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-69: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-70: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-71: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-72: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-73: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-74: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-75: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-76: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-77: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-78: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-79: Optimise always-loaded prose for staleness, not size; pointer at use time.
+- SHARED-PREF-80: Optimise always-loaded prose for staleness, not size; pointer at use time.
+
+data/captain.md
+--------------------------------------------------------------------------------
+# Captain
+- CAPTAIN-PREF-1: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-2: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-3: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-4: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-5: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-6: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-7: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-8: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-9: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-10: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-11: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-12: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-13: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-14: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-15: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-16: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-17: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-18: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-19: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-20: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-21: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-22: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-23: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-24: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-25: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-26: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-27: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-28: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-29: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-30: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-31: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-32: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-33: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-34: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-35: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-36: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-37: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-38: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-39: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-40: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-41: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-42: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-43: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-44: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-45: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-46: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-47: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-48: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-49: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-50: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-51: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-52: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-53: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-54: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-55: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-56: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-57: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-58: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-59: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-60: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-61: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-62: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-63: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-64: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-65: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-66: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-67: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-68: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-69: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-70: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-71: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-72: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-73: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-74: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-75: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-76: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-77: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-78: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-79: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-80: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-81: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-82: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-83: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-84: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-85: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-86: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-87: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-88: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-89: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-90: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-91: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-92: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-93: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-94: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-95: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-96: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-97: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-98: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-99: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-100: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-101: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-102: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-103: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-104: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-105: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-106: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-107: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-108: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-109: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-110: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-111: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-112: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-113: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-114: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-115: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-116: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-117: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-118: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-119: No silent elision. Name what was withheld and how to retrieve it.
+- CAPTAIN-PREF-120: No silent elision. Name what was withheld and how to retrieve it.
+- OUTSIDE-VOICE-RULE: run an Outside Voice review before every build.
